@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_away_before.py, Version: 0.27.5 (2026-10-25)
+# File: tests/test_wifi_away_before.py, Version: 0.27.10 (2026-10-27)
 
-"""A tracker already away when a Wi-Fi outage began (rules UP-12,
-UP-15, UP-16; ruling #409).
+"""A tracker already away when a Wi-Fi outage began is not a casualty
+(rules UP-12, UP-15, UP-16).
 
-Ruled a bug by James, 25 October 2026 (Known Gap 34): a tracker
-already away when the outage began is not a casualty. Until 0.27.5
-the burst hold counted every tracker away, so phones away all day
-helped a small flap reach the threshold, and the claim took a tied
-device whose tracker had left hours before.
+Counting every tracker away would let phones away all day help a small
+flap reach the burst threshold, and let the claim take a tied device
+whose tracker left hours before.
 """
 
 from __future__ import annotations
@@ -71,8 +69,8 @@ async def test_a_device_whose_tracker_left_hours_before_is_not_claimed(
     hass: HomeAssistant, freezer
 ):
     """It failed when its tracker left, two hours before the outage, so
-    it is not a casualty and keeps its own row. Until 0.27.5 a tracker
-    still away was enough to claim it."""
+    it is not a casualty and keeps its own row (rule UP-15).
+    """
     coord, trackers, devices, _untied = await _house(hass, 8)
     await _fall(hass, trackers[7])
     record = coord.data[DATA_DEVICES][devices[7].id]

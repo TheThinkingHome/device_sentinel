@@ -3,19 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unwatched_time_cases.py, Version: 0.27.6 (2026-10-26)
+# File: test_unwatched_time_cases.py, Version: 0.27.10 (2026-10-27)
 
-"""The return from being set aside is dated once (ruling #648).
+"""The return from being set aside is dated once (rule WATCH-08).
 
 A device is judged from the moment it is watched again, and that moment
-is fixed when it comes back: a later settings change, a restart or the
-upgrade from 0.25.6 never re-dates it, so a standing freeze is never
-cleared by a slider. Each stretch set aside is read on its own, a
-clock set back while the device is set aside does not count the time
-nobody watched it, and a return made while Device Sentinel was
-reloading or disabled is still dated. How the trouble began is kept
-across a restart (ruling #644, amended), and a damaged saved value is
-not trusted. Found by the adversarial rounds of 12 October 2026.
+is fixed when it comes back: a later settings change, a restart or an
+upgrade never re-dates it, so a standing freeze is never cleared by a
+slider. Each stretch set aside is read on its own, a clock set back
+while the device is set aside does not count the time nobody watched
+it, and a return made while Device Sentinel was reloading or disabled
+is still dated. How the trouble began is kept across a restart
+(rule UNAV-07), and a damaged saved value is not trusted.
 """
 
 from __future__ import annotations
@@ -118,9 +117,9 @@ async def test_a_slider_change_does_not_clear_a_standing_freeze(hass: HomeAssist
 
 
 async def test_the_upgrade_does_not_clear_a_standing_freeze(hass: HomeAssistant, hass_storage, freezer):
-    """0.25.6 storage: a device taken back and frozen since still carries
-    its set-aside stamp and no return. 0.26.0 loads it and keeps it
-    frozen; the upgrade is not its return."""
+    """Storage from an older release: a device taken back and frozen
+    since still carries its set-aside stamp and no return. The load
+    keeps it frozen; the upgrade is not its return (rule WATCH-08)."""
     coord, device, eids = await _ready(hass, freezer, "u02")
     window = coord._freeze_window(rec(coord, device.id))
     await walk(hass, freezer, 600)
@@ -193,8 +192,8 @@ async def test_a_freeze_cleared_without_a_report_does_not_count_unwatched_hours(
 ):
     """Excluded three hours, back, frozen a window after the return, and
     cleared by a slider change with no report. The recovery counts from
-    when it was watched again (ruling #650), not across the three
-    unwatched hours."""
+    when it was watched again, not across the three unwatched hours
+    (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, "u05")
     window = coord._freeze_window(rec(coord, device.id))
     await walk(hass, freezer, 600)
@@ -223,8 +222,8 @@ async def test_a_device_taken_back_then_frozen_counts_from_its_return(
     hass: HomeAssistant, freezer
 ):
     """Excluded three hours, back, frozen a window after the return, then
-    it reports: down for counts from when it was watched again (ruling
-    #650)."""
+    it reports: down for counts from when it was watched again
+    (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, "u10")
     window = coord._freeze_window(rec(coord, device.id))
     await walk(hass, freezer, 600)
@@ -283,7 +282,7 @@ async def test_a_freeze_turned_unavailable_keeps_its_start_across_a_restart(
 ):
     """Frozen, unavailable twenty minutes later, a restart, back: the
     trouble began as a freeze, so it counts from the last report, in the
-    event and in the brief, restart or not (#644, amended)."""
+    event and in the brief, restart or not (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, "u07")
     record = rec(coord, device.id)
     last = dt_util.utcnow().timestamp()
@@ -317,7 +316,7 @@ async def test_a_return_made_while_device_sentinel_was_unloaded_is_dated(
     """Set aside ten minutes after its last report, three hours unwatched,
     Device Sentinel unloaded, the device taken back meanwhile, Device
     Sentinel loaded again: judged a window after the return, not at once
-    (adversarial round fourteen)."""
+    (rule WATCH-08)."""
     coord, device, eids = await _ready(hass, freezer, f"u08{how}")
     window = coord._freeze_window(rec(coord, device.id))
     await walk(hass, freezer, 600)
@@ -350,7 +349,7 @@ async def test_a_damaged_start_kind_does_not_shorten_a_freeze(
 ):
     """A standing freeze whose saved start kind is damaged, or names
     another kind: a freeze began as a freeze, so the recovery counts from
-    the last report (adversarial round fourteen)."""
+    the last report (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, f"u09{str(value).replace(' ', '')}")
     record = rec(coord, device.id)
     last = dt_util.utcnow().timestamp()

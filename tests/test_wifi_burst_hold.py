@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_burst_hold.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_wifi_burst_hold.py, Version: 0.27.10 (2026-10-27)
 
-"""A burst of tied devices waits for the router (ruling #446).
+"""A burst of tied devices waits for the router (rule UP-15).
 
-On the second fleet's staged outage of 16 September the devices'
-own integrations noticed within the first minute and their verdicts
-landed three and a half minutes in, while the router marked its
-first client away at four and a half minutes and the outage was
-declared at five minutes thirty-five seconds. Replayed through the
-coordinator, 31 and then 40 device rows stood on the list for the
-two minutes between, long enough for most of their notification
-holds to mature.
+The devices' own integrations notice within the first minute and their
+verdicts land three and a half minutes in, while the router marks its
+first client away at four and a half minutes and the outage is
+declared later still. Without a wait, dozens of device rows stand on
+the list in between, long enough for most of their notification holds
+to mature.
 
 When enough tied devices to declare an outage fail within one burst
 window, their rows wait for the router: the outage claims them if it
@@ -143,10 +141,10 @@ async def test_the_sync_writes_no_row_while_they_wait(
 async def test_a_late_tracker_still_waits_after_the_declaration(
     hass: HomeAssistant, freezer
 ):
-    """The replay of 16 September left one row from 16:48 to 16:49: a
-    device that failed with the first wave, a little before the
-    devices whose trackers left first, and whose own tracker left in
-    the second wave. Neither the tie nor the window reached it."""
+    """A device that failed with the first wave, a little before the
+    devices whose trackers left first, and whose own tracker left in the
+    second wave. Neither the tie nor the window reaches it.
+    """
     coord, trackers, devices, _untied = await _house(hass, 14)
     lost = dt_util.utcnow().timestamp()
     freezer.tick(timedelta(seconds=30))
@@ -172,7 +170,7 @@ async def test_a_late_tracker_still_waits_after_the_declaration(
 async def _never_reported(hass):
     device, _ = register_device(hass, "aqara", name="0x00158d000806884c")
     coord = await setup_coordinator(hass)
-    # Past the startup grace, so the problem is raised (ruling #369).
+    # Past the startup grace, so the problem is raised (rule WATCH-10).
     coord._grace_until = 0.0
     record = coord.data["devices"][device.id]
     record[DEV_EVENT_COUNT] = 0

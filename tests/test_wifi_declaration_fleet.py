@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_declaration_fleet.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_wifi_declaration_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""Rulings #419 and #421, driven through the shipped code on both fleets.
+"""The self-tie bar and the declaration threshold, driven through the
+shipped code on both fleets (rules UP-12, UP-13).
 
-Everything measured for 0.21.0 came from replaying the probe logs
-with a separate model of the rules. A model that agrees with itself
-proves nothing about `router_ties.py`, so these cases drive the real
-coordinator instead: real fleet storage, real registry devices, the
-real tie ladder, and the real burst counter in
-`_on_wifi_tracker_change`.
+A model of the rules that agrees with itself proves nothing about
+`router_ties.py`, so these cases drive the real coordinator: real
+fleet storage, real registry devices, the real tie ladder, and the
+real burst counter in `_on_wifi_tracker_change`.
 
 Three things are asserted.
 
@@ -20,9 +19,9 @@ Three things are asserted.
    integration that supplies the trackers is not tied, and a device
    from any other integration on the same tracker set still is.
 2. The declaration threshold against each fleet's real tie count.
-3. The staged outage of 12 September, its fall sequence taken from
-   the second fleet's own probe, declares exactly once through the
-   shipped counter, while the same fleet's measured churn does not.
+3. A staged outage, its fall sequence taken from the second fleet's own
+   probe, declares exactly once through the shipped counter, while the
+   same fleet's measured churn does not.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 Each case loads a whole fleet, so the file runs at about fifty
@@ -52,9 +51,9 @@ from tests.helpers import add_mac
 
 ROUTER = "tplink_router"
 
-# The second fleet's staged outage of 12 September, from its own
-# probe: how many tied trackers fell in each minute of the fall, and
-# the churn the same fleet produces on an ordinary day.
+# The second fleet's staged outage, from its own probe: how many tied
+# trackers fell in each minute of the fall, and the churn the same fleet
+# produces on an ordinary day.
 STAGED_FALL = (14, 0, 0, 29, 3, 10)
 MEASURED_CHURN = 3
 
@@ -94,7 +93,7 @@ async def _fall(hass, tracker: str) -> None:
     await hass.async_block_till_done()
 
 
-# ------------------------------------------------------- #419
+# ------------------------------------------- the self-tie bar (rule UP-13)
 
 
 @pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
@@ -144,7 +143,7 @@ async def test_other_integrations_on_that_fleet_still_tie(
     assert len(coord._wifi_ties) == len(devices)
 
 
-# ------------------------------------------------------- #421
+# ---------------------------------------- the declaration (rule UP-12)
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
@@ -207,9 +206,9 @@ async def test_the_measured_churn_does_not_declare(
 async def test_the_staged_outage_declares_exactly_once(
     hass: HomeAssistant,
 ):
-    """The 12 September outage's first minute, fourteen tied trackers
-    falling together, driven through the shipped burst counter. It
-    clears a threshold of seven and is held once."""
+    """The staged outage's first minute, fourteen tied trackers falling
+    together, driven through the shipped burst counter. It clears a
+    threshold of seven and is held once."""
     coord, _entries, behind, _now = await _fleet(hass, TIM, TIM_SHAPE)
     coord._grace_until = 0.0
 

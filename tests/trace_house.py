@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/trace_house.py, Version: 0.27.0 (2026-10-22)
+# File: tests/trace_house.py, Version: 0.27.10 (2026-10-27)
 
-"""Replay a recorded outage through the shipped coordinator.
+"""Replay a recorded outage through the shipped coordinator (rule UP-16).
 
 Every constructed test in this suite lands its events in the same
-millisecond. Four defects on 14 September lived in the gaps between
-moments: the scan closed an outage twenty seconds before five devices
-finished reconnecting, and no test could express twenty seconds.
+millisecond, so a fault that lives in the gaps between moments, such as
+a scan closing an outage twenty seconds before five devices finish
+reconnecting, cannot be expressed in one.
 
 A trace is a recording from the outage probe on a real house: every
 tracker leaving and returning, every entity going unavailable and

@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_late_router.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_wifi_late_router.py, Version: 0.27.10 (2026-10-27)
 
 """A resumed Wi-Fi outage whose router answers late (rule UP-16).
 
-Ruled by James, 26 October 2026: a resumed outage listens to its stored
-fallen trackers by entity id, apart from the ties. Home is a return,
-away stays away, and no state, Home Assistant's placeholder or plain
-unavailable means not known yet. A fallen tracker whose entity is gone
-from the registry is dropped from the set, so a removed router
-integration cannot hold an outage open for ever.
+A resumed outage listens to its stored fallen trackers by entity id,
+apart from the ties. Home is a return, away stays away, and no state,
+Home Assistant's placeholder or plain unavailable means not known yet.
+A fallen tracker whose entity is gone from the registry is dropped
+from the set, so a removed router integration cannot hold an outage
+open for ever.
 """
 
 from __future__ import annotations

@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_zwave_dead_node.py, Version: 0.26.7 (2026-10-19)
+# File: test_zwave_dead_node.py, Version: 0.27.10 (2026-10-27)
 
-"""The Z-Wave dead-node check (ruling #670).
+"""The Z-Wave dead-node check (rule STACK-05).
 
 Home Assistant keeps a dead Z-Wave node's entities available; only its
-node status sensor says "dead". Tim Plas unplugged P03 on 15 October
-2026: Z-Wave marked it dead at 18:53:06, after a failed command, and
-alive at 20:13:02, and Device Sentinel saw nothing. These reproduce
-that and the edges around it. Every test here fails on 0.26.4.
+node status sensor says "dead". A node unplugged is marked dead after
+a failed command and alive again when it returns, and Device Sentinel
+must see both. These reproduce that and the edges around it.
 """
 
 from __future__ import annotations
@@ -102,7 +101,7 @@ def _mine(events, device_id):
 
 
 async def test_p03_dead_opens_and_alive_closes(hass: HomeAssistant, freezer):
-    """Tim's test of 15 October, end to end."""
+    """An unplugged node, end to end."""
     coord, device, ids, record = await _house(hass, freezer)
     faults = record_events(hass, EVENT_FAULT)
     recoveries = record_events(hass, EVENT_RECOVERED)
@@ -235,7 +234,7 @@ async def test_another_integration_s_node_status_is_not_read(hass: HomeAssistant
 async def test_dead_while_z_wave_is_not_loaded_raises_no_device_fault(
     hass: HomeAssistant, freezer
 ):
-    """An integration outage is one problem (#445), not one per node."""
+    """An integration outage is one problem (rule UP-03), not one per node."""
     freezer.move_to(PIN)
     source, device, ids = _zwave(hass)
     _other_source, other, other_ids = _zwave(hass, node=11, source=source)
@@ -290,12 +289,12 @@ async def test_a_muted_node_is_recorded_and_not_reported(hass: HomeAssistant, fr
     assert device.id in coord._watched
 
 
-# ------------------------------------------------- ruling #671
+# ------------------------------------------------- the node status sensor
 
 
 async def test_a_switched_off_status_sensor_is_found_and_turned_on(hass: HomeAssistant, freezer):
-    """Its own kind since #698: found switched off, Last Seen not, and
-    turned on by its own press (#696)."""
+    """Its own kind: found switched off, Last Seen not, and turned on by its
+    own press (rule REC-05)."""
     coord, device, ids, record = await _house(hass, freezer, status_on=False)
     assert coord.switched_off_devices("node_status") == {device.id: "other"}
     assert coord.switched_off(device.id, "last_seen") is None
@@ -324,7 +323,7 @@ async def test_a_device_without_one_shows_no_row(hass: HomeAssistant, freezer):
     assert coord.switched_off_devices("node_status") == {}
 
 
-# ------------------- a firmware notice beside the node status (0.26.6)
+# ------------------- a firmware notice beside the node status
 
 
 # 2. The round-six fix (a stale non-dead outage start on a device whose

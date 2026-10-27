@@ -3,22 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_trace.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_wifi_trace.py, Version: 0.27.10 (2026-10-27)
 
-"""A recorded outage, replayed through the shipped code.
+"""A recorded outage, replayed through the shipped code
+(rules UP-11, UP-16).
 
-On 14 September four defects were found by staging outages on real
-hardware, after seven build gates and 1,702 constructed cases had
-passed over every one of them. Three lived in the gaps between
-moments: a constructed test lands its events in the same millisecond,
-and twenty seconds cannot be expressed in it.
+Faults can live in the gaps between moments: a constructed test lands
+its events in the same millisecond, and twenty seconds cannot be
+expressed in it.
 
-This replays the outage probe's own recording of 14 September 13:56,
-at the offsets it actually happened: thirty trackers leaving from
-fifteen seconds, sixteen devices going unavailable over the following
-three minutes, the network returning at about 4,600 seconds, and the
-devices behind it finishing their reconnection between 4,609 and
-4,804.
+This replays the outage probe's own recording at the offsets it
+actually happened: thirty trackers leaving from fifteen seconds,
+sixteen devices going unavailable over the following three minutes,
+the network returning at about 4,600 seconds, and the devices behind
+it finishing their reconnection between 4,609 and 4,804.
 
 The assertions are shapes rather than clock times. A settle length
 that changes should not break these; a device reaching the problem
@@ -61,12 +59,9 @@ async def test_the_recorded_outage_declares(hass: HomeAssistant, freezer):
 
 
 async def test_the_count_is_taken_not_judged(hass: HomeAssistant, freezer):
-    """The row counts the devices the outage took, not the verdicts
-    that have landed.
-
-    On 14 September the row read 1 of 12 four minutes in and 10 at
-    thirteen minutes, while the network had been down and ten devices
-    on it from the first minute.
+    """The row counts the devices the outage took, not the verdicts that
+    have landed, since the network and its devices are down from the
+    first minute (rule UP-11).
     """
     house = await build(hass, load_trace(TRACE))
     trace = load_trace(TRACE)
@@ -74,11 +69,9 @@ async def test_the_count_is_taken_not_judged(hass: HomeAssistant, freezer):
     async for _event, clock in house.play(freezer, trace["events"], until=400):
         if house.coord.wifi_down_at is None:
             continue
-        # The row counts the devices the outage took, so from the
-        # moment it is declared that count stands at the size of the
-        # fallen set. It does not creep upward as verdicts land,
-        # which is what it did before 0.21.3: 1 of 12 at four
-        # minutes, 10 at thirteen.
+        # The row counts the devices the outage took, so from the moment it is
+        # declared that count stands at the size of the fallen set. It does not
+        # creep upward as verdicts land (rule UP-11).
         counted = house.coord.suppressed_down_counts.get("wifi", 0)
         assert counted >= len(house.coord.wifi_fallen_set), (
             f"at {clock}s the row counted {counted} against a fallen "
@@ -152,12 +145,11 @@ async def test_the_outage_ends(hass: HomeAssistant, freezer):
 async def test_no_device_is_orphaned_in_any_recording(
     hass: HomeAssistant, freezer, name: str
 ):
-    """The same assertion against all four outages of 14 September.
+    """The same assertion against four recorded outages.
 
-    One recording proves a fix on one shape of event. Four recordings
-    of the same house on the same day, of nine minutes, four minutes,
-    twenty minutes and eighty, is the nearest this project has to an
-    adversarial set.
+    One recording proves a fix on one shape of event. Four recordings of
+    the same house, of nine minutes, four minutes, twenty minutes and
+    eighty, are the nearest thing to an adversarial set.
     """
     house = await build(hass, load_trace(name))
     trace = load_trace(name)

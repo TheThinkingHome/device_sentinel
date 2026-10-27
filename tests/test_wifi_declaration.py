@@ -3,30 +3,27 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_declaration.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_wifi_declaration.py, Version: 0.27.10 (2026-10-27)
 
-"""Who is tied, and what declares an outage. Rulings #419 to #421.
+"""Who is tied, and what declares a Wi-Fi outage (rules UP-12, UP-13,
+MUTE-02).
 
-Written before the change, and every case here fails against 0.20.20.
+A device published by the integration that supplies the trackers is
+never tied to that integration's own tracker. A router can register
+every client on the network as its own registry device, and tying
+those to its own trackers makes the device and the witness the same
+object, so three computers powering down inside a minute would declare
+a network outage (rule UP-13).
 
-#419 A device published by the integration that supplies the trackers
-     is never tied to that integration's own tracker. The second
-     fleet's router registers every client on the network as its own
-     registry device, so 126 of its 205 tied devices were the router's
-     own records tied to the router's own trackers. The device and the
-     witness were the same object, and three computers powering down
-     inside a minute declared a network outage. Sixteen of nineteen
-     declared outages on that fleet were this.
+A router integration never recorded before is excluded once, and after
+that it is the person's. New installs get it from the default list; an
+existing install gets it on first sighting. It fires once per
+integration, ever, so unexcluding it later sticks (rule MUTE-02).
 
-#420 A router integration never recorded before is excluded once, and
-     after that it is the person's. New installs get it from the
-     default list; an existing install gets it on first sighting. It
-     fires once per integration, ever, so unexcluding it later sticks.
-
-#421 An outage is declared by a share of the tied fleet with a floor
-     of three. Three was set against churn on a twelve-tracker fleet,
-     where it is a quarter of the house; on a hundred-device fleet it
-     is three percent.
+An outage is declared by a share of the tied fleet with a floor of
+three. Three is a quarter of a twelve-tracker house but three percent
+of a hundred-device one, so the share decides on a large house
+(rule UP-12).
 """
 
 from __future__ import annotations
@@ -66,7 +63,7 @@ def _router_own_device(hass, source, uid: str, mac: str):
     return device
 
 
-# ------------------------------------------------------------- #419
+# ------------------------------------------------------- rule UP-13
 
 
 async def test_a_router_client_is_not_tied_to_its_own_tracker(
@@ -103,7 +100,7 @@ async def test_a_device_from_another_integration_still_ties(
         assert device.id in coord._wifi_ties
 
 
-# ------------------------------------------------------------- #420
+# ------------------------------------------------------- rule MUTE-02
 
 
 async def test_a_router_integration_is_excluded_on_first_sighting(
@@ -234,7 +231,7 @@ async def test_an_unsaved_list_is_left_alone(hass: HomeAssistant):
     assert ROUTER in coord.data["routers_seen"]
 
 
-# ------------------------------------------------------------- #421
+# ------------------------------------------------------- rule UP-12
 
 
 @pytest.mark.parametrize(
@@ -265,8 +262,8 @@ async def test_the_declaration_threshold_scales_with_the_fleet(
 async def test_three_falls_do_not_declare_on_a_large_fleet(
     hass: HomeAssistant,
 ):
-    """The fault this ruling answers. On a sixty-two tracker fleet
-    three computers powering down together is churn, not an outage."""
+    """On a sixty-two tracker fleet three computers powering down
+    together is churn, not an outage (rule UP-12)."""
     coord, trackers, _devices, _untied = await _house(hass, 62)
     assert len(coord._wifi_ties) == 62
 
@@ -292,13 +289,12 @@ async def test_seven_falls_do_declare_on_that_fleet(
 
 
 async def test_setup_itself_performs_the_sighting(hass: HomeAssistant):
-    """The hole this file had. Every other case above calls
-    `_sight_router_integrations` by hand, so all of them passed while
-    the call site was missing from `async_setup` and the feature
-    shipped dead in 0.21.0. Found on the reference system, where
-    `routers_seen` came back empty after the upgrade. A unit test
-    that invokes the thing under test cannot tell you whether
-    anything invokes it in production.
+    """Setup itself performs the sighting (rule MUTE-02).
+
+    Every other case above calls `_sight_router_integrations` by hand,
+    so all of them would pass with the call site missing from
+    `async_setup`. A unit test that invokes the thing under test cannot
+    tell whether anything invokes it in production.
     """
     router_entry = MockConfigEntry(domain=ROUTER, title="router")
     router_entry.add_to_hass(hass)
@@ -312,10 +308,9 @@ async def test_setup_itself_performs_the_sighting(hass: HomeAssistant):
 async def test_the_hold_uses_the_same_threshold_as_the_burst(
     hass: HomeAssistant,
 ):
-    """A 0.21.0 defect. The burst scaled with the fleet and the hold
-    did not, so a burst that decayed during the hold still declared
-    at the bare floor of three. Found while replaying both fleets for
-    0.21.1, not by any test."""
+    """The hold scales with the fleet as the burst does, so a burst that
+    decays during the hold does not declare at the bare floor of three
+    (rule UP-12)."""
     coord, trackers, _devices, _untied = await _house(hass, 62)
     coord._grace_until = 0.0
     assert coord._wifi_burst_needed() == 7

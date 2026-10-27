@@ -3,21 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_www_retired.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_www_retired.py, Version: 0.27.10 (2026-10-27)
 
-"""The www folder retired (#470, built as 0.23.5).
+"""The www folder retired (rules BRIEF-13, BRIEF-14).
 
 Home Assistant serves config/www at /local to anyone who asks, signed
 in or not, and the files Device Sentinel wrote there named devices,
-battery levels and outage times. The owner ruled on 23 and 25
-September 2026: the battery and signal reports and the brief's dated
-copies go, the current brief moves to config/device_sentinel/, and the
-whole www/device_sentinel folder is deleted, whatever else is in it.
-Links in Reports stays, and the brief's links use only the address it
-names.
-
-The tests that are not guards fail on 0.23.4, which serves the folder
-and keeps writing into it.
+battery levels and outage times. So the battery and signal reports and
+the brief's dated copies go, the current brief lives in
+config/device_sentinel/, and the whole www/device_sentinel folder is
+deleted, whatever else is in it. Links in Reports stays, and the
+brief's links use only the address it names.
 """
 
 from __future__ import annotations
@@ -43,8 +39,9 @@ OLD_BRIEF = "<html>the brief from 0.23.4</html>"
 
 
 def _plant(hass: HomeAssistant) -> str:
-    """Lay out www/device_sentinel as 0.23.4 left it, plus a file of
-    the person's own and a subfolder."""
+    """Lay out www/device_sentinel as an older release left it, plus a
+    file of the person's own and a subfolder.
+    """
     folder = hass.config.path(REPORT_WWW_DIR)
     os.makedirs(os.path.join(folder, "mine"), exist_ok=True)
     files = {
@@ -131,11 +128,11 @@ async def test_a_folder_that_cannot_be_deleted_does_not_stop_the_start(
 async def test_internal_never_reaches_for_the_external_address(
     hass: HomeAssistant,
 ):
-    """The owner, 25 September 2026: the setting names the address,
-    and nothing goes above it. With Internal chosen and no internal
-    address typed in, Home Assistant still knows the machine's own
-    address on the house network and that is what links; the external
-    address set beside it is never used."""
+    """The setting names the address, and nothing goes above it. With
+    Internal chosen and no internal address typed in, Home Assistant still
+    knows the machine's own address on the house network and that is what
+    links; the external address set beside it is never used (rule BRIEF-13).
+    """
     device, _ = register_device(hass, "lnk1", name="Motion Laundry")
     coord = await setup_coordinator(hass)
     hass.config.internal_url = None

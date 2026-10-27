@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage_fleet.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_wifi_outage_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The Wi-Fi outage, driven against both reference fleets.
+"""The Wi-Fi outage, driven against both reference fleets (rule UP-16).
 
-The reference fleet gets the measured 3 September shape: thirteen
-tied devices (the two MAC rungs' real coverage), nine trackers gone
-inside the window, and the outage declared while every config entry
-stays loaded, which is exactly the case the integration rung is
-blind to. The second fleet has no router trackers at all, which is
-the absent-capability case: no ties, no subscription, no sensor, no
-cost, and 234 devices judged exactly as before.
+The reference fleet gets a measured shape: thirteen tied devices (the
+two MAC rungs' real coverage), nine trackers gone inside the window,
+and the outage declared while every config entry stays loaded, which
+is exactly the case the integration rung is blind to. The second fleet
+has no router trackers at all, the absent-capability case: no ties, no
+subscription, no sensor, no cost, and 234 devices judged exactly as
+before.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 """
@@ -103,11 +103,10 @@ async def test_the_measured_outage_on_the_reference_fleet(
     for device, _record in behind["mqtt"][:20]:
         assert coord.upstream_down_since(device.id) is None
 
-    # Recovery pairs once the set that fell has come back. Eight of
-    # the nine returning is well past forty percent, so the first
-    # sweep announces and the settle then wants two consecutive ticks
-    # with no further return before it closes (#423, #424). Three
-    # sweeps rather than the one this case used before 0.21.1.
+    # Recovery pairs once the set that fell has come back. Eight of the
+    # nine returning is well past forty percent, so the first sweep
+    # announces and the settle then wants two consecutive ticks with no
+    # further return before it closes, so three sweeps (rule UP-16).
     for _device, tracker in tied[:8]:
         state = hass.states.get(tracker)
         hass.states.async_set(tracker, "home", dict(state.attributes))

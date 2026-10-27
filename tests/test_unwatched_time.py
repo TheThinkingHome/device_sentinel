@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unwatched_time.py, Version: 0.27.6 (2026-10-26)
+# File: test_unwatched_time.py, Version: 0.27.10 (2026-10-27)
 
-"""A device taken back is judged from the moment it is watched again (ruling #648).
+"""A device taken back is judged from the moment it is watched again
+(rule WATCH-08).
 
 Disabled, excluded or removed, then watched again, a dead device is
 judged frozen a full window after its return: the time nobody watched
@@ -13,7 +14,7 @@ it is not its silence. The return is saved with the record, so a
 restart neither forgives the watched time since nor makes the restart
 look like the return; a second stretch dates its own return; a device
 already past its window when it was set aside reads frozen again at
-once. Found by the adversarial rounds of 12 October 2026.
+once.
 """
 
 from __future__ import annotations
@@ -101,9 +102,9 @@ async def test_restart_after_watched_again(hass: HomeAssistant, freezer, how):
     await walk(hass, freezer, 7200)
     coord = await _aside(hass, device, how, False)
     await walk(hass, freezer, 3600)
-    # States kept: the device is working at the stop, so it holds no
-    # values, and a value handed back at the start is read as a report
-    # (rule WATCH-12 keeps values only for a device with a verdict).
+    # States kept: the device is working at the stop, so it holds no values,
+    # and a value handed back at the start is read as a report, because
+    # values are kept only for a device with a verdict (rule WATCH-12).
     coord = await restart(hass, freezer, down=120, keep_states=True)
     expected_left = window - 3600
     took = await _frozen_at(hass, freezer, coord, device, window + 7200)
@@ -135,8 +136,9 @@ async def test_set_aside_twice_without_a_report(hass: HomeAssistant, freezer, ho
 
 async def test_removal_hold_and_return(hass: HomeAssistant, freezer):
     """Removed from Home Assistant (held), re-added with the same id three
-    hours later, dead. The clock restarts at the return (#622), so frozen
-    comes `window` after it."""
+    hours later, dead. The clock restarts at the return, so frozen comes
+    `window` after it (rule WATCH-07).
+    """
     coord, device, eids = await _ready(hass, freezer, "b04")
     window = coord._freeze_window(rec(coord, device.id))
     source_id = getattr(device, "config_entry_id", None) or next(iter(device.config_entries))

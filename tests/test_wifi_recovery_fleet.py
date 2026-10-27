@@ -3,30 +3,27 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_recovery_fleet.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_wifi_recovery_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The recovery rule, driven through the shipped code on real fleets.
+"""The recovery rule, driven through the shipped code on real fleets
+(rule UP-16).
 
-The numbers behind #408, #409 and #422 to #426 came from replaying
-the probe logs with a separate model of the rule. A model that agrees
-with itself proves nothing about `router_ties.py`, so these cases
-drive the real coordinator: real fleet storage, the real tie ladder,
-the real burst counter and the real recovery sweep.
+A model of the rule that agrees with itself proves nothing about
+`router_ties.py`, so these cases drive the real coordinator: real
+fleet storage, the real tie ladder, the real burst counter and the
+real recovery sweep.
 
-Two shapes are asserted, both taken from the second fleet's staged
-outage of 12 September.
+Two shapes are asserted, both from a staged outage on the second fleet.
 
-1. The shape that used to hang. Devices fall, all but three return,
-   and three unrelated ones stay away. Under the shipped rule of
-   0.21.0 that outage stood open for five and a half hours against a
-   real event of ten minutes. It now closes.
+1. The shape that hangs. Devices fall, all but three return, and three
+   unrelated ones stay away. An outage of ten minutes must not stand
+   open for hours. It closes.
 2. The device that was never in it. One tracker leaves before the
    outage begins and stays away throughout. It is not a casualty and
    must not appear in the fallen set or hold the recovery open.
 
-Each case loads a whole fleet, so the file runs at about fifty
-seconds a case: run it alone, or in pairs, like the other fleet
-files.
+Each case loads a whole fleet, so the file runs at about fifty seconds
+a case: run it alone, or in pairs, like the other fleet files.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 """
@@ -125,8 +122,8 @@ async def test_the_outage_that_hung_for_five_hours_now_closes(
     now = await _sweep(coord, hass, now, 3)
 
     assert coord.wifi_down_at is None
-    # The three that never came back are still away, and are now
-    # per-device problems rather than the network's (#426).
+    # The three that never came back are still away, and are now per-device
+    # problems rather than the network's (rule UP-16).
     assert len(coord._wifi_not_home) == STILL_AWAY
 
 

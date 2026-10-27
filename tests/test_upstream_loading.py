@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_upstream_loading.py, Version: 0.27.10 (2026-10-27)
 
-"""An upstream that has not loaded yet is loading, not down (#445).
+"""An upstream that has not loaded yet is loading, not down
+(rules UP-03, UP-04).
 
-The second fleet's ZHA takes a minute or two to load after Home
-Assistant starts. Its reader allows sixty seconds before an unloaded
-entry counts as down, so on 20 of 21 restarts the brief recorded "zha
-bridge went down" and, a minute later, "came back": at the upgrade
-restart of 16 September, down at 16:22:45 and back at 16:23:46.
+ZHA can take a minute or two to load after Home Assistant starts. A
+reader that allows sixty seconds before an unloaded entry counts as
+down records "zha bridge went down" and, a minute later, "came back"
+on almost every restart.
 
 Inside the startup grace, a bridge or integration that has not loaded
 since Home Assistant started is loading, and nothing is recorded.
@@ -188,8 +188,8 @@ async def test_an_integration_that_never_loads_is_down_from_the_start(
     coord._sample_integrations(dt_util.utcnow().timestamp())
     assert _kinds(coord).count(SYS_INTEGRATION_DOWN) == 1
     # The outage is dated from the start. The entry carries one device,
-    # which is judged on its own rather than claimed (0.23.1), so the
-    # integration has no row or start of its own for it (rule UP-05).
+    # which is judged on its own rather than claimed, so the integration has
+    # no row or start of its own for it (rule UP-05).
     assert coord._entry_down_at[source.entry_id] == started
     assert coord.upstream_down_since_for("controller_hub") is None
 
@@ -280,7 +280,7 @@ async def test_a_reader_that_faults_saying_is_taken_as_established(
 async def _never_reported(hass):
     device, _ = register_device(hass, "aqara", name="0x00158d000806884c")
     coord = await setup_coordinator(hass)
-    # Past the startup grace, so the problem is raised (ruling #369).
+    # Past the startup grace, so the problem is raised (rule WATCH-10).
     coord._grace_until = 0.0
     record = coord.data["devices"][device.id]
     record[DEV_EVENT_COUNT] = 0

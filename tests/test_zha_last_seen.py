@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_zha_last_seen.py, Version: 0.26.0 (2026-10-12)
+# File: test_zha_last_seen.py, Version: 0.27.10 (2026-10-27)
 
-"""ZHA's own Last Seen clock (ruling #652).
+"""ZHA's own Last Seen clock (rules STACK-04, STACK-08).
 
 ZHA keeps, for every device, when its radio last heard it. A value that
 comes back after ZHA restarts or reloads is the device speaking only if
 the radio heard it since its last report; otherwise it is ZHA handing
-back what it kept, and a frozen device stays frozen. Found by the
-adversarial round of 12 October 2026, on the second house's ZHA fleet.
+back what it kept, and a frozen device stays frozen (rule WATCH-12).
 """
 
 from __future__ import annotations

@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_verify_restore.py, Version: 0.19.9 (2026-08-31)
+# File: test_verify_restore.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for the repair at the point of detection (ruling #370).
-#
-# A file that will not parse restores automatically (ruling #345,
-# unchanged). A file that loads with damage is repaired at the load:
-# from last-good when one is usable, in place otherwise, with the
-# evidence copy first and one buttonless notice after. A damaged
-# clocks file is discarded, not repaired (ruling #356, unchanged).
-# The three-option card, quarantine and held records these tests
-# once covered are retired; what stands is the promise they served,
-# that the load survives whatever the file holds.
+"""Damage is repaired where it is found, and the load survives
+whatever the file holds (rules STOR-09, STOR-10).
+
+A file that will not parse restores automatically (rule STOR-08). A
+file that loads with damage is repaired at the load: from last-good
+when one is usable, in place otherwise, with the evidence copy first
+and one buttonless notice after. A damaged clocks file is discarded,
+not repaired.
+"""
 
 import json
 
@@ -57,8 +56,8 @@ async def test_a_repair_raises_the_notice_and_it_acknowledges(
     hass: HomeAssistant,
 ) -> None:
     """The notice names what was repaired and where the originals
-    are, offers nothing but acknowledgement, and Submit clears it
-    (ruling #370)."""
+    are, offers nothing but acknowledgment, and Submit clears it
+    (rule STOR-12)."""
     from homeassistant.components.repairs import ConfirmRepairFlow
 
     from custom_components.device_sentinel import repairs as rmod
@@ -87,11 +86,10 @@ async def test_a_repair_raises_the_notice_and_it_acknowledges(
 async def test_a_non_dict_record_no_longer_kills_setup(
     hass: HomeAssistant, hass_storage
 ) -> None:
-    """Reproduced on 27 August: a registered device's record
-    corrupted to a string died in the clocks merge with a TypeError.
-    The gate now drops it as damage (ruling #370, amending #357):
-    setup lives, the record is gone, the notice says so, and the
-    device relearns from its next report."""
+    """A registered device's record corrupted to a string is dropped by
+    the gate as damage, rather than failing the clocks merge with a
+    TypeError: setup lives, the record is gone, the notice says so, and
+    the device relearns from its next report (rule STOR-09)."""
     device, _eids = register_device(hass, "victim")
     coord = await setup_coordinator(hass)
     entry = coord.entry
@@ -109,7 +107,7 @@ async def test_a_non_dict_record_no_longer_kills_setup(
         "the garbage record survived the gate"
     )
     # A record that is not a record is a container fault, so gate 1
-    # answers it now and gate 2 finds nothing left (ruling #371).
+    # answers it and gate 2 finds nothing left (rule STOR-05).
     assert coord2._container_notice or coord2._repair_notice, (
         "the repair raised no notice"
     )
@@ -118,10 +116,9 @@ async def test_a_non_dict_record_no_longer_kills_setup(
 async def test_a_faulted_record_is_repaired_and_setup_survives(
     hass: HomeAssistant, hass_storage
 ) -> None:
-    """The second adversarial round proved a poisoned series took
-    setup down. The gate now repairs the field to its default
-    (ruling #370): setup lives, the record stays watched, and the
-    series is a series again."""
+    """A poisoned series must not take setup down. The gate repairs the
+    field to its default: setup lives, the record stays watched, and the
+    series is a series again (rule STOR-09)."""
     device, _eids = register_device(hass, "repaired_dev")
     coord = await setup_coordinator(hass)
     entry = coord.entry
@@ -150,9 +147,8 @@ async def test_a_faulted_record_is_repaired_and_setup_survives(
 async def test_the_fold_runs_on_a_repaired_record(
     hass: HomeAssistant,
 ) -> None:
-    """The fold no longer skips anything (ruling #370): a record the
-    gate repaired folds like any other, because the poison is gone
-    rather than held."""
+    """The fold skips nothing: a record the gate repaired folds like any
+    other, because the poison is gone rather than held (rule STOR-09)."""
     device, _eids = register_device(hass, "fold_dev")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
@@ -173,8 +169,8 @@ async def test_the_fold_runs_on_a_repaired_record(
 async def test_a_damaged_clocks_file_is_discarded_not_healed(
     hass: HomeAssistant, hass_storage
 ) -> None:
-    """Ruling #356: a clocks file that fails its shape is treated as
-    missing. The session latches and the event says so."""
+    """A clocks file that fails its shape is treated as missing. The
+    session latches and the event says so (rule STOR-10)."""
     coord = await setup_coordinator(hass)
     entry = coord.entry
     await hass.config_entries.async_unload(entry.entry_id)
@@ -203,7 +199,8 @@ async def test_a_damaged_clocks_file_is_discarded_not_healed(
 async def test_a_clocks_file_missing_a_field_is_not_discarded(
     hass: HomeAssistant, hass_storage
 ) -> None:
-    """The other half of ruling #356: schema evolution merges."""
+    """A clocks file missing a field is merged, not discarded, so the
+    schema can grow (rule STOR-10)."""
     device, _eids = register_device(hass, "evolve_dev")
     coord = await setup_coordinator(hass)
     entry = coord.entry

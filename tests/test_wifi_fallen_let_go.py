@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_fallen_let_go.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_wifi_fallen_let_go.py, Version: 0.27.10 (2026-10-27)
 
 """Fallen trackers that can never come home are let go (rule UP-16).
 
-Ruled by James, 26 October 2026: a fallen tracker of an open outage
-with no usable state (none, Home Assistant's placeholder, or unavailable
-or unknown) for two hours is let go as if removed from the registry,
-and the outage closes on the trackers left, or ends if none are left.
-The two hours run from the first check that finds it without a usable
-state, or from the resume.
+A fallen tracker of an open outage with no usable state (none, Home
+Assistant's placeholder, or unavailable or unknown) for two hours is
+let go as if removed from the registry, and the outage closes on the
+trackers left, or ends if none are left. The two hours run from the
+first check that finds it without a usable state, or from the resume.
 """
 
 from __future__ import annotations

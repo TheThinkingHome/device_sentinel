@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_push_phases.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_wifi_push_phases.py, Version: 0.27.10 (2026-10-27)
 
 """When a Wi-Fi outage pushes (rule UP-09).
 
-Ruled by James, 25 October 2026 (Ruled Change 61): an upstream outage
-pushes twice, when it is down and when it is over; recovering sends no
-push, and the row says it. Bridges, the broker and integrations already
-sent nothing at recovering in 0.27.4. A Wi-Fi outage still pushed when
-it started recovering, because it stays open while it recovers.
+An upstream outage pushes twice, when it is down and when it is over;
+recovering sends no push, and the row says it. A Wi-Fi outage stays
+open while it recovers, so it must not push when it starts recovering,
+as bridges, the broker and integrations do not.
 """
 
 from __future__ import annotations
@@ -186,9 +185,9 @@ async def _pushed_by_the_tick(hass, coord, freezer):
     for _ in range(5):
         await tick(hass, freezer, step=61)
         # The minute check runs as a background task, which a plain
-        # block_till_done does not wait for, and its save awaits file
-        # work on a worker thread: without this the test could read the
-        # disk before the tick's save landed (CODE-13).
+        # block_till_done does not wait for, and its save awaits file work on a
+        # worker thread: without this the test could read the disk before the
+        # tick's save landed (rule CODE-13).
         await hass.async_block_till_done(wait_background_tasks=True)
         if WIFI_KEY in coord._upstream_announced:
             return

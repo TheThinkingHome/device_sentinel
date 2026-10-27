@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_events_fleet.py, Version: 0.27.5 (2026-10-25)
+# File: tests/test_upstream_events_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The upstream event pair, driven against both reference fleets.
+"""The upstream event pair, driven against both reference fleets
+(rules UP-02, UP-10).
 
 Not a unit test. Each case loads a real fleet's own record into a
 live coordinator, registers every device it names, and then puts the
@@ -321,7 +322,7 @@ async def test_an_outage_that_spans_a_restart_is_announced_once(
 async def test_the_broker_outranks_the_bridge_on_the_bus(
     hass: HomeAssistant,
 ):
-    """A stopped broker takes every bridge with it (ruling #224).
+    """A stopped broker takes every bridge with it (rule UP-01).
 
     The sampler returns before it reads a bridge, so a broker outage
     announces one thing rather than one per bridge, which is the same

@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unknown_since_the_start.py, Version: 0.27.7 (2026-10-27)
+# File: test_unknown_since_the_start.py, Version: 0.27.10 (2026-10-27)
 
 """An entity unknown because nothing has arrived since the start counts
-for nothing (rule LIST-06): it starts no unknown problem and ends none.
+for nothing: it starts no unknown problem and ends none (rule UNAV-02).
 
-On Tim Plas's friend's house three TRADFRI repeaters, which report only
-now and then, "went unknown" after each restart for up to 85 minutes,
-on 0.25.6. Since 0.26.6 unknown is neither down nor alive; these tests
-hold that, on ZHA and on another integration, with and without Home
-Assistant's "unavailable" placeholders at the start.
+Repeaters that report only now and then read unknown after each
+restart for over an hour. Unknown is neither down nor alive; these
+tests hold that on ZHA and on another integration, with and without
+Home Assistant's "unavailable" placeholders at the start.
 """
 from __future__ import annotations
 

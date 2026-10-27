@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_restart_resume.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_wifi_restart_resume.py, Version: 0.27.10 (2026-10-27)
 
 """A Wi-Fi outage open across a restart (rules UP-04, UP-10, UP-11).
 
-Ruled a bug by James, 25 October 2026 (Known Gap 31, the Wi-Fi half):
-an outage open before a restart is resumed from when it went down.
-Ruled 26 October 2026: the outage is stored while it stands and
-resumed from that stored state alone, so it comes back exactly as it
-stood: its backdated start, its fallen set, its worst count and what
-its down announced. A file written by 0.27.4 holds none, and nothing
-is resumed.
+An outage open before a restart is resumed from when it went down. The
+outage is stored while it stands and resumed from that stored state
+alone, so it comes back exactly as it stood: its backdated start, its
+fallen set, its worst count and what its down announced. A file
+written before the outage was stored holds none, and nothing is
+resumed.
 """
 
 from __future__ import annotations
@@ -267,9 +266,9 @@ async def test_a_lookback_casualty_stays_claimed_and_the_start_holds(
     hass: HomeAssistant, freezer
 ):
     """A tied device whose failure began three minutes before the first
-    tracker left belongs to the outage, which is dated from it (UP-15).
-    After a restart it is still claimed, and the start has not moved
-    (UP-11, LIST-13)."""
+    tracker left belongs to the outage, which is dated from it
+    (rule UP-15). After a restart it is still claimed, and the start has
+    not moved (rules UP-11, LIST-13)."""
     coord, trackers, devices, _untied = await _house(hass, 6)
     began = _now() - 180.0
     _fail(coord, devices[0].id, began)
@@ -327,9 +326,9 @@ async def test_a_backdate_while_recovering_still_moves_the_down_row(
 async def test_a_down_row_an_older_release_left_open_keeps_its_date(
     hass: HomeAssistant, freezer, hass_storage
 ):
-    """0.27.4 restarted mid-outage and left its down row open. The next
-    outage is dated back at its declaration, before its own row exists,
-    and the older row keeps its date."""
+    """An older release restarted mid-outage and left its down row open. The
+    next outage is dated back at its declaration, before its own row
+    exists, and the older row keeps its date."""
     coord, trackers, devices, _untied = await _house(hass, 6)
     await _declared(hass, coord, trackers, freezer, count=3)
     old_when = _downs(coord)[-1]["when"]
@@ -380,8 +379,8 @@ async def test_a_restart_while_recovering_writes_one_recovering_row(
 async def test_the_worst_seen_before_the_restart_is_kept(
     hass: HomeAssistant, freezer
 ):
-    """The most devices it had down carries across, and its up row and
-    the Daily Brief tell it by that (UP-11)."""
+    """The most devices it had down carries across, and its up row and the
+    Daily Brief tell it by that (rule UP-11)."""
     coord, trackers, _devices, _untied = await _house(hass, 6)
     await _declared(hass, coord, trackers, freezer, count=3)
     coord._note_upstream_peaks()
@@ -402,8 +401,8 @@ async def test_the_worst_seen_before_the_restart_is_kept(
 async def test_a_0_27_4_file_resumes_nothing(
     hass: HomeAssistant, freezer, hass_storage
 ):
-    """0.27.4 stored no Wi-Fi outage. A down row it left open is not
-    resumed at the upgrade, whatever the row says."""
+    """An older release stored no Wi-Fi outage. A down row it left open is
+    not resumed at the upgrade, whatever the row says."""
     coord, trackers, _devices, untied = await _house(hass, 6)
     await _declared(hass, coord, trackers, freezer, count=3)
 
@@ -454,10 +453,9 @@ async def test_a_closed_outage_is_not_resumed(hass: HomeAssistant, freezer):
 async def test_nothing_fallen_heard_inside_the_grace_has_no_recovering_phase(
     hass: HomeAssistant, freezer
 ):
-    """A resumed outage with an empty fallen set ends when the network
-    is heard, inside the startup grace too, with no recovering row
-    (rule UP-16). Until 0.27.5 it waited for the grace, wrote a
-    recovering row and the Problem List read recovering meanwhile."""
+    """A resumed outage with an empty fallen set ends when the network is
+    heard, inside the startup grace too, with no recovering row
+    (rule UP-16), so the Problem List never reads recovering meanwhile."""
     coord, _trackers, _since, heard = await _scan_down_then_restart(
         hass, freezer
     )
@@ -477,12 +475,12 @@ async def test_a_router_answering_after_the_grace_closes_the_outage(
     hass: HomeAssistant, freezer, placeholder
 ):
     """A resumed outage whose router integration answers only after the
-    five-minute grace, with every fallen tracker already home. The
-    returns arrive before any tie can hear them, so the fallen trackers
-    are read again when the ties form (rule UP-16). Until 0.27.5 they
-    were read once at the grace's end, against absent states, and the
-    outage never closed. With `placeholder`, the trackers read Home
-    Assistant's "unavailable" placeholder until the router answers."""
+    five-minute grace, with every fallen tracker already home. The returns
+    arrive before any tie can hear them, so the fallen trackers are read
+    again when the ties form, not once at the grace's end against absent
+    states, which would leave the outage open (rule UP-16). With
+    `placeholder`, the trackers read Home Assistant's "unavailable"
+    placeholder until the router answers."""
     coord, trackers, _devices, _untied = await _house(hass, 6)
     attrs = {t: dict(hass.states.get(t).attributes) for t in trackers}
     await _declared(hass, coord, trackers, freezer, count=3)

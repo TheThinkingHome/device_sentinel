@@ -3,32 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_medium.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_wifi_medium.py, Version: 0.27.10 (2026-10-27)
 
-"""What a tracker's medium is, and how it is remembered.
-Rulings #415, #417, #418, #427 and #428.
+"""What a tracker's medium is, and how it is remembered (rule UP-14).
 
-Written before the change, and every case here fails against 0.21.3.
+A medium judged from the latest reading taken while a tracker is home,
+kept in a dictionary that empties at every restart, leaves most
+trackers unknown and marks tied devices wired for one sample at every
+router restart. So:
 
-Today the medium is judged from the latest reading taken while a
-tracker is home, remembered in a plain dictionary that is empty
-again after every restart, and read from two attribute spellings that
-TP-Link does not use. On the reference fleet that leaves 29 of 40
-trackers unknown and marks eight of twelve tied devices wired for one
-sample at every router restart, which the next sample happens to
-undo. On the second fleet, which restarts often, the census is a
-snapshot of whatever was seen home since the last boot.
-
-#415 The medium is scored from repeated evidence, wired and wireless
-     counted separately, rather than fixed by one reading.
-#417 What a router states outright is read as stated: TP-Link's
-     `connection` carrying the network's own name, and `band`.
-#418 The scores survive a restart.
-#427 A tracker whose minority evidence reaches a tenth of the whole
-     goes to unknown, not to its majority. Unknown keeps the tie.
-#428 A reading the scoring rejects is counted per tracker and
-     published, so the case for a source-restart grace can be
-     measured rather than felt.
+- The medium is scored from repeated evidence, wired and wireless
+  counted separately, rather than fixed by one reading.
+- What a router states outright is read as stated: TP-Link's
+  `connection` carrying the network's own name, and `band`.
+- The scores survive a restart.
+- A tracker whose minority evidence reaches a tenth of the whole goes
+  to unknown, not to its majority. Unknown keeps the tie.
+- A reading the scoring rejects is counted per tracker and published,
+  so the case for a source-restart grace can be measured rather than
+  felt.
 """
 
 from __future__ import annotations
@@ -66,7 +59,7 @@ def _home(hass, tracker: str, **attrs) -> None:
     hass.states.async_set(tracker, "home", base)
 
 
-# ------------------------------------------------------------- #417
+# ------------------------------------------------ what a router states
 
 
 @pytest.mark.parametrize(
@@ -95,7 +88,7 @@ def test_a_reading_is_taken_as_the_router_states_it(attrs, expected):
     assert tracker_medium({"source_type": "router", **attrs}) == expected
 
 
-# ------------------------------------------------------------- #415
+# ------------------------------------------------ scored from evidence
 
 
 async def test_the_medium_is_scored_not_fixed(hass: HomeAssistant):
@@ -134,16 +127,15 @@ async def test_a_wired_device_stays_wired_across_many_readings(
     assert tracker in coord._wifi_wired_skipped
 
 
-# ------------------------------------------------------------- #427
+# ------------------------------------------------ a minority goes to unknown
 
 
 async def test_a_real_contradiction_goes_to_unknown(hass: HomeAssistant):
     """Eighteen wireless, twelve wired. That is not a router restart,
     it is a device that cannot be told, and unknown keeps the tie.
 
-    Widened for 0.21.6: a minority overrules nothing until there are
-    MEDIUM_MINORITY_FLOOR samples behind it, so six against four no
-    longer reaches the line.
+    A minority overrules nothing until there are MEDIUM_MINORITY_FLOOR
+    samples behind it, so six against four does not reach the line.
     """
     coord, trackers, _devices, _untied = await _house(hass, 3)
     tracker = trackers[0]
@@ -169,13 +161,12 @@ def test_the_minority_line_is_a_tenth():
     assert MEDIUM_MINORITY_SHARE == 0.10
 
 
-# ------------------------------------------------------------- #418
+# ------------------------------------------------ the scores survive a restart
 
 
 async def test_the_scores_survive_a_restart(hass: HomeAssistant):
-    """The whole of this release for the second fleet. Its memory
-    was a snapshot of whatever had been seen home since the last
-    boot, and it boots often."""
+    """A house that boots often keeps its scores, rather than a snapshot
+    of whatever was seen home since the last boot (rule UP-14)."""
     coord, trackers, _devices, _untied = await _house(hass, 3)
     tracker = trackers[0]
 
@@ -198,7 +189,7 @@ async def test_the_scores_survive_a_restart(hass: HomeAssistant):
     assert fresh.wifi_medium_of(tracker) == "wired"
 
 
-# ------------------------------------------------------------- #428
+# ------------------------------------------------ rejected readings counted
 
 
 async def test_rejected_readings_are_counted(hass: HomeAssistant):
@@ -222,22 +213,19 @@ async def test_rejected_readings_are_counted(hass: HomeAssistant):
     assert coord.wifi_medium_rejected[tracker] == 2
 
 
-# ------------------------------------------ the two medium fixes, 0.21.6
+# ------------------------------------------------ stripped readings and the floor
 
 
 def test_a_stripped_reading_cannot_be_told_from_a_wired_one():
-    """Found on hardware, 14 September, and recorded because the
-    obvious fix does not work.
+    """A stripped reading cannot be told from a wired one by its shape.
 
-    Three known-wireless devices each took one `wired` reading and
-    went to unknown. When a client leaves, TP-Link strips its network
-    name and band and reports it as wired; a tie rebuild landing
-    between the attribute update and the state update reads `home`
-    carrying that shape. But it is byte for byte what the router
-    publishes for a genuine wired client, so refusing the shape turns
-    every real wired device on the fleet into unknown. They are told
-    apart by how often each occurs, not by what a single reading
-    says.
+    When a client leaves, TP-Link strips its network name and band and
+    reports it as wired; a tie rebuild landing between the attribute
+    update and the state update reads `home` carrying that shape. But it
+    is byte for byte what the router publishes for a genuine wired
+    client, so refusing the shape would turn every real wired device
+    into unknown. They are told apart by how often each occurs, not by
+    what a single reading says (rule UP-14).
     """
     lost = {"source_type": "router", "connection": "wired", "band": "None"}
     cabled = {"source_type": "router", "connection": "wired", "band": "None"}
@@ -246,11 +234,10 @@ def test_a_stripped_reading_cannot_be_told_from_a_wired_one():
 
 
 def test_a_minority_needs_evidence_behind_it():
-    """The tenth was measured over ten days, where the tightest
-    contradiction was 2 against 22. On six samples one bad reading is
-    sixteen percent, which sent three known-wireless devices to
-    unknown on 14 September. A minority overrules nothing until there
-    is enough evidence for a share to mean anything."""
+    """On six samples one bad reading is sixteen percent, enough to send
+    a known-wireless device to unknown. A minority overrules nothing
+    until there is enough evidence for a share to mean anything
+    (rule UP-14)."""
     from custom_components.device_sentinel.router_ties import (
         MEDIUM_MINORITY_FLOOR,
         medium_from_score,

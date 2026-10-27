@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_event_counts.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_wifi_event_counts.py, Version: 0.27.10 (2026-10-27)
 
 """The devices count on a Wi-Fi outage's bus events (rule UP-10).
 
-Ruled a bug by James, 25 October 2026 (Known Gap 41): the devices
-count is the same on the down and the restored event. Until 0.27.5
-the Wi-Fi restored carried the tie count at the close, so ties
-rebuilt during the outage gave the pair two different counts.
+The devices count is the same on the down and the restored event. A
+restored that carried the tie count at the close would give the pair
+two different counts whenever ties were rebuilt during the outage.
 """
 
 from __future__ import annotations
@@ -39,7 +38,8 @@ async def test_the_down_event_counts_only_claimed_devices_as_confirmed(
     """A Wi-Fi down carries how many claimed devices already read
     unavailable (rule UP-10). A tied device whose tracker was away hours
     before the outage is not claimed (rule UP-15), so its unavailable
-    entity is not counted. Until 0.27.5 it was."""
+    entity is not counted.
+    """
     coord, trackers, devices, _untied = await _house(hass, 6)
     heard = _heard(hass)
     await _fall(hass, trackers[5])

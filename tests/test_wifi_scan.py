@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_scan.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_wifi_scan.py, Version: 0.27.10 (2026-10-27)
 
-"""WiFi detection read from the host's own radio.
+"""WiFi detection read from the host's own radio (rule UP-12).
 
-Every number here was measured before it was ruled. A full night of
-scans on a two satellite mesh, roughly two hundred sweeps at three
-minute intervals: the near satellite was missing from one sweep, the
-far one from fifty nine, and both from none at all. The one real
-event was the nightly router reboot, thirty seconds, confirmed
-independently by the host's own association dropping and returning.
+The numbers are measured: a full night of scans on a two-satellite
+mesh, roughly two hundred sweeps at three-minute intervals, missed the
+near satellite in one sweep, the far one in fifty-nine, and both in
+none. The one real event was the nightly router reboot, thirty
+seconds, confirmed by the host's own association dropping and
+returning.
 
 That is why the rule is "any access point broadcasting the name"
 rather than a signal threshold, and why the confirmation delay
@@ -149,8 +149,8 @@ async def test_a_configured_house_hears_its_networks(
 async def test_a_house_with_no_adapter_does_nothing(
     hass: HomeAssistant, supervisor: FakeSupervisor
 ):
-    """Most systems are in this state, and the router ties keep their
-    own trigger there (#391)."""
+    """Most systems are in this state, and the router ties keep their own
+    trigger there (rule UP-12)."""
     supervisor.wireless = False
     coord = await _coord(hass)
     await coord.async_sweep_wifi()
@@ -179,7 +179,7 @@ async def test_choosing_nothing_costs_nothing(
     assert not coord.wifi_scan_configured
 
 
-# ------------------------------------------------- any means up (#392)
+# ------------------------------------------------- any means up (rule UP-12)
 
 
 async def test_one_satellite_is_enough(
@@ -263,16 +263,13 @@ async def test_the_delay_holds_across_repeated_sweeps(
 ):
     """Missing across several sweeps, but for less than the delay.
 
-    Found by a control run: removing the confirmation delay entirely
-    left every other test in this file green, because a network that
-    goes missing sets its clock on the first sweep and can only be
-    declared on a later one, and the reboot case recovers before that
-    second sweep arrives. So nothing here was actually testing the
-    delay; it was testing that two sweeps are needed.
+    A network that goes missing sets its clock on the first sweep and can
+    only be declared on a later one, and the reboot case recovers before
+    that second sweep arrives. So the other tests prove only that two
+    sweeps are needed; this one proves the delay.
 
-    The reference fleet sweeps every sixty seconds and the delay
-    defaults to sixty, so this shape happens whenever a sweep lands
-    early in the window.
+    Sweeps every sixty seconds against a delay of sixty make this shape
+    whenever a sweep lands early in the window.
     """
     from datetime import timedelta
 
@@ -318,9 +315,9 @@ async def test_recovery_closes_the_outage(
 async def test_any_chosen_network_missing_is_an_outage(
     hass: HomeAssistant, supervisor: FakeSupervisor, freezer
 ):
-    """Ruled, and the reason is a limitation stated plainly on the
-    settings screen: Device Sentinel cannot tell which network a
-    device is on, so it cannot tell whose devices are affected."""
+    """Any chosen network missing is an outage, because Device Sentinel
+    cannot tell which network a device is on, so it cannot tell whose
+    devices are affected; the settings screen says so."""
     coord = await _coord(hass, networks=(IOT, HOUSE))
     await coord.async_sweep_wifi()
     from datetime import timedelta
@@ -367,7 +364,8 @@ async def test_a_chosen_network_that_is_never_heard_is_named(
     assert coord.wifi_missing_networks == ["Typo-Network"]
 
 
-# ------------------------------------------- which source triggers (#391)
+# ------------------------------------------- which source triggers
+# (rule UP-12)
 
 
 async def test_the_scan_triggers_and_the_ties_stand_down(
@@ -389,9 +387,9 @@ async def test_the_scan_triggers_and_the_ties_stand_down(
     await coord.async_sweep_wifi()
     assert coord.wifi_scan_configured
 
-    # Enough tracker movement to have triggered before this ruling,
-    # driven through the listener that owns the decision rather than
-    # by setting the state it produces.
+    # Enough tracker movement to trigger the tracker source, driven through
+    # the listener that owns the decision rather than by setting the state
+    # it produces.
     coord._grace_until = 0.0
     _tie_four(coord)
     for index in range(WIFI_BURST_FLOOR + 1):

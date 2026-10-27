@@ -3,36 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unclean_restart.py, Version: 0.24.1 (2026-10-03)
+# File: test_unclean_restart.py, Version: 0.27.10 (2026-10-27)
 
-"""What a restart with no clean-stop marker does to the clocks (#163).
+"""What a restart with no clean-stop marker does to the clocks (rules
+FRZ-10, FRZ-20).
 
-The event this is built from is real. On 2026-07-31 the development
-fleet took a deliberate thirty-minute power cut at 09:49 local. The
-last clocks write before it landed at 09:35:05, so the newest stamp on
-disk was fourteen minutes older than the cut and the system came back
-crediting 46 minutes of unwatched time.
+Built from a real thirty-minute power cut. The last clocks write landed
+fourteen minutes before the cut, so the house came back crediting 46
+minutes of unwatched time. That credit goes only to a device whose
+clock is at or before the anchor, so a motion sensor that reported
+inside the unsaved window was charged the whole wall-clock silence and
+called frozen for an outage it could not have reported through, and
+eight more devices with 22 to 32 minute windows with it. A window
+sensor silent through the cut learned the whole 50-minute gap.
 
-That credit is granted per device, and only to a device whose clock is
-at or before the anchor (#160). Motion Bath Main's clock read 09:44:07,
-nine minutes past the anchor, because it had reported inside the
-unsaved window. It therefore failed the test, was charged the full
-wall-clock silence, and was convicted frozen at 10:24:24 for an outage
-it could not have reported through. Eight further devices with windows
-of 22 to 32 minutes were convicted the same way at 10:21:32.
-
-The second half of the same event: Window Living Room Left had been
-silent since 09:35, resumed at 10:25, and learned the whole 50-minute
-gap. Its today_max went to 3009 seconds against a rhythm near 600. The
-resurrection cap could not help, correctly, because the device was
-never convicted and the cap is scoped to the freeze family.
-
-Both are cured by the same rule. The clock is reset, so the completing
-gap measures from the restart and nothing learns the blackout; the
-silence genuinely accumulated before the cut is banked as a lower
-bound rather than thrown away; and a device already on the problem
-list keeps its clock, because forgiving a known fault because the
-lights went out is what the blueprints did.
+One rule cures both. The clock is reset, so the completing gap measures
+from the restart and nothing learns the blackout; nothing measured
+between the last save and the stop is banked, because nobody was
+watching then; and a device already on the Problem List keeps its
+clock, so a known fault is not forgiven because the lights went out.
 
 The figures below are the real ones, so a regression here reads as the
 event rather than as an abstraction.
@@ -81,24 +70,22 @@ from custom_components.device_sentinel.const import (
 from .helpers import register_device, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 # The cut, in the clock the integration stores. Anchored to the run
-# rather than to a calendar date. These fixtures have to sit inside
-# the fourteen-day episode retention and still be in the past, and a
-# literal date satisfies both for only a fortnight after it is
-# written: on 14 August 2026 the closed-episode row aged out of
-# retention and was pruned before the assertion could read it.
+# rather than to a calendar date, because these fixtures have to sit
+# inside the fourteen-day episode retention and still be in the past,
+# and a literal date satisfies both for only a fortnight (rule CODE-13).
 # An hour back is far enough for a clock to postdate the anchor and
 # near enough that nothing is old news.
 _CUT = time.time() - 3600.0
 ANCHOR = _CUT                       # the last clocks write
 MOTION_BATH_MAIN = _CUT + 542.0     # inside the unsaved window
 WINDOW_LIVING_LEFT = _CUT - 5.0     # just before the anchor
-# An iso string, as the schema has always demanded of this field; a
-# float here is damage the gate now repairs, which is not what this
-# fixture means to plant (ruling #370).
+# An iso string, as the schema demands of this field; a float here is
+# damage the gate repairs, which is not what this fixture means to
+# plant (rule STOR-09).
 FIRST_OBSERVED = "2026-07-25T00:00:00+00:00"
 
 
@@ -190,12 +177,11 @@ async def test_a_clean_stop_changes_no_clock(
 async def test_a_device_on_the_problem_list_keeps_its_clock(
     hass: HomeAssistant, hass_storage
 ):
-    """The exception that carries all the weight.
+    """A device already on the list keeps its clock (rule FRZ-20).
 
-    Vibration FJ40 Land Cruiser and Soil Irrigation (Monstera) were
-    both on the list through the cut. Resetting them would forgive a
-    fault already known, which is the blueprint behaviour the
-    integration exists to replace.
+    Two devices on the list through the cut keep their clocks, because
+    resetting them would forgive a fault already known, which is what
+    the blueprints did and Device Sentinel replaces.
     """
     flagged, _ = register_device(hass, "fj40", "Vibration FJ40")
     ordinary, _ = register_device(hass, "sw1", "Switch Kitchen")
@@ -206,7 +192,7 @@ async def test_a_device_on_the_problem_list_keeps_its_clock(
             ordinary.id: _record(ANCHOR - 600.0),
         },
         # A complete item, as the sync writes it: the boundary holds
-        # a row missing its uid, summary, status or kinds (#370).
+        # a row missing its uid, summary, status or kinds (rule STOR-09).
         todo=[{
             "uid": "flagged-uid",
             TODO_DEVICE_ID: flagged.id,
@@ -229,13 +215,11 @@ async def test_a_device_on_the_problem_list_keeps_its_clock(
 async def test_the_pre_cut_silence_is_not_learned(
     hass: HomeAssistant, hass_storage
 ):
-    """Window Living Room Left, the device that proved the second half.
+    """The window sensor quiet 50 minutes when it resumed.
 
-    It had been quiet 50 minutes when it resumed. Until 0.24.1 the reset
-    banked what was measured before the lights went out as a lower
-    bound; nobody was listening between the last save and the stop, so
-    that silence cannot be trusted, and nothing is learned from it (the
-    banking of #163, replaced 3 October 2026).
+    Nobody was listening between the last save and the stop, so that
+    silence cannot be trusted, and nothing is learned or banked from it
+    (rule FRZ-20).
     """
     device, _ = register_device(hass, "wlrl", "Window Living Room Left")
     _on_disk(hass_storage, {device.id: _record(WINDOW_LIVING_LEFT)})
@@ -270,14 +254,13 @@ async def test_a_larger_maximum_already_earned_is_not_lowered(
 async def test_a_protocol_clock_older_than_the_watch_banks_nothing(
     hass: HomeAssistant, hass_storage
 ):
-    """D01 (spare) Range Extender, from the second fleet (ruling #399).
+    """A Z-Wave range extender whose clock is older than the watch.
 
-    A Z-Wave JS last_seen entity reads 2023-11-22 on a fleet set up
-    on 2026-08-17, and ruling #124 makes that the device's clock. The
-    raw truncation was 1,020.43 days, banked, folded, and turned into
-    a freeze window wider than the whole install. Six devices on that
-    fleet carried one. #399 stopped the bank where the watch began;
-    since 0.24.1 nothing is banked at all.
+    A Z-Wave JS last_seen entity can read years before the house was
+    set up, and that is the device's clock (rule FRZ-11). Banked, the
+    raw truncation of over a thousand days would fold into a freeze
+    window wider than the whole install, so nothing is banked
+    (rule FRZ-20).
     """
     device, _ = register_device(hass, "d01", "D01 (spare) Range Extender")
     watched = ANCHOR - _iso_seconds(FIRST_OBSERVED)
@@ -295,7 +278,7 @@ async def test_a_clock_inside_the_watch_banks_nothing_either(
     hass: HomeAssistant, hass_storage
 ):
     """A silence inside the observation window, the control on the case
-    above, is not banked either since 0.24.1: it is as untrusted."""
+    above, is not banked either: it is as untrusted (rule FRZ-20)."""
     device, _ = register_device(hass, "inside", "Door Terrace Dining")
     _on_disk(hass_storage, {device.id: _record(ANCHOR - 7200.0)})
 
@@ -308,8 +291,8 @@ async def test_a_clock_inside_the_watch_banks_nothing_either(
 async def test_a_record_with_no_first_observed_stamp_banks_nothing(
     hass: HomeAssistant, hass_storage
 ):
-    """A record without a first-observed stamp, which once escaped
-    #399's bound, banks nothing like every other since 0.24.1."""
+    """A record without a first-observed stamp banks nothing, like every
+    other (rule FRZ-20)."""
     device, _ = register_device(hass, "nostamp", "Switch Kitchen")
     record_on_disk = _record(ANCHOR - 7200.0)
     del record_on_disk[DEV_FIRST_OBSERVED]
@@ -366,11 +349,10 @@ async def test_an_open_episode_closes_as_a_power_loss(
 ):
     """The episode and the clock must not contradict each other.
 
-    Eight episodes were open across the 31 July cut. Each closes at
-    the last known-alive moment, which is the latest instant the
-    silence can be honestly claimed to have run to, and reads power
-    loss rather than the reboot label a later restart would have
-    stamped on it.
+    An episode open across the cut closes at the last known-alive
+    moment, the latest instant the silence can honestly be claimed to
+    have run to, and reads power loss rather than the reboot label a
+    later restart would have stamped on it (rule FRZ-08).
     """
     device, _ = register_device(hass, "open", "Door Master Closet 2")
     episode = {
@@ -396,8 +378,8 @@ async def test_an_open_episode_closes_as_a_power_loss(
 
     assert stored[EP_ENDED] == EPISODE_ENDED_UNCLEAN
     assert stored[EP_AT] == ANCHOR
-    # Its LEARNED cell waits for the device's next report (0.24.1):
-    # nothing was banked, so there is no truncated gap to name.
+    # Its LEARNED cell waits for the device's next report: nothing was
+    # banked, so there is no truncated gap to name.
     assert stored[EP_LEARNED] is None
 
 
@@ -473,8 +455,8 @@ async def test_an_unstamped_file_is_left_alone(
     measured from one.
 
     Resetting here would destroy real clocks and buy nothing, because
-    the credit the rule protects is itself inert without an anchor.
-    Only a file written before 0.10.0 can be in this state.
+    the credit the rule protects is inert without an anchor. Only a
+    file from a very old release can be in this state.
     """
     device, _ = register_device(hass, "nostamp", "Old Install")
     hass_storage[STORAGE_KEY] = {

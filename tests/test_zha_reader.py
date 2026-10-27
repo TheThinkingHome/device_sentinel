@@ -3,13 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_zha_reader.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_zha_reader.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for 0.19.0, the ZHA coordinator reader (ruling #358).
-#
-# Every case here is a measurement from 28 August 2026 rather than an
-# invention: the reload that lasts nine seconds, the outage that is
-# still down at sixty, and the house with no ZHA at all.
+"""The ZHA coordinator reader calls ZHA down only after 60 seconds
+without a loaded entry (rule UP-03).
+
+Each case is a measured one: a reload that lasts nine seconds, an
+outage still down at sixty, and a house with no ZHA at all.
+"""
 
 from unittest.mock import MagicMock, patch
 
@@ -124,7 +125,7 @@ def test_one_live_radio_among_several_is_not_an_outage():
 
 
 def test_a_faulted_read_is_unknown_not_down():
-    """Ruling #147: a reader that cannot answer never invents one."""
+    """A reader that cannot answer never invents one (rule UP-03)."""
     hass = MagicMock()
     hass.config_entries.async_entries.side_effect = RuntimeError("boom")
     reader = stack_zha.make_reader(hass)
@@ -149,13 +150,11 @@ async def test_the_reader_starts_and_stops_clean(hass: HomeAssistant):
 
 
 def test_the_reader_reports_when_the_outage_began():
-    """Ruling #359: the dwell is patience, not a start time.
+    """The 60-second wait is patience, not the outage's start.
 
-    The suppression rule reads a device that fell before its upstream
-    as one that was already broken, so a coordinator stamped a minute
-    late leaves every device it took down holding its own problem
-    row. That is exactly what the reference rig produced on 28 August
-    during a real outage.
+    A device that fell before its upstream reads as already broken, so
+    a coordinator stamped a minute late would leave every device it
+    took down holding its own problem row (rule UP-03).
     """
     hass = _hass_with([ConfigEntryState.SETUP_RETRY])
     reader = stack_zha.make_reader(hass)

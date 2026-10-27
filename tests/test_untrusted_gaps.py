@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_untrusted_gaps.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_untrusted_gaps.py, Version: 0.27.10 (2026-10-27)
 
-"""A gap is learned only if Device Sentinel could have heard the device for all of it.
+"""A gap is learned only if Device Sentinel could have heard the device
+for all of it (rules FRZ-12, FRZ-21).
 
-Two more ways an untrusted gap was learned before 0.24.1. A jump of the
-system clock is noticed at the next minute check, and a report before
-that check measured its gap across the jump. And an unclean stop banked
-each device's silence up to the last save, which on the reference rig
-on 1 October took the Zigbee bridge's outage as every Zigbee device's
-own silence: Leak Sink Bath Main learned 190 minutes.
+Two ways an untrusted gap could be learned. A jump of the system clock
+is noticed at the next minute check, so a report before that check
+measured its gap across the jump. And an unclean stop banked each
+device's silence up to the last save, which took a Zigbee bridge's
+outage as every Zigbee device's own silence.
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ def _speak(hass, entities, n):
 
 
 async def test_a_report_before_the_check_does_not_learn_a_clock_jump(hass, freezer):
-    # Pinned to a morning (#330): run in the evening, the three-hour jump
-    # crossed local midnight, the fold emptied the day's maximum and the
-    # last assertion read None (gate of 11 October 2026, 03:51 UTC).
+    # Pinned to a morning, because in the evening the three-hour jump
+    # crosses local midnight, the fold empties the day's maximum and the
+    # last assertion reads None (rule CODE-13).
     freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entities = register_device(hass, "ck", name="Clock Probe")
     coord = await setup_coordinator(hass)

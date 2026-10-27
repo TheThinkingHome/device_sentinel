@@ -3,24 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_lookback.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_wifi_lookback.py, Version: 0.27.10 (2026-10-27)
 
-"""Devices that notice before the router are the outage's (#440).
+"""Devices that notice before the router are the outage's (rule UP-15).
 
-The second fleet's staged outage of 16 September: the SSIDs paused
-at 16:40:11 and 242 entities went unavailable within the minute, but
-UniFi marked the first client away at 16:44:35, and the outage is
-dated from that first tracker. Every device whose own integration
-noticed first read as broken before the outage began, kept its own
-row under the rule for an already broken device, and 53 were listed
-beside the outage row. 51 were tied devices whose trackers fell in
-that outage.
+A router marks its first client away minutes after the devices
+themselves drop, and the outage is dated from that first tracker. So a
+device whose own integration noticed first would read as broken before
+the outage began and keep its own row beside the outage row.
 
 A tied device whose tracker fell in the outage, and whose failure
-began no more than five minutes before the outage's first tracker,
-is the outage's, and the outage is dated from the earliest such
-failure. Five minutes is UniFi's default detection time; Home
-Assistant's own device trackers wait three.
+began no more than five minutes before the outage's first tracker, is
+the outage's, and the outage is dated from the earliest such failure.
+Five minutes is UniFi's default detection time; Home Assistant's own
+device trackers wait three.
 """
 
 from __future__ import annotations

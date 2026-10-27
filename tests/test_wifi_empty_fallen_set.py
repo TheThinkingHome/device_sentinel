@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_empty_fallen_set.py, Version: 0.27.5 (2026-10-25)
+# File: tests/test_wifi_empty_fallen_set.py, Version: 0.27.10 (2026-10-27)
 
 """A Wi-Fi outage with nothing in its fallen set (rule UP-16).
 
-Ruled by James, 25 October 2026 (Known Gap 17): a Wi-Fi outage ends
-when the devices that dropped with it come back; with none dropped, it
-ends when the network is heard again. Until 0.27.5 the recovery
-returned early on an empty fallen set, so an outage the scan declared
-before any tied tracker left stayed open until the next restart, its
-row read "waiting for 0 devices to reconnect", and every non-radio
-device that failed meanwhile was claimed by it instead of listed.
+A Wi-Fi outage ends when the devices that dropped with it come back;
+with none dropped, it ends when the network is heard again. Otherwise
+an outage the scan declared before any tied tracker left would stay
+open until the next restart, its row reading "waiting for 0 devices to
+reconnect", and claim every non-radio device that failed meanwhile
+instead of listing it.
 """
 
 from __future__ import annotations
@@ -48,9 +47,10 @@ def _pairs(hass):
 async def test_an_outage_with_no_ties_ends_when_the_network_is_heard(
     hass: HomeAssistant, freezer
 ):
-    """The repro of Known Gap 17: a chosen network with no ties at all.
-    The network comes back, the outage ends, and a device that fails
-    afterwards for its own reasons is listed on its own."""
+    """A chosen network with no ties at all. The network comes back, the
+    outage ends, and a device that fails afterwards for its own reasons
+    is listed on its own.
+    """
     device, _ = register_device(hass, "plug", "Plug Later Broken")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0

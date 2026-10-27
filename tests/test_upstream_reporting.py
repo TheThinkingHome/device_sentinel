@@ -1,16 +1,16 @@
-"""Reporting an upstream outage as one fault, not seventy-six.
+"""Reporting an upstream outage as one fault, not seventy-six
+(rules UP-01, UP-05, UP-09, UP-11).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.23.18 (2026-09-29)
+# File: test_upstream_reporting.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Found by running it. Stopping Zigbee2MQTT on the reference system
-raised 74 problems and pushed a notification naming 74 devices
-without naming the bridge; stopping the broker raised 76 and did the
-same. Every verdict was true and the record stayed clean, so this is
-a reporting fault: the person is told the casualties and never the
-cause, and the cause is the only thing they can act on.
+Stopping Zigbee2MQTT can raise 74 problems and push a notification
+naming 74 devices without naming the bridge, and stopping the broker
+does the same with 76. Every verdict is true and the record clean, so
+this is a reporting fault: the person is told the casualties and never
+the cause, and the cause is the only thing they can act on.
 """
 
 from homeassistant.config_entries import ConfigEntryState
@@ -34,7 +34,7 @@ from custom_components.device_sentinel.const import (
 from .helpers import register_device, setup_coordinator
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -57,8 +57,8 @@ async def test_devices_are_not_reported_while_their_broker_is_down(
     first, _ = register_device(hass, "up1", "First Device")
     second, _ = register_device(hass, "up2", "Second Device")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, first.id, since=TIME_BASE + 2000.0)
     _down(coord, second.id, since=TIME_BASE + 2000.0)
@@ -80,8 +80,8 @@ async def test_a_device_broken_before_the_outage_keeps_its_row(
     old, _ = register_device(hass, "up3", "Already Broken")
     new, _ = register_device(hass, "up4", "Casualty")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, old.id, since=TIME_BASE + 1000.0)
     _down(coord, new.id, since=TIME_BASE + 2000.0)
@@ -101,8 +101,8 @@ async def test_everything_is_reported_when_the_upstream_is_up(
     reads as one."""
     device, _ = register_device(hass, "up5", "Ordinary Casualty")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, device.id)
 
@@ -119,8 +119,8 @@ async def test_a_device_still_down_after_recovery_is_reported(
     this one did not."""
     device, _ = register_device(hass, "up6", "Did Not Return")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, device.id, since=TIME_BASE + 2000.0)
     coord._broker_down_at = TIME_BASE + 1500.0
@@ -136,13 +136,13 @@ async def test_a_device_still_down_after_recovery_is_reported(
 async def test_an_outage_settles_before_it_is_announced(
     hass: HomeAssistant,
 ):
-    """Ruling #265. The devices arrive over tens of seconds, so a
-    count taken at the first one is wrong and a message per tick is
-    the burst this fixes."""
+    """The devices arrive over tens of seconds, so a count taken at the
+    first one is wrong and a message per tick is the burst this avoids
+    (rule UP-09)."""
     device, _ = register_device(hass, "up7", "Settling Device")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, device.id, since=TIME_BASE + 2000.0)
     from homeassistant.util import dt as dt_util
@@ -160,11 +160,11 @@ async def test_the_count_is_pushed_again_only_when_it_changes(
     one."""
     device, _ = register_device(hass, "up8", "Counted Device")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     from homeassistant.util import dt as dt_util
 
@@ -186,11 +186,11 @@ async def test_the_recovery_is_announced_once(hass: HomeAssistant):
     """One message when the upstream returns, carrying how many had
     gone quiet, and nothing after it."""
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     coord._upstream_announced[BROKER_LABEL] = 12
     coord._broker_down_at = None
@@ -200,13 +200,13 @@ async def test_the_recovery_is_announced_once(hass: HomeAssistant):
 async def test_the_upstream_row_reads_like_a_sentence(
     hass: HomeAssistant,
 ):
-    """Ruling #266. The row said "z2m: upstream", which is accurate
-    and tells a person nothing: not what z2m is, not what it means
-    for their house, not what to do about it."""
+    """A row reading "z2m: upstream" is accurate and tells a person
+    nothing: not what z2m is, not what it means for their house, not
+    what to do about it (rule UP-11)."""
     device, _ = register_device(hass, "up9", "Casualty")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     _down(coord, device.id, since=TIME_BASE + 2000.0)
     coord._bridge_down_at["z2m"] = 1500.0
@@ -216,9 +216,9 @@ async def test_the_upstream_row_reads_like_a_sentence(
         "z2m", {"upstream": 1500.0}, 74
     )
 
-    # Ruling #401: casualties against membership. One watched
-    # device behind the stack in this house, so membership reads as
-    # the larger of the two rather than below the count.
+    # Casualties against membership. One watched device behind the
+    # stack in this house, so membership reads as the larger of the
+    # two rather than below the count (rule UP-11).
     assert summary == "Zigbee2MQTT down: 74 of 74 total devices unavailable"
     assert "stopped reporting at" in description
     assert "listed on its own" in description
@@ -228,8 +228,8 @@ async def test_one_casualty_reads_in_the_singular(hass: HomeAssistant):
     """A row that says "1 devices" is the kind of detail that makes a
     person doubt the rest of it."""
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
 
     summary, _ = coord._upstream_item_text("z2m", {"upstream": 1500.0}, 1)
@@ -240,18 +240,18 @@ async def test_one_casualty_reads_in_the_singular(hass: HomeAssistant):
 async def test_the_count_changes_and_the_stamp_does_not(
     hass: HomeAssistant,
 ):
-    """The question ruled before this was built: a count in the
-    summary rewrites the row as devices fall, and the row must keep
-    the moment the outage began or the SINCE column and the duration
-    beside it become a lie. The sync keeps an existing kind's stamp
-    unless the detection carries its own, and this one carries the
-    moment the upstream went down, which does not move.
+    """A count in the summary rewrites the row as devices fall, and the
+    row must keep the moment the outage began or the SINCE column and
+    the duration beside it become a lie. The sync keeps an existing
+    kind's stamp unless the detection carries its own, and this one
+    carries the moment the upstream went down, which does not move
+    (rule LIST-13).
     """
     first, _ = register_device(hass, "upa", "First Casualty")
     second, _ = register_device(hass, "upb", "Second Casualty")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     coord._broker_down_at = TIME_BASE + 1500.0
     _down(coord, first.id, since=TIME_BASE + 2000.0)
@@ -281,28 +281,25 @@ async def test_the_count_changes_and_the_stamp_does_not(
 async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
     hass: HomeAssistant,
 ):
-    """Ruling #359, found on live hardware on 28 August.
+    """The coordinator is stamped when the outage began (rule UP-03).
 
-    The reference rig ran a real coordinator outage under 0.19.0 and
-    both ZHA devices went onto the problem list with their own rows,
-    which is the noise the upstream row exists to end. The cause was
-    not the suppression, which is stack-agnostic and correct: it was
-    the timestamp. ZHA's reader holds a sixty second dwell before it
-    will say down, so the coordinator was stamped a minute after its
-    devices fell, and a device that falls before its upstream reads
-    as one that was already broken.
+    ZHA's reader waits sixty seconds before it says down. Stamped when
+    the reader believes it, the coordinator would be dated a minute
+    after its devices fell, and a device that falls before its upstream
+    reads as one that was already broken, so each would hold its own
+    problem row.
 
-    This drives the whole path with the real numbers from that run:
-    the entry went down at 15:41:30, the devices at 15:41:36, and the
-    sampler only believed it at 15:43.
+    This drives the whole path with measured numbers: the entry goes
+    down at 15:41:30, the devices at 15:41:36, and the sampler believes
+    it at 15:43.
     """
     from custom_components.device_sentinel.const import STACK_ZHA
 
     first, _ = register_device(hass, "zha1", "ZHA Test Device - Motion")
     second, _ = register_device(hass, "zha2", "ZHA Test Device - mmWave")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     coord._watched[first.id] = STACK_ZHA
     coord._watched[second.id] = STACK_ZHA
@@ -324,7 +321,7 @@ async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
         "0.19.0's behaviour is not reproduced by this test"
     )
 
-    # What 0.19.1 does: stamp when the outage began.
+    # Stamp when the outage began.
     coord._bridge_down_at[STACK_ZHA] = _Reader.down_since
     assert coord.reportable_down_rows == []
     assert coord.suppressed_down_counts == {STACK_ZHA: 2}
@@ -333,16 +330,16 @@ async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
 
 
 async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
-    """Ruling #359's guard. A wrong onset fails toward silence: one
-    before every device's timestamp buries the whole fleet behind a
-    cause. No reader can produce these, which is why they are
-    refused rather than handled."""
+    """A wrong onset fails toward silence: one before every device's
+    timestamp buries the whole house behind a cause. No reader can
+    produce these, which is why they are refused rather than handled
+    (rule UP-03)."""
     from custom_components.device_sentinel.const import STACK_ZHA
 
     device, _ = register_device(hass, "zha3", "Casualty")
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     coord._watched[device.id] = STACK_ZHA
     _down(coord, device.id, since=TIME_BASE + 2000.0)
@@ -384,15 +381,14 @@ async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
 async def test_an_integration_outage_stamps_its_row_and_pushes(
     hass: HomeAssistant,
 ):
-    """The resolver answers for an integration's domain (#382).
+    """The resolver answers for an integration's domain (rule UP-01).
 
-    Found by asking. The to-do row's stamp and the settle gate on the
-    push both resolve the upstream by name, and the integration rung
-    shipped without a branch there: the outage fired its event, the
-    devices were suppressed, and then the row read "is not reporting"
-    with no time and no push ever left. A bridge in the identical
-    position stamps and pushes, so this holds the third rung to the
-    standard of the first two.
+    The to-do row's stamp and the settle gate on the push both resolve
+    the upstream by name. Without an integration branch there, the
+    outage fires its event and suppresses the devices, and then the row
+    reads "is not reporting" with no time and no push. A bridge in the
+    same position stamps and pushes, so this holds the integration rung
+    to the standard of the other two.
     """
     source = MockConfigEntry(
         domain="controller_hub", title="controller_hub hub"
@@ -412,8 +408,8 @@ async def test_an_integration_outage_stamps_its_row_and_pushes(
         )
         made.append(device)
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     coord._grace_until = 0.0
     coord._rebuild_registry_view()
@@ -448,13 +444,13 @@ async def test_an_integration_outage_stamps_its_row_and_pushes(
 async def test_the_sentence_says_what_went_down_with_it(
     hass: HomeAssistant,
 ):
-    """Ruling #448. The second fleet's Brother row read "1 device sit
-    behind it, and 1 of them are unavailable": a plural verb on a
-    singular device, and a membership count where a person wants to
-    know what the outage took."""
+    """A row must not read "1 device sit behind it, and 1 of them are
+    unavailable": a plural verb on a singular device, and a membership
+    count where a person wants to know what the outage took
+    (rule UP-11)."""
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
 
     _summary, description = coord._upstream_item_text(
@@ -484,8 +480,8 @@ async def test_a_row_before_any_device_is_judged_says_none_yet(
     """An upstream can be known down before a single device behind it
     has been judged."""
     coord = await setup_coordinator(hass)
-    # These devices reach Home Assistant through the broker; since
-    # 0.23.12 a broker outage is upstream only to such devices.
+    # These devices reach Home Assistant through the broker, and a
+    # broker outage is upstream only to such devices (rule UP-01).
     _on_the_broker(coord)
     coord.upstream_membership = lambda _name: 4
 

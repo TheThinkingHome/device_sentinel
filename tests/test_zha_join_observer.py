@@ -3,13 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_zha_join_observer.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_zha_join_observer.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for 0.19.2, the ZHA join observer (ruling #360).
-#
-# It is an instrument, so what the tests hold is mostly what it must
-# NOT do: never claim a pairing window, never touch a verdict, never
-# break a setup, and never fill the log with messages it is not for.
+"""The ZHA join observer marks a device a person handled, and nothing
+else (rule FRZ-17).
+
+It is an instrument, so what the tests hold is mostly what it must NOT
+do: never claim a pairing window, never touch a verdict, never break a
+setup, and never fill the log with messages it is not for.
+"""
 
 import logging
 from unittest.mock import MagicMock
@@ -32,10 +34,9 @@ def test_the_signal_and_messages_are_plain_strings():
         "device_joined",
         "raw_device_initialized",
         "device_fully_initialized",
-        # A removal since 0.19.2 (ruling #362): a person removing a
-        # device is handling it, and a sleeping battery device never
-        # hears the leave request, so it rejoins by itself at the
-        # next start. Measured on 29 August.
+        # A removal: a person removing a device is handling it, and a
+        # sleeping battery device never hears the leave request, so it
+        # rejoins by itself at the next start (rule FRZ-17).
         "device_removed",
     }
 
@@ -64,7 +65,7 @@ async def test_a_handling_is_recorded_by_registry_id(
     )
     observer.async_start()
     with caplog.at_level(logging.DEBUG):
-        # A re-pair: the join comes first, carrying the address (#719).
+        # A re-pair: the join comes first, carrying the address (rule FRZ-17).
         observer._on_message(PAIRING)
         observer._on_message(
             {"type": "device_joined", "device_info": {"ieee": "b4:0e:06:0f:ff:e0:fc:6f"}}
@@ -92,9 +93,9 @@ async def test_a_message_without_a_registry_id_records_nothing(
     hass: HomeAssistant,
 ):
     """device_joined and raw_device_initialized carry the ieee and no
-    registry id, measured 29 August. A device this integration cannot
-    name is one it cannot file, and mapping an ieee by guesswork
-    would attach a person's action to the wrong record."""
+    registry id. A device this integration cannot name is one it cannot
+    file, and mapping an ieee by guesswork would attach a person's
+    action to the wrong record."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
@@ -112,8 +113,8 @@ async def test_a_message_without_a_registry_id_records_nothing(
 
 async def test_the_top_level_shape_is_read_too(hass: HomeAssistant):
     """raw_device_initialized carries its fields at the top level
-    rather than under device_info, measured 29 August. Both shapes
-    are read rather than one assumed."""
+    rather than under device_info. Both shapes are read rather than one
+    assumed."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
@@ -134,7 +135,7 @@ async def test_messages_it_is_not_for_are_ignored(
 ):
     """A busy network must not fill the log. Groups, log entries and
     connection notices are none of this reader's business; a removal
-    is, since 0.19.2."""
+    is (rule GEN-10)."""
     observer = stack_zha.make_join_observer(hass)
     with caplog.at_level(logging.DEBUG):
         for kind in (
@@ -150,7 +151,7 @@ async def test_messages_it_is_not_for_are_ignored(
 async def test_a_malformed_message_is_named_not_parsed(
     hass: HomeAssistant, caplog
 ):
-    """Ruling #147: what cannot be understood is said, never guessed."""
+    """What cannot be understood is said, never guessed (rule GEN-10)."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
@@ -180,8 +181,8 @@ async def test_a_refused_subscription_does_not_break_anything(
 
 
 async def test_it_claims_no_pairing_window(hass: HomeAssistant):
-    """The observer exists because pairing is unclaimed on ZHA, so
-    nothing it sees may change that until the design is ruled."""
+    """ZHA keeps no pairing window, so nothing the observer sees may
+    claim one (rule FRZ-17)."""
     reader = stack_zha.make_reader(MagicMock())
     assert reader.pairing_open is False
     observer = stack_zha.make_join_observer(hass)
@@ -193,10 +194,8 @@ async def test_it_claims_no_pairing_window(hass: HomeAssistant):
 
 
 def test_the_observer_is_reached_through_the_registry():
-    """Ruling #218: the caller names no stack. My first wiring put
-    STACK_ZHA and a direct stack_zha import into interventions.py,
-    and test_the_stack_agnostic_files_name_no_stack caught it, which
-    is exactly the job that test was written for."""
+    """The caller names no stack (rule STACK-01), which
+    test_the_stack_agnostic_files_name_no_stack also guards."""
     from unittest.mock import MagicMock
 
     from custom_components.device_sentinel import stacks
@@ -210,15 +209,15 @@ def test_the_observer_is_reached_through_the_registry():
         assert stacks.make_join_observer(stack, hass) is None
 
 
-# ------------------------------- the handling tag, added in 0.19.2
+# ----------------------------------------------------- the handling tag
 
 
 async def test_a_handling_is_filed_under_the_registry_id(
     hass: HomeAssistant,
 ):
-    """Ruling #362. The full init carries device_reg_id, which is the
-    key the rest of the integration files records under, so nothing
-    has to be matched by name or address."""
+    """The full init carries device_reg_id, which is the key the rest of
+    the integration files records under, so nothing has to be matched by
+    name or address (rule FRZ-17)."""
     from custom_components.device_sentinel.const import (
         ZHA_HANDLED_TAIL_SECONDS,
     )
@@ -281,7 +280,7 @@ async def test_a_removal_counts_as_handling(hass: HomeAssistant):
     ) is not None
 
 
-# ------------------------- a full init alone is not a person (#719)
+# -------------------- a full init alone is not a person (rule FRZ-17)
 
 # Pairing open: what ZHA's Add Device page leaves on the signal while it
 # is open, its own log relayed line by line.
@@ -307,10 +306,9 @@ def _full_init(registry_id, ieee, name):
 async def test_a_full_init_alone_after_a_restart_is_not_handled(
     hass: HomeAssistant, caplog
 ):
-    """The rig, 21 October 2026: 9 to 18 seconds after Home Assistant
-    restarted, ZHA sent a full init alone for three test devices nobody
-    touched, and the brief said somebody re-paired them. Replayed, none
-    is filed, nothing reaches the coordinator, and the log says why."""
+    """Seconds after Home Assistant restarts, ZHA can send a full init
+    alone for devices nobody touched. Replayed, none is filed, nothing
+    reaches the coordinator, and the log says why (rule FRZ-17)."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
@@ -326,7 +324,7 @@ async def test_a_full_init_alone_after_a_restart_is_not_handled(
 
 
 async def test_a_reconfigure_still_counts(hass: HomeAssistant):
-    """A reconfigure sends raw, then the full init (29 August 2026)."""
+    """A reconfigure sends raw, then the full init (rule FRZ-17)."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
@@ -396,13 +394,13 @@ async def test_odd_addresses_never_count(hass: HomeAssistant):
 
 
 
-# ----------- a device moving on its own is not a person (0.27.0 round)
+# ------------------------------- a device moving on its own is not a person
 
 
 async def test_a_device_changing_its_address_is_not_handled(hass: HomeAssistant, caplog):
-    """zigpy 2.3.0 sends a join, then ZHA two full inits, when a known
+    """zigpy sends a join, then ZHA two full inits, when a known
     device turns up at a new network address, with nobody near it. With
-    pairing closed it is the device, not a person."""
+    pairing closed it is the device, not a person (rule FRZ-17)."""
     seen = []
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))

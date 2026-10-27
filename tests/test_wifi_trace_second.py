@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_trace_second.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_wifi_trace_second.py, Version: 0.27.10 (2026-10-27)
 
-"""The second fleet's staged outage, replayed through the whole tick.
+"""The second fleet's staged outage, replayed through the whole tick
+(rule UP-15).
 
-Recorded by the outage probe on 16 September with 0.21.10 running:
-the SSIDs paused at 16:40, the devices' own integrations noticed
-within the first minute, the router marked its first client away four
+The recording: the SSIDs pause, the devices' own integrations notice
+within the first minute, the router marks its first client away four
 and a half minutes in and a second wave five minutes after that, and
-the network came back at 16:50. 0.21.10 listed 53 devices beside the
-outage row (rulings #440 and #446 answer it).
+the network comes back ten minutes in. Devices that noticed first must
+not be listed beside the outage row.
 
 Unlike the reference traces, which land verdicts by hand, this one
 drives each device's entity to unavailable at its recorded moment and

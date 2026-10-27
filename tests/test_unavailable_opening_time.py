@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_unavailable_opening_time.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_unavailable_opening_time.py, Version: 0.27.10 (2026-10-27)
 
-"""A device that became unavailable is dated from when it went.
+"""A device that became unavailable is dated from when it went (rules
+UNAV-07, UNAV-08).
 
-James's rig on 24 October 2026: Last 24 Hours read "became unavailable"
-at 3:10:46 and "recovered after 15m" at 3:22:03, eleven minutes apart.
-The device went at 3:07:05; it is listed only once it has been gone past
-the debounce and the sweep has seen it, and its recovery counts from
-when it went (#644). The opening row now keeps when it went, and the
-table, the dashboard and the sentence date it from there.
+A device is listed only once it has been gone past the debounce and the
+sweep has seen it, and its recovery counts from when it went. So the
+opening row keeps when it went, and the table, the dashboard and the
+sentence date it from there, never minutes after the device went.
 """
 
 from __future__ import annotations
@@ -114,17 +113,17 @@ async def test_a_row_from_before_has_no_since_and_reads_as_it_did(hass: HomeAssi
     row = {INC_EVENT: INCIDENT_OPENED, INC_KIND: "unavailable", INC_WHEN: 100000.0, "device_id": "x"}
     assert coord._began_at(row) == 100000.0
     # Nor is a since later than the row, far before it, or not a real
-    # moment ever used (adversarial round).
+    # moment ever used.
     for since in (200000.0, 100000.0 - 4 * 86400, 0.0, float("-inf"), float("nan")):
         assert coord._began_at({**row, INC_SINCE: since}) == 100000.0, since
     assert coord._began_at({**row, INC_SINCE: 99800.0}) == 99800.0
 
 
 async def test_a_start_held_under_a_mute_is_not_kept(hass: HomeAssistant):
-    """A device unavailable and muted for unavailable since 20 October,
-    whose mute is lifted on 24 October, is listed on the 24th: its
-    opening keeps the listing time, not a start four days back, which
-    the brief would read as today (adversarial round of 0.27.3)."""
+    """A device unavailable and muted for unavailable for four days,
+    whose mute is then lifted, is listed that day: its opening keeps the
+    listing time, not a start four days back, which the brief would read
+    as today (rule UNAV-08)."""
     from custom_components.device_sentinel.const import DEV_DOWN_BEGAN_AS
 
     from .helpers import register_device
@@ -143,9 +142,9 @@ async def test_a_start_held_under_a_mute_is_not_kept(hass: HomeAssistant):
 
 
 async def test_a_group_is_told_from_when_the_first_went(hass: HomeAssistant):
-    """The sentence for several devices dates them as the table does
-    (adversarial round of 0.27.3): from when the first one went, not
-    when the first one was listed."""
+    """The sentence for several devices dates them as the table does:
+    from when the first one went, not when the first one was listed
+    (rule UNAV-08)."""
     from .test_attribution import BROKER_OUTAGE, T0, _incident
 
     coord = await setup_coordinator(hass)
@@ -162,8 +161,8 @@ async def test_a_group_is_told_from_when_the_first_went(hass: HomeAssistant):
 
 
 async def test_a_group_never_reported_is_said_in_words(hass: HomeAssistant):
-    """Tim Plas's brief read "13 devices never_reported at 9:58 AM"
-    (found by the reports of 0.27.3)."""
+    """A group never reported is said in words, never "13 devices
+    never_reported at 9:58 AM" (rule LIST-02)."""
     from custom_components.device_sentinel.const import TODO_KIND_NEVER_REPORTED
 
     from .test_attribution import BROKER_OUTAGE, T0, _incident
@@ -181,7 +180,8 @@ async def test_a_group_never_reported_is_said_in_words(hass: HomeAssistant):
 
 async def test_a_group_with_a_low_battery_is_said_in_words(hass: HomeAssistant):
     """Lowering the threshold reloads Device Sentinel and can list several
-    cells at once: "3 devices low_battery at ..." (adversarial round)."""
+    cells at once, said in words, never "3 devices low_battery at ..."
+    (rule LIST-02)."""
     from custom_components.device_sentinel.const import TODO_KIND_LOW_BATTERY
 
     from .test_attribution import BROKER_OUTAGE, T0, _incident
@@ -202,7 +202,7 @@ async def test_a_group_with_a_low_battery_is_said_in_words(hass: HomeAssistant):
 ])
 async def test_a_group_reads_after_its_count(hass: HomeAssistant, kind, words):
     """Not "3 devices signal railed" or "3 devices battery is running
-    down" (adversarial round of 0.27.3)."""
+    down" (rule LIST-02)."""
     from custom_components.device_sentinel import const
 
     from .test_attribution import BROKER_OUTAGE, T0, _incident

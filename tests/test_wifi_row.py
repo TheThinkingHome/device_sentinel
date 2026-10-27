@@ -3,37 +3,31 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_wifi_row.py, Version: 0.27.10 (2026-10-27)
 
-"""The row a Wi-Fi outage writes. Rulings #411 to #414.
+"""The row a Wi-Fi outage writes (rules UP-11, UP-15).
 
-Written before the change, and every case here fails against 0.21.1.
+A staged outage can take down forty-odd devices and the problem list
+then shows every one of them on its own with no cause, unless the claim
+lasts long enough to gather them.
 
-The fault the second fleet reported: a staged outage took down
-forty-odd devices and the problem list showed every one of them
-individually with no cause. The row builder, its wording and its
-suppression all existed and worked for Zigbee2MQTT and ZHA. Only the
-claim's lifetime was wrong.
+Trackers lead and verdicts trail: the trackers can be home 76 seconds
+after the peak while the entities behind them are still going
+unavailable on their own timers, 41 seconds to four minutes later. A
+claim that lasts only while each tracker is away expires before the
+casualties reach the problem list.
 
-A device is claimed while its own tracker reads not_home. Trackers
-lead and verdicts trail: the trackers were home 76 seconds after the
-peak, while the entities behind them were still going unavailable on
-their own timers, 41 seconds to four minutes on the measured
-3 September outage. So the casualties reached the problem list after
-the claim that would have gathered them had expired.
-
-#411 An outage claims every device that failed inside it, for the
-     life of the outage, rather than only while that device's own
-     tracker is away.
-#412 Except a device a radio stack owns. Zigbee, Z-Wave and Matter
-     hardware has its own bridge rung and its own medium. Ownership
-     is asked of the bridge rather than the integration domain,
-     because Z2M devices arrive through MQTT discovery and carry the
-     mqtt domain, which would claim every MQTT device in the house.
-#413 A wired device is counted among an outage's casualties even
-     though a wired tracker is never counted toward declaring one.
-     Declaring wants precision; attributing wants coverage.
-#414 The outage names the network it belongs to.
+- An outage claims every device that failed inside it, for the life of
+  the outage, rather than only while that device's own tracker is away.
+- Except a device a radio stack owns. Zigbee, Z-Wave and Matter hardware
+  has its own bridge rung and its own medium. Ownership is asked of the
+  bridge rather than the integration domain, because Z2M devices arrive
+  through MQTT discovery and carry the mqtt domain, which would claim
+  every MQTT device in the house.
+- A wired device is counted among an outage's casualties even though a
+  wired tracker is never counted toward declaring one. Declaring wants
+  precision; attributing wants coverage.
+- The outage names the network it belongs to.
 """
 
 from __future__ import annotations
@@ -72,7 +66,7 @@ def _judge(coord, devices, when: float) -> None:
         record[DEV_FROZEN_SINCE] = when
 
 
-# ------------------------------------------------------------- #411
+# ---------------------------------------------- a claim for the outage's life
 
 
 async def test_the_claim_outlives_the_tracker_coming_home(
@@ -101,14 +95,12 @@ async def test_the_row_is_written_rather_than_each_device(
     hass: HomeAssistant, freezer
 ):
     """One row naming the outage, and the casualties counted rather
-    than listed. This is what the second fleet did not get.
+    than listed (rule UP-11).
 
     Ten fell and seven have been judged down so far. The row counts
     ten: the devices the outage took, not the verdicts that have
-    caught up. Asserted the other way round until the staged outage
-    of 14 September showed what that reads like on a screen, where
-    the row crawled from 1 to 10 over thirteen minutes while the
-    network had been down the whole time.
+    caught up. Counting verdicts makes the row crawl from 1 to 10 over
+    thirteen minutes while the network has been down the whole time.
     """
     coord, trackers, devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
@@ -126,18 +118,15 @@ async def test_a_device_whose_tracker_stayed_home_is_still_claimed(
 ):
     """A tracker reading home is not evidence the device is well.
 
-    Written the other way round first, on the reasoning that a router
-    still listing a device proves it could reach it. That is a weak
-    signal read as a strong one: the router may be holding a stale
-    entry, the device may be asleep, or it may be frozen for its own
-    reason. Nothing is known from it, so the window claims it like
-    anything else that failed inside the outage.
+    A router still listing a device is a weak signal: the router may be
+    holding a stale entry, the device may be asleep, or it may be frozen
+    for its own reason. Nothing is known from it, so the window claims
+    it like anything else that failed inside the outage (rule UP-15).
 
-    The cost is small because the claim ends with the outage (#426).
-    A device that really is broken on its own becomes its own row
-    minutes later. The cost of the opposite is a row nobody can
-    explain sitting beside the outage row, which is the fault this
-    release exists to fix.
+    The cost is small because the claim ends with the outage. A device
+    that really is broken on its own becomes its own row minutes later.
+    The cost of the opposite is a row nobody can explain sitting beside
+    the outage row.
     """
     coord, trackers, devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
@@ -168,13 +157,11 @@ async def test_the_claim_ends_with_the_outage(
 ):
     """For the life of the outage, plus a short hand-back window.
 
-    Rewritten for 0.21.7. It asserted the claim ended the instant the
-    outage did, which is #426 as written and is what put six devices
-    on the problem list mid-recovery on 14 September. A device the
-    outage claimed now keeps that claim for WIFI_HANDBACK_SECONDS
-    (#433), so it has a chance to come back before becoming its own
-    problem, and the row it eventually writes is dated from the
-    outage rather than from the end of the window.
+    Ending the claim the instant the outage ends puts devices on the
+    problem list mid-recovery. A device the outage claimed keeps that
+    claim for WIFI_HANDBACK_SECONDS (rule UP-08), so it has a chance to
+    come back before becoming its own problem, and the row it writes is
+    dated from the outage rather than from the end of the window.
     """
     coord, trackers, devices, _untied = await _house(hass, 10)
     first = await _declared(hass, coord, trackers, freezer, count=10)
@@ -197,7 +184,7 @@ async def test_the_claim_ends_with_the_outage(
         assert coord.upstream_down_since(device.id) is None
 
 
-# ------------------------------------------------------------- #412
+# ------------------------------------------- a radio stack's devices are not
 
 
 async def test_a_radio_device_is_not_claimed(
@@ -222,17 +209,17 @@ async def test_ownership_is_asked_of_the_bridge_not_the_domain(
 ):
     """An MQTT device the Z2M bridge does not know is not Zigbee's.
 
-    The reference fleet's two NSPanel Pros are MQTT and Wi-Fi: they
-    publish their own discovery and carry no Z2M identifier. A test
-    on the domain would claim every MQTT device in that house as
-    Zigbee's, which is right for almost all of it and wrong for them.
+    An NSPanel Pro is MQTT and Wi-Fi: it publishes its own discovery
+    and carries no Z2M identifier. A test on the domain would claim
+    every MQTT device in the house as Zigbee's, which is right for
+    almost all of them and wrong for it (rule UP-15).
     """
     coord, trackers, devices, untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
 
     # Its own config entry, as a real NSPanel has: registered under
     # Device Sentinel's entry, its entity read as another
-    # integration's, and since 0.22.21 that is not the device speaking.
+    # integration's, which is not the device speaking (rule WATCH-02).
     panel_source = MockConfigEntry(domain="wifi_hub", title="panel")
     panel_source.add_to_hass(hass)
     panel = _wifi_device(
@@ -249,15 +236,15 @@ async def test_ownership_is_asked_of_the_bridge_not_the_domain(
     assert found is not None and found[0] == WIFI_KEY
 
 
-# ------------------------------------------------------------- #413
+# ------------------------------------------------- a wired device is claimed
 
 
 async def test_a_wired_device_is_counted_among_the_casualties(
     hass: HomeAssistant, freezer
 ):
-    """Deliberately the opposite of #388, which keeps a wired tracker
-    out of the count that declares an outage. Declaring wants
-    precision; attributing wants coverage."""
+    """The opposite of declaring, which keeps a wired tracker out of the
+    count (rule UP-14). Declaring wants precision; attributing wants
+    coverage (rule UP-15)."""
     coord, trackers, devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
 
@@ -270,7 +257,7 @@ async def test_a_wired_device_is_counted_among_the_casualties(
     assert found is not None and found[0] == WIFI_KEY
 
 
-# ------------------------------------------------------------- #414
+# --------------------------------------------------- the network is named
 
 
 async def test_the_row_names_the_network(hass: HomeAssistant, freezer):
@@ -369,25 +356,21 @@ async def test_the_sensor_publishes_the_recovery(
     assert published["quiet_ticks"] == 0
 
 
-# ------------------------------------- the staged outage of 14 September
+# -------------------------------------------- falls spread over minutes
 
 
 async def test_the_fallen_set_holds_every_tracker_that_is_away(
     hass: HomeAssistant, freezer
 ):
-    """Found by a staged outage on hardware, not by this suite.
+    """Trackers that fall across several minutes still seed the fallen set.
 
-    The trackers do not fall in one instant. On 14 September they
-    fell across several minutes, and the burst window is pruned to
-    sixty seconds on every fall, so the outage's start time kept
-    moving forward. The fallen set was seeded from the trackers whose
-    fall time was at or after that start, and by the time the
-    threshold was reached the start had moved past all of them: the
-    set was empty at declaration with eleven trackers away.
+    The burst window is pruned to sixty seconds on every fall, so the
+    outage's start time keeps moving forward. A fallen set seeded only
+    from trackers whose fall time is at or after that start can be
+    empty at declaration with eleven trackers away (rule UP-16).
 
-    Every case in this file until now landed its falls in the same
-    instant, so the prune never moved and the defect could not
-    appear.
+    Falls landed in the same instant never move the prune, so these
+    cases spread them out.
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     coord._grace_until = 0.0
@@ -418,10 +401,10 @@ async def test_the_count_is_the_devices_the_outage_took(
     """The row counts devices the outage took, not devices Home
     Assistant has finished marking down.
 
-    On 14 September the row read 1 of 12 four minutes in, then 3, then
-    4, then 10 at thirteen minutes, because it was counting freeze
-    verdicts landing one at a time. The network was down and ten
-    devices were on it from the first minute.
+    Counting freeze verdicts landing one at a time makes the row read
+    1 of 12 four minutes in, then 3, then 4, then 10 at thirteen
+    minutes, while the network was down and ten devices were on it from
+    the first minute (rule UP-11).
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
@@ -437,19 +420,17 @@ async def test_the_count_is_the_devices_the_outage_took(
 async def test_the_scan_route_builds_a_fallen_set_too(
     hass: HomeAssistant, freezer
 ):
-    """The route nothing covered, found by hardware.
+    """A house that declares from the scan still builds a fallen set.
 
-    A house that can hear its own radio declares from the scan (#391)
-    and the tie burst is switched off entirely. 0.21.1 built the
-    fallen set in the tie route alone, so on the reference system,
-    which has a network configured, there was never a fallen set at
-    all: the sensor published `fallen=0` with eleven trackers away,
-    the claim had nothing to work from, and the recovery closed on
-    two returns against a threshold of one.
+    A house that can hear its own radio declares from the scan (rule
+    UP-12) and the tie burst is switched off entirely. A fallen set
+    built in the tie route alone leaves such a house with none: the
+    sensor publishes `fallen=0` with eleven trackers away, the claim
+    has nothing to work from, and the recovery closes on two returns
+    against a threshold of one (rule UP-16).
 
-    Neither fleet file configures a network and no constructed house
-    did either, which is why two fleet replays and a full gate all
-    passed over it.
+    A test house with no network configured never takes this route, so
+    this one configures a network.
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     coord._grace_until = 0.0
@@ -475,20 +456,18 @@ async def test_the_scan_route_builds_a_fallen_set_too(
     assert coord.wifi_attributes["fallen"] == 10
 
 
-# ----------------------------------------- the recovering row, 0.21.6
+# --------------------------------------------------- the recovering row
 
 
 async def test_the_row_says_recovering_once_the_network_is_back(
     hass: HomeAssistant, freezer
 ):
-    """Three states rather than two.
+    """Three states rather than two (rule UP-11).
 
-    Until 0.21.6 the announce fired inside the recovery rule and
-    changed nothing a person could see: the row went on saying the
-    network was unavailable until the settle finished. On the staged
-    outage of 14 September the network returned at 16:47 and the row
-    did not move until 16:49, so from the outside there was no
-    difference between recovering and still down.
+    An announce that changes nothing a person can see leaves the row
+    saying the network is unavailable until the settle finishes, so
+    from the outside there is no difference between recovering and
+    still down.
     """
     coord, trackers, devices, _untied = await _house(hass, 12)
     hass.config_entries.async_update_entry(
@@ -568,20 +547,19 @@ async def test_a_reopen_puts_the_row_back_to_unavailable(
     assert coord.wifi_recovering_at is None
 
 
-# ------------------------------------ the announcement phase, 0.21.8
+# -------------------------------------------- the announcement phase
 
 
 async def test_a_live_count_does_not_announce_again(
     hass: HomeAssistant, freezer
 ):
-    """One announcement per phase, not per number.
+    """One announcement per phase, not per number (rule UP-09).
 
-    The push was keyed on the count, and silent after the first of a
-    run. Once the recovering row counts down live (#431) that key
-    moves on every device that returns, so a recovery would announce
-    itself again and again. Keyed on the phase instead: declared,
-    recovering, over. A tracker flapping inside the settle cannot
-    double-announce, because the phase has not changed.
+    The recovering row counts down live, so a push keyed on the count
+    would announce the recovery again for every device that returns.
+    Keyed on the phase instead: declared, recovering, over. A tracker
+    flapping inside the settle cannot double-announce, because the
+    phase has not changed.
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     first = await _declared(hass, coord, trackers[:11], freezer, count=11)
@@ -615,12 +593,11 @@ async def test_a_live_count_does_not_announce_again(
 async def test_the_recovering_row_counts_down_live(
     hass: HomeAssistant, freezer
 ):
-    """Found on hardware, 15 September.
+    """The row is rewritten as devices come back during a recovery.
 
-    The row appeared saying 11 of 11 remain unavailable and stayed
-    there while nine devices came back, because the casualty count
-    does not move during a recovery and nothing else marked the
-    problem list for rewriting.
+    The casualty count does not move during a recovery, so without
+    another mark the row stays at 11 of 11 remain unavailable while
+    nine devices come back (rule UP-11).
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     first = await _declared(hass, coord, trackers[:11], freezer, count=11)
@@ -652,10 +629,10 @@ async def test_the_recovering_row_counts_down_live(
 async def test_a_recovery_with_nothing_back_yet_says_so(
     hass: HomeAssistant, freezer
 ):
-    """Ruling #443. The network is heard before a single device has
-    returned. "11 of 11 remain" beside "0 have already recovered" said
-    the same thing twice and read as a contradiction, so the row says
-    the network is back and what it is waiting for."""
+    """The network is heard before a single device has returned. "11 of
+    11 remain" beside "0 have already recovered" says the same thing
+    twice and reads as a contradiction, so the row says the network is
+    back and what it is waiting for (rule UP-11)."""
     coord, trackers, _devices, _untied = await _house(hass, 12)
     hass.config_entries.async_update_entry(
         coord.entry,
@@ -689,8 +666,8 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
 async def test_one_device_left_reads_in_the_singular(
     hass: HomeAssistant, freezer
 ):
-    """Ruling #442. "1 of the 11 devices remain" is the kind of detail
-    that makes a person doubt the rest of the row."""
+    """"1 of the 11 devices remain" is the kind of detail that makes a
+    person doubt the rest of the row (rule UP-11)."""
     coord, trackers, _devices, _untied = await _house(hass, 12)
     first = await _declared(hass, coord, trackers[:11], freezer, count=11)
     for tracker in trackers[:10]:

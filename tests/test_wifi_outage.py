@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_wifi_outage.py, Version: 0.27.10 (2026-10-27)
 
-"""The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
+"""The Wi-Fi outage: the tie ladder, the burst, the hold, the claim
+(rules UP-12, UP-13, UP-15, UP-16).
 
-Every number asserted here was measured on the reference fleet before
-it was ruled: nine of seventeen watched trackers not_home inside
-sixty seconds on a real outage, a worst ordinary burst of three that
-the hold absorbed, and a tie coverage of thirteen of sixteen from the
-two MAC rungs. The cases follow those shapes rather than inventing
-new ones.
+Every number asserted here was measured on a real house: nine of
+seventeen watched trackers not_home inside sixty seconds on a real
+outage, a worst ordinary burst of three that the hold absorbed, and a
+tie coverage of thirteen of sixteen from the two MAC rungs. The cases
+follow those shapes rather than inventing new ones.
 """
 
 from __future__ import annotations
@@ -145,9 +145,9 @@ async def test_the_mac_rung_ties_across_spellings(hass: HomeAssistant):
 
 
 async def test_the_status_band_says_wi_fi(hass: HomeAssistant):
-    """The band read "Bridge: WiFi", the sensor's entity name (James's
-    dashboard review, 24 October 2026). It says Wi-Fi; the sensor keeps
-    its name, so nothing reading it breaks."""
+    """The band says Wi-Fi, not the sensor's entity name "Bridge: WiFi";
+    the sensor keeps its name, so nothing reading it breaks
+    (rule DASH-02)."""
     coord, _, _, _ = await _house(hass, 3)
     parts = {part["key"]: part["name"] for part in coord.dashboard_status()["parts"]}
     assert parts["wifi"] == "Wi-Fi"
@@ -250,8 +250,8 @@ async def test_two_trackers_never_trigger(hass: HomeAssistant, freezer):
 
 
 async def test_a_flap_clears_inside_the_hold(hass: HomeAssistant, freezer):
-    """The 4 September wobble: three fall, all return before the hold
-    ends, nothing is reported and the state is clean for next time."""
+    """A wobble: three fall, all return before the hold ends, nothing is
+    reported and the state is clean for next time (rule UP-12)."""
     coord, trackers, _devices, _ = await _house(hass, 4)
     seen = _heard(hass)
     for tracker in trackers[:3]:
@@ -339,8 +339,8 @@ async def test_a_device_is_claimed_only_by_its_own_tracker(
 async def test_the_resolver_and_the_push_know_the_name(
     hass: HomeAssistant, freezer
 ):
-    """The 0.20.2 lesson, applied before shipping instead of after:
-    the row stamps and the push leaves once the outage settles."""
+    """The row stamps, and the push leaves once the outage settles
+    (rule UP-09)."""
     coord, trackers, devices, _ = await _house(hass, 4)
     from custom_components.device_sentinel.const import (
         DATA_DEVICES,
@@ -369,8 +369,8 @@ async def test_the_broker_still_outranks_the_network(
     await _declared(hass, coord, trackers, freezer, count=3)
     assert coord.upstream_down_since(devices[0].id)[0] == WIFI_KEY
     coord._broker_down_at = dt_util.utcnow().timestamp()
-    # Since 0.23.12 the broker is upstream only to devices that ride it;
-    # a Wi-Fi device keeps its network.
+    # The broker is upstream only to devices that ride it; a Wi-Fi
+    # device keeps its network (rule UP-01).
     found = coord.upstream_down_since(devices[0].id)
     assert found is not None and found[0] == WIFI_KEY
     coord._watched[devices[0].id] = "mqtt"
@@ -406,16 +406,14 @@ async def test_recovery_pairs_and_releases_the_claims(
     restored half fires with the same membership, and every claim
     drops.
 
-    Rewritten for 0.21.1. It used to close on a single sweep, when
-    the rule was "fewer than the floor still away". Recovery is now
-    judged against the fallen set (#408): two of the three back is
+    Recovery is judged against the fallen set: two of the three back is
     forty percent, which announces, and the settle then takes two
-    consecutive ticks with no further return before it closes (#424).
-    Three sweeps, not one.
+    consecutive ticks with no further return before it closes. Three
+    sweeps, not one (rule UP-16).
 
-    And again for 0.21.7: a device still down at the close keeps its
-    claim for WIFI_HANDBACK_SECONDS (#433), so the claims drop after
-    that window rather than the instant the outage ends.
+    A device still down at the close keeps its claim for
+    WIFI_HANDBACK_SECONDS, so the claims drop after that window rather
+    than the instant the outage ends (rule UP-08).
     """
     coord, trackers, devices, _ = await _house(hass, 4)
     seen = _heard(hass)
@@ -453,12 +451,11 @@ async def test_a_house_with_no_ties_pays_nothing(hass: HomeAssistant):
 
 
 async def test_the_real_boot_order_heals_itself(hass: HomeAssistant):
-    """Found on the reference fleet the hour 0.20.3 deployed. At boot
-    the tracker registry entries exist and their states do not,
-    because the router integration has not polled; the ladder tied
-    nothing and the create-once sensor check read the house as
-    incapable forever. The retry gate holds while ties are empty and
-    any tracker is stateless, and the tick heals it."""
+    """At boot the tracker registry entries exist and their states do
+    not, because the router integration has not polled. The retry gate
+    holds while ties are empty and any tracker is stateless, and the
+    tick heals it, so the house is never read as incapable forever
+    (rule UP-13)."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     device = _wifi_device(
@@ -633,9 +630,8 @@ def test_the_medium_reader_knows_both_published_markers():
     assert tracker_medium({"connection_type": "LAN"}) == "wired"
     # TP-Link's wireless value is the network's own name, never
     # "wifi", which is why this is an exclusion and not an allow list.
-    # Until 0.21.4 a named network read as unknown, because only the
-    # UniFi spellings were positive wireless evidence. TP-Link states
-    # the medium as plainly by naming the network (#417).
+    # TP-Link states the medium as plainly by naming the network as
+    # UniFi does by its spellings (rule UP-14).
     assert tracker_medium({"connection": "IoT"}) == "wireless"
     assert tracker_medium({"essid": "Home"}) == "wireless"
     assert tracker_medium({"ssid": "Home"}) == "wireless"
@@ -647,11 +643,10 @@ def test_the_medium_reader_knows_both_published_markers():
 
 
 async def test_a_wired_tracker_is_never_tied(hass: HomeAssistant):
-    """The reference fleet's four PoE cameras and its printer tied
-    themselves in on 0.20.4: MAC matching says nothing about medium,
-    and a switch reboot could then have declared a Wi-Fi outage. The
-    worst wired cluster measured was five inside sixty seconds,
-    above the floor."""
+    """MAC matching says nothing about medium, so PoE cameras and a
+    printer must not tie themselves in, or a switch reboot could declare
+    a Wi-Fi outage. The worst wired cluster measured was five inside
+    sixty seconds, above the floor (rule UP-13)."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     camera = _wifi_device(
@@ -774,19 +769,15 @@ async def test_the_census_reaches_the_diagnostics(hass: HomeAssistant):
 async def test_a_tie_survives_the_outage_it_exists_to_detect(
     hass: HomeAssistant,
 ):
-    """Found on the reference fleet during the first live Wi-Fi test.
+    """A tie survives the outage it exists to detect.
 
-    An outage left seven wireless trackers reading wired while they
-    were away, the ladder ran in that moment and skipped them, and
-    nothing looked at them again: the tie set fell from twelve to six
-    and was still six ten minutes after every attribute had recovered.
-    A second outage would have been judged on half a fleet, and a
-    third on fewer, each time silently.
+    During an outage wireless trackers can read wired while they are
+    away. If the ladder skipped them then and nothing looked again, the
+    tie set would shrink with each outage, silently.
 
     A medium is judged only while a tracker is home. An away tracker
-    keeps what it was last judged to be, which is the #221 principle:
-    a live reading confirms or doubts a classification, it does not
-    decide one.
+    keeps what it was last judged to be: a live reading confirms or
+    doubts a classification, it does not decide one (rule UP-14).
     """
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
