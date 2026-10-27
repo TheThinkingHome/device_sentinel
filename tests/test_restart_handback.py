@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_restart_handback.py, Version: 0.27.6 (2026-10-26)
+# File: test_restart_handback.py, Version: 0.27.10 (2026-10-27)
 
-"""Restarts, and the values they hand back.
+"""Restarts, and the values they hand back (rules UNAV-05, UP-06).
 
 A stack restart, a Home Assistant restart or a full system restart
 hands the old values back; that is not the device reporting, so its
-clock stays and a frozen verdict stands with no recovery told (#535),
-muted for unavailable or not. An outage no older than the restart is
-the hand-back; a device off for ten minutes before it is a real return.
-A freeze is dated from when its counted silence reached the window,
-stepping over the time Home Assistant was off. Found by the
-adversarial rounds of 0.26.6.
+clock stays and a frozen verdict stands with no recovery told, muted
+for unavailable or not. An outage no older than the restart is the
+hand-back; a device off for ten minutes before it is a real return. A
+freeze is dated from when its counted silence reached the window,
+stepping over the time Home Assistant was off.
 """
 
 from __future__ import annotations
@@ -57,9 +56,9 @@ async def _cross_during_restart(hass, freezer, uid, lead, down):
     await walk(hass, freezer, to_go, step=300)
     assert record[DEV_FROZEN_CATEGORY] is None
     stopped = dt_util.utcnow().timestamp()
-    # States kept: the device is working at the stop, so it holds no
-    # values, and a value handed back at the start is read as a report
-    # (rule WATCH-12 keeps values only for a device with a verdict).
+    # States kept: the device is working at the stop, so it holds no values,
+    # and a value handed back at the start is read as a report, because
+    # values are kept only for a device with a verdict (rule WATCH-12).
     coord = await restart(hass, freezer, down=down, keep_states=True)
     started = dt_util.utcnow().timestamp()
     await walk(hass, freezer, lead + 30 * 60, step=60)
@@ -114,7 +113,7 @@ async def test_the_start_steps_over_several_and_overlapping_spans(hass: HomeAssi
     assert coord._frozen_start(device.id, record, last + 5) == last + 5, "never in the future"
 
 
-# ------------------- values handed back by a stack or a restart (#535)
+# ------------------- values handed back by a stack or a restart (rule UNAV-05)
 
 
 @pytest.mark.parametrize("mode", ["none", "unav", "frz"])
@@ -191,8 +190,9 @@ async def _set(hass, ids, value):
 
 def _restart_only(device, record, lead, cat0, heard, back, faults):
     """An outage no older than the restart is the stack handing values
-    back (#535): the clock stays and a frozen verdict stands, with no
-    recovery told. A device off for ten minutes before is a real return."""
+    back: the clock stays and a frozen verdict stands, with no recovery
+    told. A device off for ten minutes before is a real return
+    (rule UNAV-05)."""
     if lead >= 600:
         return
     assert record[DEV_LAST_ACTIVITY] == heard

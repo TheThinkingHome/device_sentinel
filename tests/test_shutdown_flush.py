@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_shutdown_flush.py, Version: 0.10.8 (2026-07-29)
+# File: test_shutdown_flush.py, Version: 0.27.10 (2026-10-27)
 
-"""What a clean stop writes, and that it always writes it.
+"""What a clean stop writes, and that it always writes it
+(rules FRZ-20, STOR-02).
 
 Stopping does two things: it stamps any silence still running as
 truncated by the restart, and it flushes both storage files so the
@@ -13,14 +14,12 @@ next start reads the exact moment the system went down.
 
 The fault pinned here: the stamp reaches _mark_cold_dirty, whose last
 act is to clear the routine dirty flag, because a delayed write has
-been scheduled to carry the change. The flush was gated on that same
-flag, so a stop with any silence running skipped its own flush. Both
-files were then written by Home Assistant's final-write stage from
-their separately scheduled payloads, each stamped at its own schedule
-time, in no fixed order, and the small file could come out the older
-of the two. The next start then refused to merge it. On 29 July the
-one shutdown that stamped an episode was followed by the one start
-that refused the clocks, 941 seconds apart.
+been scheduled to carry the change. A flush gated on that same flag
+skips itself whenever a silence is running. Both files are then written
+by Home Assistant's final-write stage from their separately scheduled
+payloads, each stamped at its own schedule time, in no fixed order, so
+the small file can come out the older of the two and the next start
+refuses to merge it.
 
 Every test here advances the frozen clock between phases, because
 both files stamp with utcnow at serialize time: under a pinned clock
@@ -115,10 +114,10 @@ async def test_a_stop_with_nothing_outstanding_also_flushes(
 ):
     """Unconditional means unconditional.
 
-    With nothing dirty the old gate also skipped the flush, which was
-    harmless only because nothing had changed; the saved stamp still
-    went stale. The stamp is what #160 measures observed silence
-    against, so it should always be the true moment of stopping.
+    With nothing dirty a gated flush also skips, harmless only because
+    nothing changed, but the saved stamp goes stale. Observed silence is
+    measured against the stamp, so it is always the true moment of
+    stopping (rule FRZ-10).
     """
     coord = await setup_coordinator(hass)
     coord._dirty = False

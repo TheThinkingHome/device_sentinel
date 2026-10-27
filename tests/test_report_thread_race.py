@@ -3,28 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_report_thread_race.py, Version: 0.24.11 (2026-10-07)
+# File: tests/test_report_thread_race.py, Version: 0.27.10 (2026-10-27)
 
-"""The reports' worker thread and a changing device list (0.23.13).
+"""The reports' worker thread and a changing device list (rule BRIEF-14).
 
 The reports are written on a worker thread while the event loop adds a
-record when a device pairs and deletes one when it goes. Found proving
-0.22.29, where the signal report failed with "dictionary changed size
-during iteration" and lost that day's reports; on 0.23.12 the same
-churn failed 25 of 150 report writes, every one in watched_records, the
-one function every surface reads the store through. It now iterates a
-snapshot taken in one step. This test churns the map from a second
-thread with the interpreter switching threads as often as it can, so a
-live iteration fails within a few thousand calls.
+record when a device pairs and deletes one when it goes. Iterating the
+live map fails with "dictionary changed size during iteration" and
+loses that day's reports, so watched_records, the one function every
+surface reads the store through, iterates a snapshot taken in one step.
+This test churns the map from a second thread with the interpreter
+switching threads as often as it can, so a live iteration fails within
+a few thousand calls.
 
-Two writes at once (0.24.11). Each report is saved through a temporary
-file of a fixed name beside it, and two writes running together shared
-it: one write's move found the file gone, and that report was lost.
-GitHub's run of 7 October lost a Daily Brief this way, the midnight
-write and the brief meeting after a day's clock jump, and the brief was
-marked sent without being sent. Reproduced on 0.23.20, 0.24.10 and
-0.24.11 (3 to 11 of 20 rounds). Report writes now take turns. These
-tests slow each file's move so two writes always overlap.
+Two writes at once. Each report is saved through a temporary file of a
+fixed name beside it, so two writes running together share it: one
+write's move finds the file gone and that report is lost, and a Daily
+Brief can be marked sent without being sent. Report writes take turns.
+These tests slow each file's move so two writes always overlap.
 """
 
 from __future__ import annotations

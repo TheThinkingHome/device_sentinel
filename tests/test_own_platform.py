@@ -3,9 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_own_platform.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_own_platform.py, Version: 0.27.10 (2026-10-27)
 
-"""A reading is preferred from the device's own integration (#404)."""
+"""A reading is preferred from the device's own integration
+(rules WATCH-02, BAT-01).
+"""
 
 from __future__ import annotations
 
@@ -117,7 +119,9 @@ async def test_two_foreign_percentages_pick_the_lower_id(
 
 
 async def test_the_device_s_own_last_seen_wins(hass: HomeAssistant, hass_storage):
-    """The same rule on the clock, which #124 makes load-bearing."""
+    """The same rule on the clock, which the device's own reports drive
+    (rule FRZ-11).
+    """
     device, _ = await _house(hass, [
         ("battery_notes", "sensor", "b01_last_seen", "timestamp"),
         ("zha", "sensor", "b01_own_last_seen", "timestamp"),

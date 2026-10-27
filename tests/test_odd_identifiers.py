@@ -3,19 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_odd_identifiers.py, Version: 0.23.13 (2026-09-27)
+# File: tests/test_odd_identifiers.py, Version: 0.27.10 (2026-10-27)
 
-"""An identifier of any length never stops Device Sentinel (issue #16).
+"""An identifier of any length never stops Device Sentinel
+(rules DEV-13, STOR-21).
 
 Home Assistant types a device identifier as a pair, a domain and a
-value, and stores whatever an integration registers. hOn 0.8.4
-registers three parts, its domain, the appliance's MAC and its type,
-and reading every identifier as a pair left Device Sentinel 0.22.28 in
-setup_error in any house with a Haier appliance, and failed the
-diagnostics download whenever Extended Diagnostics had anything ticked.
-Reported by BeardedTinker with a traceback and a working patch. Fixed
-first on the Latest line as 0.22.29, and here in the fourth place the
-0.23 line has, the Extended Diagnostics node mapping.
+value, but stores whatever an integration registers. hOn registers
+three parts, its domain, the appliance's MAC and its type, so reading
+every identifier as a pair would leave Device Sentinel in setup_error
+in any house with a Haier appliance, and fail the diagnostics download
+whenever Extended Diagnostics has anything ticked. Every place that
+reads identifiers is covered, the Extended Diagnostics node mapping
+included.
 """
 
 from __future__ import annotations
@@ -99,9 +99,9 @@ async def test_every_odd_shape_sets_up_ticks_and_downloads(hass: HomeAssistant, 
     if studied:
         watched = _found(report, "watched_devices")
         told = {row["name"]: row["identifiers"] for row in watched}
-        # Every part kept (issue #16); the MAC in the middle is the
-        # appliance's own, so the download carries its stand-in
-        # rather than the address itself (0.23.19).
+        # Every part kept; the MAC in the middle is the appliance's own, so the
+        # download carries its stand-in rather than the address itself
+        # (rule STOR-21).
         assert told["Odd 0"] == ["A4:CF:12:MAC-01:washing_machine"]
 
 
@@ -154,7 +154,7 @@ async def test_the_entry_is_named_in_the_loaded_state(hass: HomeAssistant):
 
 
 async def test_a_node_is_mapped_whatever_its_identifier_length(hass: HomeAssistant):
-    """The Extended Diagnostics node mapping (0.23.8), the fourth place."""
+    """The Extended Diagnostics node mapping, the fourth place."""
     from custom_components.device_sentinel.study_stacks import node_devices
 
     source = MockConfigEntry(domain="zwave_js", title="Z-Wave")

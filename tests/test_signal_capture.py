@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_capture.py, Version: 0.24.0 (2026-10-02)
+# File: test_signal_capture.py, Version: 0.27.10 (2026-10-27)
 
-"""The signal when a device goes unavailable, and the evidence in the download.
+"""The signal when a device goes unavailable, and the evidence in the
+download (rule SIG-11).
 
 Link failures surface as a device going unavailable, not as a freeze
-silence, so before 0.24.0 the evidence ruling #172 waits on never
-recorded a single one: on 2 October no fleet held a silence that ended
-in a link failure. The opening row of an unavailable incident now
-carries the device's signal at that moment, and the diagnostics
-download carries the signal stress table, so testers' files bring the
-evidence with them.
+silence, so the silence episodes alone never record one. The opening
+row of an unavailable incident carries the device's signal at that
+moment, and the diagnostics download carries the signal stress table,
+so testers' files bring the evidence with them.
 """
 
 from __future__ import annotations
@@ -67,7 +66,8 @@ async def test_a_device_with_no_signal_records_none(hass: HomeAssistant):
 
 async def test_old_and_new_incident_rows_both_pass_the_load_check(hass: HomeAssistant):
     """A new opening row with the signal, a new row without it, and a
-    row shaped as every row before 0.24.0: none is a fault."""
+    row from an older release with no signal field: none is a fault.
+    """
     _entry, coord, device_id = await _device(hass)
     coord._record_incident(device_id, "Shed Door", FREEZE_CATEGORY_UNAVAILABLE, INCIDENT_OPENED)
     coord._record_incident(device_id, "Shed Door", FREEZE_CATEGORY_FROZEN, INCIDENT_OPENED)

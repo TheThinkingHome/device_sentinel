@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_release_line.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_release_line.py, Version: 0.27.10 (2026-10-27)
 
-"""The release running, at the foot of the dashboard (ruling #723).
+"""The release running, at the foot of the dashboard (rule DASH-15).
 
-From Tim Plas, 21 October 2026: a person should see which release runs
-without opening Settings or HACS. The status reply names it as
-"Device Sentinel" and the manifest's version, with a link to that
-release's notes; the link only where the version reads as a release
-tag, so an odd value is printed and never built into an address.
+A person sees which release runs without opening Settings or HACS. The
+status reply names "Device Sentinel" and the manifest's version, with a
+link to that release's notes. The link appears only where the version
+reads as a release tag, so an odd value is printed and never built into
+an address.
 """
 
 from __future__ import annotations

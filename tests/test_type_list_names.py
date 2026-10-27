@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_type_list_names.py, Version: 0.26.8 (2026-10-20)
+# File: test_type_list_names.py, Version: 0.27.10 (2026-10-27)
 
-"""Words typed through Other that name a type on the list (ruling #717).
+"""Words typed through Other that name a type on the list (rule DEV-11).
 
-An owner's answer typed through Other is kept as the list's name when it
-names a type on the list: the same words in another case or spacing, or
-an earlier name for it. The reference rig's two SLZB coordinators read
-"ZHA Coordinator" and "Zigbee2MQTT Coordinator", typed on 9 October 2026
-before 0.25.2 named them; Tim Plas's robot vacuum read "Vacuum" before
-#712 put it on the list. Anything else stays as the owner wrote it.
+An owner's answer typed through Other is kept as the list's name when
+it names a type on the list: the same words in another case or
+spacing, or an earlier name for it. Coordinators typed as "ZHA
+Coordinator" and "Zigbee2MQTT Coordinator" before the list named them,
+and a robot vacuum typed as "Vacuum", take the list's names. Anything
+else stays as the owner wrote it.
 """
 
 from __future__ import annotations
@@ -32,11 +32,11 @@ from .helpers import setup_coordinator
 
 
 @pytest.mark.parametrize(("words", "expected"), [
-    # The reference rig, 9 October 2026.
+    # Answers typed on the first fleet.
     ("ZHA Coordinator", "Zigbee Coordinator (ZHA)"),
     ("Zigbee2MQTT Coordinator", "Zigbee Coordinator (Zigbee2MQTT)"),
     ("Z-Wave Coordinator", "Z-Wave Controller"),
-    # Tim Plas's house.
+    # Answers typed on the second fleet.
     ("Vacuum", "Vacuum"),
     ("vacuum", "Vacuum"),
     ("RF IR Remote", "IR Remote"),

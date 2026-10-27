@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_study.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_study.py, Version: 0.27.10 (2026-10-27)
 
-"""Volunteered hardware study (#393).
+"""Volunteered hardware study (rule STACK-11).
 
 The shapes here are UniFi's, read from the Home Assistant source: a
 connected client publishes `essid`, `radio`, `radio_proto`, `ap_mac`
 and more, and a disconnected one drops to `mac`, `name` and `oui`.
-That difference is the thing a study exists to confirm on a real
-fleet rather than infer from somebody else's code, and it is the same
-difference that cost two releases on the reference fleet when a
-router relabelled its away clients (#389).
+That difference is the thing a study exists to confirm on a real fleet
+rather than infer from somebody else's code, because a router that
+relabels its away clients misleads any rule built on the away reading
+(rule UP-14).
 """
 
 from __future__ import annotations
@@ -115,11 +115,10 @@ async def test_it_keeps_what_a_client_publishes_while_away(
 ):
     """The fault a snapshot cannot see.
 
-    A client that publishes nine fields while home and three while
-    away is two shapes, and the difference is what a medium rule can
-    or cannot be built on. On the reference fleet the away reading
-    was not merely thinner, it was wrong, and reading it cost two
-    releases (#389).
+    A client that publishes nine fields while home and three while away is
+    two shapes, and the difference is what a medium rule can or cannot be
+    built on. The away reading can be not merely thinner but wrong
+    (rule UP-14).
     """
     source = MockConfigEntry(domain="unifi", title="UniFi")
     source.add_to_hass(hass)
@@ -261,7 +260,7 @@ async def test_the_snapshot_carries_what_a_tie_would_need(
     assert "watched_devices" in snapshot
 
 
-# ------------------------------------------------- ending it (#393)
+# ------------------------------------------------- ending it (rule STACK-11)
 
 
 async def test_unticking_stops_collection_at_once(hass: HomeAssistant):

@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_owner_entry.py, Version: 0.23.20 (2026-10-01)
+# File: tests/test_owner_entry.py, Version: 0.27.10 (2026-10-27)
 
-"""Who owns a device, read without the attributes 2026.10 deprecates.
+"""Who owns a device, read without the attributes 2026.10 deprecates
+(rules UP-01, REL-03).
 
 Home Assistant 2026.8 gave every device one config entry, named by
 `config_entry_id`, and 2026.10 reports any read of the two attributes
@@ -84,11 +85,11 @@ async def test_the_owner_is_config_entry_id_and_nothing_else_is_read(
 async def test_an_owner_whose_entry_is_gone_is_still_the_owner(
     hass: HomeAssistant,
 ):
-    """The owner is returned as it stands, as 0.23.19 returned the primary.
+    """The owner is returned as it stands, as the primary entry was.
 
-    Its domain then reads unknown, the same answer 0.23.19 gave a
-    device whose only entry had gone, and no other entry is consulted,
-    because on 2026.8 and later there is no other.
+    Its domain then reads unknown, the same answer a device whose only
+    entry has gone gets, and no other entry is consulted, because on
+    2026.8 and later there is no other.
     """
     coord = await setup_coordinator(hass)
     device = _NewDevice("no-such-entry")
@@ -124,12 +125,12 @@ async def test_before_2026_8_with_no_primary_the_first_living_entry_owns(
 
 
 async def test_a_restored_composite_keeps_the_old_order(hass: HomeAssistant):
-    """The case Home Assistant exempts keeps 0.23.19's fallback.
+    """The case Home Assistant exempts keeps the older fallback.
 
     A restored composite is the stand-in Home Assistant builds for a
-    device id from before the 2026.8 split. It can list several
-    entries, and reading its old attributes reports nothing, so its
-    domain falls back to another entry when its owner's has gone.
+    device id from before the 2026.8 split. It can list several entries,
+    and reading its old attributes reports nothing, so its domain falls
+    back to another entry when its owner's has gone.
     """
     other = MockConfigEntry(domain="router_tracker", entry_id="b-other")
     other.add_to_hass(hass)

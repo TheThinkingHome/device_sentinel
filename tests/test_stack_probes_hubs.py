@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_probes_hubs.py, Version: 0.26.4 (2026-10-15)
+# File: tests/test_stack_probes_hubs.py, Version: 0.27.10 (2026-10-27)
 
-"""Hue, SmartThings, Tuya and Lutron in Extended Diagnostics (0.23.9).
+"""Hue, SmartThings, Tuya and Lutron in Extended Diagnostics
+(rules STACK-11, STACK-12).
 
 Recording only, into the one stack_probe.md. The fakes follow the
-shapes read on 26 September 2026 in Home Assistant 2026.9.2 and the
-libraries it pins: aiohue 4.9.0, pysmartthings 4.0.1,
-tuya-device-sharing-sdk 0.2.15, and the Lutron probe's reading of
-pylutron-caseta. Also the Connects line: how each device reaches Home
-Assistant, from its integration's own declaration.
+shapes Home Assistant and the libraries it pins give: aiohue,
+pysmartthings, tuya-device-sharing-sdk, and the Lutron probe's reading
+of pylutron-caseta. Also the Connects line: how each device reaches
+Home Assistant, from its integration's own declaration.
 """
 
 from __future__ import annotations
@@ -119,9 +119,9 @@ def test_the_four_stacks_are_offered():
 
 async def test_hue_gives_the_bridges_own_judgment(hass: HomeAssistant):
     """The bridge's judgment sits beside Device Sentinel's. A device on
-    Hue's ignore list without a light is not helped by it, and since
-    0.26.4 the line says so (tests/test_hue_smartthings_probe.py reads
-    the real library)."""
+    Hue's ignore list without a light is not helped by it, and the line
+    says so (tests/test_hue_smartthings_probe.py reads the real library).
+    """
     lamp_id, strip_id = "3a1b2c3d-0000-4000-8000-000000000001", "3a1b2c3d-0000-4000-8000-000000000002"
     entry = _hue(hass, {lamp_id: _Connectivity.CONNECTIVITY_ISSUE, strip_id: _Connectivity.CONNECTED},
                  ignored=[lamp_id])
@@ -146,9 +146,10 @@ async def test_a_v1_hue_bridge_is_named_and_not_read(hass: HomeAssistant):
 
 
 async def test_smartthings_records_its_cloud_subscription(hass: HomeAssistant):
-    """The cloud-outage question: a lost subscription is a line. Since
-    0.26.4 a device's type says how it reaches the cloud, and its line
-    says what Home Assistant shows for it."""
+    """The cloud-outage question: a lost subscription is a line. A device's
+    type says how it reaches the cloud, and its line says what Home
+    Assistant shows for it.
+    """
     runtime = SimpleNamespace(devices={
         "b7e1": SimpleNamespace(device=SimpleNamespace(device_id="b7e1", type=_Type.ZIGBEE, hub=SimpleNamespace(), parent_device_id=None)),
         "c9f2": SimpleNamespace(device=SimpleNamespace(device_id="c9f2", type=_Type.VIPER, hub=None, parent_device_id=None)),

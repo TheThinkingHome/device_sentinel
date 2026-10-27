@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_signal_badday.py, Version: 0.27.10 (2026-10-27)
 
-"""The bad signal day detector (ruling #310).
+"""The bad signal day detector (rules SIG-01, SIG-08).
 
 A bad day is a fall in a device's own daily P5 against the median of
 its recent days, far enough in the device's units and far enough in
@@ -14,9 +14,9 @@ gates' reasons: the absolute gate stops a trivial move on a steady
 device reading as a catastrophe, and the spread gate stops a large
 move on a jittery device reading as news.
 
-The fixtures carry no cause fields and no dwell, because the
-detector reads neither: the lesson of the stitch that shipped inert
-was a rule reading a field the live journal never writes.
+The fixtures carry no cause fields and no dwell, because the detector
+reads neither: a rule reading a field the live journal never writes
+ships inert.
 """
 
 from __future__ import annotations
@@ -104,9 +104,9 @@ async def test_a_small_fall_on_a_steady_device_is_not_news(
 
 
 async def test_an_rssi_device_is_judged_in_decibels(hass: HomeAssistant):
-    """The gate is scale-native (ruling #310, following #250). A
-    -60 dBm link losing 8 dB is a bad day at the 6 dB default; the
-    25-point LQI gate would never fire on an RSSI scale at all."""
+    """The gate is scale-native. A -60 dBm link losing 8 dB is a bad day at
+    the 6 dB default; the 25-point LQI gate would never fire on an RSSI
+    scale at all (rule SIG-08)."""
     device, _ = register_device(hass, "bd4", "Shade Motor")
     coord = await setup_coordinator(hass)
     record = coord.data[DATA_DEVICES][device.id]
@@ -208,12 +208,12 @@ async def test_the_baseline_window_is_the_days_of_signal_history(
 
 
 async def test_the_approved_slider_words_are_pinned(hass: HomeAssistant):
-    """The four texts James approved on 21 August, verbatim.
+    """The four approved texts, verbatim.
 
-    The config screen is a document with an author. A regenerated
-    strings file that paraphrases these is wrong even where it is
-    fluent, and the translations copy must match byte for byte, which
-    the build gate also compares.
+    The config screen is a document with an author. A regenerated strings
+    file that paraphrases these is wrong even where it is fluent, and the
+    translations copy must match byte for byte, which the build gate also
+    compares (rule CODE-14).
     """
     package = pathlib.Path(
         __import__(
@@ -241,11 +241,8 @@ async def test_the_approved_slider_words_are_pinned(hass: HomeAssistant):
         assert "signal_red_threshold" not in signal["data"]
 
 
-# 0.19.14: the signal report release (ruling #380).
-
-
 # ==================================================================
-# The spread in floating point gives the exact answer (0.22.20).
+# The spread in floating point gives the exact answer.
 # ==================================================================
 
 _FLEETS = [

@@ -3,23 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_failures.py, Version: 0.18.4 (2026-08-27)
+# File: test_storage_failures.py, Version: 0.27.10 (2026-10-27)
 
-"""A storage file Home Assistant cannot read (ruling #327).
+"""A storage file Home Assistant cannot read (rules STOR-08, STOR-10).
 
-The person who most needs a plain explanation is the person whose
-file just broke. Setup used to let the exception escape, so they got
-a stack trace and a config entry whose error named no cause.
+The person who most needs a plain explanation is the person whose file
+just broke, so setup never lets the exception escape as a stack trace
+and an error that names no cause.
 
 The two files are answered differently on purpose. The main file is
 the record, so setup stops and says so, permanently rather than on a
 retry loop, because a corrupt file does not become readable on the
-next attempt. The clocks file is the small companion, so an
-unreadable one costs a few minutes of live counters and the start
-continues.
-
-The banked Restore flow will read the last-good copy beside the file
-when it ships; until then an explanation is what a person gets.
+next attempt. The clocks file is the small companion, so an unreadable
+one costs a few minutes of live counters and the start continues.
 """
 
 from unittest.mock import patch
@@ -123,9 +119,9 @@ async def test_an_unreadable_clocks_file_is_survivable(
 ) -> None:
     """The small companion is not the record.
 
-    Losing it costs one interval of live counters, so the start
-    continues on the clocks held in the main file and says so, rather
-    than refusing to run (ruling #327).
+    Losing it costs one interval of live counters, so the start continues
+    on the clocks held in the main file and says so, rather than refusing
+    to run (rule STOR-10).
     """
     real_load = None
 

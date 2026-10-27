@@ -1,17 +1,16 @@
-"""Characterization tests for the state-change handler's edges.
+"""The state-change handler's edges, pinned as they stand
+(rules WATCH-10, UNAV-05).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_state_change_edges.py, Version: 0.23.12 (2026-09-27)
+# File: test_state_change_edges.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Two branches of _on_state_changed that the suite has never executed:
-the guard for an event carrying no new state, and the path where a
-taint is raised inside the startup grace window. They are written
-against the code as it stands, before any refactoring of that
-handler, so that a later change to its shape has something to be
-identical to. Neither describes new behavior; both record behavior
-that already exists and was never pinned.
+Two branches of _on_state_changed: the guard for an event carrying no
+new state, and the path where a taint is raised inside the startup
+grace window. Neither describes new behavior; both pin behavior that
+exists, so a later change to the handler's shape has something to
+match.
 """
 
 from datetime import timedelta
@@ -92,10 +91,9 @@ async def test_a_taint_raised_inside_grace_is_also_held_in_the_grace_set(
     coord._judge_all_devices()
     assert len(coord.data[DATA_EPISODES]) == 1
 
-    # Wide enough to still be open when the device recovers, which is
-    # the moment the branch is decided. Judged unavailable, so its
-    # stack saying it is available is a genuine recovery under #535
-    # rather than a republished value.
+    # Wide enough to still be open when the device recovers, the moment the
+    # branch is decided. Judged unavailable, so its stack saying it is
+    # available is a real recovery, not a value handed back (rule UNAV-05).
     record[DEV_FROZEN_CATEGORY] = "unavailable"
     coord._grace_until = dt_util.utcnow().timestamp() + 86400.0
     hass.states.async_set(entity_id, "unavailable")

@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_quiet_devices.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_quiet_devices.py, Version: 0.27.10 (2026-10-27)
 
-"""What the surfaces say about a device that is not speaking.
+"""What the surfaces say about a device that is not speaking
+(rules FRZ-08, WATCH-12).
 
-The reference rig's watering sensor ran its battery flat and went
-silent at 7:27 PM. Seventeen hours later its own page showed a green
-"Reporting" pill on two devices set aside, its Problem List row was
-dated from July's battery rather than the evening's freeze, its
-silence episode read closed with nothing said about the silence since,
-and a restart replayed the retained MQTT payloads so its signal took
-four readings from a device that had said nothing. Each of those is a
-surface claiming the device spoke.
+A sensor that runs its battery flat goes silent, and no surface may
+claim it spoke: its page must not show a green "Reporting" pill, its
+Problem List row is dated from the freeze, not an older battery
+problem, its silence episode says what happened since, and a restart
+that replays retained MQTT payloads gives its signal no readings.
 """
 
 from __future__ import annotations
@@ -143,7 +141,7 @@ async def test_a_truncated_silence_still_running_says_so(hass: HomeAssistant):
         encoding="utf-8",
     ).read()
     assert "1 still silent" in text
-    # The whole silence, and what the lag counts from (0.22.25).
+    # The whole silence, and what the lag counts from.
     assert "| 18.0h | intervention (reboot) |" in text
     assert "| not yet, 9.0h since the reboot |" in text
 

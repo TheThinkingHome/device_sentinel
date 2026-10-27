@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_repair_restarts_count.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_repair_restarts_count.py, Version: 0.27.10 (2026-10-27)
 
 """A re-pair restarts the 42-Day Log-Normal Percentile; a reconfigure or
 a removal does not, since neither changes how a device reports (rule
@@ -166,9 +166,10 @@ async def _removed_and_back(hass, monkeypatch, reader):
 async def test_a_device_removed_and_added_again_while_pairing_restarts_the_count(
     hass: HomeAssistant, monkeypatch
 ):
-    """The usual Zigbee2MQTT re-pair: removed, then paired again. Decided
-    on its return, since its first report may come after pairing closes,
-    or carry a Last Seen older than its return (0.27.9 rounds 2 and 3)."""
+    """The usual Zigbee2MQTT re-pair: removed, then paired again. Decided on
+    its return, since its first report may come after pairing closes, or
+    carry a Last Seen older than its return.
+    """
     _coord, record = await _removed_and_back(hass, monkeypatch, _PairingOpen())
     assert record[DEV_LOGNORMAL_DAYS] == 0
 

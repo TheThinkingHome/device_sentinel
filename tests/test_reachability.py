@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.27.5 (2026-10-25)
+# File: tests/test_reachability.py, Version: 0.27.10 (2026-10-27)
 
-"""Zigbee2MQTT reachability, replayed against a captured fleet.
+"""Zigbee2MQTT reachability, replayed against a captured fleet, and the
+upstream outages (rules STACK-03, UP-01, UP-03, UP-10).
 
-The fixtures in tests/fixtures are the reference fleet as the broker
-published it on 2026-08-05: 75 entries in bridge/devices, 81
-availability topics, and the bridge's own availability configuration.
-Six of those topics name nothing that exists and two of the six read
-online, which is the case that would otherwise contradict a correct
-verdict (ruling #221).
+The fixtures in tests/fixtures are a real fleet as the broker published
+it: 75 entries in bridge/devices, 81 availability topics, and the
+bridge's own availability configuration. Six of those topics name
+nothing that exists and two of the six read online, which is the case
+that would otherwise contradict a correct verdict.
 
 Nothing here changes a verdict. Reachability is a second opinion that
 confirms or doubts, and every path that cannot answer returns None,
@@ -161,14 +161,14 @@ def test_a_mains_device_carries_the_short_one():
 
 
 def test_the_dead_device_reads_offline():
-    """Vibration 02, silent since 20 July and offline in the capture."""
+    """Vibration 02, long silent and offline in the capture."""
     reader = _loaded_reader()
     seen = reader.reachability(_ieee("Vibration 02"))
     assert seen["state"] == "offline"
 
 
 def test_an_unknown_key_and_a_silent_bridge_answer_nothing():
-    """Every path that cannot say returns None (ruling #221)."""
+    """Every path that cannot say returns None (rule STACK-03)."""
     reader = _loaded_reader()
     assert reader.reachability("0xdeadbeefdeadbeef") is None
     assert reader.reachability(None) is None
@@ -269,12 +269,11 @@ async def test_a_reader_that_raises_is_no_opinion(hass: HomeAssistant):
 
 
 async def test_an_outage_spanning_a_restart_closes(hass: HomeAssistant):
-    """The bridge_up that two nights on the fleet never got.
+    """An outage spanning a restart closes.
 
-    The bridge went down at 03:40 and the house rebooted at 03:42, so
-    the state it was in died with the process and the recovery was
-    never written. Restored from storage, the next sample closes the
-    outage with its real duration (ruling #222).
+    The bridge goes down at 03:40 and the house reboots at 03:42, so the
+    state it was in dies with the process. Restored from storage, the
+    next sample closes the outage with its real duration (rule UP-04).
     """
     coord = await setup_coordinator(hass)
     down_at = 1785000000.0
@@ -332,10 +331,10 @@ async def test_the_registry_walk_records_the_key(hass: HomeAssistant):
     )
 
 
-# The upstream events (ruling #381). A stopped broker or bridge
-# silences every device behind it deliberately, so until this pair
-# existed the one failure that takes a house quiet was the one an
-# automation could not see.
+# The upstream events (rule UP-10). A stopped broker or bridge silences
+# every device behind it on purpose, so without this pair the one
+# failure that takes a house quiet would be the one an automation could
+# not see.
 
 
 def _heard(hass, kind):
@@ -344,10 +343,10 @@ def _heard(hass, kind):
 
 
 def _past_grace(coord):
-    """Leave the startup grace, where the bus is deliberately silent.
+    """Leave the startup grace, where the bus is silent on purpose.
 
     Everything reports at once on a restart and none of it is news
-    (ruling #291), so a freshly built coordinator fires nothing. A
+    (rule WATCH-10), so a freshly built coordinator fires nothing. A
     test about the bus has to step outside that window first.
     """
     coord._grace_until = 0.0
@@ -397,7 +396,7 @@ async def test_a_bridge_coming_back_reaches_the_bus(hass: HomeAssistant):
 async def test_a_fresh_install_announces_no_recovery(
     hass: HomeAssistant,
 ):
-    """Nothing stored is a start, not a recovery (ruling #222).
+    """Nothing stored is a start, not a recovery (rule UP-04).
 
     The events sit on the transition rather than on the state, so a
     restart that comes up with a bridge already running must not
@@ -514,7 +513,7 @@ async def test_an_outage_inside_the_grace_is_held_not_dropped(
     """Silent during the grace, announced the moment it ends.
 
     The grace exists so every other integration can finish starting
-    without its noise being read as news (ruling #291). An upstream
+    without its noise being read as news (rule WATCH-10). An upstream
     that fails inside it and is still down afterwards is news, and
     the announcement carries the moment it really failed.
     """
@@ -568,9 +567,8 @@ async def test_an_outage_that_came_and_went_inside_the_grace_is_silent(
     assert back == []
 
 
-# The integration outage (ruling #382). The third thing that can
-# carry a house's devices, after the broker and a bridge, and the
-# only one with nothing watching it until now.
+# The integration outage (rule UP-03). The third thing that can carry a
+# house's devices, after the broker and a bridge.
 
 
 def _plant(hass, count, domain, prefix):
@@ -671,7 +669,7 @@ async def test_an_integration_coming_back_pairs(
     hass: HomeAssistant, freezer
 ):
     """The restored half, and the devices are theirs again once the
-    window a returning integration gives them has passed (#441)."""
+    window a returning integration gives them has passed (rule UP-08)."""
     source, made = _plant(hass, 5, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
     _past_grace(coord)
@@ -778,7 +776,7 @@ async def test_a_stack_with_a_reader_answers_for_itself(
 async def test_the_broker_still_outranks_an_integration(
     hass: HomeAssistant,
 ):
-    """Order is broker, then bridge, then integration (#264)."""
+    """Order is broker, then bridge, then integration (rule UP-01)."""
     source, made = _plant(hass, 3, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
     _past_grace(coord)
@@ -795,8 +793,8 @@ async def test_the_broker_still_outranks_an_integration(
     assert coord.upstream_down_since(made[0].id)[0] == "controller_hub"
 
     coord._broker_down_at = now - 30.0
-    # Since 0.23.12 the broker is upstream only to devices that ride it,
-    # and a controller hub's device does not.
+    # The broker is upstream only to devices that ride it, and a
+    # controller hub's device does not (rule UP-01).
     assert coord.upstream_down_since(made[0].id)[0] == "controller_hub"
     coord._watched[made[0].id] = "mqtt"
     assert coord.upstream_down_since(made[0].id)[0] != "controller_hub"
@@ -807,11 +805,11 @@ async def test_an_entry_never_seen_loaded_is_not_an_outage(
 ):
     """An entry nobody has started is not an outage.
 
-    Found by the suite: the rung claimed every device whose entry had
-    not been observed loaded, which suppressed a real freeze because
-    the integration behind it was read as down. Home Assistant has not
-    started this entry and says nothing about why, so its devices are
-    still their own story (ruling #445 keeps this case).
+    Claiming every device whose entry was not seen loaded would
+    suppress a real freeze, because the integration behind it would be
+    read as down. Home Assistant has not started this entry and says
+    nothing about why, so its devices are still their own story
+    (rule UP-03).
     """
     source, made = _plant(hass, 3, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
@@ -836,10 +834,9 @@ async def test_an_entry_never_seen_loaded_is_not_an_outage(
 async def test_an_entry_that_failed_from_the_start_is_down_from_the_start(
     hass: HomeAssistant,
 ):
-    """Ruling #445. Until 0.21.12 an entry that failed before the house
-    came up was never judged, so each device behind it was reported
-    on its own. Once the startup grace is over it is one outage,
-    dated from when this run began."""
+    """An entry that failed before the house came up is judged: once the
+    startup grace is over it is one outage, dated from when this run
+    began, not each device behind it on its own (rule UP-04)."""
     source, made = _plant(hass, 3, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
     _past_grace(coord)

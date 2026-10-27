@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_outage_pairs_and_counts.py, Version: 0.27.4 (2026-10-25)
+# File: test_outage_pairs_and_counts.py, Version: 0.27.10 (2026-10-27)
 
-"""Upstream outages: every down owes its restored, with one count.
+"""Upstream outages: every down owes its restored, with one count
+(rule UP-10).
 
 Each config entry's outage gets its own down and restored pair, with
 the device count the down was announced with. A one-device entry speaks
@@ -13,8 +14,7 @@ of that device, the broker counts only the devices that ride it, and a
 device muted for unavailable is still counted. An outage still down
 across a restart is owed its restored, inside the startup grace too; an
 entry deleted while down is closed as removed, and an integration no
-longer watched is closed as such, never as removed. Found by the
-adversarial rounds of 0.26.6.
+longer watched is closed as such, never as removed.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from .test_bridge_pairing import _Stub
 # --------------------------------- the device count behind an upstream
 
 
-# Round 30: the device count reads the same on every upstream.
+# The device count reads the same on every upstream (rule UP-10).
 
 
 async def test_a_bridge_counts_devices_muted_for_unavailable(hass: HomeAssistant):
@@ -390,9 +390,8 @@ async def test_shared_worst_and_row(hass: HomeAssistant, freezer):
                 said=[coord._system_event_sentence(r) for r in sys])
     up_a = [r for r in sys if r.get("kind") == "integration_up"][0]
     # A's three devices went down with it; B's devices, the one frozen
-    # before and the one down under B's own outage, are not A's. Before
-    # 0.27.4 no device behind a down entry was ever counted, so this
-    # read 0 (rule UP-11).
+    # before and the one down under B's own outage, are not A's. Devices
+    # behind a down entry are counted, so this reads 3, not 0 (rule UP-11).
     assert up_a["worst"] == 3, info
 
 
@@ -862,8 +861,8 @@ async def test_p3_two_devices_one_muted_other_deleted(hass: HomeAssistant, freez
 
 
 async def test_p4_upgrade_row_from_0265_count(hass: HomeAssistant, freezer):
-    """A 0.26.5 down row (no devices) for an entry of 3 with one muted: 0.26.5
-    announced 2. Restored after the upgrade should say 2, not 3."""
+    """A down row from an older release (no devices) for an entry of 3 with
+    one muted announced 2. Restored after the upgrade says 2, not 3."""
     downs = record_events(hass, "device_sentinel_upstream_down")
     ups = record_events(hass, "device_sentinel_upstream_restored")
     freezer.move_to(PIN)
@@ -881,7 +880,7 @@ async def test_p4_upgrade_row_from_0265_count(hass: HomeAssistant, freezer):
     _down(hass, *a)
     await hass.async_block_till_done()
     await walk(hass, freezer, 15 * 60)
-    # what 0.26.5 would have written: no devices on the row
+    # what an older release would have written: no devices on the row
     for r in _sys(coord):
         r.pop("devices", None)
     coord._dirty = True

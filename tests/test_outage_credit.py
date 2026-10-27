@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_credit.py, Version: 0.27.5 (2026-10-25)
+# File: tests/test_outage_credit.py, Version: 0.27.10 (2026-10-27)
 
-"""An outage is not a device's silence (#536).
+"""An outage is not a device's silence (rules FRZ-10, UP-07).
 
-The reference rig, 28 September. Zigbee2MQTT was down from 3:40 to 7:37,
-one bridge problem throughout; when the three-minute rejoin window
-closed, 24 living devices were announced frozen in one check on four
-hours they could not have been heard in. The time an upstream was down
-is now taken out of its devices' silence, from the stored returns, so
-a restart in the middle of an outage cannot erase it. A device already
-frozen before the outage keeps that verdict, its last-heard time is
-never changed, and the gap across the outage is not learned.
+When Zigbee2MQTT is down for hours and the three-minute rejoin window
+closes, living devices must not be announced frozen on hours they could
+not have been heard in. The time an upstream was down is taken out of
+its devices' silence, from the stored returns, so a restart in the
+middle of an outage cannot erase it. A device already frozen before
+the outage keeps that verdict, its last-heard time is never changed,
+and the gap across the outage is not learned.
 """
 
 from __future__ import annotations
@@ -116,8 +115,8 @@ async def test_a_device_frozen_before_the_outage_keeps_its_silence(hass: HomeAss
 
 
 async def test_a_short_nightly_outage_costs_a_long_reporter_only_its_minutes(hass: HomeAssistant):
-    """The owner's concern: a nightly reboot must not keep a dead
-    long reporter from ever being judged."""
+    """A nightly reboot must not keep a dead long reporter from ever being
+    judged."""
     coord, device, record = await _one(hass)
     coord._stack_for_device = lambda d: STACK_Z2M
     record[DEV_DAILY_MAX] = [30 * HOUR] * (LEARNING_MIN_DAYS + 5)
@@ -194,10 +193,9 @@ async def test_the_night_of_28_september(hass: HomeAssistant, freezer):
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
     await _minutes(hass, coord, freezer, 60)
-    # The restart in the middle, as at 7:34 on the rig. The outage
-    # starts are saved with the record since 0.26.0 (ruling #647), so
-    # a restart no longer loses them; the outage credit is what this
-    # test proves, and it holds either way.
+    # The restart in the middle. The outage starts are saved with the record
+    # (rule UNAV-04), so a restart does not lose them; the outage credit is
+    # what this test proves, and it holds either way.
     await _minutes(hass, coord, freezer, 180)
     coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
     hass.states.async_set(value, "56")
@@ -224,7 +222,7 @@ async def test_the_gap_across_an_outage_is_not_learned(hass: HomeAssistant, free
     assert record[DEV_TODAY_MAX] is None, "the four-hour gap was learned as the device's rhythm"
 
 
-# Stored outages with a corrupt or missing duration, and the rig's own night of 28 September.
+# Stored outages with a corrupt or missing duration, and a real night's outage.
 
 
 def _event_15(kind, scope, when, duration=None):

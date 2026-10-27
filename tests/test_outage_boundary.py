@@ -3,20 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_boundary.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_outage_boundary.py, Version: 0.27.10 (2026-10-27)
 
-"""0.21.12's stored data at the storage boundary (rulings #279, #370).
+"""The stored outage shape at the storage boundary (rule STOR-05).
 
-0.21.12 writes one new field, an ended outage's worst figure, and two
-new event kinds. The wide fuzz in `test_storage_shape.py`
-damages the fields a fleet file already holds, and no fleet file holds
-these yet, so on its own it would never touch them: the gap #279 was
-ruled against, where a check was read off one file's values rather
-than off every value the code can write. Here the new shape is
+An ended outage carries a worst figure, and a Wi-Fi recovery writes two
+event kinds. The wide fuzz in `test_storage_shape.py` damages the
+fields a fleet file already holds, and no fleet file holds these, so on
+its own it would never touch them. A check must be read off every value
+the code can write, not off one file's values. Here the new shape is
 written onto each fleet first, then the new fields are damaged, the
-file goes through the real load, and every reader, the new Wi-Fi
-rules among them, runs over what the gate let through. The write
-seam and the save are held to the same shape.
+file goes through the real load, and every reader, the Wi-Fi rules
+among them, runs over what the gate let through. The write seam and
+the save are held to the same shape.
 """
 
 from __future__ import annotations
@@ -66,7 +65,7 @@ SHAPE_FLEETS = FLEETS + [
 
 
 def _vouched(coord) -> None:
-    """What the boundary promises about the fields 0.21.12 reads."""
+    """What the boundary promises about the fields the outage rules read."""
     for row in coord.data[DATA_SYSTEM_EVENTS]:
         assert isinstance(row.get(SYS_KIND), str), row
         for field in (SYS_WORST, SYS_DEVICES):
@@ -85,8 +84,9 @@ def _vouched(coord) -> None:
 
 
 def _damage(data: dict, rng: random.Random) -> int:
-    """Poison the fields 0.21.12 writes, and the failure times its
-    rules read. Returns how many values were damaged."""
+    """Poison the fields the outage rows carry, and the failure times its
+    rules read. Returns how many values were damaged.
+    """
     damaged = 0
     events = data[DATA_SYSTEM_EVENTS]
     carriers = [row for row in events if SYS_WORST in row]
@@ -113,7 +113,8 @@ def _damage(data: dict, rng: random.Random) -> int:
 
 def test_the_synthesized_shape_carries_the_new_fields():
     """The fuzz below is only worth running if the data it damages
-    carries what 0.21.12 writes."""
+    carries the new outage fields.
+    """
     for path, _clocks_path in (param.values for param in SHAPE_FLEETS):
         if not path.exists():
             continue
@@ -180,8 +181,9 @@ async def test_the_write_seam_refuses_a_bad_worst_figure(hass: HomeAssistant):
 async def test_a_clean_save_still_rotates_the_last_good_copy(
     hass: HomeAssistant,
 ):
-    """#281: a save that holds a new-shaped row must still check clean,
-    or the last-good copy stops being refreshed and nobody notices."""
+    """A save that holds a new-shaped row must still check clean, or the
+    last-good copy stops being refreshed and nobody notices (rule STOR-04).
+    """
     coord = await setup_coordinator(hass)
     coord._record_system_event(
         SYS_BRIDGE_UP, scope="zha", devices=55, worst=14, duration=700.0

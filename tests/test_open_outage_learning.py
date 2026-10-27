@@ -3,19 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_open_outage_learning.py, Version: 0.24.1 (2026-10-03)
+# File: tests/test_open_outage_learning.py, Version: 0.27.10 (2026-10-27)
 
-"""A gap across an outage still open is not learned.
+"""A gap across an outage still open is not learned (rules FRZ-12, UP-07).
 
-#536 keeps a gap across an upstream's outage out of learning, reading
-the outages from the stored returns. A return is stored when Device
-Sentinel next reads the upstream, and Zigbee2MQTT's devices start
-reporting the moment the bridge is back: on 1 October the reference
-rig's Leak Sink Bath Main finished a 201-minute gap across the bridge's
-outage before its return was recorded, and learned it as its own
-silence. A gap is learned only if Device Sentinel can trust it, so an
-outage still open on the device's path, by the same ladder the holds
-read, keeps the gap out of learning exactly as a stored one does.
+A gap across an upstream's outage is kept out of learning, reading the
+outages from the stored returns. A return is stored when Device
+Sentinel next reads the upstream, but Zigbee2MQTT's devices report the
+moment the bridge is back, so a device can finish a gap across the
+outage before its return is recorded. An outage still open on the
+device's path, by the same ladder the holds read, keeps the gap out of
+learning exactly as a stored one does.
 """
 
 from __future__ import annotations
@@ -68,8 +66,9 @@ async def test_with_no_outage_the_gap_is_learned(hass: HomeAssistant, freezer):
 
 
 async def test_a_bridge_still_marked_down_keeps_the_gap_out(hass: HomeAssistant, freezer):
-    """The night of 1 October: the bridge fell, came back, and its first
-    reports arrived before Device Sentinel next read the bridge."""
+    """The bridge falls, comes back, and its first reports arrive before
+    Device Sentinel next reads the bridge.
+    """
     coord, device, record, seen, now, last = await _silent_four_hours(hass, freezer)
     fell = last + 60
     coord.data[DATA_SYSTEM_EVENTS] = [

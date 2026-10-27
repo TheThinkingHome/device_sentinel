@@ -3,17 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_options_migration.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_options_migration.py, Version: 0.27.10 (2026-10-27)
 
-"""The options migration, entry shape by entry shape (ruling #316).
+"""The options migration, entry shape by entry shape (rules STOR-19,
+MUTE-01).
 
-What a person loses if this is wrong is their whole muting list, and
-they find out at the next brief, when every device they had silenced
-arrives at once with nothing to explain it. So the shapes are tested
-separately rather than as one happy path: an entry that never had a
-picker touched, an entry carrying all twelve lists, an entry that has
-already been migrated, an entry holding only some of the twelve, and
-the jump the public will make from the release they are actually on.
+If this is wrong a person loses their whole muting list, and finds out
+at the next brief, when every device they had silenced arrives at once
+with nothing to explain it. So the shapes are tested separately rather
+than as one happy path: an entry that never had a picker touched, an
+entry carrying all twelve lists, an entry already migrated, an entry
+holding only some of the twelve, and the jump from the oldest public
+release in one load.
 
 The real fleet's options are read from the diagnostics file when it
 is present rather than hand-written here, because a hand-written
@@ -59,8 +60,8 @@ from custom_components.device_sentinel.const import (
 from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import setup_coordinator
 
-# The spellings a 0.16.3 entry carries, which is the release the
-# public sits on and therefore the one the single jump starts from.
+# The spellings an entry from the oldest public release carries, the
+# one the single jump starts from.
 PUBLIC_RELEASE_OPTIONS = {
     "excluded_integrations": ["tplink_router", "ping"],
     "excluded_labels": ["no_watch"],
@@ -76,7 +77,7 @@ PUBLIC_RELEASE_OPTIONS = {
     "freeze_excluded_devices": ["dev_frz_1"],
     "ignored_integrations": ["mobile_app"],
     "low_threshold": 20,
-    # Retired at #311, never swept, so a real entry still carries it.
+    # Retired, never swept, so a real entry still carries it.
     "signal_margin": 5,
     "signal_red_threshold": 10,
     "signal_sensitivity": 0,
@@ -135,10 +136,9 @@ async def test_settings_that_are_not_muting_are_untouched(
 
 
 async def test_the_retired_signal_keys_are_swept(hass: HomeAssistant):
-    """#311 turned four settings into constants and left the keys.
-
-    They have sat in every stored entry since, reading in diagnostics
-    as live settings, which is the rot ruling #49 exists to stop.
+    """Four settings that became constants have their keys swept, so
+    stored entries do not read in diagnostics as live settings
+    (rule STOR-19).
     """
     entry = await _migrated(hass, dict(PUBLIC_RELEASE_OPTIONS))
 
@@ -157,9 +157,10 @@ async def test_an_untouched_install_gains_no_keys(hass: HomeAssistant):
 
     for new in MUTING_KEY_RENAMES.values():
         assert new not in entry.options, new
-    # Two keys on purpose: step 5 writes down the persistent card's old
-    # default, so the new default of off reaches new installs only
-    # (ruling #462), and step 7 keeps Advanced for an upgrade (#693).
+    # Two keys on purpose: one step writes down the persistent card's
+    # old default, so the new default of off reaches new installs only
+    # (rule NOTE-11), and another keeps Advanced for an upgrade
+    # (rule DASH-03).
     assert entry.options == {"low_threshold": 15, "persistent_enabled": True, "dashboard_mode": "advanced"}
     assert entry.minor_version == OPTIONS_MINOR_VERSION
 
@@ -219,11 +220,10 @@ async def test_an_already_muted_entry_is_not_disturbed(
 async def test_the_public_jump_from_the_current_release(
     hass: HomeAssistant,
 ):
-    """0.16.3 is what the public runs, and it arrives in one load.
+    """The oldest public release arrives in one load.
 
-    The author and the beta tester take the steps one at a time, so
-    this path is the one nobody exercises by hand before it reaches
-    a stranger's system.
+    Testers take the steps one at a time, so this path is the one nobody
+    exercises by hand before it reaches a stranger's system.
     """
     entry = await _migrated(hass, dict(PUBLIC_RELEASE_OPTIONS), minor_version=1)
 
@@ -244,12 +244,11 @@ async def test_the_reference_fleet_s_own_entry_survives(
     """The real options, read from a diagnostics download.
 
     A hand-written entry holds what the author expects. This one
-    holds what the integration actually wrote on a live system, which
-    is the difference that has caught two releases already.
+    holds what the integration actually wrote on a live system.
     """
     # Read from the reference fleet's folder, like every other fleet
-    # case. It used to read the chat's upload folder, whose contents
-    # are whatever was sent last, from any house.
+    # case, never from a folder whose contents are whatever was sent
+    # last, from any house.
     files = sorted(fleet_path("reference").glob("config_entry-device_sentinel-*.json"))
     if not files:
         pytest.skip(FLEET_ABSENT)
@@ -282,7 +281,7 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
     """Stored settings-changed rows carry option keys, so they move.
 
     The brief turns each recorded key into the label a person read on
-    the screen (ruling #314). Rename the keys and leave the history
+    the screen (rule CFG-02). Rename the keys and leave the history
     alone and every brief covering a day before the upgrade prints
     `excluded_devices` at a person for as long as the row is kept.
     """
@@ -376,12 +375,11 @@ async def test_a_row_written_after_the_rename_is_left_alone(
 ):
     """`excluded_integrations` means two different settings.
 
-    It was the muting key until 0.16.18 moved it and is the ignore key
-    since 0.16.19 moved into the word it vacated. Read without a date,
-    a row written by today's release would be rewritten by tomorrow's
-    load into a setting its author never touched, and the brief would
-    name the wrong screen field at a person. The storage file's own
-    version stamp is what tells the two apart.
+    It was the muting key in older releases and is now the ignore key.
+    Read without a date, a row written by today's release would be
+    rewritten by tomorrow's load into a setting its author never
+    touched, and the brief would name the wrong screen field at a
+    person. The storage file's own version stamp tells the two apart.
     """
     hass_storage[STORAGE_KEY] = {
         "version": 1,
@@ -417,7 +415,7 @@ async def test_the_retired_sliders_are_dropped(hass: HomeAssistant):
     They were sliders while their numbers were guesses. The numbers
     settled, so the code states them as constants, and a stored value
     left behind would make an entry behave differently from what the
-    code says (ruling #394).
+    code says (rule STOR-19).
     """
     entry = await _migrated(
         hass,
@@ -442,10 +440,10 @@ async def test_a_threshold_nobody_set_is_pinned_at_twenty(
 ):
     """The new default is for new installs, not for existing houses.
 
-    Twenty was the default until 0.20.11 and fifteen is the default
-    after it. An entry that never stored one would otherwise start
-    judging batteries differently on upgrade, without its owner
-    asking for that (ruling #394).
+    Older releases defaulted to twenty and newer ones to fifteen. An
+    entry that never stored one would otherwise start judging batteries
+    differently on upgrade, without its owner asking for that
+    (rule BAT-03).
     """
     entry = await _migrated(hass, {}, minor_version=3)
 

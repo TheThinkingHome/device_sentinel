@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.25.5 (2026-10-10)
+# File: tests/test_power_source.py, Version: 0.27.10 (2026-10-27)
 
-"""What powers each device (0.24.7, Project__0_24_7.md).
+"""What powers each device (rules DEV-06, DEV-07, DEV-08, DEV-09).
 
 The owner's entry first, then the Battery Notes library shipped inside
 Device Sentinel, otherwise "Not known". The pencil is on the device
@@ -123,10 +123,10 @@ def test_the_shipped_library_loads_and_a_damaged_one_does_not_stop(tmp_path, cap
 
 
 def test_the_licence_line_counts_the_shipped_library():
-    """The library is refreshed with every Latest (0.24.7, ruling 3), and
-    the licence file's copy line is updated by hand at each refresh. A
-    refresh that forgot the line would ship a notice that misstates
-    what Device Sentinel carries (0.24.11)."""
+    """The library is refreshed with every Latest, and the license file's
+    copy line is updated by hand at each refresh. A refresh that forgot
+    the line would ship a notice that misstates what Device Sentinel
+    carries (rule REL-15)."""
     from pathlib import Path
 
     data = Path(power_source.__file__).parent / "data"
@@ -255,7 +255,7 @@ async def test_no_link_without_a_maker_or_when_it_says_what_the_library_says(has
     assert coord.power_view(device.id)["report_url"] is None, "the form refuses a device with no maker"
 
 
-# ------------------------------------------------------------ the answers file (0.25.1)
+# ------------------------------------------------------------ the answers file
 
 
 def _answers(power):
@@ -357,7 +357,7 @@ async def test_the_page_carries_the_power_block(hass: HomeAssistant, hass_ws_cli
     assert "battery_type" not in reply["result"]["identity"]
 
 
-# ------------------------------------------------ one entry for the model (0.24.8)
+# ------------------------------------------------ one entry for the model
 
 
 async def _four_of_a_kind(hass, hass_ws_client):
@@ -385,7 +385,7 @@ async def test_one_entry_covers_every_device_of_the_model(hass: HomeAssistant, h
         assert view["set_on_name"] == "Button Master Shower"
     assert coord.power_view(stranger.id)["words"] == "Not known", "another model took the entry"
     # The same model written another way is another model: same means
-    # exactly the same (0.24.8).
+    # exactly the same (rule DEV-07).
     lookalike, _ = register_device(hass, "mk8", "Lookalike")
     _made_by(hass, lookalike, "Unlisted Maker", "Unlisted Sensor", "UL SENSOR 1")
     assert coord.power_view(lookalike.id)["words"] == "Not known", "a model written another way took the entry"
@@ -428,8 +428,8 @@ async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_stora
 async def test_the_copy_for_0_24_7_is_never_read_back_as_an_entry(hass: HomeAssistant, hass_storage, hass_ws_client):
     coord, client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
     await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
-    # The power file as 0.25.0 wrote it: each model entry, and a copy
-    # under the device it was set on, marked with its model.
+    # The power file as an older release wrote it: each model entry, and
+    # a copy under the device it was set on, marked with its model.
     power = coord._power_payload()
     for key, model_entry in power["models"].items():
         copy = {f: model_entry[f] for f in ("kind", "type", "quantity", "set")}
@@ -468,7 +468,7 @@ async def test_a_removed_setter_hands_the_entry_to_another_of_the_model(hass: Ho
     await hass.async_block_till_done()
     await registry_settled(hass)
     # The last of the model is held 30 days, and the entry with it
-    # (ruling #622); the purge takes both.
+    # (rule WATCH-07); the purge takes both.
     assert len(coord._power_models) == 1, "the entry went before the hold ended"
     for d in survivors:
         coord.data[DATA_DEVICES][d.id][DEV_REMOVED_SINCE] -= 31 * 86400
@@ -490,8 +490,8 @@ async def test_an_entry_set_on_a_device_since_gone_names_no_ghost(hass: HomeAssi
 
 
 async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssistant, hass_storage):
-    """A pencil save is written a second later; a reload or a stop inside
-    that second lost it (0.24.9, found before Latest)."""
+    """A pencil save is written a second later, so a reload or a stop
+    inside that second must keep it (rule STOR-20)."""
     device, _ = register_device(hass, "rs1", "Saved Then Reloaded")
     _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1")
     entry = await setup_entry(hass)
@@ -506,7 +506,7 @@ async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssista
     assert [m["type"] for m in models.values()] == ["CR2032"]
 
 
-# ------------------------------------------------------------ malformed input (0.24.11)
+# ------------------------------------------------------------ malformed input
 
 
 def _registry_with_numbers(hass, hass_storage, device_id, **fields):
@@ -529,11 +529,10 @@ def _registry_with_numbers(hass, hass_storage, device_id, **fields):
 
 
 async def test_a_device_saved_with_a_numeric_maker_keeps_its_page_and_the_brief(hass: HomeAssistant, hass_storage):
-    """Since 0.24.9 the brief's recommendation lines ask the library about
-    every device. A maker saved as the number 7 failed that lookup, so the
-    whole brief, the device's page and the Recommendations tab failed with it
-    (0.24.11). The device reads as the text Home Assistant itself would give
-    it today."""
+    """The brief's recommendation lines ask the library about every
+    device, so a maker saved as the number 7 must not fail the brief,
+    the device's page or the Recommendations tab. The device reads as
+    the text Home Assistant itself would give it today (rule CODE-09)."""
     device, _ = register_device(hass, "num", "Numbered Plug")
     numbers = {"manufacturer": 7, "model": 1234, "model_id": 56, "hw_version": 2}
     if hasattr(dr, "_validate_str"):
@@ -571,7 +570,7 @@ def test_a_malformed_library_entry_is_skipped_and_the_rest_kept(caplog):
     """A battery type or quantity the pencil would refuse is never shown from
     the library either: no hidden or control characters, 1 to 40 characters,
     a quantity of 1 to 8. The entry is left out with one warning; the good
-    entries beside it still answer (0.24.11)."""
+    entries beside it still answer (rule DEV-08)."""
     good = {"manufacturer": "Acme", "model": "Good", "battery_type": "AAA", "battery_quantity": 2}
     bad = [
         {"battery_type": "AA‮A"}, {"battery_type": "AA\nA"}, {"battery_type": ""}, {"battery_type": "   "},
@@ -602,12 +601,12 @@ def test_the_shipped_library_has_no_malformed_entry(caplog):
 # ------------------------------------------------- one write for a burst
 #
 # The last-good copy is tested with the answers file, in
-# test_answers_store.py (0.25.1).
+# test_answers_store.py.
 
 
 async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass_ws_client, hass_storage, freezer):
-    """The one-second wait still gathers a burst (0.24.7), now through
-    Device Sentinel's own timer rather than the store's."""
+    """The one-second wait gathers a burst, through Device Sentinel's own
+    timer rather than the store's (rule STOR-02)."""
     from homeassistant.util import dt as dt_util
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
     coord, client, device = await _setup(hass, hass_ws_client)
@@ -630,7 +629,8 @@ async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass
 
 
 async def test_clearing_a_devices_own_entry_leaves_the_models(hass: HomeAssistant, hass_ws_client):
-    """As on the Type row (found by review, 0.25.1)."""
+    """As on the Type row: clearing a device's own entry leaves the
+    model's (rule DEV-07)."""
     coord, _client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
     coord._power_entries[devices[0].id] = {"kind": "battery", "type": "AA", "quantity": 1, "set": None}
     coord.page_set_power(devices[1].id, "AAA", 2)
@@ -643,8 +643,8 @@ async def test_clearing_a_devices_own_entry_leaves_the_models(hass: HomeAssistan
 
 
 async def test_a_wired_source_typed_as_a_battery_reads_as_the_choice(hass: HomeAssistant, hass_ws_client):
-    """James's Z-Wave stick was saved as one battery called "USB Direct to
-    Server" before that was a choice (0.25.3)."""
+    """A Z-Wave stick saved as one battery called "USB Direct to Server"
+    before that was a choice reads as the choice (rule DEV-08)."""
     coord, _client, device = await _setup(hass, hass_ws_client)
     key = coord._power_key(device.id)
     coord._power_reset()

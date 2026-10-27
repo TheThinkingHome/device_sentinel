@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_priority_targets.py, Version: 0.27.4 (2026-10-25)
+# File: test_priority_targets.py, Version: 0.27.10 (2026-10-27)
 
 """Who gets a push, and when (rules NOTE-02, NOTE-07, BRIEF-11).
 
 High-priority targets get every push, Quiet Hours included.
 Normal-priority targets get every push except during Quiet Hours. The
-Daily Brief goes only to Send the Full Brief To. Before 0.27.4 Quiet
-Hours stopped every push, high priority included, and normal-priority
-targets were never sent anything.
+Daily Brief goes only to Send the Full Brief To.
 """
 
 from __future__ import annotations

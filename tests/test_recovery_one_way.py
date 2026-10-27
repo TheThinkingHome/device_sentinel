@@ -3,20 +3,21 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_recovery_one_way.py, Version: 0.27.10 (2026-10-27)
 
-"""A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
+"""A recovery goes one way, and the other rules it travels with
+(rules LIST-08, UP-06, FRZ-11, GEN-07, GEN-08, UNAV-07).
 
-#529: a recovery is announced only when a device that was not
-reporting starts reporting again. Frozen to unavailable is the device
-getting worse; unavailable to frozen happens only in a boot or a
-coordinator restart and is false data. On the reference rig the bus
-heard Switch Hall Living recover twice in one night without it ever
-speaking. #530: a bridge restoring a device's values is not the device
-speaking. #531, withdrawn before release, and #535: a restart or an outage is
-credited with nothing, on any stack. #532: integrations are named as Home Assistant shows them.
-#533: Device Sentinel's own text does not say "we". And the probe
-file keeps its lines when stored lines move in on an upgrade.
+A recovery is announced only when a device that was not reporting
+starts reporting again. Frozen to unavailable is the device getting
+worse; unavailable to frozen happens only in a boot or a coordinator
+restart and is false data, so without this rule a switch can be heard
+recovering twice in one night without ever speaking. A bridge
+restoring a device's values is not the device speaking. A restart or
+an outage is credited with nothing, on any stack. Integrations are
+named as Home Assistant shows them, and Device Sentinel's own text
+does not say "we". The probe file keeps its lines when stored lines
+move in on an upgrade.
 """
 
 from __future__ import annotations
@@ -68,7 +69,7 @@ def _item_kinds(coord, device_id):
     return set()
 
 
-# ------------------------------------------------------------------ #529
+# ------------------------------------------------ one way (rule LIST-08)
 
 
 async def test_getting_worse_is_not_a_recovery(hass: HomeAssistant, freezer):
@@ -79,7 +80,7 @@ async def test_getting_worse_is_not_a_recovery(hass: HomeAssistant, freezer):
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
     # Past the debounce a frozen device waits before it turns
-    # unavailable (round 29 of 0.26.6).
+    # unavailable (rule UNAV-03).
     await _minutes(hass, coord, freezer, 4)
     rows = [(r["kind"], r["event"], bool(r.get("superseded"))) for r in coord.data[DATA_INCIDENTS]]
     assert rows == [("frozen", "opened", False), ("unavailable", "opened", False), ("frozen", "resolved", True)], rows
@@ -94,7 +95,7 @@ async def test_the_step_back_is_not_reported(hass: HomeAssistant, freezer):
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
     # Past the debounce a frozen device waits before it turns
-    # unavailable (round 29 of 0.26.6).
+    # unavailable (rule UNAV-03).
     await _minutes(hass, coord, freezer, 4)
     before = list(coord.data[DATA_INCIDENTS])
     hass.states.async_set(value, "56")
@@ -122,7 +123,7 @@ async def test_the_one_real_recovery_is_heard_once(hass: HomeAssistant, freezer)
     assert not _item_kinds(coord, device.id)
 
 
-# ------------------------------------------------------------------ #530
+# ------------------------------------------ restored values (rule FRZ-11)
 
 
 async def _clockless(hass, freezer):
@@ -176,7 +177,7 @@ async def test_a_real_word_after_the_hold_still_counts(hass: HomeAssistant, free
     assert record[DEV_FROZEN_CATEGORY] is None
 
 
-# ------------------------------------------------- #531 withdrawn, #535
+# -------------------------------- no credit for a restart (rule UP-06)
 
 
 async def _cause_after(hass, lag, ended="intervention (reboot)"):
@@ -193,9 +194,8 @@ async def _cause_after(hass, lag, ended="intervention (reboot)"):
 
 
 async def test_a_reboot_revives_nothing_however_soon(hass: HomeAssistant):
-    """#535: a restart or an outage earns no credit, 13.5 hours after it
-    (the second fleet's P03, woken by hand) or 17 minutes (the reference
-    rig's 17 September). #531's window was withdrawn before release."""
+    """A restart or an outage earns no credit, whether 13.5 hours after
+    it (a device woken by hand) or 17 minutes (rule UP-06)."""
     assert await _cause_after(hass, 13.5 * 3600) == RECOVERY_CAUSE_UNOBSERVED
     assert await _cause_after(hass, 17 * 60) == RECOVERY_CAUSE_UNOBSERVED
 
@@ -204,7 +204,7 @@ async def test_a_bridge_reconnect_revives_nothing(hass: HomeAssistant):
     assert await _cause_after(hass, 60, "intervention (bridge reconnect)") == RECOVERY_CAUSE_UNOBSERVED
 
 
-# ------------------------------------------------------------- #532, #533
+# ---------------------------------- names and "we" (rules GEN-07, GEN-08)
 
 
 async def test_an_integration_is_named_as_home_assistant_shows_it(hass: HomeAssistant):
@@ -228,9 +228,9 @@ def test_the_legend_does_not_say_we():
 
 
 async def test_moving_stored_lines_in_keeps_the_lines_already_written(hass: HomeAssistant):
-    """The first start after an upgrade from 0.23.8: a catch-up fold wrote
-    its lines before the stored ones moved in, and the move replaced
-    the file."""
+    """The first start after an upgrade: a catch-up fold writes its lines
+    before the stored ones move in, so the move must not replace the
+    file (rule STACK-12)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._probe_write_lines(["| Sep 27 00:00 | zwave_js | day | | | the catch-up fold's line | | | |"])
@@ -243,7 +243,7 @@ async def test_moving_stored_lines_in_keeps_the_lines_already_written(hass: Home
     ], rows
 
 
-# ------------------------------------------------ #535 beyond the bridge
+# ------------------------------------------- beyond the bridge (rule UP-06)
 
 
 async def _behind(hass, freezer, domain="zwave_js"):
@@ -300,8 +300,8 @@ async def test_an_unavailable_device_recovers_when_its_stack_says_available(hass
 
 async def test_a_restart_does_not_move_a_working_device_clock(hass: HomeAssistant, freezer):
     """Home Assistant's own restart: values coming back inside the
-    startup grace are republished, not the device speaking (#535,
-    reversing #125's reboot stamp)."""
+    startup grace are republished, not the device speaking
+    (rule UNAV-05)."""
     device, entities = register_device(hass, "lamp", name="Lamp")
     entity_id = entities[0] if isinstance(entities, list) else entities
     hass.states.async_set(entity_id, "unavailable")
@@ -324,7 +324,7 @@ async def test_a_person_pairing_is_still_credited(hass: HomeAssistant):
     assert not attribution.credits(SimpleNamespace(kind=SYS_RESTART))
 
 
-# ------------------------------------------- #535 amended: fetched readings
+# ------------------------------------------------------ fetched readings
 
 
 async def _restarted(hass, domain):
@@ -358,7 +358,7 @@ async def _restarted(hass, domain):
 async def test_a_reading_fetched_from_the_device_is_the_device_answering(hass: HomeAssistant):
     """HomeKit Device polls the accessory when it connects: Presence
     Guest's 3:40 AM reading is the sensor answering, and it moves the
-    clock (#535, amended)."""
+    clock (rule FRZ-11)."""
     record, before = await _restarted(hass, "homekit_controller")
     assert record[DEV_LAST_ACTIVITY] > before
 
@@ -369,14 +369,14 @@ async def test_a_value_restored_from_a_cache_is_not(hass: HomeAssistant):
     assert record[DEV_LAST_ACTIVITY] == before
 
 
-# ------------------------------- #529: a standing item survives a restart
+# ---------------------- a standing item survives a restart (rule LIST-08)
 
 
 async def test_a_broker_outage_is_upstream_only_to_mqtt_devices(hass: HomeAssistant):
-    """The chaos weeks of 27 September: with the broker down, every device
-    in the house answered to it, Lutron Picos included, so their standing
-    items were hidden behind it and retired as recovered, and #535's hold
-    would have stopped judging every device in the house."""
+    """With the broker down, every device in the house answers to it,
+    Lutron Picos included, so their standing items are hidden behind it.
+    They must not be retired as recovered, and the hold must not stop
+    judging every device in the house (rule LIST-08)."""
     from homeassistant.config_entries import ConfigEntryState
     from homeassistant.helpers import device_registry as dr
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -401,7 +401,7 @@ async def test_a_silent_device_missing_from_the_source_is_not_retired(
     hass: HomeAssistant, monkeypatch
 ):
     """Whatever keeps a still-silent device's problem out of the source
-    for a moment, its item stays and no recovery is announced (#529)."""
+    for a moment, its item stays and no recovery is announced (rule LIST-08)."""
     from .test_upstream_loading import _never_reported, _resolved
 
     coord, device = await _never_reported(hass)
@@ -417,7 +417,8 @@ async def test_a_silent_device_missing_from_the_source_is_not_retired(
     assert not fired and _resolved(coord, device.id) == []
 
 
-# A problem hidden behind an outage dated from the start of the run is held, not closed and announced again (#529, every upstream).
+# A problem hidden behind an outage dated from the start of the run is
+# held, not closed and announced again, on every upstream (rule LIST-08).
 
 
 def _probe(hass, domain):
@@ -444,7 +445,7 @@ def _kinds(coord, device_id):
 
 @pytest.mark.parametrize("upstream", ["bridge", "integration", "broker", "wifi"])
 async def test_a_problem_hidden_by_a_start_of_run_outage_is_held(hass: HomeAssistant, freezer, upstream):
-    """Soil Irrigation (Monstera), 3:47 AM on 28 September, on every upstream."""
+    """Soil Irrigation (Monstera), 3:47 AM, on every upstream."""
     domain = {"bridge": "mqtt", "integration": "zwave_js", "broker": "mqtt", "wifi": "shelly"}[upstream]
     source, device, value, battery = _probe(hass, domain)
     hass.states.async_set(value, "40")
@@ -541,7 +542,7 @@ async def test_a_real_return_still_ends_the_problem(hass: HomeAssistant, freezer
     assert held == {"low_battery": 2.0}
 
 
-# ------------------- how long a recovered device was down (ruling #644)
+# --------------------- how long a recovered device was down (rule UNAV-07)
 
 
 async def _armed_device(hass, freezer, uid):
@@ -580,7 +581,7 @@ async def _minutes_on(hass, freezer, n):
 async def test_down_for_counts_from_when_the_device_went_silent(hass: HomeAssistant, freezer):
     """Frozen, then unavailable, then back: the recovery says how long
     since the device last spoke, not since it turned unavailable
-    (ruling #644)."""
+    (rule UNAV-07)."""
     from tests.helpers import record_events
 
     from custom_components.device_sentinel.const import EVENT_RECOVERED
@@ -625,7 +626,7 @@ async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_repor
     """A frozen verdict can clear on a minute tick when the wait grows (a
     day folds in, a setting changes). The silence is still running, so
     "down for" counts from the last report, not from the start of the
-    gap before it (ruling #644; adversarial round of 12 October 2026)."""
+    gap before it (rule UNAV-07)."""
     from tests.helpers import record_events
 
     from custom_components.device_sentinel.const import (
@@ -655,11 +656,10 @@ async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_repor
 
 
 async def test_a_report_stamped_before_the_opening_by_its_last_seen_clock(hass: HomeAssistant, freezer):
-    """With a Last Seen clock (#124) the recovering report carries the
-    stack's own time of contact, which can be older than the moment the
+    """With a Last Seen clock the recovering report carries the stack's
+    own time of contact, which can be older than the moment the
     incident opened. It is still a report, so "down for" counts from the
-    start of the silence it ended, 30 hours (ruling #644; adversarial
-    round of 12 October 2026)."""
+    start of the silence it ended, 30 hours (rules FRZ-11, UNAV-07)."""
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
     from tests.helpers import record_events
 
@@ -715,7 +715,7 @@ async def test_a_short_drop_on_a_quiet_device_reads_as_short(hass: HomeAssistant
     """A device that reports once an hour, quiet for 40 minutes, then
     unavailable for five: the trouble began as unavailable, so "down for"
     counts from when it went, five minutes, not the 45 since it last
-    spoke (ruling #644, amended 12 October 2026)."""
+    spoke (rule UNAV-07)."""
     from tests.helpers import record_events
 
     from custom_components.device_sentinel.const import EVENT_RECOVERED

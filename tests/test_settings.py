@@ -3,19 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_settings.py, Version: 0.23.5 (2026-09-25)
+# File: test_settings.py, Version: 0.27.10 (2026-10-27)
 
-"""The reorganized settings screen and the brief wording it governs.
+"""The settings screens and the brief wording they govern (rules
+CFG-02, LIST-10, BRIEF-13).
 
 One screen for notifications and the daily brief, in three sections
-that flatten to the same stored keys as before, so the screen gained
-sections while the storage did not. A separate Advanced screen whose
-sliders feed live coordinator properties, clamped to safe bands, with
-defaults that leave an untouched install behaving exactly as it did
-before. Alongside the flow, the two brief wording fixes ruled from the
-first live file: a never-reported device's SINCE cell says discovered,
-and the counts line reads as a sentence. This file holds the section
-flattening, the advanced sliders, and those wording riders.
+that flatten to the same stored keys, so the screen has sections while
+the storage does not. A separate Advanced screen whose sliders feed
+live coordinator properties, clamped to safe bands, with defaults that
+leave an untouched install behaving as it always has. Beside the flow,
+the brief's wording: a never-reported device's SINCE cell says
+discovered, and the counts line reads as a sentence.
 """
 
 import os
@@ -65,7 +64,7 @@ def _brief_text(hass):
     """Return the brief that was written, whatever its name.
 
     Named for the day its window opened, which is not today's date
-    when the window began before the brief hour (0.7.5).
+    when the window began before the brief hour.
     """
     path = hass.config.path(
         "device_sentinel", "daily_brief.html"
@@ -154,11 +153,11 @@ async def test_advanced_stores_and_coordinator_reads_live(
 async def test_advanced_defaults_match_the_shipped_constants(
     hass: HomeAssistant,
 ):
-    """An untouched install behaves exactly as 0.7.0 did.
+    """An untouched install behaves as it always has.
 
-    The two shares are constants since 0.20.11 rather than settings,
-    so what is asserted here is that the constant reaches the
-    coordinator, not that an option does (ruling #394).
+    The two shares are constants rather than settings, so what is
+    asserted here is that the constant reaches the coordinator, not
+    that an option does.
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -168,14 +167,14 @@ async def test_advanced_defaults_match_the_shipped_constants(
 
 
 # ==================================================================
-# The brief wording ruled from the first live file.
+# The brief's wording.
 # ==================================================================
 
 async def test_brief_says_discovered_for_never_reported(
     hass: HomeAssistant,
 ):
-    """#118: the SINCE cell for a never-reported device is when it
-    was discovered in the registry, and says so."""
+    """The SINCE cell for a never-reported device is when it was
+    discovered in the registry, and says so (rule LIST-10)."""
     device = _register(hass, "nr1", "Silent From Birth")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -197,8 +196,8 @@ async def test_brief_says_discovered_for_never_reported(
 
 
 async def test_counts_line_reads_naturally(hass: HomeAssistant):
-    """#117 rider: '2 devices need attention, one of them
-    acknowledged.' rather than clipped fragments."""
+    """'2 devices need attention, one of them acknowledged.' rather than
+    clipped fragments."""
     names = ["Counts One", "Counts Two"]
     devices = [_register(hass, f"c{i}", name) for i, name in enumerate(names)]
     entry = await setup_entry(hass)
@@ -214,14 +213,14 @@ async def test_counts_line_reads_naturally(hass: HomeAssistant):
     await coord.async_todo_update(uid=uid, status="completed")
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    # #123: the acknowledged device leaves the brief entirely, so the
-    # count is of what the reader still needs to act on.
+    # The acknowledged device leaves the brief entirely, so the count is
+    # of what the reader still needs to act on (rule NOTE-08).
     assert "1 device needs attention." in text
     assert "acknowledged" not in text
 
 
 # ==================================================================
-# Links in reports (issue #13).
+# Links in reports (rule BRIEF-13).
 # ==================================================================
 
 async def _open_notifications(hass, entry):

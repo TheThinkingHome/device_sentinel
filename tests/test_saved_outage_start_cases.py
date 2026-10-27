@@ -3,15 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_saved_outage_start_cases.py, Version: 0.26.0 (2026-10-12)
+# File: test_saved_outage_start_cases.py, Version: 0.27.10 (2026-10-27)
 
-"""The saved outage start under restarts, renames and removals (ruling #647).
+"""The saved outage start under restarts, renames and removals
+(rules FRZ-14, UNAV-04).
 
 A device with two entities on a one-hour rhythm: an outage across a
 restart is not learned; a lone entity going unavailable, or one removed
-while unavailable, starts no outage; a rename changes nothing, since the
-start is the device's; the debounce counts from the moment the whole
-device went. Found by the adversarial round of 12 October 2026.
+while unavailable, starts no outage; a rename changes nothing, since
+the start is the device's; the debounce counts from the moment the
+whole device went.
 """
 
 from __future__ import annotations
@@ -55,10 +56,10 @@ async def _ready(hass, freezer, uid, count=2):
 async def test_stale_absence_skips_the_unavailable_debounce(hass: HomeAssistant, freezer):
     """Entity 1 goes unavailable and stays so; the device says nothing new
     for forty minutes (its rhythm is an hour). Then entity 0 blips
-    unavailable for 150 seconds. Every entity reads bad only for those
-    100 seconds, under the 180-second debounce, so 0.25.6 published no
-    verdict. 0.26.0 dates the stamp from entity 1's start, forty minutes
-    old, and the next sweep publishes."""
+    unavailable for 150 seconds. Every entity reads bad only for those 100
+    seconds, under the 180-second debounce, so no verdict is owed; a stamp
+    dated from entity 1's start, forty minutes old, must not publish one
+    at the next sweep (rule UNAV-03)."""
     coord, device, eids = await _ready(hass, freezer, "a01")
     record = rec(coord, device.id)
     hass.states.async_set(eids[1], "unavailable")
@@ -79,8 +80,8 @@ async def test_stale_absence_skips_the_unavailable_debounce(hass: HomeAssistant,
 
 async def test_stale_absence_inflates_down_for(hass: HomeAssistant, freezer):
     """As A01 but the blip lasts five minutes, so a verdict is owed. The
-    recovered event's down_for (#644: unavailable counts from when it
-    went) should read about five minutes, not forty-five."""
+    recovered event's down_for counts from when the device went, so it
+    reads about five minutes, not forty-five (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, "a02")
     record = rec(coord, device.id)
     from tests.helpers import record_events
@@ -139,7 +140,7 @@ async def test_restart_inside_a_30_minute_outage(hass: HomeAssistant, freezer, a
     (700, 1800, 700, False),   # 1,400 s counted with half an hour stopped    # an hour stopped, under eight minutes absent, back after the grace
 ])
 async def test_stopped_within(hass: HomeAssistant, freezer, before, down, after, want_taint):
-    """The stop is taken out of the absence (#541, #647)."""
+    """The stop is taken out of the absence (rule UP-06)."""
     coord, device, eids = await _ready(hass, freezer, f"a04{before}{down}")
     record = rec(coord, device.id)
     debounce = coord._taint_debounce(record)

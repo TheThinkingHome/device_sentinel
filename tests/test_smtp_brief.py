@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_smtp_brief.py, Version: 0.23.0 (2026-09-24)
+# File: tests/test_smtp_brief.py, Version: 0.27.10 (2026-10-27)
 
-"""The daily brief by email through smtp.send_message.
+"""The daily brief by email through smtp.send_message (rule BRIEF-11).
 
 Home Assistant retires the old-style notify action per SMTP recipient
-in 2027.3 and raises a Repairs card for each use until then. Since
-2026.8 each recipient is a notify entity, and smtp.send_message is the
-action that still carries an HTML body; notify.send_message refuses
-one. The owner ruled on 24 September: offer SMTP recipients beside the
-old actions, send to them through smtp.send_message, and leave a
-chosen old action working as it did until Home Assistant removes it.
-The tests that are not guards fail on 0.22.28.
+and raises a Repairs card for each use until then. Each recipient is a
+notify entity, and smtp.send_message is the action that still carries
+an HTML body; notify.send_message refuses one. So SMTP recipients are
+offered beside the old actions and sent to through smtp.send_message,
+and a chosen old action keeps working until Home Assistant removes it.
 """
 
 from __future__ import annotations

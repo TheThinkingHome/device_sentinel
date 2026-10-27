@@ -3,13 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_restore.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_restore.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for 0.18.2, Restore (ruling #345).
-#
-# The subject is the one path nobody can rehearse in production: a
-# storage file that will not parse. Every test breaks a real file on
-# disk and reads the outcome a person would read.
+"""Restore: a main file that cannot be read is restored from its
+last-good copy and told (rules STOR-08, REP-08).
+
+The subject is the one path nobody can rehearse in production: a
+storage file that will not parse. Every test breaks a real file on
+disk and reads the outcome a person would read.
+"""
 
 import json
 import os
@@ -112,7 +114,7 @@ async def test_no_copy_means_no_restore(hass: HomeAssistant):
 async def test_an_unreadable_copy_is_never_written_over_the_live_file(
     hass: HomeAssistant,
 ):
-    """Two bad files are worse than one (ruling #345)."""
+    """Two bad files are worse than one (rule STOR-08)."""
     broken = "{not json at all"
     _write(hass, LIVE, broken)
     _write(hass, COPY, "{also broken")
@@ -132,7 +134,7 @@ async def test_a_truncated_copy_is_refused(hass: HomeAssistant):
 
 
 async def test_the_clocks_file_is_left_alone(hass: HomeAssistant):
-    """Only the main file is replaced (ruling #345)."""
+    """Only the main file is replaced (rule STOR-08)."""
     _write(hass, LIVE, "{broken")
     _write(hass, COPY, _good())
     clocks = _write(hass, CLOCKS, '{"data": {"clocks": {"d0": {}}}}')
@@ -166,7 +168,7 @@ async def test_setup_survives_an_unreadable_file(hass: HomeAssistant):
 async def test_setup_still_stops_when_nothing_can_be_restored(
     hass: HomeAssistant,
 ):
-    """The old behaviour survives where restore cannot help."""
+    """Setup still stops where restore cannot help (rule STOR-08)."""
     for name in (COPY, LIVE):
         path = hass.config.path(name)
         if os.path.exists(path):
@@ -208,8 +210,8 @@ async def test_the_notice_reaches_every_surface(hass: HomeAssistant):
     ]
     assert len(events) == 1
     assert "restored" in str(events[0].get("detail"))
-    # The durable surface is a repair card now, not a persistent
-    # notification (ruling #350).
+    # The durable surface is a repair card, not a persistent
+    # notification (rule REP-08).
     from homeassistant.helpers import issue_registry as ir
     from custom_components.device_sentinel.const import (
         DOMAIN,
@@ -258,7 +260,7 @@ async def test_the_loss_sentence_counts_midnights_not_hours(
 
 
 async def test_the_loss_sentence_speaks_in_two_forms(hass: HomeAssistant):
-    """Ruling #352: one arithmetic, a standalone and an embedded head.
+    """One arithmetic, a standalone and an embedded head (rule STOR-08).
 
     The standalone form stands in the repair card and the
     notification. The embedded form continues "restored from the
@@ -291,12 +293,10 @@ async def test_the_loss_sentence_speaks_in_two_forms(hass: HomeAssistant):
 async def test_the_brief_sentence_is_mechanically_clean(
     hass: HomeAssistant,
 ):
-    """Ruling #352: one colon, no capital splice, one full stop.
+    """One colon, no capital splice, one full stop (rule STOR-08).
 
-    The 27 August brief on the reference fleet showed the fault
-    twice: two colons, a capital "The" mid-sentence, and a double
-    full stop. This drives the real event through the real renderer
-    and refuses all three.
+    This drives the real event through the real renderer and refuses
+    two colons, a capital "The" mid-sentence, and a double full stop.
     """
     coord = await setup_coordinator(hass)
     coord._restored_from = dt_util.utcnow().timestamp() - 720.0
@@ -316,9 +316,9 @@ async def test_the_brief_sentence_is_mechanically_clean(
     assert ": The" not in sentence, sentence
     assert ".." not in sentence, sentence
     assert sentence.endswith("."), sentence
-    # A historic row from before 0.18.7 keeps its stored detail
-    # forever; the renderer must at least stop doubling its full
-    # stop. The colons inside old details are stored text and stay.
+    # A historic row written by an older release keeps its stored detail
+    # forever; the renderer must at least stop doubling its full stop.
+    # The colons inside old details are stored text and stay.
     old = dict(rows[0])
     old["detail"] = (
         "restored from the last-good copy: The copy was taken today "
@@ -343,22 +343,20 @@ async def test_the_brief_leads_with_the_restore(hass: HomeAssistant):
     assert "could not read its storage file" in said[0], said[:3]
 
 
-# 0.18.4 (ruling #348): the trigger that actually fires. Corruption
-# never raises to us. Home Assistant catches every JSONDecodeError,
-# renames the file to `.corrupt.<isotime>`, and returns None. Found
-# when James proposed testing Restore on his own system by deleting
-# the file and by renaming a text file over it: neither would have
-# fired Restore, and both would have overwritten his last-good copy
-# with an empty document.
+# The trigger that actually fires (rule STOR-08). Corruption never
+# raises to Device Sentinel: Home Assistant catches every
+# JSONDecodeError, renames the file to `.corrupt.<isotime>`, and returns
+# None. Deleting the file, or renaming a text file over it, would not
+# fire Restore, and both must not overwrite the last-good copy with an
+# empty document.
 
 
 def _clear_storage(hass):
     """Start from a known directory.
 
-    The harness reuses one config directory across tests in a file,
-    so a `.corrupt` file written by one test was still there for the
-    next and turned a missing-file case into a corrupt one. Found by
-    the suite, which is the right place to find it.
+    The harness reuses one config directory across tests in a file, so
+    a `.corrupt` file written by one test would still be there for the
+    next and turn a missing-file case into a corrupt one.
     """
     directory = hass.config.path(".storage")
     if not os.path.exists(directory):
@@ -450,10 +448,9 @@ async def test_setup_restores_from_an_empty_load(hass: HomeAssistant):
 async def test_an_empty_document_never_rotates_over_a_good_copy(
     hass: HomeAssistant,
 ):
-    """The data-loss path 0.18.2 shipped with (ruling #348), under
-    the rotation: an empty live file is never renamed over a
-    last-good copy that holds devices, because the load that found
-    the copy usable restored from it rather than arming."""
+    """Under the rotation, an empty live file is never renamed over a
+    last-good copy that holds devices, because the load that found the
+    copy usable restored from it rather than arming (rule STOR-04)."""
     _clear_storage(hass)
     _write(hass, COPY, _good())
     before = open(hass.config.path(COPY)).read()
@@ -473,11 +470,10 @@ async def test_an_empty_document_never_rotates_over_a_good_copy(
 async def test_a_restored_file_that_still_will_not_load(
     hass: HomeAssistant,
 ):
-    """A second failure gives the sentence, not a traceback (#348).
+    """A second failure gives the sentence, not a traceback (rule STOR-08).
 
-    The reload after a restore was unguarded. When the restored file
-    would not load either, the exception escaped `async_setup_entry`
-    and a person got exactly the traceback #327 exists to prevent.
+    When the restored file will not load either, the exception must not
+    escape `async_setup_entry` and show a person a traceback.
     """
     from homeassistant.config_entries import ConfigEntryState
     from pytest_homeassistant_custom_component.common import (
@@ -497,9 +493,8 @@ async def test_a_restored_file_that_still_will_not_load(
     assert entry.state is ConfigEntryState.SETUP_ERROR
 
 
-# 0.18.5 (ruling #349): the notice names what was copied.
-# On the reference fleet's live test of 27 August a deleted storage
-# file produced three evidence files and a notice claiming four.
+# The notice names what was copied, so a deleted storage file's notice
+# counts the evidence files it really made (rule STOR-11).
 
 
 async def test_the_notice_names_only_what_was_copied(
@@ -540,7 +535,7 @@ async def test_the_notice_names_all_four_when_all_four_exist(
     _write(hass, CLOCKS, '{"data": {"clocks": {}}}')
     _write(hass, CCOPY, '{"data": {"clocks": {}}}')
     _stamp, copied = await async_copy_evidence(hass)
-    # Three since #370: the clocks last-good is retired, so a stale
+    # Three, because the clocks file keeps no last-good copy, so a stale
     # one on disk is not evidence of anything.
     assert len(copied) == 3, copied
 
@@ -551,9 +546,9 @@ async def test_nothing_to_copy_says_so(hass: HomeAssistant):
     assert stamp is None and copied == []
 
 
-# 0.18.6 (ruling #350): the durable surface is a repair card, and
-# Home Assistant's own critical issue is cleared after a successful
-# restore because its advice would undo the recovery.
+# The durable surface is a repair card, and Home Assistant's own
+# critical issue is cleared after a successful restore because its
+# advice would undo the recovery (rule REP-08).
 
 HA_DOMAIN = "homeassistant"
 
@@ -589,7 +584,7 @@ async def test_the_card_replaces_the_notification(
 
 
 async def test_home_assistants_issue_is_cleared(hass: HomeAssistant):
-    """Its advice would undo the recovery (ruling #350)."""
+    """Its advice would undo the recovery (rule REP-08)."""
     from homeassistant.helpers import issue_registry as ir
     from custom_components.device_sentinel.const import STORAGE_KEY
 

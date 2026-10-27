@@ -3,36 +3,31 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_source_hygiene.py, Version: 0.16.8 (2026-08-20)
+# File: tests/test_source_hygiene.py, Version: 0.27.10 (2026-10-27)
 
-"""Two guards against a class of edit accident nothing else can see.
+"""Two guards against a class of edit accident nothing else can see
+(rules CODE-04, CODE-02).
 
-On 20 August a deep pass found three sites where an edit had spliced
-a line into a call at the wrong indentation. All three were valid
-Python, so the suite, ruff at its pinned rules, and bandit passed
-over every one. Two were logging calls whose placeholder and
-argument counts no longer matched: Python's logging swallows that
-mismatch inside its own handler, so the message never reaches the
-log and the caller never learns. One of the two was the trim's only
-error path, telling a person their storage copy failed; it had never
-once produced its message. The third was a field tuple pasted twice,
-inert by luck because the reader only takes a minimum and a maximum.
+A line spliced into a call at the wrong indentation is valid Python, so
+the suite, ruff at its pinned rules, and bandit all pass over it. A
+logging call whose placeholder and argument counts no longer match is
+swallowed inside Python's logging handler, so the message never reaches
+the log and the caller never learns; on an error path that tells a
+person their storage copy failed, the message is never seen.
 
 Ruff carries the rule for the logging half and cannot apply it here,
 because it resolves a logger only where `logging.getLogger` sits in
 the same file, and this project binds LOGGER once in `const.py`. So
-the check lives in the suite instead, beside the citation guard,
-which is the same idea (ruling #233): a convention the code relies
-on, watched by the code.
+the check lives in the suite instead, beside the citation guard, which
+is the same idea: a convention the code relies on, watched by the code.
 
-What these prove is narrow and stated plainly. The first proves
-every LOGGER call formats: the count of `%` conversions in a
-constant format string equals the count of arguments. It cannot
-judge an f-string or a computed format, and skips them. The second
-proves no line inside an open bracket sits at or below the indent of
-the line that opened it, which is the fingerprint all three
-accidents shared. Neither can tell a wrong argument from a right
-one; that still needs a person reading.
+What these prove is narrow and stated plainly. The first proves every
+LOGGER call formats: the count of `%` conversions in a constant format
+string equals the count of arguments. It cannot judge an f-string or a
+computed format, and skips them. The second proves no line inside an
+open bracket sits at or below the indent of the line that opened it,
+which is the fingerprint such accidents share. Neither can tell a wrong
+argument from a right one; that still needs a person reading.
 """
 
 from __future__ import annotations
@@ -171,7 +166,7 @@ def test_every_logger_call_can_format_its_message():
 
 
 def test_no_line_inside_a_bracket_sinks_to_its_opener():
-    """The shared fingerprint of all three 20 August edit accidents."""
+    """The shared fingerprint of a line spliced in at the wrong indent."""
     found = [
         line for path in _sources() for line in _sunken_continuations(path)
     ]
@@ -182,31 +177,29 @@ def _retired_names() -> set[str]:
     """Return the names no longer in use anywhere.
 
     A name can be retired by one step and taken up by the next:
-    `excluded_integrations` was the muting key until #316 moved it and
-    is the ignore key since #317 moved into the word it vacated. Such
-    a name is live, not retired, so the targets are subtracted from
-    the sources rather than the two being read as one list.
+    `excluded_integrations` was once the muting key and is now the ignore
+    key. Such a name is live, not retired, so the targets are subtracted
+    from the sources rather than the two being read as one list.
     """
     return set(OPTION_KEY_RENAMES) - set(OPTION_KEY_RENAMES.values())
 
 
 def test_no_retired_exclude_option_name_survives_in_source():
-    """The twelve muting keys keep one spelling (ruling #316).
+    """The twelve muting keys keep one spelling (rule MUTE-10).
 
-    The rename could fail two ways that nothing else here would
-    catch. A reader left on an old key name reads an option that no
-    longer exists, finds nothing, and silently judges a device its
-    owner muted; renaming the constants makes that an import error,
-    but a bare string in a dictionary or a test payload has no
-    constant to break. And the migration itself has to keep the old
-    names, so the guard reads them from the map rather than from a
-    second copy of the list.
+    The rename could fail two ways that nothing else here would catch. A
+    reader left on an old key name reads an option that no longer exists,
+    finds nothing, and silently judges a device its owner muted; renaming
+    the constants makes that an import error, but a bare string in a
+    dictionary or a test payload has no constant to break. And the
+    migration itself has to keep the old names, so the guard reads them
+    from the map rather than from a second copy of the list.
 
     Three files are exempt and named rather than pattern-matched:
-    const.py, which holds the map; this file, which reads it; and
-    the migration's own test, whose fixtures are written in the old
-    spellings because those are what it exists to take. `excluded_areas`
-    is exempt everywhere, being a dead key kept for the sweep to find.
+    const.py, which holds the map; this file, which reads it; and the
+    migration's own test, whose fixtures are written in the old spellings
+    because those are what it exists to take. `excluded_areas` is exempt
+    everywhere, being a dead key kept for the sweep to find.
     """
     allowed = {"excluded_areas"}
     retired = _retired_names() - allowed

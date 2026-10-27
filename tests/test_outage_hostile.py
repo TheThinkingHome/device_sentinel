@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_hostile.py, Version: 0.23.1 (2026-09-24)
+# File: tests/test_outage_hostile.py, Version: 0.27.10 (2026-10-27)
 
-"""Hard cases for the 0.21.12 outage rules (#440, #441, #445, #446).
+"""Hard cases for the outage rules (rules UP-03, UP-08, UP-15).
 
 Every one of these rules reads a failure time a record carries and
 does arithmetic on it. The storage check lets through any finite
-number (ruling #370), so a number no writer produces is fed here, and
+number (rule STOR-05), so a number no writer produces is fed here, and
 a clock can move backwards. None of it may raise, move an outage to a
 moment that did not happen, or hold a row forever. Values the check
 refuses are tested where they are refused, through the real load, in
@@ -185,9 +185,9 @@ async def test_two_entries_of_one_integration_recover_apart(
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
     made = []
-    # Two devices behind each hub, so each entry is an outage behind
-    # its devices: an entry carrying one device is that device offline
-    # and claims nothing (0.23.1).
+    # Two devices behind each hub, so each entry is an outage behind its
+    # devices: an entry carrying one device is that device offline and
+    # claims nothing (rule UP-05).
     for index in range(2):
         source = MockConfigEntry(domain="controller_hub", title=f"Hub {index}")
         source.add_to_hass(hass)

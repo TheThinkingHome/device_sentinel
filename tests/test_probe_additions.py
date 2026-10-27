@@ -3,27 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_probe_additions.py, Version: 0.26.4 (2026-10-15)
+# File: tests/test_probe_additions.py, Version: 0.27.10 (2026-10-27)
 
-"""What the probe records from 0.23.11 (ruled 27 September 2026).
+"""What the probe records (rule STACK-12).
 
-From the second fleet's capture of 26 September. Devices woken for a
-few seconds left no trace, because the probe read state once a minute;
-the Z-Wave library announces wake up, sleep, dead and alive as they
-happen. Z-Wave keeps each node's route, the repeaters its messages
-last travelled through, and a controller's health counters and
-background noise. A muted device read "reporting" in the probe's
-Device Sentinel column. For Thread, the upstream to build, the probe
-records border routers appearing and disappearing, from their own
-announcements through Home Assistant's shared zeroconf instance, and
-each Thread device's network ID.
+The probe reads state once a minute, so a device woken for a few
+seconds leaves no trace; the Z-Wave library announces wake up, sleep,
+dead and alive as they happen, and the probe records them. Z-Wave keeps
+each node's route, the repeaters its messages last travelled through,
+and a controller's health counters and background noise. A muted
+device reads muted, not "reporting", in the probe's Device Sentinel
+column. For Thread, the probe records border routers appearing and
+disappearing, from their own announcements through Home Assistant's
+shared zeroconf instance, and each Thread device's network ID.
 Recording only throughout: nothing is sent to any network.
 
 The fakes carry the shapes the libraries carry: zwave-js-server-python
-0.73.1 keeps a route as statistics.lwr with its raw data holding
-"repeaters" and "routeFailedBetween", and a controller's noise as
-"backgroundRSSI" by channel; a Thread node's network ID is attribute
-0/53/4.
+keeps a route as statistics.lwr with its raw data holding "repeaters"
+and "routeFailedBetween", and a controller's noise as "backgroundRSSI"
+by channel; a Thread node's network ID is attribute 0/53/4.
 """
 
 from __future__ import annotations
@@ -159,9 +157,9 @@ async def test_a_replaced_node_object_is_listened_to_afresh(hass: HomeAssistant)
 
 
 async def test_a_second_network_renames_the_listened_nodes(hass: HomeAssistant):
-    """A second Z-Wave network tags every node with its network
-    (0.26.4); the first network's listeners are made again under the
-    new name, so its event lines match its minute lines."""
+    """A second Z-Wave network tags every node with its network; the first
+    network's listeners are made again under the new name, so its event
+    lines match its minute lines."""
     node = _Node(7)
     _zwave(hass, [node])
     coord = await _study(hass, "zwave_js")

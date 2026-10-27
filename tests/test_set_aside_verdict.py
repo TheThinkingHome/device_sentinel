@@ -3,19 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_verdict.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_set_aside_verdict.py, Version: 0.27.10 (2026-10-27)
 
-"""The stale verdict of a set-aside device, and what it cost.
+"""The stale verdict of a set-aside device, and what it cost
+(rule WATCH-03).
 
-Reproduce the 27 minute recovery on a five minute absence.
-
-James's ZHA coordinator, 30 August 2026. It has no entities and
-never will, so the startup grace watches it, it is judged never
-reported, and five minutes later grace closes and it is set aside.
-The incident timeline recorded both cycles honestly, 300 seconds
-each. The recovery event announced 27 minutes, which is the span
-from the first cycle's opening to the second cycle's close, and that
-is what a voice assistant read out.
+A ZHA coordinator has no entities and never will, so the startup grace
+watches it, it is judged never reported, and five minutes later grace
+closes and it is set aside. The incident timeline records both cycles,
+300 seconds each. The recovery event must not announce 27 minutes, the
+span from the first cycle's opening to the second cycle's close,
+because that is what a voice assistant reads out.
 
 These tests report as well as assert, so the mechanism is visible
 whatever the outcome.
@@ -185,12 +183,12 @@ async def test_a_loaded_integration_ends_the_grace_exemption(
 async def test_the_cause_is_bounded_to_the_incident_that_closed(
     hass: HomeAssistant,
 ):
-    """Fix four: the bound of #228 was defeated at this call site.
+    """The bound on an explaining episode holds at this call site.
 
-    The resolution is written before the cause is asked, so asking
-    the log again returned nothing and the bound fell to zero, which
-    let any episode on the device answer. An episode far older than
-    this incident must not explain it.
+    The resolution is written before the cause is asked, so asking the log
+    again would return nothing and the bound would fall to zero, letting
+    any episode on the device answer. An episode far older than this
+    incident must not explain it (rule BRIEF-05).
     """
     coord, device, record = await _never_reporting_device(hass, "co6")
     coord._judge_all_devices()
@@ -215,8 +213,8 @@ async def test_the_cause_is_bounded_to_the_incident_that_closed(
     )
 
     causes = record_events(hass, EVENT_RECOVERED)
-    # The device speaks again, watched throughout, so the recovery
-    # is a real one and does announce (ruling #368).
+    # The device speaks again, watched throughout, so the recovery is a real
+    # one and does announce.
     record[DEV_EVENT_COUNT] = 1
     record[DEV_LAST_ACTIVITY] = 1_788_000_000.0
     record[DEV_FROZEN_CATEGORY] = None
@@ -230,8 +228,8 @@ async def test_the_cause_is_bounded_to_the_incident_that_closed(
     assert mine, "no recovery fired"
     print("RESOLVED BY:", mine[-1].get("resolved_by"))
     # A null cause reads unknown rather than being guessed into a
-    # self-recovery (ruling #291), so unknown is the right answer
-    # here: nobody knows, and the ancient reboot is not an answer.
+    # self-recovery, so unknown is the right answer here: nobody knows, and
+    # the ancient reboot is not an answer (rule BRIEF-05).
     assert mine[-1].get("resolved_by") == "unknown", (
         f"an episode nine days older than the incident explained it: "
         f"{mine[-1].get('resolved_by')}"

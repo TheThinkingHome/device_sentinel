@@ -3,24 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_tables.py, Version: 0.26.0 (2026-10-12)
+# File: test_storage_tables.py, Version: 0.27.10 (2026-10-27)
 
-"""The half of the file the shape check never read (ruling #332).
+"""The shape check reads every table and the clocks file, not only the
+device records (rule STOR-05).
 
-The device records are 171 KB of the reference fleet's 355 KB. The
-tables beneath them, the incident log, the system events, the to-do
-list and its journal, the silence episodes, the storm rows and the
-storm tally, are the other 184 KB, and the activity clocks file
-beside them was never checked at all.
+The device records are about half the file. The tables beneath them,
+the incident log, the system events, the to-do list and its journal,
+the silence episodes, the storm rows and the storm tally, are the rest,
+and the activity clocks file sits beside them.
 
-All three gaps feed one failure. A damaged table passes the check,
-the check reports clean, and the last-good copy is refreshed over the
-damage, so Heal and Restore read a copy of the fault. The ladder
-those two sit on rests entirely on the last-good pair being
-trustworthy.
+A damaged table that passes the check reports clean, and the last-good
+copy is refreshed over the damage, so Heal and Restore would read a
+copy of the fault. The ladder those two sit on rests entirely on the
+last-good pair being trustworthy (rule STOR-04).
 
 This check reports and touches nothing, exactly as the record check
-does (ruling #278).
+does.
 """
 
 import pytest
@@ -72,7 +71,7 @@ def _clock(**over):
         "signal_today_max": None,
         "signal_rail_count": 0,
         # The saved outage starts, written with each routine save
-        # since 0.26.0 (ruling #647).
+        # (rule UNAV-04).
         "down_since": None,
     }
     row.update(over)
@@ -283,14 +282,14 @@ def test_a_falsy_clocks_payload_never_raises(value):
     check_clocks(value)
 
 
-# ------------------------------------ a stamp is not optional (#333)
+# ------------------------------------ a stamp is not optional (rule STOR-05)
 
 
 def test_a_null_stamp_is_a_fault():
     """A duration may be null while a thing is still happening. The
     stamp that says when it happened may not: a null there sorts
     nowhere, formats as nothing, and reads as a row that never
-    occurred. Found by adversarial simulation on 24 August."""
+    occurred (rule STOR-05)."""
     faults = check_storage({DATA_INCIDENTS: [_incident(when=None)]})
     assert faults and faults[0][:2] == ("incidents[0]", "when")
 
@@ -312,8 +311,8 @@ def test_every_row_defining_stamp_is_required():
         SYSTEM_EVENT_SHAPE,
     )
 
-    # Required, and since 0.23.18 held to what is possible: a moment
-    # between 2020 and 2100, a span within 360 days (ruling #544).
+    # Required, and held to what is possible: a moment between 2020 and
+    # 2100, a span within 360 days (rule STOR-07).
     assert SYSTEM_EVENT_SHAPE["when"] == REAL_MOMENT
     assert STORM_SHAPE["at"] == REAL_MOMENT
     assert STRESS_SHAPE["at"] == REAL_MOMENT
@@ -321,12 +320,11 @@ def test_every_row_defining_stamp_is_required():
     for field in ("basis", "window"):
         assert EPISODE_SHAPE[field] == REAL_SPAN
     # And the ones that legitimately stay nullable. An episode's `at`
-    # was in the list above until 0.19.4 and did not belong there:
-    # `since` is what defines an episode row, and `at` is when it
-    # closed, which is unknown for as long as the silence runs
-    # (ruling #364). A stress row's `at` is different and stays
-    # required, because a stress row is folded only from an episode
-    # that has already closed.
+    # does not belong in the list above: `since` is what defines an
+    # episode row, and `at` is when it closed, which is unknown for as
+    # long as the silence runs (rule STOR-05). A stress row's `at` is
+    # different and stays required, because a stress row is folded only
+    # from an episode that has already closed.
     assert EPISODE_SHAPE["at"] != REAL_NUMBER
     assert EPISODE_SHAPE["ended"] != REAL_NUMBER
     assert EPISODE_SHAPE["lag"] != REAL_NUMBER
@@ -341,11 +339,11 @@ def test_a_not_a_number_stamp_is_a_fault():
         assert faults, value
 
 
-# --------------------------- the keys nothing verified (#334)
+# --------------------------- the keys nothing verified (rule STOR-05)
 
 
 def test_a_migration_marker_of_the_wrong_type_is_a_fault():
-    """The second adversarial pass found these unshaped.
+    """A migration marker of the wrong type is a fault (rule STOR-05).
 
     Both markers hold a version-like string that the load compares
     against an expected mark. A marker that does not match runs a
@@ -378,8 +376,8 @@ def test_the_backup_list_must_hold_strings():
 
 
 def test_every_key_both_fleets_hold_has_a_shape():
-    """The test that found #334, kept so the next key added to
-    storage cannot arrive unverified.
+    """Every key both fleets hold has a shape, so the next key added to
+    storage cannot arrive unverified (rule STOR-05).
 
     A key with no shape is skipped in silence, which is right for a
     field inside a row and wrong for a whole key: nothing else looks
@@ -388,7 +386,7 @@ def test_every_key_both_fleets_hold_has_a_shape():
     from custom_components.device_sentinel.normalise import SCALARS, TABLES
 
     known = set(TABLES) | set(SCALARS) | {"devices"}
-    # Every top-level key both real fleets carried on 24 August 2026.
+    # Every top-level key both real fleets carry.
     seen = {
         "devices", "first_installed", "setup_count", "stats_epoch",
         "saved_at", "last_version", "bridge_seen", "broker_seen",
@@ -399,7 +397,7 @@ def test_every_key_both_fleets_hold_has_a_shape():
     assert seen <= known, sorted(seen - known)
 
 
-# ------------------------- an open episode is not damage (#364)
+# ------------------------- an open episode is not damage (rule STOR-05)
 
 
 def _open_episode(**over):
@@ -422,13 +420,13 @@ def _open_episode(**over):
 
 
 def test_an_open_episode_is_not_a_fault():
-    """The false card Tim's fleet raised on 29 August 2026.
+    """An open episode is not a fault (rule STOR-05).
 
     An episode opens the moment a silence passes its basis and stays
     open until the device speaks, so a device silent across a load or
-    a fold has a row with None in `at` and `ended`. The table
-    required both, so four such devices produced eight faults and a
-    repair card that named nothing wrong.
+    a fold has a row with None in `at` and `ended`. Requiring both would
+    turn each such device into two faults and a repair card that names
+    nothing wrong.
     """
     assert check_storage({"silence_episodes": [_open_episode()]}) == []
 

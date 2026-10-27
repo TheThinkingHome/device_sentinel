@@ -3,14 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_parked_item_holds.py, Version: 0.27.7 (2026-10-27)
+# File: test_parked_item_holds.py, Version: 0.27.10 (2026-10-27)
 
-"""An item waiting its minute after its last problem cleared (rule
-LIST-06), against faults still held for their debounce and a person
-deleting the item: a problem that heals inside its debounce is never
-announced, a fault that matured while the item waited is sent if the
-device goes down again inside the minute, and a deleted item waits for
-nothing. Found by the first adversarial round of 0.27.7."""
+"""An item waiting its minute after its last problem cleared, against
+faults still held for their debounce and a person deleting the item
+(rule LIST-06).
+
+A problem that heals inside its debounce is never announced, a fault
+that matured while the item waited is sent if the device goes down
+again inside the minute, and a deleted item waits for nothing.
+"""
 from __future__ import annotations
 
 
@@ -48,10 +50,10 @@ async def _wait(hass, freezer, seconds):
 
 
 async def test_a_brief_drop_on_a_chatty_device_sends_nothing(hass: HomeAssistant, freezer):
-    """Debounce 30 s. Down 10 s, back. Before 0.27.7 the recovery
-    cancelled the hold and nothing reached the phone. Now the hold
-    matures during the park, is dropped, and the recovery at the end of
-    the minute finds no hold to cancel, so it is pushed alone."""
+    """Debounce 30 s. Down 10 s, back. The hold matures during the park, is
+    dropped, and the recovery at the end of the minute finds no hold to
+    cancel, so it is pushed alone.
+    """
     coord, dev, calls, heard = await _house(hass)
     down(coord, dev, FREEZE_CATEGORY_UNAVAILABLE, ago=0.0)
     await sync(hass, coord)
@@ -119,12 +121,12 @@ async def test_a_hand_deletion_during_the_minute_waits_for_nothing(hass: HomeAss
     assert count <= 3, f"{count} list syncs in two quiet minutes"
 
 
-# Second adversarial round of 0.27.7.
 async def test_a_ticked_item_is_silent_when_it_returns_in_its_minute(hass: HomeAssistant, freezer):
     """Fault held 30 s; person ticks it at 5 s; device up at 10 s (parked);
-    hold matures at 30 s in the park; device down again at 40 s.
-    Ruling: a ticked item is silent until its last problem clears, and a
-    return inside the minute announces nothing."""
+    hold matures at 30 s in the park; device down again at 40 s. A ticked
+    item is silent until its last problem clears, and a return inside the
+    minute announces nothing (rule LIST-03).
+    """
     coord, dev, calls, heard = await _house(hass)
     down(coord, dev, FREEZE_CATEGORY_UNAVAILABLE, ago=0.0)
     await sync(hass, coord)

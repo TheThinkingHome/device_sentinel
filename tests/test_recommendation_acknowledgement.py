@@ -3,17 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.10 (2026-10-27)
 
-"""The switched-off cards and acknowledging a recommendation.
+"""The switched-off cards and acknowledging a recommendation (rules
+REC-05, REC-07).
 
-Three cards join Last Seen Sensor Switched Off (ruling #698): Battery,
-Signal, and Z-Wave Status as its own card. Every row, and every
-written recommendation, carries a tick a person can set and take back
-(#699), kept in the answers file and forgotten when its device leaves
-the card or its line goes. A sensor a person switched off themselves
-starts ticked. What is ticked leaves the count and the emailed Brief
-(#700); Simple's cards and lines are marked (#695).
+Beside Last Seen Sensor Switched Off sit Battery, Signal, and Z-Wave
+Status as its own card. Every row, and every written recommendation,
+carries a tick a person can set and take back, kept in the answers file
+and forgotten when its device leaves the card or its line goes. A
+sensor a person switched off themselves starts ticked. What is ticked
+leaves the count and the emailed Brief (rules REC-08, REC-10); Simple's
+cards and lines are marked (rule REC-09).
 """
 
 from __future__ import annotations
@@ -46,9 +47,8 @@ def _card(coord, kind: str):
 
 
 async def test_the_battery_card_lists_its_devices_and_is_in_simple(hass: HomeAssistant):
-    """Ruling #698's Battery Sensor Switched Off card, shown in Simple
-    (#695); Signal Sensor Switched Off is shown in Simple too since
-    0.27.4 (rule REC-09)."""
+    """The Battery Sensor Switched Off card, shown in Simple; Signal
+    Sensor Switched Off is shown in Simple too (rules REC-05, REC-09)."""
     device, _ = _battery_off(hass, "hall", "Hall Motion")
     sig, (sig_entity,) = register_device(hass, "sig", name="Shed Plug")
     er.async_get(hass).async_update_entity(
@@ -68,8 +68,8 @@ async def test_the_battery_card_lists_its_devices_and_is_in_simple(hass: HomeAss
 
 
 async def test_a_tick_leaves_the_count_and_the_brief_and_can_be_taken_back(hass: HomeAssistant):
-    """Ruling #699: ticked, the row stays listed and leaves the count
-    and the emailed Brief; unticked, it counts again."""
+    """Ticked, the row stays listed and leaves the count and the emailed
+    Brief; unticked, it counts again (rule REC-07)."""
     device, _ = _battery_off(hass, "hall", "Hall Motion")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -86,8 +86,8 @@ async def test_a_tick_leaves_the_count_and_the_brief_and_can_be_taken_back(hass:
 
 
 async def test_the_brief_line_counts_what_is_not_ticked(hass: HomeAssistant):
-    """Ruling #724: the emailed Brief's line carries the same number as
-    the card's title, the rows not ticked, and leaves with the last."""
+    """The emailed Brief's line carries the same number as the card's
+    title, the rows not ticked, and leaves with the last (rule REC-10)."""
     first, _ = _battery_off(hass, "a", "Alpha")
     second, _ = _battery_off(hass, "b", "Bravo")
     entry = await setup_entry(hass)
@@ -102,7 +102,7 @@ async def test_the_brief_line_counts_what_is_not_ticked(hass: HomeAssistant):
 
 
 async def test_a_new_device_on_a_ticked_card_is_active_on_its_own(hass: HomeAssistant):
-    """James's example: three ticked, a fourth joins, the count is one."""
+    """Three ticked, a fourth joins, the count is one (rule REC-08)."""
     first, _ = _battery_off(hass, "a", "Alpha")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -118,7 +118,7 @@ async def test_a_new_device_on_a_ticked_card_is_active_on_its_own(hass: HomeAssi
 
 async def test_a_tick_is_forgotten_when_its_device_leaves_the_card(hass: HomeAssistant):
     """Switched on, the device leaves the card and its tick goes; off
-    again, it is active again (ruling #699)."""
+    again, it is active again (rule REC-07)."""
     device, entity_id = _battery_off(hass, "hall", "Hall Motion")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -138,8 +138,8 @@ async def test_a_tick_is_forgotten_when_its_device_leaves_the_card(hass: HomeAss
 
 
 async def test_a_sensor_its_person_switched_off_starts_ticked(hass: HomeAssistant):
-    """Frenck's review (point 4): shown, so the person sees Device
-    Sentinel would like it on, and not counted; unticking counts it."""
+    """Shown, so the person sees Device Sentinel would like it on, and
+    not counted; unticking counts it (rule REC-07)."""
     device, _ = _battery_off(hass, "hall", "Hall Motion", by=USER)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -152,8 +152,8 @@ async def test_a_sensor_its_person_switched_off_starts_ticked(hass: HomeAssistan
 
 
 async def test_a_written_line_is_ticked_by_its_key(hass: HomeAssistant):
-    """A line naming no device is ticked too (ruling #699), and leaves
-    the emailed Brief; Simple shows the target lines (#695)."""
+    """A line naming no device is ticked too, and leaves the emailed
+    Brief; Simple shows the target lines (rules REC-07, REC-09)."""
     entry = await setup_entry(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.old_phone"]})
     coord = entry.runtime_data
     lines = coord.recommendation_lines()
@@ -167,7 +167,7 @@ async def test_a_written_line_is_ticked_by_its_key(hass: HomeAssistant):
 
 
 async def test_ticks_survive_a_restart_in_the_answers_file(hass: HomeAssistant, hass_storage):
-    """Kept with the other answers a person gives (ruling #699)."""
+    """Kept with the other answers a person gives (rule STOR-20)."""
     device, _ = _battery_off(hass, "hall", "Hall Motion")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -185,7 +185,7 @@ async def test_ticks_survive_a_restart_in_the_answers_file(hass: HomeAssistant, 
 
 async def test_damaged_ticks_are_dropped_not_fatal(hass: HomeAssistant, hass_storage):
     """A tick that is not true or false is dropped and the start goes on
-    (#370's rule for the answers file)."""
+    (rule STOR-05)."""
     hass_storage[ANSWERS_STORE_KEY] = {
         "version": 1, "key": ANSWERS_STORE_KEY,
         "data": {"power": {}, "types": {}, "acknowledged": {"devices": {"battery_off": {"x": "yes"}}, "lines": []}},
@@ -212,7 +212,7 @@ async def test_a_line_missing_at_a_start_keeps_its_tick(hass: HomeAssistant, has
     """A line can be absent at a start, before a reader has heard, or
     while the Supervisor does not answer. Reading never forgets a tick,
     a start keeps it, and only the midnight run forgets a line that is
-    gone then (found by review)."""
+    gone then (rule REC-07)."""
     entry = await setup_entry(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.old_phone"]})
     coord = entry.runtime_data
     coord.set_recommendation_ack(True, line="target:notify.old_phone")
@@ -234,7 +234,7 @@ async def test_a_line_missing_at_a_start_keeps_its_tick(hass: HomeAssistant, has
 
 async def test_only_a_real_midnight_forgets(hass: HomeAssistant):
     """The catch-up fold a start runs forgets nothing; a real midnight
-    does (found by review)."""
+    does (rule REC-07)."""
     device, entity_id = _battery_off(hass, "hall", "Hall Motion")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -250,7 +250,7 @@ async def test_only_a_real_midnight_forgets(hass: HomeAssistant):
 
 async def test_the_report_writer_only_reads_the_ticks(hass: HomeAssistant):
     """The report is written off Home Assistant's own thread; it reads
-    the ticks and never changes them (found by review)."""
+    the ticks and never changes them (rule CODE-06)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._recommendation_acks = {"devices": {"battery_off": {"gone-device": True}}, "lines": {"gone": True}}

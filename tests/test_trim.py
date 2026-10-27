@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_trim.py, Version: 0.23.18 (2026-09-29)
+# File: test_trim.py, Version: 0.27.10 (2026-10-27)
 
-"""The trim choosers: erasing one device's history on purpose."""
+"""The trim choosers: erasing one device's history on purpose (rule
+CFG-10)."""
 from __future__ import annotations
 
 import json
@@ -35,7 +36,7 @@ from custom_components.device_sentinel.const import (
 from tests.helpers import register_device, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -74,7 +75,7 @@ async def test_a_device_trim_removes_its_history_and_nothing_else(
 ):
 
     """Records, episodes, incidents and list items go; the other
-    device keeps all four (ruling #307)."""
+    device keeps all four (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr1", "Trim Me")
@@ -111,8 +112,7 @@ async def test_a_device_trim_removes_its_history_and_nothing_else(
 
 async def test_the_pickers_empty_themselves(hass: HomeAssistant):
     """Otherwise the next save of any setting deletes again, and the
-    person could never touch Advanced without re-erasing (ruling
-    #307)."""
+    person could never touch Advanced without re-erasing (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr3", "Trim Me")
@@ -129,7 +129,7 @@ async def test_the_copy_is_written_before_anything_is_deleted(
     hass: HomeAssistant,
 ):
     """The copy is the only way back, so it lands first and it holds
-    what the deletion is about to remove (ruling #307)."""
+    what the deletion is about to remove (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr4", "Trim Me")
@@ -163,7 +163,7 @@ async def test_the_copy_is_written_before_anything_is_deleted(
 
 async def test_trimming_keeps_the_exclusion(hass: HomeAssistant):
     """A trimmed device is rediscovered in seconds, and trimming data
-    is not a statement about wanting the device gone (ruling #307)."""
+    is not a statement about wanting the device gone (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr5", "Trim Me")
@@ -187,7 +187,7 @@ async def test_trimming_an_empty_device_is_allowed(
     hass: HomeAssistant,
 ):
     """Idempotent on purpose: a faulty record can read as empty, and
-    that is the device a person will be told to pick (ruling #307).
+    that is the device a person will be told to pick (rule CFG-10).
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -204,7 +204,7 @@ async def test_trimming_an_empty_device_is_allowed(
 async def test_an_integration_trim_takes_every_device_on_it(
     hass: HomeAssistant,
 ):
-    """And leaves other integrations untouched (ruling #307)."""
+    """And leaves other integrations untouched (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     one, _ = register_device(hass, "tr7", "First")
@@ -225,7 +225,7 @@ async def test_an_integration_trim_takes_every_device_on_it(
 async def test_the_trim_writes_a_system_event(hass: HomeAssistant):
     """It lands in the histories and the brief reports it, because it
     is the one destructive act done on a person's instruction
-    (ruling #307)."""
+    (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr9", "Trim Me")
@@ -247,7 +247,7 @@ async def test_the_trim_writes_a_system_event(hass: HomeAssistant):
 
 async def test_system_events_survive_a_trim(hass: HomeAssistant):
     """They belong to the house, not to any device: a restart that
-    happened is still a restart that happened (ruling #307)."""
+    happened is still a restart that happened (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "tr10", "Trim Me")
@@ -266,11 +266,9 @@ async def test_two_trims_in_one_second_keep_both_copies(
 ):
     """The copy is the only way back, so it is never overwritten.
 
-    Found adversarially: the first stamp was the clock to the second
-    and the code comment said no person could collide it. The test
-    collided it on the first attempt, and a person saving the screen
-    twice in a hurry does the same, which is precisely when they are
-    most likely to want the earlier copy (ruling #307).
+    A stamp to the second collides when a person saves the screen twice
+    in a hurry, which is when they most want the earlier copy
+    (rule CFG-10).
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -299,7 +297,7 @@ async def test_the_section_arrives_nested_and_stores_flat(
     Assistant hands them back nested. The stored keys stay flat,
     because the coordinator reads them by name and a section is a way
     of drawing a screen rather than a change to what is stored
-    (ruling #307).
+    (rule CFG-02).
     """
     from homeassistant.data_entry_flow import FlowResultType
 
@@ -352,13 +350,11 @@ async def test_the_section_arrives_nested_and_stores_flat(
 async def test_an_ignored_device_is_named_not_numbered(
     hass: HomeAssistant,
 ):
-    """The event names a set-aside device, not its id (ruling #307).
+    """The event names a set-aside device, not its id (rule DEV-01).
 
-    Found on the first live trim: an ignored television was erased
-    and the brief recorded a thirty-two character hex id, because the
-    name lookup read the watched map alone while the picker had been
-    widened to every detected device. An event naming a device by id
-    answers nothing a month later.
+    The picker offers every detected device, so the name lookup reads
+    beyond the watched map. An event naming a device by a thirty-two
+    character hex id answers nothing a month later.
     """
     from homeassistant.helpers import device_registry as dr
 
@@ -399,9 +395,9 @@ async def test_an_ignored_device_is_named_not_numbered(
 async def test_a_trim_with_nothing_to_take_says_why(
     hass: HomeAssistant,
 ):
-    """On the first live trim an ignored television whose record had
-    already gone at a fold produced "nothing recorded", which reads
-    as a failed tool rather than a completed no-op (ruling #307)."""
+    """A device whose record already went at a fold says why, because
+    "nothing recorded" reads as a failed tool rather than a completed
+    no-op (rule CFG-10)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     target, _ = register_device(hass, "empty1", "Already Gone")
@@ -424,8 +420,8 @@ async def test_the_trim_pickers_are_not_a_settings_change(
     hass: HomeAssistant,
 ):
     """One deed, one row. The pickers move twice per trim, once when
-    picked and once when the save empties them, so naming them put
-    three events in the brief for one action (ruling #307)."""
+    picked and once when the save empties them, so naming them would
+    put three events in the brief for one action (rule CFG-10)."""
     from custom_components.device_sentinel.const import (
         SYS_OPTIONS_CHANGED,
     )
@@ -461,10 +457,10 @@ async def test_the_trim_pickers_are_not_a_settings_change(
     )
 
 
-# ------------------------------------------- what the log says (#329)
+# ------------------------------------------- what the log says (rule CODE-08)
 
 def test_the_trim_log_says_what_was_erased(caplog) -> None:
-    """The counts were accepted and dropped on the floor.
+    """The log line carries the counts it is given (rule CODE-08).
 
     A person reading this line after a trim that matched a device
     with no record needs to see the zero rather than infer it.

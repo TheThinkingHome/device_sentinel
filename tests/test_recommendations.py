@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_recommendations.py, Version: 0.27.10 (2026-10-27)
 
-"""The brief's Recommendations section (ruling #458).
+"""The brief's Recommendations section and the device cards (rules
+REC-02, REC-04, REC-10).
 
 What a person could change about their own setup, worst first: a
 message that goes nowhere, a family switched off in effect, what is
@@ -128,7 +129,7 @@ async def test_a_router_integration_watched_again_is_measured(hass: HomeAssistan
         registry.async_get_or_create(
             "device_tracker", "tplink_router", f"mac{n}", device_id=device.id
         )
-    # Sighted and excluded at setup (ruling #420), then taken off the
+    # Sighted and excluded at setup (rule MUTE-02), then taken off the
     # list by the person, which is the only way it is watched again.
     entry = await setup_entry(hass, {CONF_EXCLUDED_INTEGRATIONS: []})
     assert "tplink_router" in entry.runtime_data.excluded_integrations
@@ -169,9 +170,8 @@ async def test_the_worst_comes_first(hass: HomeAssistant):
 
 
 async def test_every_line_shows(hass: HomeAssistant):
-    """No cap (ruling #461, amending #458). Nothing is dismissed, so a
-    cap would hide every line below it for as long as those above it
-    stood."""
+    """No cap. Nothing is dismissed, so a cap would hide every line below
+    it for as long as those above it stood (rule REC-02)."""
     coord = await setup_coordinator(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.gone"]})
     coord.data[DATA_STORM_DAYS] = _noisy([f"poller{n}" for n in range(6)])
     lines = coord._recommendations_section()
@@ -200,10 +200,9 @@ async def test_the_written_brief_carries_the_section(hass: HomeAssistant):
     assert "notify.old_phone" in page
 
 
-# ------------------------------------------------ the library (#459)
-# The fourth fleet set its own exclusions to none and watches ping,
-# spook and mobile_app, the first house that did not take its list
-# from the reference system's.
+# ------------------------------------------------ the library (rule REC-03)
+# A house can set its own exclusions to none and watch ping, spook and
+# mobile_app, so its list is not taken from the defaults.
 
 
 def _watched_integration(hass, domain: str, uid: str):
@@ -394,7 +393,7 @@ async def test_a_single_muted_device_is_it_not_them(hass: HomeAssistant):
     assert "unexclude them" not in line
 
 
-# ------------------------------------------ recommendations about devices (0.24.9)
+# ------------------------------------------ recommendations about devices
 
 
 async def _house_for_cards(hass: HomeAssistant):
@@ -434,7 +433,7 @@ async def test_each_card_lists_its_devices(hass: HomeAssistant):
     assert ids["last_seen"] == [unknown.id]
     assert ids["area"] == [unknown.id]
     assert set(ids["names"]) == {twin_a.id, twin_b.id}, "names compared without regard to capitals"
-    # The two type cards come last (0.25.3); none of these devices has a type.
+    # The two type cards come last; none of these devices has a type.
     assert [card["kind"] for card in coord.device_recommendations()] == ["power", "last_seen", "area", "names", "type"]
     assert cards["last_seen"]["body"].startswith("1 device has a Last Seen sensor")
     names = [row["name"] for row in cards["power"]["devices"]]
@@ -468,7 +467,7 @@ async def test_the_emailed_brief_carries_one_line_each_with_its_link(hass: HomeA
 
     coord, *_ = await _house_for_cards(hass)
     text = _text(coord._recommendations_section())
-    # Each title counts the rows not ticked, as on the tab (ruling #724).
+    # Each title counts the rows not ticked, as on the tab (rule REC-08).
     active = {card["title"]: card["active"] for card in coord.device_recommendations()}
     for title in ("Power Not Set", "Last Seen Sensor Switched Off", "No Area Assigned", "Devices Sharing A Name"):
         assert active[title] > 0, title
@@ -500,7 +499,7 @@ async def test_only_the_recommendation_lines_carry_a_link(hass: HomeAssistant):
 
 
 # ==================================================================
-# Slow Reporting Devices (ruling #637, 0.26.0).
+# Slow Reporting Devices (rule REC-06).
 # ==================================================================
 
 def _wait_of(coord, device_id, rhythm_seconds):
@@ -515,7 +514,8 @@ def _slow_card(coord):
 
 
 async def test_a_device_whose_wait_is_over_the_line_is_offered_a_freeze_mute(hass: HomeAssistant):
-    """The card lists it in James's words, and it is not in the emailed brief."""
+    """The card lists it in its own words, and it is not in the emailed
+    brief (rule REC-06)."""
     slow, _ = register_device(hass, "slow1", "Guest Lamp")
     quick, _ = register_device(hass, "slow2", "Hall Motion")
     coord = await setup_coordinator(hass)
@@ -559,7 +559,7 @@ async def test_an_unarmed_device_has_no_wait_and_no_card(hass: HomeAssistant):
 async def test_a_device_muted_for_everything_leaves_the_card(hass: HomeAssistant):
     """Mute everything already stops every freeze verdict, so the card has
     nothing to offer it, whether the mute names the device, a label or the
-    integration (adversarial round two, 12 October 2026)."""
+    integration (rule REC-06)."""
     label = lr.async_get(hass).async_create("Ignore")
     by_device, _ = register_device(hass, "slow6", "Muted Device")
     by_label, _ = register_device(hass, "slow7", "Labelled Device")
@@ -611,8 +611,7 @@ async def test_the_card_leaves_off_only_the_devices_judgment_leaves_off(hass: Ho
     even with one entity unavailable; with a frozen verdict standing, or
     for a deep-sleep device, the freeze rule can judge it, so the card
     offers the mute. A dropped device is judged unavailable, never
-    frozen, so it stays off too (#636, #637 and #640; adversarial rounds
-    of 12 October 2026)."""
+    frozen, so it stays off too (rules REC-06, STACK-07)."""
     from custom_components.device_sentinel.const import DEV_FROZEN_CATEGORY, FREEZE_CATEGORY_FROZEN
 
     connected, (c_t, c_fw) = _esphome_slow_device(hass, "conn", False)

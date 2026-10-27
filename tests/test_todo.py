@@ -3,19 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.27.7 (2026-10-27)
+# File: test_todo.py, Version: 0.27.10 (2026-10-27)
 
-"""The problem list: one item per device, maintained by the sync.
+"""The problem list: one item per device, maintained by the sync
+(rules LIST-01, LIST-03, LIST-05, LIST-06, LIST-07, NOTE-12).
 
-The todo entity is where a person reads trouble devices. From 0.6.0 the
+The todo entity is where a person reads trouble devices. The
 detection-to-todo sync alone maintains it: one item per device keyed by
 device_id however many detections tag it, added on first appearance,
 its text following the kinds as they come and go, deleted the moment
 the last clears. A person can check an item to acknowledge it (it stays,
 marked done, its check time untouched by the sync) or hand-delete it (a
 still-troubled device is re-added fresh next sync). Every addition lands
-in the bounded journal and fires the dispatcher signal. This file holds
-the entity surface, the sync lifecycle, and the real-plumbing wiring.
+in the bounded journal. This file holds the entity surface, the sync
+lifecycle, the bus events, and the real-plumbing wiring.
 """
 
 import random
@@ -64,7 +65,7 @@ from custom_components.device_sentinel.normalise import repair_tables
 from tests.helpers import record_events, register_device, settle_parked, setup_coordinator, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 DOMAIN = "device_sentinel"
@@ -72,7 +73,7 @@ LIST_ENTITY = "todo.device_sentinel_problem_list"
 
 
 
-# Tim Plas's S63 carried down to 21.5 percent: steady, then speeding up.
+# S63 carried down to 21.5 percent: steady, then speeding up.
 SPEEDING = [round(level - 36.0, 1) for level in [
     73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
     74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
@@ -257,13 +258,13 @@ async def test_a_missing_status_does_not_reopen_an_item(
 async def test_a_hand_deletion_does_not_orphan_a_live_episode(
     hass: HomeAssistant,
 ):
-    """The pairing bug this release exists to stop.
+    """Each opening pairs with its own recovery.
 
-    The brief matches each opening to its recovery on a key of
-    device and kind. A second opening on a key that already had one
-    pending overwrote the entry, so the real opening was orphaned
-    and rendered as a fault that never resolved, while the spurious
-    one paired with the eventual recovery.
+    The brief matches each opening to its recovery on a key of device
+    and kind. A second opening on a key that already has one pending
+    must not overwrite the entry, or the real opening is orphaned and
+    rendered as a fault that never resolved, while the spurious one
+    pairs with the eventual recovery.
     """
     device, eids = _register_device(hass, "t8", "Episode Sensor")
     entry = await setup_entry(hass)
@@ -458,9 +459,7 @@ async def test_display_order_two_blocks(hass: HomeAssistant):
 
 
 async def test_journal_on_addition(hass: HomeAssistant):
-    """Every addition lands in the journal, once. (It also fired a
-    dispatcher signal for a planned engine until 0.23.19; nothing ever
-    listened, and the engine was built on the sync's own events.)"""
+    """Every addition lands in the journal, once (rule LIST-05)."""
     device, eids = _register_device(hass, "s6", "Porch Motion",
                                     battery=True)
     entry = await setup_entry(hass)
@@ -490,8 +489,8 @@ async def test_battery_flip_syncs_without_a_tick(hass: HomeAssistant):
                                     battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window
+    # the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
     hass.states.async_set(eids["plain"], "on")
 
@@ -508,8 +507,8 @@ async def test_battery_flip_syncs_without_a_tick(hass: HomeAssistant):
 
 
 async def test_setup_purges_hand_typed_items(hass: HomeAssistant):
-    """A pre-0.6.0 hand-typed item (no device_id) is purged at setup;
-    engine items gain the new fields in place."""
+    """A hand-typed item with no device_id is purged at setup; engine
+    items gain the new fields in place (rule LIST-01)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord.data["todo_items"] = [
@@ -574,7 +573,7 @@ async def test_option_exclusion_clears_the_item(hass: HomeAssistant):
         dt_util.utcnow().timestamp() - 8 * 3600
     )
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     coord._judge_all_devices()
     coord._sync_problem_list()
@@ -608,11 +607,11 @@ async def test_journal_cap_evicts_only_the_oldest(hass: HomeAssistant):
 async def test_a_falling_cell_reaches_the_problem_list(
     hass: HomeAssistant,
 ):
-    """Ruling #213. Low is a level that has been crossed; falling is
-    one that is going to be, and the two rarely name the same device.
-    The forecast is worth a person's attention on its own, so it
-    reaches the list like any other kind rather than living only on a
-    report they may never open.
+    """Low is a level that has been crossed; falling is one that is
+    going to be, and the two rarely name the same device. The forecast
+    is worth a person's attention on its own, so it reaches the list
+    like any other kind rather than living only on a report they may
+    never open (rule BAT-14).
 
     It reads as a warning rather than a fault, because the cell is
     working: what is wrong is where it is heading.
@@ -624,15 +623,15 @@ async def test_a_falling_cell_reaches_the_problem_list(
     hass.states.async_set(eids["plain"], "on")
 
     record = coord.data["devices"][device.id]
-    # Speeding up, the only fall that reaches the list since 0.27.0
-    # (#731): a steady one is a battery to watch.
+    # Speeding up, the only fall that reaches the list: a steady one is
+    # a battery to watch (rule BAT-14).
     record[DEV_BATTERY_DAILY] = list(SPEEDING)
     record[DEV_BATTERY_VALUE] = SPEEDING[-1]
     coord._sync_problem_list()
 
     item = _item_for(coord, device.id)
     assert item is not None
-    # The time left runs to the 15 percent threshold (#730).
+    # The time left runs to the 15 percent threshold (rule BAT-13).
     assert item["summary"] == (
         "Falling Cell: battery reaches 15% in under a week"
     )
@@ -642,7 +641,7 @@ async def test_low_and_falling_read_as_one_line(
     hass: HomeAssistant,
 ):
     """One device, one item, one line: the level then where it is
-    heading, rather than two phrases stacked (ruling #213)."""
+    heading, rather than two phrases stacked (rule BAT-14)."""
     device, eids = _register_device(hass, "bf2", "Dying Cell",
                                     battery=True)
     entry = await setup_entry(hass)
@@ -661,14 +660,13 @@ async def test_low_and_falling_read_as_one_line(
 async def test_the_falling_kind_keeps_an_acknowledgment(
     hass: HomeAssistant,
 ):
-    """Rulings #123 and #133 hold without amendment. Acknowledging
-    silences the phone and not the record, so a person who ticked off
-    a forecast still watches it come true on the list: the item stays,
-    gains the level, and says nothing further to anyone.
+    """Acknowledging silences the phone and not the record, so a person
+    who ticked off a forecast still watches it come true on the list:
+    the item stays, gains the level, and says nothing further to anyone
+    (rule NOTE-08).
 
-    This was nearly overturned when the falling kind arrived, on the
-    reasoning that acknowledging a forecast should not acknowledge the
-    event it forecasts. It does not need to: the item is still there.
+    Acknowledging a forecast does not acknowledge the event it
+    forecasts, and it does not need to: the item is still there.
     """
     device, eids = _register_device(hass, "bf3", "Watched Cell",
                                     battery=True)
@@ -677,8 +675,8 @@ async def test_the_falling_kind_keeps_an_acknowledgment(
     hass.states.async_set(eids["plain"], "on")
 
     record = coord.data["devices"][device.id]
-    # Speeding up, the only fall that reaches the list since 0.27.0
-    # (#731): a steady one is a battery to watch.
+    # Speeding up, the only fall that reaches the list: a steady one is
+    # a battery to watch (rule BAT-14).
     record[DEV_BATTERY_DAILY] = list(SPEEDING)
     record[DEV_BATTERY_VALUE] = SPEEDING[-1]
     coord._sync_problem_list()
@@ -700,11 +698,11 @@ async def test_the_falling_kind_keeps_an_acknowledgment(
 async def test_the_falling_line_says_what_is_empty(
     hass: HomeAssistant,
 ):
-    """Ruling #216. The item may carry the forecast and nothing else,
-    and "Door 2nd Bedroom: empty in about 2 weeks" sitting beside
-    "Soil Irrigation: battery 0%" leaves a reader to guess what is
-    empty. It reads once when both kinds are present, because the
-    level clause ahead of it has already said the word.
+    """The item may carry the forecast and nothing else, and "Door 2nd
+    Bedroom: empty in about 2 weeks" beside "Soil Irrigation: battery
+    0%" leaves a reader to guess what is empty. It reads once when both
+    kinds are present, because the level clause ahead of it has already
+    said the word (rule BAT-14).
     """
     coord = await setup_coordinator(hass)
 
@@ -744,7 +742,7 @@ async def test_a_fault_fires_once_on_the_transition(hass: HomeAssistant):
     """The event rides the problem-list boundary, not the verdict.
 
     That boundary already carries the debounce and the collapse, so an
-    automation gets the same filtering a person gets (ruling #289). It
+    automation gets the same filtering a person gets (rule NOTE-12). It
     fires when the line appears and stays quiet while it stands.
     """
     device, eids = _register_device(hass, "e1", "Attic Sensor")
@@ -790,7 +788,7 @@ async def test_the_since_stamp_is_timezone_aware(hass: HomeAssistant):
 
 async def test_nothing_fires_during_the_startup_grace(hass: HomeAssistant):
     """Everything reports at once on a restart and none of it is news
-    (ruling #291)."""
+    (rule NOTE-12)."""
     device, eids = _register_device(hass, "e3", "Attic Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -836,7 +834,7 @@ async def test_a_recovery_names_the_kind_and_how_it_ended(
     assert payload["kind"] == TODO_KIND_FROZEN
     assert payload["device_id"] == device.id
     assert payload["down_for"] is not None
-    # Three values, and unknown when nobody knows (ruling #291).
+    # Three values, and unknown when nobody knows.
     assert payload["resolved_by"] in {"self", "intervention", "unknown"}
 
 
@@ -845,7 +843,7 @@ async def test_ticking_fires_and_unticking_renews_the_fault(
 ):
     """Unticking has no event of its own: it is the soft
     un-acknowledge, so the fault fires again carrying renewed and an
-    automation needs no knowledge of acknowledgment (ruling #289)."""
+    automation needs no knowledge of acknowledgment (rule NOTE-12)."""
     device, eids = _register_device(hass, "e5", "Attic Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -884,17 +882,17 @@ async def test_ticking_fires_and_unticking_renews_the_fault(
 async def test_two_faults_at_once_fire_one_event_worst_first(
     hass: HomeAssistant,
 ):
-    """#213's collapse holds on the bus as well as on the screen.
+    """One line per device holds on the bus as well as on the screen.
 
     _journal_addition runs once per kind, so firing there would give
     this device two events. The fire point is after the kind map has
-    settled, and kinds[0] is the headline (ruling #289).
+    settled, and kinds[0] is the headline (rule NOTE-12).
     """
     device, eids = _register_device(hass, "e6", "Attic Sensor", battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window
+    # the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
     coord._grace_until = 0.0
     faults = _listen(hass, EVENT_FAULT)
@@ -908,8 +906,8 @@ async def test_two_faults_at_once_fire_one_event_worst_first(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
-    # The real grace close sweeps held battery flags (#346); a test
-    # that shuts the window by hand sweeps the same way.
+    # The real grace close sweeps held battery flags (rule BAT-03); a
+    # test that shuts the window by hand sweeps the same way.
     coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
@@ -924,10 +922,10 @@ async def test_two_faults_at_once_fire_one_event_worst_first(
 async def test_a_whole_line_clearing_answers_every_fault(
     hass: HomeAssistant,
 ):
-    """Option A, ruled 18 August: every kind that landed is answered
-    by exactly one recovery, so a device leaving the list can fire
-    more than once in the same instant. The alternative left a fault
-    with no answer, which an automation cannot recover from."""
+    """Every kind that landed is answered by exactly one recovery, so a
+    device leaving the list can fire more than once in the same instant.
+    A fault left with no answer is one an automation cannot recover
+    from (rule NOTE-12)."""
     device, eids = _register_device(hass, "e7", "Attic Sensor", battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -938,8 +936,8 @@ async def test_a_whole_line_clearing_answers_every_fault(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
-    # The real grace close sweeps held battery flags (#346); a test
-    # that shuts the window by hand sweeps the same way.
+    # The real grace close sweeps held battery flags (rule BAT-03); a
+    # test that shuts the window by hand sweeps the same way.
     coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
@@ -971,8 +969,8 @@ async def test_a_lesser_kind_clearing_under_a_worse_one_is_silent(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
-    # The real grace close sweeps held battery flags (#346); a test
-    # that shuts the window by hand sweeps the same way.
+    # The real grace close sweeps held battery flags (rule BAT-03); a
+    # test that shuts the window by hand sweeps the same way.
     coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
@@ -1079,8 +1077,8 @@ async def test_the_sync_survives_hostile_persisted_items(
         )
     coord.data["incidents"] = hostile_incidents
     # The gate repairs a damaged table at the moment it is found
-    # (ruling #370); hostile persisted rows arrive only through a
-    # load, so the load-style repair runs before any consumer.
+    # (rule STOR-09); hostile stored rows arrive only through a load,
+    # so the load-style repair runs before any consumer.
     repair_tables(coord.data)
     try:
         coord._judge_all_devices()

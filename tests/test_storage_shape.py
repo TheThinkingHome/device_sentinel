@@ -3,32 +3,27 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.26.8 (2026-10-21)
+# File: test_storage_shape.py, Version: 0.27.10 (2026-10-27)
 
-"""The shape check reports and touches nothing; last-good follows it.
+"""The shape check names what does not fit, and last-good follows it
+(rules STOR-04, STOR-05, STOR-06, STOR-07, STOR-09, STOR-12).
 
-Ruling #278. An adversarial pass planted a storage file whose devices
-key was a string and setup would not start, then one record whose
-daily_max was None and the fold raised on it and skipped every device
-after. This release watches for both without acting on either: the
-check names what does not fit, and the last-good copy is refreshed
-only when it names nothing. The release that repairs waits until a
-week of loads and folds has shown the checks quiet on good data.
+A storage file whose devices key is a string stops setup, and one
+record whose daily_max is None makes the fold raise and skip every
+device after it. The check names what does not fit, the damage is
+repaired where it is found, and the last-good copy is refreshed only
+from a clean file.
 
-Added at 0.15.3, the taint tests. The 118-record fixture below holds
-tainted as False on every record, because nothing was tainted the
-minute it was captured, so it recorded a boolean for a field #164 had
-already made False or one of four reason strings. A snapshot cannot
-show a field whose type depends on what the fleet was doing, so the
-reasons are walked from the TAINT_REASONS tuple instead: a fifth
-reason added later fails the suite rather than the fleet.
+The taint reasons are walked from the TAINT_REASONS tuple rather than
+read from a captured file, because a snapshot cannot show a field whose
+type depends on what the house was doing: a fifth reason added later
+fails the suite rather than a house.
 
-The two tests that matter most are the last two. One proves the check
-is silent on a record shaped exactly as the code writes it, which is
-the false-positive case that would make the whole thing dangerous.
-The other proves it is silent on the reference fleet's real file, 118
-records read off disk, which is the same claim on data nobody wrote
-for a test.
+Two tests matter most. One proves the check is silent on a record
+shaped exactly as the code writes it, the false-positive case that
+would make the whole thing dangerous. The other proves it is silent on
+a real house's file, 118 records read off disk, the same claim on data
+nobody wrote for a test.
 """
 
 from __future__ import annotations
@@ -89,7 +84,7 @@ from tests.helpers import setup_coordinator
 from .helpers import register_device, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -123,8 +118,8 @@ def _last_good(hass: HomeAssistant, key: str) -> Path:
 
 
 def _shape_events(coord) -> list[dict]:
-    """Storage events of either kind: a repair (#370) or a writer
-    fault named by the seam."""
+    """Storage events of either kind: a repair (rule STOR-09) or a
+    writer fault named by the seam."""
     return [
         e for e in coord.data.get(DATA_SYSTEM_EVENTS) or []
         if e.get(SYS_KIND) in (SYS_STORAGE_SHAPE, SYS_STORAGE_REPAIR)
@@ -157,7 +152,7 @@ def test_a_learned_record_has_no_faults():
 
 
 def test_every_planted_corruption_is_named():
-    """The faults the adversarial pass planted, and a few more."""
+    """The planted faults, and a few more."""
     good = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     cases = {
         "series_none": (DEV_DAILY_MAX, None),
@@ -185,9 +180,9 @@ def test_every_planted_corruption_is_named():
 
 
 def test_a_missing_and_a_retired_field_are_both_named():
-    """A retired field is damage; a newer version's field is not (#189,
-    amended 28 September 2026): it is kept, unread, so going back a
-    release and forward again loses nothing."""
+    """A retired field is damage; a newer version's field is not: it is
+    kept, unread, so going back a release and forward again loses
+    nothing (rule STOR-19)."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     del rec[DEV_TAINTED]
     rec["signal_sum"] = 1
@@ -200,7 +195,7 @@ def test_a_missing_and_a_retired_field_are_both_named():
 
 
 def test_the_check_changes_nothing():
-    """The whole point of the first release."""
+    """The check only names; the repair is a separate step (rule STOR-05)."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     rec[DEV_DAILY_MAX] = None
     rec[DEV_TODAY_MAX] = math.nan
@@ -214,9 +209,9 @@ def test_the_check_changes_nothing():
 
 async def test_a_clean_save_rotates_live_to_last_good(hass: HomeAssistant):
     """The Store is mocked in memory, so the on-disk file is planted
-    by hand; what is under test is the rotation of ruling #370: a
-    clean save renames the live main file to last-good, and the
-    clocks file gets no copy at all."""
+    by hand; what is under test is the rotation: a clean save renames
+    the live main file to last-good, and the clocks file gets no copy
+    at all (rule STOR-04)."""
     register_device(hass, "ok1", name="Fine")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -237,9 +232,9 @@ async def test_a_clean_save_rotates_live_to_last_good(hass: HomeAssistant):
 async def test_a_faulty_save_repairs_and_leaves_last_good_alone(
     hass: HomeAssistant,
 ):
-    """Ruling #370: a save that found a fault repairs at that moment
-    and writes the live file without rotating, so last-good stays
-    the last clean file."""
+    """A save that found a fault repairs at that moment and writes the
+    live file without rotating, so last-good stays the last clean file
+    (rules STOR-04, STOR-09)."""
     register_device(hass, "bad1", name="Broken")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -266,13 +261,13 @@ async def test_a_faulty_save_repairs_and_leaves_last_good_alone(
 
 
 async def test_the_reference_fleet_is_clean():
-    """118 real records off the Panorama's disk. Not a fixture.
+    """118 real records off a house's disk. Not a fixture.
 
-    The file is a snapshot from 16 August and the schema has moved
-    since, so the reconciler's job is done here first: a record that
-    predates a field arrives at the check with the field filled, not
-    missing. Filling from the template rather than by name keeps this
-    from having to be edited every time the schema gains something.
+    The file is a snapshot and the schema has moved since, so the
+    reconciler's job is done here first: a record that predates a
+    field arrives at the check with the field filled, not missing.
+    Filling from the template rather than by name keeps this from
+    having to be edited every time the schema gains something.
     """
     here = Path(__file__).parent / "fixtures" / "panorama_records_2026-08-16.json"
     if not here.exists():
@@ -283,13 +278,13 @@ async def test_the_reference_fleet_is_clean():
     for record in devices.values():
         for field in [k for k in record if k not in template]:
             # The reconciler removes schema-dropped keys before the
-            # check runs in production (ruling #256); the erased
-            # signal fields (ruling #322) are in this snapshot.
+            # check runs (rule STOR-19); the erased signal fields
+            # (rule SIG-13) are in this snapshot.
             del record[field]
         for field, blank in template.items():
             record.setdefault(field, blank)
     # The load converts a device on Zigbee's raw battery scale before
-    # the boundary (ruling #545), and so does this: LUX Outdoors read
+    # the boundary (rule BAT-02), and so does this: LUX Outdoors read
     # 200 down to 178 under a "%" unit. It is the one device converted.
     from custom_components.device_sentinel.detect_battery import (
         mark_raw_battery,
@@ -306,7 +301,7 @@ async def test_the_reference_fleet_is_clean():
 async def test_a_second_scale_block_is_checked_inside():
     """The alternate block is one field, so the record still holds
     exactly the same field count and nothing became optional
-    (ruling #286). What is inside it is checked by the same table
+    (rule STOR-05). What is inside it is checked by the same table
     that checks the primary."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     assert rec[DEV_SIGNAL_ALT] is None
@@ -346,13 +341,13 @@ async def test_a_second_scale_block_is_checked_inside():
 
 
 def test_every_taint_reason_passes_the_check():
-    """The fault of 17 August, asserted so it cannot return.
+    """The taint reason is checked against every value it can hold.
 
-    The reason field is False or one of the four constants (ruling
-    #164), and the check called it a boolean because the file the
-    shapes were read from had no live taint in it. Walking the tuple
-    rather than naming the four means a fifth reason fails here rather
-    than costing a boot its last-good copy.
+    The reason field is False or one of the four constants, and a
+    check built from a file with no live taint in it calls the field a
+    boolean. Walking the tuple rather than naming the four means a
+    fifth reason fails here rather than costing a boot its last-good
+    copy (rule STOR-05).
     """
     for reason in TAINT_REASONS:
         rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
@@ -371,11 +366,11 @@ def test_the_exact_record_that_fired_on_17_august():
 def test_a_clean_record_is_false_and_not_merely_falsy():
     """False passes; the falsy things that are not it do not.
 
-    The field was a boolean flag before #164 and every read of it is
-    a truthiness test, so a 0 or a 1 written by something that still
+    The field was once a boolean flag and every read of it is a
+    truthiness test, so a 0 or a 1 written by something that still
     thinks it is one would go unnoticed everywhere else. This is the
-    one place it should be caught, and the existing bool_as_int case
-    above is the same assertion from the other side.
+    one place it should be caught, and the bool_as_int case above is
+    the same assertion from the other side (rule STOR-05).
     """
     rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     assert rec[DEV_TAINTED] is False
@@ -389,18 +384,18 @@ def test_a_clean_record_is_false_and_not_merely_falsy():
         ), f"{wrong!r} was accepted"
 
 
-# ------------- an open episode across a fold raises nothing (#364)
+# ---------- an open episode across a fold raises nothing (rule STOR-05)
 
 
 async def test_an_open_episode_saves_with_no_fault_and_no_repair(
     hass: HomeAssistant,
 ):
-    """Tim's false card, driven through the live path.
+    """A false card, driven through the live path.
 
-    Four devices silent past their basis at the moment of a save
-    produced eight faults and a repair card naming nothing wrong.
-    The same four now pass the save seam untouched: no repair, no
-    event, every row still in the table.
+    Four devices silent past their basis at the moment of a save must
+    not produce faults and a repair card naming nothing wrong. They
+    pass the save seam untouched: no repair, no event, every row still
+    in the table (rule STOR-05).
     """
     register_device(hass, "quiet1", name="Quiet One")
     entry = await setup_entry(hass)
@@ -431,9 +426,9 @@ async def test_an_open_episode_saves_with_no_fault_and_no_repair(
 
 
 async def test_a_save_fault_copies_the_evidence(hass: HomeAssistant):
-    """Ruling #340, carried into #370: a repair at save copies the
-    evidence before the file is rewritten, so the folder a person is
-    pointed at exists and holds the original."""
+    """A repair at save copies the evidence before the file is
+    rewritten, so the folder a person is pointed at exists and holds
+    the original (rule STOR-11)."""
     register_device(hass, "bad2", name="Broken")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -542,7 +537,7 @@ async def test_two_records_damaged_in_the_same_field_do_not_share_it(
 
     Registered devices rather than fleet ids, because a record whose
     device the registry does not carry is held rather than watched
-    (ruling #622), and the test is about the repair of watched ones.
+    (rule WATCH-07), and the test is about the repair of watched ones.
     """
     first_device, _ = register_device(hass, "share_one")
     second_device, _ = register_device(hass, "share_two")
@@ -991,8 +986,8 @@ def test_gate_one_is_silent_on_the_real_fleets(path, clocks_path):
     assert json.dumps(data, sort_keys=True, default=str) == before
 
 async def test_control_gate_one_can_fail(hass: HomeAssistant, hass_storage):
-    """With gate 1 blinded, the load-time steps crash as they did
-    before ruling #371. Proves the gate is what prevents it."""
+    """With gate 1 blinded, the load-time steps crash. Proves the gate
+    is what prevents it (rule STOR-05)."""
     from custom_components.device_sentinel import coordinator as cmod
 
     register_device(hass, "ctl_g1")
@@ -1054,10 +1049,9 @@ async def test_gate_two_repair_does_not_share_a_template_object(
 async def test_gate_one_restores_from_the_copy_rather_than_emptying(
     hass: HomeAssistant, real_disk
 ):
-    """Ruling #372: a damaged devices map with a usable copy is
-    answered by restoring, not by emptying. Would catch the 0.19.10
-    behaviour, where every record was lost to a repair while the copy
-    one save back held them all."""
+    """A damaged devices map with a usable copy is answered by
+    restoring, not by emptying, so no record is lost to a repair while
+    the copy one save back holds them all (rule STOR-09)."""
     device, _ = register_device(hass, "restore_first")
     coord = await setup_coordinator(hass)
     coord._rotation_armed = True
@@ -1089,9 +1083,9 @@ async def test_gate_one_restores_from_the_copy_rather_than_emptying(
 async def test_gate_one_repairs_when_the_copy_carries_the_same_fault(
     hass: HomeAssistant, real_disk
 ):
-    """The other half of #372: a copy checked and refused. Restoring
-    to the same fault would cost a file copy and prove nothing, so
-    the repair runs instead."""
+    """A copy checked and refused. Restoring to the same fault would
+    cost a file copy and prove nothing, so the repair runs instead
+    (rule STOR-09)."""
     register_device(hass, "same_fault")
     coord = await setup_coordinator(hass)
     coord._rotation_armed = True
@@ -1154,9 +1148,8 @@ async def test_gate_one_repairs_when_there_is_no_copy(
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-# The second fleet's committed house. Until 8 October 2026 this read a
-# capture of 26 August that was never committed, so its cases skipped
-# everywhere and only the reference fleet was checked.
+# A second house's committed files, so its cases run everywhere and
+# not only on the first house.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
@@ -1169,7 +1162,7 @@ CLOCKS_FOR = {
 }
 
 def _fleet_checker(path: Path) -> list[dict]:
-    """The fleet's records as the load path presents them: the main
+    """The house's records as the load path presents them: the main
     file with the companion clocks merged in."""
     devices = fleet_data(path)["devices"]
     with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
@@ -1186,10 +1179,10 @@ def _fleet_checker(path: Path) -> list[dict]:
         merged_all[device_id] = merged
     # The load path reconciles every stored record against the
     # current schema before anything reads it, filling fields a
-    # newer version added and dropping ones it retired. A fleet file
+    # newer version added and dropping ones it retired. A house file
     # from an earlier release is what the reconciler exists for, and
     # a campaign that skipped it would fail on every field added
-    # since the file was written (ruling #397 added two).
+    # since the file was written (rule STOR-19).
     StorageMixin._reconcile_records(merged_all, "")
     return list(merged_all.values())
 
@@ -1414,8 +1407,9 @@ async def test_a_fault_at_save_is_repaired_at_that_moment(
     hass: HomeAssistant,
 ):
     """An in-place edit the seam never saw is caught by the save
-    check and repaired then (ruling #370): the row is dropped, the
-    event and the notice say so, and last-good is left alone."""
+    check and repaired then (rules STOR-06, STOR-09): the row is
+    dropped, the event and the notice say so, and last-good is left
+    alone."""
     coord = await setup_coordinator(hass)
     events_before = len(coord.data.get("system_events") or [])
     coord.data.setdefault("incidents", []).append(
@@ -1441,7 +1435,7 @@ async def test_a_repaired_save_does_not_rotate(
     hass: HomeAssistant, monkeypatch
 ):
     """A save that repaired something writes the live file and
-    leaves last-good alone (ruling #370)."""
+    leaves last-good alone (rule STOR-04)."""
     from custom_components.device_sentinel import store as smod
 
     rotations = []
@@ -1467,7 +1461,7 @@ async def test_a_clean_save_rotates_only_from_a_clean_live_file(
 ):
     """The first save after a load that needed repair writes without
     rotating, because the live file on disk at that moment is the
-    damaged original (ruling #370)."""
+    damaged original (rule STOR-04)."""
     from custom_components.device_sentinel import store as smod
 
     rotations = []
@@ -1502,7 +1496,7 @@ class TestControlGateOff:
     waiver reaches it alone: when setup dies mid-way on purpose,
     the render tick it registered before dying has no unload to
     cancel it. That leak belongs to the crash the gate prevents,
-    not to this release."""
+    not to the code under test."""
 
     @pytest.fixture
     def expected_lingering_timers(self) -> bool:
@@ -1620,7 +1614,7 @@ async def test_every_real_writer_goes_through_the_seam(hass: HomeAssistant):
     assert damaged_rows(coord.data) == {}
 
 
-# A damaged record is repaired at load (#370).
+# A damaged record is repaired at load (rule STOR-09).
 
 
 SENSOR_PROPERTIES = [
@@ -1646,9 +1640,9 @@ HELD_POISONS = [
 async def test_a_damaged_record_is_repaired_at_load(
     hass: HomeAssistant, hass_storage, field, poison
 ):
-    """The #370 rule through the real load path: a damaged record
-    field is repaired at the gate, every surface then runs on the
-    repaired fleet, and the field itself checks clean afterwards."""
+    """Through the real load path: a damaged record field is repaired
+    at the gate, every surface then runs on the repaired fleet, and the
+    field itself checks clean afterwards (rule STOR-09)."""
     from custom_components.device_sentinel.const import STORAGE_KEY
     from custom_components.device_sentinel.normalise import check_records
 
@@ -1668,7 +1662,7 @@ async def test_a_damaged_record_is_repaired_at_load(
     )
     # Either gate may be the one that answers, depending on the
     # field: gate 1 owns the container fields, gate 2 the rest
-    # (ruling #371).
+    # (rule STOR-05).
     assert coord2._repair_notice or coord2._container_notice, (
         "the repair raised no notice"
     )
@@ -1690,7 +1684,7 @@ async def test_a_damaged_record_is_repaired_at_load(
     assert written, "reports did not render with a held record present"
 
 
-# Every stored value held to what is possible (ruling #544).
+# Every stored value held to what is possible (rule STOR-07).
 
 
 @pytest.mark.parametrize(
@@ -1709,9 +1703,9 @@ async def test_a_damaged_record_is_repaired_at_load(
     ],
 )
 def test_a_value_outside_its_kind_is_a_fault(field, good, bad):
-    """Found on 29 September 2026: a finite value no device and no
-    clock can produce passed the type check and failed later, turned
-    into a date or raised to a power."""
+    """A finite value no device and no clock can produce passes the
+    type check and fails later, turned into a date or raised to a
+    power, so the check holds it to what is possible (rule STOR-07)."""
     record = _new_device_record("2026-09-01T00:00:00+00:00", TIME_BASE)
     record[field] = good
     assert not [f for f in check_records({"d": record}) if f[1] == field]
@@ -1755,11 +1749,10 @@ def test_the_edges_of_every_range_pass():
     assert check_records({"d": record}) == []
 
 
-# The adversarial round's map, 29 September 2026: an impossible value
-# in these stored places stopped Device Sentinel starting, or broke the
-# brief, the reports or a dashboard page. Each is planted in turn in a
-# small house with every table populated, which must start and write
-# its reports.
+# An impossible value in these stored places can stop Device Sentinel
+# starting, or break the brief, the reports or a dashboard page. Each is
+# planted in turn in a small house with every table populated, which
+# must start and write its reports (rule STOR-07).
 _PLANTED = [
     ("incidents", "when"), ("incidents", "duration"),
     ("silence_episodes", "at"), ("silence_episodes", "since"),
@@ -1826,10 +1819,10 @@ async def test_an_impossible_stored_value_never_stops_a_start(hass, hass_storage
 
 
 async def test_a_retired_signal_clock_leaves_a_stored_record(hass, hass_storage):
-    """signal_last_change, the dwell timer's clock, retired in 0.23.19
-    as ruling #310 scheduled: a record written before loses it at load,
-    in its own fields and in a second scale's block, and a field a newer
-    version wrote is still kept (#189, amended)."""
+    """signal_last_change, the retired dwell timer's clock: a record
+    written before loses it at load, in its own fields and in a second
+    scale's block, and a field a newer version wrote is still kept
+    (rules SIG-13, STOR-19)."""
     from custom_components.device_sentinel.const import DATA_DEVICES, STORAGE_KEY
 
     device, _ = register_device(hass, "old", name="Written By 0.23.18")
@@ -1855,10 +1848,9 @@ async def test_a_damaged_clock_and_a_damaged_event_row_repair_together(
     hass: HomeAssistant,
 ):
     """Would catch: the clock repair writing its system event before the
-    damaged rows are dropped. The event writer read every row of the
-    table as a dict, so a junk row beside a damaged clock raised a
-    TypeError and the save failed (0.25.5, found by the convergence
-    fuzz once held records changed its random path)."""
+    damaged rows are dropped. The event writer reads every row of the
+    table as a dict, so a junk row beside a damaged clock would raise a
+    TypeError and fail the save (rule STOR-10)."""
     device, _ = register_device(hass, "clock_and_row")
     coord = await setup_coordinator(hass)
     coord.data.setdefault(DATA_SYSTEM_EVENTS, []).insert(0, 7)

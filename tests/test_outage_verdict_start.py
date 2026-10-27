@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_outage_verdict_start.py, Version: 0.26.0 (2026-10-12)
+# File: test_outage_verdict_start.py, Version: 0.27.10 (2026-10-27)
 
-"""An outage judged down is ended from when it went (ruling #647).
+"""An outage judged down is ended from when it went (rule UNAV-04).
 
 When a device reports while an unavailable or unknown verdict stands,
 the gap is ended from the moment the outage began, whatever start the
 reporting entity holds: an unseen rename whose new id gained a later
 start, or a button whose battery entity carried the outage while its
-event entity rested, is never learned as quiet. An event entity at rest
-says nothing about the device, so a device of nothing else is judged by
-its clock, not read as down. Found by the adversarial round of 12
-October 2026.
+event entity rested, is never learned as quiet. An event entity at
+rest says nothing about the device, so a device of nothing else is
+judged by its clock, not read as down.
 """
 
 from homeassistant.core import HomeAssistant

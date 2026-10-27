@@ -3,18 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.23.19 (2026-09-30)
+# File: test_signal.py, Version: 0.27.10 (2026-10-27)
 
-"""Signal detection: the floor line and the rail.
+"""Signal detection: the floor line and the rail (rules SIG-06, SIG-07).
 
 A device's danger line is the plain minimum of its daily P5 window
-plus the sensitivity margin (rulings #322, #323). A rail (LQI 255,
-RSSI -128) is not a reading: it feeds neither the floor nor the
-estimators, and the confirmed rail is three consecutive days on which
-the device spoke and said nothing but the fill value, read as a zero
-reading count beside a rail count above zero (ruling #322). This file
-holds the floor line and how it renders, the rail detector, signal
-muting as recorded-not-reported.
+plus the sensitivity margin. A rail (LQI 255, RSSI -128) is not a
+reading: it feeds neither the floor nor the estimators, and the
+confirmed rail is three consecutive days on which the device spoke and
+said nothing but the fill value, read as a zero reading count beside a
+rail count above zero. This file holds the floor line and how it
+renders, the rail detector, and signal muting as recorded, not
+reported.
 """
 
 import pytest
@@ -110,13 +110,13 @@ async def _rail_coordinator(hass):
     return coord, device.id
 
 
-# ------------------------------------------- the line is the floor (#66)
+# ------------------------------------- the line is the floor (rule SIG-06)
 
 
 async def test_line_in_report(hass: HomeAssistant):
     """The report shows the daily P5 window with the floor bold.
 
-    The floor is the plain minimum (ruling #323), so nothing is
+    The floor is the plain minimum (rule SIG-06), so nothing is
     struck: no value can sit below it. A rail-only day's null
     renders as a dash.
     """
@@ -151,7 +151,7 @@ async def test_line_in_report(hass: HomeAssistant):
     assert "**117** 121 119 - 118 120" in row
 
 
-# ------------------------------------- the rails and stuck detector (#60)
+# ------------------------------- the rails and stuck detector (rule SIG-07)
 
 async def test_rail_feeds_neither_floor_nor_estimators(hass: HomeAssistant):
     """A rail value is not a measurement: it never touches today's
@@ -166,8 +166,8 @@ async def test_rail_feeds_neither_floor_nor_estimators(hass: HomeAssistant):
 
 
 async def test_rssi_rail_does_not_poison_the_floor(hass: HomeAssistant):
-    """James S24+ hit -128 once inside real readings; that spike must
-    not feed today's statistics."""
+    """A phone that hits -128 once inside real readings: that spike must
+    not feed today's statistics (rule SIG-07)."""
     coord = await setup_coordinator(hass)
     record = _armed_rssi_record()
     coord._feed_signal(record, SIGNAL_RAIL_RSSI, 1000.0)
@@ -179,9 +179,7 @@ async def test_a_real_reading_after_a_rail_counts(
     hass: HomeAssistant,
 ):
     """The recovered-by-hand case: the moment a revived sensor sends a
-    real value, it is the reading and it feeds the day. (The frozen
-    clock this once checked, last_change, retired with dwell's
-    recording in 0.23.19, as ruling #310 scheduled.)"""
+    real value, it is the reading and it feeds the day (rule SIG-07)."""
     coord = await setup_coordinator(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
@@ -190,12 +188,12 @@ async def test_a_real_reading_after_a_rail_counts(
     assert record[DEV_SIGNAL_TODAY_MIN] == 116.0
 
 
-# --------------------------- the rail confirmed over three days (0.4.8)
+# ------------------------------------------ the rail confirmed over three days
 
 async def test_three_rail_days_confirm_a_rail(hass: HomeAssistant):
     """Three consecutive days on which the device spoke and said
     nothing but the fill value: a zero reading count beside a rail
-    count above zero (ruling #322)."""
+    count above zero (rule SIG-07)."""
     coord, device_id = await _rail_coordinator(hass)
     rec = coord.data["devices"][device_id]
     rec[DEV_SIGNAL_DAILY_COUNT] = [400, 380, 0, 0, 0]
@@ -226,7 +224,7 @@ async def test_a_recovered_rail_clears(hass: HomeAssistant):
 async def test_a_silent_day_is_not_a_railed_day(hass: HomeAssistant):
     """A silent day and a railed day both carry a zero reading
     count and differ only in the rail entry, which is why the rail
-    column is the evidence (ruling #322). Three silent days confirm
+    column is the evidence (rule SIG-07). Three silent days confirm
     nothing."""
     coord, device_id = await _rail_coordinator(hass)
     rec = coord.data["devices"][device_id]
@@ -322,14 +320,14 @@ async def test_excluded_device_still_records_but_is_not_reported(
     assert "88 96 **80**" in row
 
 
-# ------------------------------------------- the erasure at load (#322)
+# ------------------------------------------- the erasure at load (rule SIG-13)
 
 async def test_the_erased_fields_are_swept_at_load(
     hass: HomeAssistant, hass_storage
 ):
     """A file written before the erasure carries the dwell record;
     one load later it does not, in the record and inside the
-    second-scale block alike (ruling #322)."""
+    second-scale block alike (rule SIG-13)."""
     device = _register_device(hass, "sweep322")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -367,7 +365,7 @@ async def test_the_erased_fields_are_swept_at_load(
 
 
 def _sig_entry(entity_id, device_class=None, unit=None, name=None):
-    """A registry-entry double carrying a unit (ruling #283)."""
+    """A registry-entry double carrying a unit (rule SIG-02)."""
 
     class _E:
         pass
@@ -426,13 +424,13 @@ def test_the_signal_strength_class_is_never_refused():
 
 
 def test_a_unitless_name_match_is_kept():
-    """The narrowness of #283, which is the whole point of it.
+    """A unitless name match is kept, because only a percentage is
+    refused (rule SIG-02).
 
     Nothing in any diagnostics says what unit a Zigbee2MQTT
     linkquality entity carries. A rule refusing every unrecognized
-    unit would have taken signal from 74 devices on the reference
-    fleet if the guess were wrong, so only a percentage is refused
-    and everything else is kept.
+    unit would take signal from every such device if the guess were
+    wrong, so only a percentage is refused and everything else is kept.
     """
     for unit in (None, "", "lqi", "LQI", "dBm", "arbitrary"):
         assert SignalMixin._is_signal(
@@ -504,7 +502,7 @@ def test_the_two_real_fleets_classify_as_expected():
 
 def test_the_sign_decides_the_scale():
     """RSSI is negative at any Zigbee receiver; LQI runs 0 to 255
-    (ruling #284). Zero is a valid link quality and not a plausible
+    (rule SIG-03). Zero is a valid link quality and not a plausible
     received power, so it belongs with LQI."""
     for value in (-1.0, -66.0, -106.0, -128.0):
         assert scale_of(value) == SIGNAL_SCALE_RSSI, value
@@ -536,7 +534,7 @@ def test_a_second_scale_gets_its_own_block():
 
 
 def test_rssi_takes_the_primary_even_when_lqi_arrived_first():
-    """Precedence is RSSI (ruling #285), and a ZHA device's LQI
+    """Precedence is RSSI (rule SIG-03), and a ZHA device's LQI
     entity may well report first. The two trade places rather than
     either being discarded, so nothing already learned is lost."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
@@ -593,8 +591,8 @@ def test_routing_is_stable_however_the_readings_interleave():
 async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
     """Ninety days of real shape: null days, rail days, and a floor.
 
-    A rail value means no reading at all (#305) and must not become
-    the floor, and a null day must be skipped rather than read as
+    A rail value means no reading at all (rule SIG-05) and must not
+    become the floor, and a null day must be skipped rather than read as
     zero. Over three months a device collects both, and the floor has
     to survive the mixture.
     """
@@ -610,15 +608,15 @@ async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
             series.append(70.0 + (day % 11))
     record[DEV_SIGNAL_DAILY_P5] = series
     # The bad-day judgment reads the mixture day by day: a null day is
-    # no reading, and no day raises (the floor this once tested was the
-    # dwell line's, retired in 0.23.19 as ruling #310 scheduled).
+    # no reading, and no day raises (rule SIG-08).
     readings = [coord.signal_badday(record, day) for day in range(len(series))]
     assert readings[0] is None
     judged = [r for r in readings if r is not None]
     assert judged and all(70.0 <= r["baseline"] <= 255.0 for r in judged)
 
 
-# A signal reading outside its scale's physical range is ignored (#540).
+# A signal reading outside its scale's physical range is ignored
+# (rule SIG-04).
 
 
 @pytest.mark.parametrize("reading", ["1e308", "-1e308", "300", "-200", "1e200"])

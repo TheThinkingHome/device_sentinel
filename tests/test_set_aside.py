@@ -1,20 +1,21 @@
-"""Tests for setting disabled devices aside.
+"""Disabled devices, and devices with no entities, are set aside
+(rule WATCH-03).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_set_aside.py, Version: 0.25.5 (2026-10-10)
+# File: test_set_aside.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Reported by teskanoo in issue #1: entities of disabled integrations
-were monitored and reported, which is white noise, since a disabled
-device cannot report and its silence says nothing about the hardware.
+Watching a disabled integration's entities is white noise, since a
+disabled device cannot report and its silence says nothing about the
+hardware.
 
-The rule is drawn at the device (ruling #257). A device Home
-Assistant has disabled is set aside, and so is a device with no
-entities at all, because neither can ever speak and neither has
-anything a person could switch on. A device whose entities are all
-disabled stays watched: those entities exist, the never-reported row
-is the prompt, and a person can enable them or exclude the device.
+The rule is drawn at the device. A device Home Assistant has disabled
+is set aside, and so is a device with no entities at all, because
+neither can ever speak and neither has anything a person could switch
+on. A device whose entities are all disabled stays watched: those
+entities exist, the never-reported row is the prompt, and a person can
+enable them or exclude the device.
 """
 
 import json
@@ -73,8 +74,8 @@ def _device(hass, uid, name, entities=1, disabled=None, entity_disabled=None):
 
 
 async def test_a_disabled_device_is_set_aside(hass: HomeAssistant):
-    """Issue #1, at the device level: a disabled device cannot report,
-    so watching for its silence produces a problem row about nothing."""
+    """A disabled device cannot report, so watching for its silence
+    would produce a problem row about nothing (rule WATCH-03)."""
     device = _device(
         hass, "sa1", "Disabled Device",
         disabled=dr.DeviceEntryDisabler.USER,
@@ -92,7 +93,7 @@ async def test_a_device_with_no_entities_is_set_aside(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     # Past the startup window: during it a device with no entities is
     # usually one whose integration has not finished loading, so the
-    # rule is held (ruling #260).
+    # rule is held (rule WATCH-10).
     coord._grace_until = 0.0
     coord._rebuild_registry_view()
 
@@ -103,9 +104,9 @@ async def test_a_device_with_no_entities_is_set_aside(hass: HomeAssistant):
 async def test_a_device_whose_entities_are_disabled_stays_watched(
     hass: HomeAssistant,
 ):
-    """Ruled deliberately against the simpler rule: those entities
-    exist, so the device is one press from reporting again, and the
-    never-reported row is the prompt that says so."""
+    """Those entities exist, so the device is one press from reporting
+    again, and the never-reported row is the prompt that says so
+    (rule WATCH-03)."""
     device = _device(
         hass, "sa3", "Silenced Device",
         entity_disabled=er.RegistryEntryDisabler.USER,
@@ -162,7 +163,7 @@ async def test_a_departed_device_loses_its_record_after_the_hold(
     hass: HomeAssistant,
 ):
     """Set aside is not gone. A device the registry no longer holds
-    keeps its record 30 days in case it comes back (ruling #622), and
+    keeps its record 30 days in case it comes back (rule WATCH-07), and
     the fold after that deletes it."""
     device, _ = register_device(hass, "sa6", "Leaving Device")
     coord = await setup_coordinator(hass)
@@ -205,7 +206,8 @@ async def test_the_refusal_reason_is_its_own_word(hass: HomeAssistant):
     assert LEARNED_DISABLED.startswith("no (")
 
 
-# A set-aside device through the notification path, damaged rows, the fold, a restore, an outage, a person's action and the brief's tally (0.19.8).
+# A set-aside device through the notification path, damaged rows, the
+# fold, a restore, an outage, a person's action and the brief's tally.
 
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
@@ -242,7 +244,8 @@ DAMAGED_TABLE_ROWS = [
 async def test_nothing_reaches_the_wire_for_a_set_aside(
     hass: HomeAssistant, seed
 ):
-    """Round one spied on the collector. This spies on the sender."""
+    """Nothing reaches the sender for a set-aside device, spied on at the
+    sender itself (rule WATCH-03)."""
     rng = random.Random(70_000 + seed)
     sent: list = []
     device, _ = register_device(hass, f"wire{seed}")
@@ -300,12 +303,11 @@ async def test_a_damaged_table_row_survives_every_consumer(
     await coord2._save_main()
     written = await coord2.async_regenerate_reports()
     assert written, f"{table} row stopped the reports"
-    # The boundary (ruling #370): a damaged row is repaired out of
-    # the document at the gate, so no reader and no file carries it.
-    # Two ruled exceptions in the to-do list: the 0.6.0 migration
-    # purges a row with no device id, and a structurally usable item
-    # whose device has no problem is retired by the sync, which is
-    # the list doing its job.
+    # The boundary: a damaged row is repaired out of the document at the
+    # gate, so no reader and no file carries it (rule STOR-09). Two
+    # exceptions in the to-do list: the migration purges a row with no
+    # device id, and a structurally usable item whose device has no
+    # problem is retired by the sync, which is the list doing its job.
     def _matches(candidate):
         if isinstance(row, dict):
             return isinstance(candidate, dict) and all(

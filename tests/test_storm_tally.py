@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storm_tally.py, Version: 0.23.19 (2026-09-30)
+# File: test_storm_tally.py, Version: 0.27.10 (2026-10-27)
 
-"""The storm tally and the flood sentence (rulings #320, #321).
+"""The storm tally and the flood sentence (rules UP-17, UP-18).
 
-Raw storm rows keep one hour, the size of their only reader, after
-two days of them reached 64 percent of the reference fleet's storage
-file. The daily record is the tally: one row per domain per day,
-written at the fold with the count and three medians. The brief's
-flood sentence reads the newest tally day, skips excluded domains,
-and teaches that muting does not reduce what is recorded.
+Raw storm rows keep one hour, the size of their only reader, because
+two days of them can fill most of a house's storage file. The daily
+record is the tally: one row per domain per day, written at the fold
+with the count and three medians. The brief's flood sentence reads the
+newest tally day, skips excluded domains, and teaches that muting does
+not reduce what is recorded.
 """
 
 
@@ -43,9 +43,8 @@ def _close_storms(coord, domain, times, devices=18, duration=5.0):
 
 
 async def test_the_raw_keep_is_one_hour(hass: HomeAssistant):
-    """Ruling #320, amending #232: the only reader of the raw rows
-    looks back one hour, so that is the keep. Two days held 47
-    unread hours and 64 percent of the reference fleet's file."""
+    """The only reader of the raw rows looks back one hour, so that is the
+    keep (rule UP-17)."""
     assert STORM_KEEP_SECONDS == 3600.0
 
 
@@ -128,9 +127,9 @@ def _ago(days: int) -> str:
 async def test_the_flood_sentence_reads_the_newest_day(
     hass: HomeAssistant,
 ):
-    """One line per flooding domain, carrying the worst day's count
-    and the teaching that muting does not reduce what is recorded
-    (ruling #321, read since ruling #457 over the last seven days)."""
+    """One line per flooding domain, carrying the worst day's count and the
+    teaching that muting does not reduce what is recorded, read over the
+    last seven days (rule UP-18)."""
     coord = await setup_coordinator(hass)
     coord.data[DATA_STORM_DAYS] = [
         {STORM_DAY_DATE: _ago(1), STORM_DAY_DOMAIN: "poller",
@@ -207,10 +206,8 @@ async def test_the_midnight_roll_dates_the_day_that_ended(
 ):
     """The tally row carries the day its storms happened.
 
-    The roll runs at local midnight, when today is already the next
-    day. The second fleet's two ZHA storms of 16 September, at 17:26
-    and 17:52 while its coordinator was pulled, were filed under the
-    17th, and the brief said so.
+    The roll runs at local midnight, when today is already the next day,
+    so storms of the evening must not be filed under the day after.
     """
     from datetime import datetime
 
@@ -228,7 +225,7 @@ async def test_the_midnight_roll_dates_the_day_that_ended(
 
 
 # The storm detector's distinct-device count, kept as changes enter and
-# leave its window since 0.23.19, must equal the count of the window.
+# leave its window, must equal the count of the window.
 
 
 async def test_the_running_count_matches_the_window(hass):
@@ -255,8 +252,8 @@ async def test_the_running_count_matches_the_window(hass):
 
 
 async def test_a_burst_costs_the_same_per_change(hass):
-    """Ten thousand changes in one window: 0.23.18 rebuilt a set of the
-    whole window on each, so the burst cost its square."""
+    """Ten thousand changes in one window: rebuilding a set of the whole
+    window on each would make the burst cost its square."""
     import time
 
     from .helpers import setup_entry

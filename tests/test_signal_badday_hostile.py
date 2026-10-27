@@ -3,26 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday_hostile.py, Version: 0.24.2 (2026-10-03)
+# File: tests/test_signal_badday_hostile.py, Version: 0.27.10 (2026-10-27)
 
-"""What the bad-day detector does with data it should never see.
+"""What the bad-day detector does with data it should never see
+(rule SIG-08).
 
-Every case here was found by an adversarial pass on 21 August, and
-four of them were live faults before that pass: a corrupt reading in
-a baseline raised inside statistics.median, an infinity flagged the
-day and rendered as "inf", a string raised on comparison, and a
-device whose scale field was absent had the LQI gate applied to a
-dBm series, which is a 25 dB demand and therefore deafness.
-
-The scale case was not hypothetical. A 16 August snapshot of the
-reference fleet carries a P5 series on 79 devices and a scale on
-none of them, seven of those devices negative.
+A corrupt reading in a baseline must not raise inside
+statistics.median, an infinity must not flag the day or render as
+"inf", a string must not raise on comparison, and a device whose scale
+field is absent must not have the LQI gate applied to a dBm series,
+which is a 25 dB demand and therefore deafness. Real fleets do hold
+P5 series with no scale, some of them negative.
 
 None of this is guarded on the reasoning that the recorder could
 never write it. Storage is a JSON file on a person's disk, the Data
-Trim tool exists because records do go wrong, and the outages of 20
-August came from deciding a case was unreachable instead of checking
-it.
+Trim tool exists because records do go wrong, and deciding a case is
+unreachable instead of checking it is how outages happen.
 """
 
 from __future__ import annotations
@@ -127,15 +123,14 @@ async def test_a_reading_from_the_other_scale_is_not_judged(
 ):
     """The moment a promotion lands.
 
-    A device whose LQI entity reported first hands the primary block
-    over when its RSSI arrives (rulings #285, #286), so today's
-    reading can sit on the other side of zero from the days behind
-    it. The two are not comparable and the day is left unjudged
-    rather than judged from the difference between two measuring
-    systems.
+    A device whose LQI entity reported first hands the primary block over
+    when its RSSI arrives, so today's reading can sit on the other side of
+    zero from the days behind it. The two are not comparable and the day
+    is left unjudged rather than judged from the difference between two
+    measuring systems (rule SIG-03).
 
-    A stored series holding both signs is storage's to deal with,
-    once at load (ruling #282), and is not tested here.
+    A stored series holding both signs is storage's to deal with, once at
+    load, and is not tested here.
     """
     coord, record = await _record(
         hass, "h11", [160.0, 162.0, 158.0, 161.0, 160.0, 159.0, -60.0]
@@ -185,12 +180,11 @@ async def test_an_index_past_the_end_is_unjudged(hass: HomeAssistant):
 async def test_a_hostile_fleet_still_draws_signal_trends(
     hass: HomeAssistant,
 ):
-    """End to end. Every poison at once, and the reports are written
-    and Signal Trends is built.
+    """End to end. Every poison at once, and the reports are written and
+    Signal Trends is built.
 
-    The signal report page this once read retired with the www folder
-    in 0.23.5; the dashboard tab that replaced it reads the same
-    judgment, so it is the surface that must survive the poison now.
+    Signal Trends reads the same judgment the reports do, so it is the
+    surface that must survive the poison (rule SIG-12).
     """
     coord = await setup_coordinator(hass)
     poisons = {

@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_persistent_default.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_persistent_default.py, Version: 0.27.10 (2026-10-27)
 
-"""A new install starts with the persistent card off (ruling #462).
+"""A new install starts with the persistent card off (rule NOTE-11).
 
-The dashboard now shows what the card showed. An install from before
-this release that never saved the setting was running with the card
-on, so the options migration writes that down rather than letting the
-new default switch it off. An install that saved the setting keeps it.
+The dashboard shows what the card showed. An older install that never
+saved the setting was running with the card on, so the options
+migration writes that down rather than letting the new default switch
+it off. An install that saved the setting keeps it.
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ async def _entry(hass: HomeAssistant, options: dict, minor_version: int) -> Mock
 
 async def test_the_default_is_off(hass: HomeAssistant):
     assert DEFAULT_PERSISTENT_ENABLED is False
-    # 7 since 0.26.7 (the dashboard setting, #693); the card default is
-    # unchanged.
+    # The options minor version is 7 for the dashboard setting (rule DASH-03);
+    # the card default is unchanged.
     assert OPTIONS_MINOR_VERSION == 7
 
 

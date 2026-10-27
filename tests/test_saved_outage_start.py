@@ -3,18 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_saved_outage_start.py, Version: 0.26.0 (2026-10-12)
+# File: test_saved_outage_start.py, Version: 0.27.10 (2026-10-27)
 
-"""The start of an outage, saved with the device's record (ruling #647).
+"""The start of an outage, saved with the device's record
+(rules UNAV-04, FRZ-14).
 
 When a device goes down as a whole, every one of its own entities
 unavailable or unknown or its ESPHome connection dropped, Device
-Sentinel saves the moment with the device's record. A restart inside the outage cannot lose it: the gap spanning
-an outage longer than the taint debounce is not learned, whatever
-restarts happen inside it. Device Sentinel's own stops inside the
-outage are taken out of its length, as they are out of a gap (#541),
-so an ordinary restart, with entities written unavailable as Home
-Assistant stops and back as it starts, costs no gap.
+Sentinel saves the moment with the device's record. A restart inside
+the outage cannot lose it: the gap spanning an outage longer than the
+taint debounce is not learned, whatever restarts happen inside it.
+Device Sentinel's own stops inside the outage are taken out of its
+length, as they are out of a gap, so an ordinary restart, with entities
+written unavailable as Home Assistant stops and back as it starts,
+costs no gap (rule UP-06).
 """
 
 from __future__ import annotations
@@ -125,8 +127,8 @@ def test_a_fresh_record_holds_no_outage():
 
 def test_the_starts_are_written_with_each_routine_save():
     """A start cleared in memory is written with the routine save, not
-    only with the main file, so a power cut cannot bring it back
-    (adversarial round of 12 October 2026)."""
+    only with the main file, so a power cut cannot bring it back.
+    """
     from custom_components.device_sentinel.const import CLOCK_FIELDS
 
     assert DEV_DOWN_SINCE in CLOCK_FIELDS
@@ -135,7 +137,8 @@ def test_the_starts_are_written_with_each_routine_save():
 async def test_a_damaged_saved_start_costs_only_that_start(hass: HomeAssistant, hass_storage, freezer):
     """One device's saved outage start damaged in the clocks file clears
     that start; the file is kept, so no other device's clock restarts
-    (adversarial round of 12 October 2026)."""
+    (rule STOR-09).
+    """
     from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY, STORAGE_CLOCKS_KEY
 
     coord, device, eid = await _device(hass, freezer, "damaged1")

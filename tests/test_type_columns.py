@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_type_columns.py, Version: 0.25.3 (2026-10-09)
+# File: tests/test_type_columns.py, Version: 0.27.10 (2026-10-27)
 
-"""Types where devices are listed (0.25.3).
+"""Types where devices are listed (rule DEV-12).
 
-Battery Trends, the Classification tab and the Devices tab narrow to one
-type; Battery Trends' By Model lists the types a model's cells have; two
-recommendation cards name devices with no type and models split between
-types. Ruled by James on 9 October 2026. The panel's side is checked in
+Battery Trends, the Classification tab and the Devices tab narrow to
+one type; Battery Trends' By Model lists the types a model's cells
+have; two recommendation cards name devices with no type and models
+split between types. The panel's side is checked in
 tools/panel_checks/check_type_filters.js.
 """
 

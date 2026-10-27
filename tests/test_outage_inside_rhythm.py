@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_inside_rhythm.py, Version: 0.24.1 (2026-10-03)
+# File: tests/test_outage_inside_rhythm.py, Version: 0.27.10 (2026-10-27)
 
-"""An outage inside a device's rhythm is ignored; one reaching its grace is not.
+"""An outage inside a device's rhythm is ignored; one reaching its grace
+is not (rules FRZ-12, UP-07).
 
 A device's wait is its rhythm, its normal longest gap, plus a grace for
 the report it is then due to send. An outage shorter than the rhythm
@@ -13,9 +14,8 @@ and wholly inside it, from the last report, could only have swallowed
 a report the device was not yet due to send, so the gap is learned
 whole. One that reaches the grace, or is as long as the rhythm, may
 have swallowed the report the device was due to send, so the gap is
-forgotten (James, 3 October 2026). Before this rule every stored outage
-forgot the gap, so the nightly three-minute Zigbee2MQTT restart cost
-slow reporters their gap across it every night.
+forgotten. So the nightly three-minute Zigbee2MQTT restart does not
+cost slow reporters their gap.
 """
 
 from __future__ import annotations
@@ -109,8 +109,9 @@ async def test_an_open_outage_inside_the_rhythm_is_ignored_too(hass, freezer):
 
 
 async def test_a_rhythm_that_is_not_a_number_forgets_the_gap(hass, freezer):
-    """Found by the 0.24.1 adversarial round: every comparison with NaN is
-    false, so an unusable rhythm read the outage as inside it."""
+    """Every comparison with NaN is false, so an unusable rhythm must not
+    read the outage as inside it.
+    """
     coord, record, seen, now, last = await _slow_device(hass, freezer, 10, 8)
     coord.data[DATA_SYSTEM_EVENTS] = _outage(last + HOUR, last + HOUR + 180)
     coord._freeze_rhythm = lambda r: {"rhythm": float("nan")}

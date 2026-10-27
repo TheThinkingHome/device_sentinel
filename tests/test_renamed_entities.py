@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_renamed_entities.py, Version: 0.26.0 (2026-10-12)
+# File: test_renamed_entities.py, Version: 0.27.10 (2026-10-27)
 
-"""Entities renamed, removed or added back during an outage (ruling #647).
+"""Entities renamed, removed or added back during an outage (rules
+UNAV-04, FRZ-14).
 
 The outage start is the device's, saved when it goes down as a whole,
 so a rename or a removal, seen or not, cannot lose it, and the value
@@ -13,8 +14,7 @@ Home Assistant moves across on a rename is not the device speaking. An
 entity that goes unavailable alone, while another of the device's own
 entities holds a value, starts no outage, whatever then happens to it:
 a disabled entity or another integration's holds nothing, and an event
-entity resting at unknown holds. Found by the adversarial rounds of 12
-October 2026.
+entity resting at unknown holds.
 """
 
 from __future__ import annotations
@@ -98,8 +98,9 @@ async def test_rename_when_not_absent(hass: HomeAssistant, freezer):
 async def test_a_lone_absent_entity_renamed_leaves_the_healthy_gap_learned(hass: HomeAssistant, freezer):
     """Entity 1 alone goes unavailable (the device is quiet, entity 0
     holds its value); it is renamed. Fifty minutes after its last report
-    the device reports through entity 0, on its rhythm. 0.25.6 learned
-    this gap; 0.26.0 reads the renamed entity's start as an outage."""
+    the device reports through entity 0, on its rhythm. The gap is
+    learned, because the renamed entity's start is not an outage
+    (rule UNAV-04)."""
     coord, device, eids = await _ready(hass, freezer, "o03")
     record = rec(coord, device.id)
     hass.states.async_set(eids[1], "unavailable")
@@ -223,9 +224,9 @@ async def test_esphome_drop_after_stale_entity_absence(hass: HomeAssistant, free
 
 async def test_partial_absence_then_whole_device(hass: HomeAssistant, freezer):
     """Entity 1 unavailable at t0 (the device quiet); entity 0 at t0 + 2 h.
-    #647 dates the device down from the latest start. Then a restart
-    inside the outage, five minutes before the verdict would be read:
-    the verdict should still be dated from t0 + 2 h."""
+    The device is dated down from the latest start. Then a restart inside
+    the outage, five minutes before the verdict would be read: the
+    verdict is still dated from t0 + 2 h (rule UNAV-04)."""
     coord, device, eids = await _ready(hass, freezer, "o08")
     record = rec(coord, device.id)
     hass.states.async_set(eids[1], "unavailable")
@@ -329,7 +330,7 @@ async def test_a_lone_blipping_entity_moved_away_leaves_the_gap_learned(hass: Ho
     """Entity 0 alone goes unavailable and is moved to another device;
     entity 1 reports on the device's rhythm. Its start is left behind,
     but a healthy entity reporting is not a return, so the gap is
-    learned (adversarial round fourteen)."""
+    learned (rule FRZ-14)."""
     coord, device, eids = await _ready(hass, freezer, "o12")
     other, _ = register_device(hass, "o12_other", entity_count=1)
     hass.states.async_set(eids[0], "unavailable")
@@ -366,7 +367,7 @@ async def test_a_disabled_sibling_does_not_make_a_removal_lone(hass: HomeAssista
     a sibling disabled by its integration. The entity is removed and
     added back ten minutes before the device returns: a disabled entity
     holds no value, so the start is kept and the outage is not learned
-    (adversarial round fourteen)."""
+    (rule UNAV-04)."""
     freezer.move_to(PIN)
     device, eids = register_device(hass, "o14", entity_count=2)
     reg = er.async_get(hass)
@@ -403,8 +404,7 @@ async def test_a_removed_lone_blip_beside_a_resting_event_entity(hass: HomeAssis
     """A button: a battery sensor and an event entity resting at
     unknown. The sensor blips alone and is removed; fifty minutes later
     the button is pressed. A resting event entity is not absent, so the
-    sensor's start went with it and the gap is learned (adversarial
-    round fifteen)."""
+    sensor's start went with it and the gap is learned (rule UNAV-04)."""
     coord, device, eids = await _ready(hass, freezer, "o15", count=1)
     first = er.async_get(hass).async_get(eids[0])
     source = hass.config_entries.async_get_entry(first.config_entry_id)
@@ -430,8 +430,7 @@ async def test_an_old_orphan_does_not_date_a_short_blip(hass: HomeAssistant, fre
     """Entity 0 blips alone and is removed while Device Sentinel reloads,
     so its start is left behind. Twenty minutes later entity 1 is
     unavailable for one minute: that blip has its own start and is
-    under the debounce, so the gap is learned (adversarial round
-    fifteen)."""
+    under the debounce, so the gap is learned (rule UNAV-03)."""
     coord, device, eids = await _ready(hass, freezer, "o16")
     hass.states.async_set(eids[0], "unavailable")
     await hass.async_block_till_done()

@@ -1,16 +1,15 @@
-"""Tests for weighing the day by minutes rather than readings.
+"""Weighing the day by minutes rather than readings (rule SIG-05).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_time_weighting.py, Version: 0.13.8 (2026-08-13)
+# File: test_time_weighting.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Ruling #259. The percentiles have weighed minutes since 0.12.19 while
-the mean and deviation counted readings, so a day's four figures
-answered two different questions and could not be read side by side.
-On this reference fleet reporting rates differ by two orders of
-magnitude, which let a device's busy hours outvote its quiet ones in
-the mean while the median ignored the difference.
+The percentiles weigh minutes, so the mean and deviation do too;
+otherwise a day's four figures answer two different questions and
+cannot be read side by side. Reporting rates differ by two orders of
+magnitude across a fleet, which would let a device's busy hours outvote
+its quiet ones in the mean while the median ignored the difference.
 """
 
 import pytest
@@ -185,12 +184,12 @@ async def test_the_deviation_measures_the_spread_of_time(
 async def test_the_clearing_takes_the_day_in_progress(
     hass: HomeAssistant,
 ):
-    """The accumulator carried across the upgrade too (ruling #260).
+    """The accumulator carried across the upgrade too.
 
-    Built by counting readings, continued by counting minutes, it
-    would have folded one hybrid row at the first midnight: exactly
-    the mixed figure the clearing exists to prevent, on the one day
-    it can happen. The day restarts from the upgrade instead.
+    Built by counting readings, continued by counting minutes, it would
+    fold one hybrid row at the first midnight: exactly the mixed figure
+    the clearing exists to prevent, on the one day it can happen. The day
+    restarts from the upgrade instead.
     """
     device, _ = register_device(hass, "tw8", "Mid-day Device")
     coord = await setup_coordinator(hass)
@@ -216,12 +215,12 @@ async def test_the_clearing_takes_the_day_in_progress(
 async def test_a_device_whose_integration_is_still_loading_is_kept(
     hass: HomeAssistant,
 ):
-    """Ruling #260. Integrations register their entities as they
-    load, so during the startup window a device with none is usually
-    one whose owner has not finished. Setting it aside then and
-    bringing it back a second later cost eighteen devices their first
-    gap on every restart of the reference system, each discarded as
-    administrative by the rule written for a disabling.
+    """Integrations register their entities as they load, so during the
+    startup window a device with none is usually one whose owner has not
+    finished. Setting it aside then and bringing it back a second later
+    would cost such devices their first gap on every restart, each
+    discarded as administrative by the rule written for a disabling
+    (rule WATCH-10).
     """
     coord = await setup_coordinator(hass)
     source = MockConfigEntry(domain="test", title="Loading Source")
@@ -241,11 +240,10 @@ async def test_a_device_whose_integration_is_still_loading_is_kept(
 async def test_the_clearing_runs_again_for_an_install_past_the_first_mark(
     hass: HomeAssistant,
 ):
-    """Ruling #261. The first marker was set by a version that
-    cleared the recorded days but left the day accumulating, so an
-    install that had already passed it would have folded the hybrid
-    row anyway. The marker's value changes, which runs the clearing
-    once more, this time taking the day with it.
+    """A marker set by a version that cleared the recorded days but left the
+    day accumulating would let an install that had already passed it fold
+    the hybrid row anyway. The marker's value changes, which runs the
+    clearing once more, this time taking the day with it.
     """
     device, _ = register_device(hass, "tw9", "Half-cleared Device")
     coord = await setup_coordinator(hass)
@@ -268,10 +266,9 @@ async def test_the_clearing_runs_again_for_an_install_past_the_first_mark(
 async def test_the_grace_close_re_reads_the_registry(
     hass: HomeAssistant,
 ):
-    """The second half of ruling #260: the no-entities rule is held
-    during startup, so something has to look again when the window
-    shuts, or a device that genuinely has none stays watched until an
-    unrelated registry change.
+    """The no-entities rule is held during startup, so something has to look
+    again when the window shuts, or a device that has none stays watched
+    until an unrelated registry change (rule WATCH-10).
     """
     coord = await setup_coordinator(hass)
     source = MockConfigEntry(domain="test", title="Bare Source")
@@ -294,11 +291,11 @@ async def test_the_grace_close_re_reads_the_registry(
 async def test_a_held_value_costs_the_same_whatever_it_lasts(
     hass: HomeAssistant,
 ):
-    """Ruling #262. Welford for a repeated value has a closed form,
-    so a value held for a full day is one arithmetic step rather than
-    1440. The figures must match the loop exactly, which is what this
-    pins: a day at one level, then a second level, against the
-    textbook running update.
+    """Welford for a repeated value has a closed form, so a value held for a
+    full day is one arithmetic step rather than 1440. The figures must
+    match the loop exactly, which is what this pins: a day at one level,
+    then a second level, against the textbook running update
+    (rule SIG-05).
     """
     device, _ = register_device(hass, "cf1", "Closed Form Device")
     coord = await setup_coordinator(hass)
@@ -373,11 +370,10 @@ async def test_the_bulk_feed_bootstraps_the_same_way(
 async def test_a_day_of_readings_with_no_held_minute_is_dropped(
     hass: HomeAssistant,
 ):
-    """Ruling #262. A device can report several times inside one
-    minute at the very end of a day, which weighs nothing, so the day
-    folds nothing. The reads counter has to go with it: carried
-    forward, it put one device's report count on the following day's
-    row.
+    """A device can report several times inside one minute at the very end of
+    a day, which weighs nothing, so the day folds nothing. The reads
+    counter goes with it, or one device's report count lands on the
+    following day's row (rule SIG-05).
     """
     device, _ = register_device(hass, "cf2", "Late Reporter")
     coord = await setup_coordinator(hass)

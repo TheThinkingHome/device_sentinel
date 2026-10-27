@@ -3,20 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_own_connection.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_own_connection.py, Version: 0.27.10 (2026-10-27)
 
-"""A device whose own connection fails is listed as itself.
+"""A device whose own connection fails is listed as itself (rule UP-05).
 
-SwitchBot, TP-Link and Brother make an integration entry per device.
-On the second fleet two SwitchBot freezer sensors died with their
-batteries, and each one's entry failed to start. Device Sentinel
-counted them as casualties of their own entries' outages, so the
-Problem List named no device, only "switchbot down: 2 of 14 total
-devices unavailable"; at each restart the two went on the list and
-came off a minute later, logged as recoveries; and outage rows
-written before 0.22.23, which name no entry, never closed, so the
-integration's page read "SwitchBot Bluetooth integration, still down"
-for days. Every test here but the guards fails on 0.23.0.
+SwitchBot, TP-Link and Brother make an integration entry per device,
+so a sensor that dies with its battery fails its own entry. Counted as
+a casualty of that outage, it would leave the Problem List naming no
+device, only "switchbot down: 2 of 14 total devices unavailable"; at
+each restart it would go on the list and come off a minute later,
+logged as a recovery; and an outage row that names no entry would
+never close, so the integration's page would read "still down" for
+days.
 """
 
 from __future__ import annotations

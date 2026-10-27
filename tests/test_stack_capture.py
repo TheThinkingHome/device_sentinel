@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_capture.py, Version: 0.23.8 (2026-09-25)
+# File: tests/test_stack_capture.py, Version: 0.27.10 (2026-10-27)
 
-"""What Extended Diagnostics captures from Z-Wave and Matter.
+"""What Extended Diagnostics captures from Z-Wave and Matter
+(rule STACK-11).
 
-The second fleet's first capture, 24 September, wrote Z-Wave node
-states as 1, 3 and 4 where the file promised asleep, dead and alive;
-wrote the word "datetime" for each node's last seen; and left every
-Matter line's detail empty, with no network and no last contact. These
-tests build nodes in the shapes the libraries give. The ones that are
-not guards fail on 0.23.2.
+Z-Wave node states are written as asleep, dead and alive, not as 1, 3
+and 4; each node's last seen is a time, not the word "datetime"; and
+each Matter line carries its network and last contact. These tests
+build nodes in the shapes the libraries give.
 """
 
 from __future__ import annotations
@@ -95,8 +94,8 @@ async def test_matter_network_from_its_diagnostics_cluster(hass: HomeAssistant):
         node_data=SimpleNamespace(attributes={"0/53/0": 11, "0/53/1": 3}))
     _matter(hass, [node])
     (row,) = probe_rows(hass, {MATTER_DOMAIN})
-    # Since 0.23.8 a Thread node's routing role (0/53/1) rides beside
-    # its network: 3 is an end device.
+    # A Thread node's routing role (0/53/1) rides beside its network: 3 is
+    # an end device.
     assert row["detail"] == "network thread, thread role end device"
 
 

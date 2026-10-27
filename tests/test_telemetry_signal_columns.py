@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_telemetry_signal_columns.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_telemetry_signal_columns.py, Version: 0.27.10 (2026-10-27)
 
-"""device_telemetry.md reads signal the way the judge does.
+"""device_telemetry.md reads signal the way the judge does
+(rules SIG-06, SIG-13).
 
-The report measured each device's daily lows against a floor-based
-line and printed the floor's weekly drift and the mean and spread of
-every reading. That line judges nothing: weak links are raised by the
-bad-day model, which the dashboard draws. On the reference rig the two
-lines for Temperature Main Bath sat 26 points apart, 104.3 against
-78.6. Ruled 21 September 2026: the report carries the dashboard's
+A floor-based line judges nothing: weak links are raised by the
+bad-day model, which the dashboard draws, and the two lines can sit 26
+points apart on the same device. So the report carries the dashboard's
 figures, its normal and the bad-day line, and marks the bad days.
 """
 
@@ -56,8 +54,8 @@ async def test_the_floor_columns_give_way_to_the_bad_day_model(hass: HomeAssista
     _coord, _record, _text_, header, row = await _written(hass)
     assert "FLOOR/WK" not in header
     assert "MEAN\u00b1SD" not in header
-    # Read by name, beside SIGNAL: the six rhythm columns of 0.23.17
-    # (ruling #542) sit before CLOCK and moved every position after them.
+    # Read by name, beside SIGNAL: the six rhythm columns sit before CLOCK
+    # and move every position after them.
     at = header.index("ITS NORMAL")
     assert header[at - 1 : at + 2] == ["SIGNAL", "ITS NORMAL", "BAD-DAY LINE"]
     assert len(header) == len(row) == 15

@@ -1,16 +1,13 @@
-"""Tests for what the reports say about set-aside devices.
+"""What the reports say about set-aside devices (rule WATCH-03).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_report_columns.py, Version: 0.25.6 (2026-10-11)
+# File: test_report_columns.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Ruling #257 recorded why each device was set aside and the
-classification file printed a tick regardless, so a disabled device
-and a service device still read identically: the reason existed in
-the data and never reached the page. The dwell chart had the same
-shape of gap, recording the day's percentiles since 0.12.19 and
-showing neither.
+Each device records why it was set aside, so the classification file
+prints that reason, not a tick: a disabled device and a service device
+must not read the same.
 """
 
 
@@ -65,8 +62,8 @@ async def test_each_reason_is_named_in_the_classification(
         name="Bare One",
     )
     coord = await setup_coordinator(hass)
-    # Past the startup window, where the no-entities rule is held
-    # because an integration may still be loading (ruling #260).
+    # Past the startup window, because the no-entities rule is held while an
+    # integration may still be loading (rule WATCH-10).
     coord._grace_until = 0.0
     coord._rebuild_registry_view()
 
@@ -92,7 +89,7 @@ async def test_the_header_names_every_cause(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _classification(hass)
 
-    # All five, since 0.22.13: duplicate coordinators were missing.
+    # All five reasons, duplicate coordinators included (rule WATCH-05).
     for cause in (
         "integrations and devices you asked to exclude", "service devices",
         "disabled devices", "duplicate coordinators",

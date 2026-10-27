@@ -1,7 +1,7 @@
-"""Tests for the 30-day hold of a removed device's record (ruling #622).
+"""The 30-day hold of a removed device's record (rule WATCH-07).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_removed_hold.py, Version: 0.25.5 (2026-10-10)
+# File: test_removed_hold.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -205,9 +205,9 @@ async def test_the_hold_survives_a_restart(hass: HomeAssistant, hass_storage):
     record = entry.runtime_data.data[DATA_DEVICES][hardware.device_id]
     assert record[DEV_REMOVED_SINCE] == since, "a restart restarted the hold"
     assert record[DEV_REMOVED_NAME] == "Porch Light"
-    # The gaps are forgotten at load, being longer than this test's
-    # install has watched (#403); the signal history shows the record
-    # came back whole.
+    # The gaps are forgotten at load, being longer than this test's install
+    # has watched (rule FRZ-13); the signal history shows the record came
+    # back whole.
     assert record[DEV_SIGNAL_DAILY_P5] == [-70.0] * 10
 
 
@@ -461,8 +461,8 @@ async def test_answers_go_with_the_purge(hass: HomeAssistant, hass_ws_client, ha
 
 
 async def test_a_device_with_no_record_takes_its_answers_at_once(hass: HomeAssistant, hass_ws_client):
-    """Only a held record holds answers: with none, the removal takes
-    them as before (0.24.7)."""
+    """Only a held record holds answers: with none, the removal takes them
+    (rule STOR-20)."""
     hardware = Hardware(hass, "ra3", "No Record")
     coord = await setup_coordinator(hass)
     client = await _client(hass, hass_ws_client)
@@ -555,7 +555,7 @@ async def test_mutes_are_kept_while_a_device_is_held(hass: HomeAssistant, caplog
     await _removed(hass, other)
     assert "the muting is kept 30 days in case the device comes back" in caplog.text
 
-    # A save of a screen, which used to drop the picks.
+    # A save of a screen keeps the picks.
     await _save_freeze_screen(hass, entry)
     for key in keys:
         assert hardware.device_id in entry.options.get(key, []), key
@@ -580,7 +580,7 @@ async def test_mutes_go_on_the_first_save_after_the_purge(hass: HomeAssistant):
     assert hardware.device_id not in entry.options.get(CONF_FREEZE_MUTED_DEVICES, [])
 
 
-# ------------------------------------------------------------ found by review
+# ------------------------------------------------------------ edge cases
 
 
 async def test_a_composite_id_does_not_keep_a_hold_for_ever(hass: HomeAssistant, monkeypatch):
@@ -638,8 +638,8 @@ async def test_a_returning_device_is_judged_from_its_return(hass: HomeAssistant)
 
 
 async def test_a_stamp_carried_back_by_an_older_release_resets_nothing(hass: HomeAssistant):
-    """0.25.4 keeps an unknown field, so a device that came back while
-    it ran still carries its removal stamp, with reports after it."""
+    """An older release keeps an unknown field, so a device that came back
+    while it ran still carries its removal stamp, with reports after it."""
     hardware = Hardware(hass, "rc4", "Downgraded")
     coord = await setup_coordinator(hass)
     record = coord.data[DATA_DEVICES][hardware.device_id]
@@ -693,7 +693,7 @@ async def test_a_device_never_heard_stays_never_reported(hass: HomeAssistant):
     assert record[DEV_LAST_ACTIVITY] is None
 
 
-# ------------------------------------------------------------ found by the adversarial round
+# ------------------------------------------------------------ more edge cases
 
 
 def _sick(record) -> None:
@@ -756,16 +756,16 @@ def test_a_name_in_a_log_line_stays_on_one_line():
     assert len(_plain("x" * 10_000)) == 120
 
 
-# ------------------------------------------------------------ ruled 10 October, afternoon
+# ------------------------------------------------------------ the id follows
+# Home Assistant
 
 
 @pytest.mark.skipif(not MULTI_OWNER_POSSIBLE, reason=MULTI_OWNER_GONE)
 async def test_the_record_goes_with_the_id_home_assistant_gives_back(hass: HomeAssistant):
-    """Below Home Assistant 2026.8 a removed device's id goes to any
-    device sharing one of its addresses, a router's tracker included,
-    which Home Assistant treats as the same device. The record follows
-    the id (James, 10 October 2026: follow Home Assistant); the first gap
-    is refused either way."""
+    """Below Home Assistant 2026.8 a removed device's id goes to any device
+    sharing one of its addresses, a router's tracker included, which Home
+    Assistant treats as the same device. The record follows the id, as
+    Home Assistant does; the first gap is refused either way."""
     esphome = MockConfigEntry(domain="esphome", title="ESPHome")
     router = MockConfigEntry(domain="tplink_router", title="Router")
     for source in (esphome, router):

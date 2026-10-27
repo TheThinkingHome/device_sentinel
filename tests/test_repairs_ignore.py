@@ -3,21 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs_ignore.py, Version: 0.26.7 (2026-10-19)
+# File: test_repairs_ignore.py, Version: 0.27.10 (2026-10-27)
 
-"""Every fixable repair offers an ignore (ruling #325).
+"""Every fixable repair offers an ignore (rule REP-06).
 
 Home Assistant puts an Ignore button on an issue that is not fixable
-and takes it away as soon as one is, because a fixable issue opens
-its flow instead of the dialog carrying the button. A person who does
-not want the fix was then stuck with the card, which is the fault
-reported against 0.16.3 by a person holding 124 deliberately disabled
-entities. The ignore now lives inside the flow, beside the fix.
+and takes it away as soon as one is, because a fixable issue opens its
+flow instead of the dialog carrying the button. A person who does not
+want the fix is then stuck with the card, so the ignore lives inside
+the flow, beside the fix.
 
-The disabled-entities card that report was about is retired (ruling
-#697); a sensor a person switched off is listed already acknowledged
-on its Recommendations card instead (#699). The missing-target card
-is the fixable one left, and it keeps the rule.
+The missing-target card is the fixable one left, and it keeps the rule.
+A sensor a person switched off is listed already acknowledged on its
+Recommendations card instead (rule REC-07).
 """
 
 import homeassistant.helpers.issue_registry as ir
@@ -85,9 +83,10 @@ async def test_the_target_card_offers_both_ways_out(
 async def test_every_fixable_flow_has_an_ignore_step(
     hass: HomeAssistant, issue_id: str
 ) -> None:
-    """The standing rule (ruling #325), pinned against every flow
-    this module can hand out: a new fixable repair that forgets the
-    ignore fails here."""
+    """The standing rule, pinned against every flow this module can hand
+    out: a new fixable repair that forgets the ignore fails here
+    (rule REP-06).
+    """
     flow = await repairs_module.async_create_fix_flow(
         hass, issue_id, {"entry_id": "whatever"}
     )

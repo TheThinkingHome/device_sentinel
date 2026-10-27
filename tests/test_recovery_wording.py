@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_wording.py, Version: 0.22.25 (2026-09-22)
+# File: tests/test_recovery_wording.py, Version: 0.27.10 (2026-10-27)
 
-"""A closed signal problem says it was the signal.
+"""A closed signal problem says it was the signal (rule NOTE-10).
 
-The reference rig's brief of 19 September read "Plug Living Room
-Router recovered at 12:00 AM after 2 and a half weeks". The plug never stopped
-reporting; its signal problem closed at the midnight judgment. A
-reader could only guess which.
+A plug that never stopped reporting closes its signal problem at the
+midnight judgment. "Recovered after 2 and a half weeks" leaves a reader
+guessing whether the device was silent or its signal was weak, so the
+sentence names the signal.
 """
 
 from __future__ import annotations

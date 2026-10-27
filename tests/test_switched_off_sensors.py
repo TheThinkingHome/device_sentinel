@@ -3,24 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_switched_off_sensors.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_switched_off_sensors.py, Version: 0.27.10 (2026-10-27)
 
-"""Switched-off sensors: found per device, turned on per device.
+"""Switched-off sensors: found per device, turned on per device (rules
+REC-05, DASH-09).
 
-The three Enable button entities are retired (ruling #696, from
-Frenck's review of the HACS default-list submission): any user,
-automation or script could press them, and each turned on other
-integrations' entities on every watched device, including ones a
-person had switched off. A sensor is now switched on one device and
-one kind at a time, by an administrator, from the device's page or its
-Recommendations card, and the retired-entity sweep removes the three
-registry entries.
+No button entity turns sensors on, because any user, automation or
+script could press it and turn on other integrations' entities on
+every watched device, including ones a person had switched off. A
+sensor is switched on one device and one kind at a time, by an
+administrator, from the device's page or its Recommendations card, and
+the retired-entity sweep removes the three old registry entries.
 
-What counts as switched off (ruling #698): only a device's own
-entities, never one another integration added (#404, #463), and a
-device is listed only when none of its own entities of that kind is
-on. Who switched them off is kept, because a person's own choice is
-listed already acknowledged (#699).
+Only a device's own entities count as switched off, never one another
+integration added (rule WATCH-02), and a device is listed only when
+none of its own entities of that kind is on. Who switched them off is
+kept, because a person's own choice is listed already acknowledged
+(rule REC-07).
 """
 
 from __future__ import annotations
@@ -76,9 +75,9 @@ USER = er.RegistryEntryDisabler.USER
 
 
 async def test_the_three_enable_buttons_are_gone(hass: HomeAssistant):
-    """Ruling #696: only Regenerate Reports and Maintenance Mode are
-    button entities; nothing a script can press turns on another
-    integration's entity."""
+    """Only Regenerate Reports and Maintenance Mode are button entities;
+    nothing a script can press turns on another integration's entity
+    (rule DASH-09)."""
     await setup_entry(hass)
     buttons = sorted(
         state.entity_id for state in hass.states.async_all("button")
@@ -91,9 +90,9 @@ async def test_the_three_enable_buttons_are_gone(hass: HomeAssistant):
 
 
 async def test_an_upgrade_removes_the_three_registry_entries(hass: HomeAssistant):
-    """An install from before 0.26.7 holds the three entries in its
-    registry; the retired-entity sweep removes them at setup and leaves
-    the two buttons that stay (ruling #696)."""
+    """An older install holds the three entries in its registry; the
+    retired-entity sweep removes them at setup and leaves the two
+    buttons that stay (rule STOR-19)."""
     entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", options={})
     entry.add_to_hass(hass)
     registry = er.async_get(hass)
@@ -119,7 +118,7 @@ async def test_an_upgrade_removes_the_three_registry_entries(hass: HomeAssistant
 
 async def test_switched_off_reads_who_switched_it_off(hass: HomeAssistant):
     """The integration's default reads "other"; a person's own choice
-    reads "user", so its card row starts acknowledged (#699)."""
+    reads "user", so its card row starts acknowledged (rule REC-07)."""
     source, by_default = _device(hass, "by_default")
     _entity(hass, source, by_default, "bd_ls", "by_default_last_seen", disabled_by=INTEGRATION)
     source2, by_hand = _device(hass, "by_hand")
@@ -136,8 +135,8 @@ async def test_switched_off_reads_who_switched_it_off(hass: HomeAssistant):
 
 async def test_another_integrations_entity_never_lists_a_device(hass: HomeAssistant):
     """A battery sensor Battery Notes adds to a device is not the
-    device's own (#404, #463): switched off, it lists nothing, and a
-    turn-on leaves it alone (ruling #698)."""
+    device's own (rule WATCH-02): switched off, it lists nothing, and a
+    turn-on leaves it alone (rule REC-05)."""
     source, device = _device(hass, "noted")
     _entity(hass, source, device, "noted_temp", "noted_temperature")
     foreign = _entity(
@@ -155,7 +154,7 @@ async def test_another_integrations_entity_never_lists_a_device(hass: HomeAssist
 
 async def test_one_entity_of_the_kind_on_is_enough(hass: HomeAssistant):
     """A ZHA-shaped device with its RSSI on and its LQI off has a
-    signal, so it is not listed (ruling #698)."""
+    signal, so it is not listed (rule REC-05)."""
     source, device = _device(hass, "zha_like")
     _entity(hass, source, device, "zl_rssi", "zha_like_rssi", device_class="signal_strength", unit="dBm")
     _entity(hass, source, device, "zl_lqi", "zha_like_lqi", disabled_by=INTEGRATION)
@@ -176,9 +175,9 @@ async def test_one_entity_of_the_kind_on_is_enough(hass: HomeAssistant):
 async def test_a_turn_on_reaches_one_device_and_one_kind(
     hass: HomeAssistant, kind, object_id, device_class, unit
 ):
-    """Ruling #696: one device, one kind. Another device's switched-off
-    entity of the same kind, and this device's other kinds, stay off,
-    and the brief carries one row on the device's line."""
+    """One device, one kind. Another device's switched-off entity of the
+    same kind, and this device's other kinds, stay off, and the brief
+    carries one row on the device's line (rule DASH-09)."""
     source, device = _device(hass, "plug", name="Hall Plug")
     target = _entity(
         hass, source, device, f"p_{kind}", object_id,
@@ -220,8 +219,8 @@ async def test_a_turn_on_refuses_an_unknown_kind(hass: HomeAssistant):
 
 
 async def test_the_status_sensor_keeps_no_awaiting_counts(hass: HomeAssistant):
-    """The three awaiting-enable attributes went with their buttons
-    (ruling #696)."""
+    """The status sensor keeps no awaiting-enable attributes
+    (rule CFG-07)."""
     source, device = _device(hass, "await")
     _entity(hass, source, device, "aw_ls", "await_last_seen", disabled_by=INTEGRATION)
     await setup_entry(hass)

@@ -3,25 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stacks.py, Version: 0.20.17 (2026-09-11)
+# File: tests/test_stacks.py, Version: 0.27.10 (2026-10-27)
 
-"""The stack registry, the four stack modules, and the silence.
+"""The stack registry, the four stack modules, and the silence (rules
+STACK-01, STACK-02).
 
 Three subjects. The contract each stack module implements, exercised
-on all four rather than only on the one with a reader, because ruling
-#218 asks that the contract be implemented three times before it is
-relied on once and an unexercised implementation is a claim rather
-than a proof.
+on all four rather than only on the ones with a reader, because an
+unexercised implementation is a claim rather than a proof.
 
-The domain replay, which is the proof that the pairing lookup did not
-change when it stopped naming a stack. The old form and the new form
-are both evaluated over every domain a real fleet carries plus the
-guarded cases, and asserted equal on each.
+The domain replay, which proves the pairing lookup did not change when
+it stopped naming a stack. The old form and the new form are both
+evaluated over every domain a real fleet carries plus the guarded
+cases, and asserted equal on each.
 
-The silence, which is the part that has to keep being true. Ruling
-#215's lesson was that a hand-maintained list inside a guard drifts
-while the guard keeps passing, so this one reads the source with ast
-rather than repeating what it expects to find.
+The silence, which has to keep being true. A hand-maintained list
+inside a guard drifts while the guard keeps passing, so this one reads
+the source with ast rather than repeating what it expects to find.
 """
 
 from __future__ import annotations
@@ -46,8 +44,8 @@ from custom_components.device_sentinel.const import (
 PKG = pathlib.Path(stacks.__file__).parent
 
 # Every stack module, and the integration domain each owns. Z2M is the
-# one whose stack name and domain differ, which is the whole reason
-# presence is told by its bridge device (ruling #139).
+# one whose stack name and domain differ, which is why presence is told
+# by its bridge device (rule STACK-01).
 OWNED_DOMAIN = {
     stack_zha: "zha",
     stack_zwave: "zwave_js",
@@ -102,12 +100,12 @@ def test_every_stack_module_implements_the_contract():
 
 
 def test_only_z2m_owns_a_device_that_is_its_own_plumbing():
-    """Ruling #400, and why it cannot be `detects` reused.
+    """Only Z2M owns a device that is its own plumbing, and `detects`
+    cannot decide it (rule WATCH-05).
 
     `detects` answers yes for every device on an unbuilt stack's
-    domain, so building the rule on it would set aside a tester's
-    Z-Wave stick, which reports every 204 seconds and carries a real
-    signal series.
+    domain, so building the rule on it would set aside a Z-Wave stick
+    that reports every 204 seconds and carries a real signal series.
     """
     assert stack_z2m.is_plumbing("mqtt", BRIDGE) is True
     assert stack_z2m.is_plumbing("mqtt", NOT_BRIDGE) is False
@@ -123,7 +121,7 @@ def test_only_z2m_owns_a_device_that_is_its_own_plumbing():
 
 
 def test_the_walk_asks_one_question_and_every_stack_answers():
-    """The dispatcher, so the walk never names a stack (ruling #218)."""
+    """The dispatcher, so the walk never names a stack (rule STACK-01)."""
     assert stacks.is_plumbing("mqtt", BRIDGE) is True
     assert stacks.is_plumbing("mqtt", NOT_BRIDGE) is False
     assert stacks.is_plumbing("zwave_js", NOT_BRIDGE) is False
@@ -159,7 +157,7 @@ def test_the_three_unbuilt_stacks_detect_by_domain_alone():
 
 
 def test_z2m_is_detected_by_its_bridge_device_and_not_its_domain():
-    """The mqtt domain alone proves nothing (rulings #139 and #143)."""
+    """The mqtt domain alone proves nothing (rule STACK-01)."""
     assert stack_z2m.detects("mqtt", BRIDGE) is True
     assert stack_z2m.detects("mqtt", NOT_BRIDGE) is False
     assert stack_z2m.detects("zha", BRIDGE) is False
@@ -177,9 +175,9 @@ def test_z2m_recognises_the_bridge_by_model_when_the_name_is_changed():
 def test_only_the_built_stacks_make_a_reader():
     """A stack with no reader costs no subscription and no timer.
 
-    Two stacks have one since 0.19.0: Z2M over MQTT, and ZHA over its
-    config entry (ruling #358). Z-Wave and Matter still have none,
-    and neither does a name no module claims.
+    Two stacks have one: Z2M over MQTT, and ZHA over its config entry.
+    Z-Wave and Matter have none here, and neither does a name no module
+    claims.
     """
     assert stack_zwave.make_reader(None) is None
     assert stack_matter.make_reader(None) is None
@@ -203,7 +201,7 @@ def test_detect_returns_the_stack_a_device_proves():
 
 
 def _old_form(readers, domain):
-    """The pairing lookup as detect_freeze.py held it in 0.12.0.
+    """The pairing lookup in its old form.
 
     Fetch the reader keyed z2m, then require the device's domain to
     be exactly mqtt. Kept here so the replacement is measured against
@@ -233,26 +231,21 @@ def test_the_domain_replay_agrees_with_the_form_it_replaced():
 
 
 def test_the_one_divergence_is_unreachable_and_stays_that_way():
-    """Where the two forms differ, and why it is now live.
+    """Where the two forms differ, and why it is safe.
 
     Handed a reader filed under a stack other than Z2M, the old form
     returns nothing (it looked only for z2m) and the new form returns
-    that reader (it asks who owns the domain). The new form is the
-    generalization the old one would have become. This test used to
-    end by proving the divergence unreachable, since only Z2M made a
-    reader; 0.19.0 gave ZHA one, so the divergence is live and what
-    this test now holds is the condition that made it safe: the new
-    stack's pairing behaviour was ruled before it shipped.
+    that reader (it asks who owns the domain). With ZHA making a reader
+    the divergence is live, so this test holds the condition that makes
+    it safe: the new stack's pairing behavior is set before it ships.
     """
     reader = object()
     zha_only = {STACK_ZHA: reader}
     assert _old_form(zha_only, "zha") is None
     assert stacks.reader_for_domain(zha_only, "zha") is reader
-    # Reachable since 0.19.0, which is what this test was written to
-    # catch: ZHA has a reader now, so the generalization is live
-    # rather than theoretical. Its pairing behaviour was ruled before
-    # it shipped (ruling #358): pairing_open is a constant False, so
-    # a ZHA device recovering is never mistaken for a pairing.
+    # ZHA has a reader, so the generalization is live rather than
+    # theoretical. Its pairing_open is a constant False, so a ZHA device
+    # recovering is never mistaken for a pairing (rule FRZ-17).
     made = stack_zha.make_reader(None)
     assert made is not None
     assert made.pairing_open is False
@@ -299,14 +292,14 @@ def _string_constants(path: pathlib.Path) -> set[str]:
 
 
 def test_the_stack_agnostic_files_name_no_stack():
-    """The silence ruling #218 asks for, asserted rather than trusted.
+    """The stack-agnostic files name no stack, asserted rather than
+    trusted (rule STACK-01).
 
-    Three files held stack knowledge before this release: the registry
-    walk in coordinator.py, the bridge test in interventions.py, and
-    the pairing lookup in detect_freeze.py. None of them may import a
-    STACK_ name or carry a stack's domain as a live literal. A fourth
-    stack should change none of them, and this fails if one grows a
-    branch back.
+    Three files could hold stack knowledge: the registry walk in
+    coordinator.py, the bridge test in interventions.py, and the pairing
+    lookup in detect_freeze.py. None of them may import a STACK_ name or
+    carry a stack's domain as a live literal. A fourth stack should
+    change none of them, and this fails if one grows a branch back.
     """
     domains = {"mqtt", "zha", "zwave_js", "matter", "zigbee2mqtt"}
     for name in ("coordinator.py", "interventions.py", "detect_freeze.py"):

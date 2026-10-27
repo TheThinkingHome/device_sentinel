@@ -1,17 +1,16 @@
-"""What survives a save, a stop, and a load, for this week's fields.
+"""What survives a save, a stop, and a load, for the newer fields
+(rule STOR-19).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_round_trip.py, Version: 0.23.16 (2026-09-29)
+# File: test_round_trip.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-The unclean-restart suite covers the clocks and the episodes. This
-one covers what the last two weeks added and nothing has yet driven
-through a full save and reload: the percentile estimator states, the
-Welford pair, the reading counter, and the set-aside stamp. A value
-that does not round trip is not a crash; it is a day of statistics
-quietly starting over, which is the failure this project keeps
-finding late.
+The unclean-restart suite covers the clocks and the episodes. This one
+drives the rest through a full save and reload: the percentile
+estimator states, the Welford pair, the reading counter, and the
+set-aside stamp. A value that does not round trip is not a crash; it is
+a day of statistics quietly starting over, which is hard to notice.
 """
 
 import json
@@ -139,7 +138,7 @@ async def test_the_set_aside_stamp_is_cold_and_survives(
     assert saved[DATA_DEVICES][device.id][DEV_SET_ASIDE_SINCE] == 1000.0
 
 
-# A newer version's fields survive an older release (#189, amended).
+# A newer version's fields survive an older release (rule STOR-19).
 
 
 def test_a_newer_versions_field_survives_the_reconciler():

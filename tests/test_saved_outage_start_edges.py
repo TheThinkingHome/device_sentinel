@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_saved_outage_start_edges.py, Version: 0.27.7 (2026-10-27)
+# File: test_saved_outage_start_edges.py, Version: 0.27.10 (2026-10-27)
 
-"""The device's saved outage start at its edges (ruling #647).
+"""The device's saved outage start at its edges (rule UNAV-04).
 
 Set aside, a device's outage is not followed, so its return reads it
 afresh. A clock step restarts the start at the moment it is noticed, as
-it restarts the device clocks (#538). A button never pressed rests, as
-an event entity does. With nothing saved, as at the upgrade, a standing
-unavailable verdict gives the start. Found by the adversarial round of
-12 October 2026.
+it restarts the device clocks (rule FRZ-21). A button never pressed
+rests, as an event entity does. With nothing saved, as at the upgrade,
+a standing unavailable verdict gives the start.
 """
 
 from __future__ import annotations
@@ -139,7 +138,7 @@ async def test_an_outage_while_set_aside_starts_afresh_on_return(hass: HomeAssis
 async def test_a_device_down_through_a_stretch_set_aside_counts_from_its_return(hass: HomeAssistant, freezer):
     """Down, set aside three hours while still down, taken back still
     down, back an hour later: not learned, and down for counts from the
-    return, since nobody watched it while it was set aside (#648)."""
+    return, since nobody watched it while it was set aside (rule WATCH-08)."""
     coord, device, eids, _, _ = await ready(hass, freezer, "e02", count=1)
     events = record_events(hass, EVENT_RECOVERED)
     went = dt_util.utcnow().timestamp()
@@ -158,8 +157,8 @@ async def test_a_device_down_through_a_stretch_set_aside_counts_from_its_return(
     await tick(hass, freezer)
     assert record[DEV_TODAY_MAX] is None or record[DEV_TODAY_MAX] < H
     got = downs(events, device.id)
-    # The three hours set aside are nobody's watching (#648): 0.25.6
-    # counted from the return.
+    # The three hours set aside are nobody's watching, so down for
+    # counts from the return (rule WATCH-08).
     assert got and got[-1][1] <= now - back_at + 300, (got, now - went, now - back_at)
 
 
@@ -260,10 +259,10 @@ async def test_a_remote_with_a_resting_button_is_not_down(hass: HomeAssistant, f
     hass.states.async_set(ev, "2026-10-11T17:00:00.000+00:00")
     await hass.async_block_till_done()
     await tick(hass, freezer)
-    # 0.25.6 learned this press (3000 s); 0.26.0 reads the never-pressed
-    # button as the device down, taints, and discards it.
+    # The press (3000 s) is learned: a never-pressed button rests, so it
+    # is not the device down and nothing is tainted.
     assert record[DEV_TODAY_MAX] is not None, "the first press after a restart was not learned"
-    # Shared with 0.25.6: the unknown verdict on a device at rest.
+    # The unknown verdict on a device at rest.
     assert seen == {None}, seen
 
 
@@ -274,7 +273,7 @@ async def _upgrade(hass, hass_storage, freezer, uid, back_during):
     await walk(hass, freezer, 3 * H)
     assert rec(coord, device.id)[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
     entry = await unload(hass)
-    # The file as 0.25.6 left it: no saved outage start.
+    # The file as an older release left it: no saved outage start.
     hass_storage[STORAGE_CLOCKS_KEY]["data"]["clocks"][device.id].pop(DOWN, None)
     freezer.tick(120)
     if back_during:
@@ -294,9 +293,10 @@ async def _upgrade(hass, hass_storage, freezer, uid, back_during):
 
 
 async def test_the_upgrade_with_a_device_back_during_the_restart(hass: HomeAssistant, hass_storage, freezer):
-    """Unavailable three hours under 0.25.6 (verdict standing), back while
-    Home Assistant restarts into 0.26.0. The three hours must not be
-    learned; the standing verdict says when it went."""
+    """Unavailable three hours with the verdict standing, back while Home
+    Assistant restarts into the release that saves the outage start. The
+    three hours must not be learned; the standing verdict says when it
+    went (rule UNAV-04)."""
     record = await _upgrade(hass, hass_storage, freezer, "e09", True)
     assert record[DEV_TODAY_MAX] is None or record[DEV_TODAY_MAX] < H, record[DEV_TODAY_MAX]
 

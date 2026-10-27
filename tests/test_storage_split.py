@@ -3,17 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.27.6 (2026-10-26)
+# File: test_storage_split.py, Version: 0.27.10 (2026-10-27)
 
-"""The two files: the shadow, the merge, and the stamps.
+"""The main and clocks files: the shadow, the merge, and the stamps
+(rules STOR-01, STOR-02, STOR-19).
 
-One of the files split out of test_storage.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
-
-Two tests were retired with the transition (ruling #241). The diagnostics phase field is gone, having one answer forever once the strip became unconditional. And the refused-stale-hot case is gone with the main file's clock copies: that test's own docstring predicted it would fail the day the strip landed and called that failure the point. The invariant it guarded, that a load reconstructs the newest clocks available, is covered by the round-trip test in test_clock_strip.py.
+Helpers are copied into each file that calls them, so each file reads
+on its own. That a load rebuilds the newest clocks available is covered
+by the round-trip test in test_clock_strip.py.
 """
 
 
@@ -71,7 +68,7 @@ from custom_components.device_sentinel.coordinator import (
 from tests.helpers import setup_coordinator, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -113,9 +110,9 @@ class _StoreSpy:
     def _delay(self, data_func, delay):
         self.delays += 1
         self.last_delay = delay
-        # Nothing schedules a save through async_delay_save since the
-        # single deadline on the minute tick replaced it (ruling #165),
-        # so reaching here is a fault.
+        # Nothing schedules a save through async_delay_save, because the
+        # single deadline on the minute tick does (rule STOR-02), so
+        # reaching here is a fault.
         raise AssertionError(f"async_delay_save was called with {delay}")
         self._real_delay(data_func, delay)
 
@@ -138,9 +135,9 @@ def _cold(hass_storage, devices, saved_at):
 
     Marked as a clean stop, because these tests are about which file
     supplies the clocks and not about what an unclean stop does to
-    them. Without the marker the load would take the #163 path and
-    reset every clock the merge had just restored, which is correct
-    behaviour and would tell us nothing about the merge.
+    them. Without the marker the load would take the unclean-stop path
+    and reset every clock the merge had just restored, which is correct
+    behavior and would say nothing about the merge (rule FRZ-20).
     """
     hass_storage[STORAGE_KEY] = {
         "version": 1,
@@ -174,7 +171,7 @@ async def test_the_clocks_file_is_written(
 async def test_the_shadow_agrees_with_storage(
     hass: HomeAssistant, hass_storage
 ):
-    """What the rig will check daily, asserted here once."""
+    """What a daily check of a real house reads, asserted here once."""
     device, entity_id = _register(hass, "cl2", "Agreeing Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -234,14 +231,12 @@ async def test_nothing_reads_the_shadow(
 async def test_the_shadow_exists_from_the_first_moment(
     hass: HomeAssistant, hass_storage
 ):
-    """0.8.8: setup writes storage directly rather than through
-    _save_now, so without an explicit write here the clocks file did
-    not appear until the first coalesced save up to a window later,
-    and a system restarting inside that window never produced one.
+    """Setup writes the clocks file at once, so a system restarting
+    inside the first interval still has one (rule STOR-02).
 
     It mirrors whatever storage held at that instant, so on a fresh
-    install it is legitimately empty and on an existing one it
-    carries every device from the first moment.
+    install it is empty and on an existing one it carries every device
+    from the first moment.
     """
     _register(hass, "sh1", "Immediate Sensor")
     entry = await setup_entry(hass)
@@ -276,11 +271,10 @@ async def test_a_cold_change_takes_the_main_file_along(
 ):
     """The interval write carries both files when the flag is set.
 
-    A cold change used to schedule its own write on its own debounce,
-    and two schedules against one pair of files is the race that let
-    the main file lead the clocks file. Now it sets a flag, and the
-    one scheduler writes both at the interval, main file first, so
-    the hot stamp is always the newer of the pair (#165).
+    Two schedules against one pair of files is the race that lets the
+    main file lead the clocks file. So a cold change sets a flag, and
+    the one scheduler writes both at the interval, main file first, so
+    the hot stamp is always the newer of the pair (rule STOR-02).
     """
     device, _eid = _register(hass, "pair1", "Paired Device")
     entry = await setup_entry(hass)
@@ -352,9 +346,9 @@ async def test_a_dirty_tick_inside_the_window_moves_nothing(
 async def test_an_unstamped_pair_is_left_alone(
     hass: HomeAssistant, hass_storage
 ):
-    """Every install's first load after upgrading. Before 0.10.0 both
-    files were written together, so the main file is already current
-    and a merge it cannot date is a merge it should not make."""
+    """A main file with no stamp to date the clocks file against is
+    already current, so a merge it cannot date is a merge it should not
+    make (rule STOR-19)."""
     device, _eid = _register(hass, "hot3", "Unstamped Device")
     old = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     old[DEV_LAST_ACTIVITY] = 1_780_005000.0
@@ -398,11 +392,11 @@ async def test_the_epoch_wipe_still_has_the_last_word(
     """The ordering the merge depends on: a merge running after the
     wipe would hand the wiped fields straight back.
 
-    Narrowed in 0.11.8. The epoch wipes the rhythm and the verdict
-    drawn from it, six fields, and keeps everything else, because
-    there is no raw layer to rebuild a wiped series from and the
-    signal and battery histories are soaks in progress (ruling #204).
-    So the taint flag is reset here and the signal reading is not.
+    The epoch wipes the rhythm and the verdict drawn from it, six
+    fields, and keeps everything else, because there is no raw layer
+    to rebuild a wiped series from and the signal and battery
+    histories are soaks in progress (rule STOR-19). So the taint flag
+    is reset here and the signal reading is not.
     """
     device, _eid = _register(hass, "hot5", "Epoch Device")
     stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
@@ -411,7 +405,7 @@ async def test_the_epoch_wipe_still_has_the_last_word(
         "data": {
             DATA_DEVICES: {device.id: stale},
             DATA_STATS_EPOCH: "an-older-epoch",
-            # Past the weighting change of ruling #259, so the
+            # Past the weighting change (rule SIG-05), so the
             # one-shot clearing of the mean and deviation does not
             # fire here and this test asks only what it means to
             # ask: what an epoch wipe keeps.
@@ -419,10 +413,9 @@ async def test_the_epoch_wipe_still_has_the_last_word(
             DATA_SAVED_AT: TIME_BASE + 1000.0,
         },
     }
-    # A current-form taint reason, not the pre-#164 boolean flag: a
-    # bool here is a shape fault since 0.18.8 and would discard the
-    # whole hot file (ruling #356) before the wipe this test is
-    # about could run.
+    # A current-form taint reason, not the old boolean flag: a bool
+    # here is a shape fault and would discard the whole hot file
+    # (rule STOR-10) before the wipe this test is about could run.
     _hot(hass_storage, {device.id: {
         DEV_SIGNAL_VALUE: 42.0, DEV_TAINTED: TAINT_UNAVAILABLE,
     }}, saved_at=1_780_009000.0)
@@ -476,14 +469,14 @@ async def test_setup_stamps_both_files_at_once(
 async def test_the_main_file_never_leads_the_clocks_file(
     hass: HomeAssistant, freezer, hass_storage
 ):
-    """The invariant the whole 0.10.9 cadence exists for (#165).
+    """The main file's stamp is never newer than the clocks file's
+    (rule STOR-02).
 
     Cold changes arrive at every offset inside the interval, critical
     saves land mid-window, and churn runs throughout. After every
     single write, the main file's stamp is never newer than the
     clocks file's, because the one scheduler writes cold first and
-    hot second and nothing else writes at all. This is the state the
-    final phase of the split cannot survive, held down structurally.
+    hot second and nothing else writes at all.
     """
     from custom_components.device_sentinel.const import (
         DATA_SAVED_AT,
@@ -536,7 +529,7 @@ async def test_the_main_file_never_leads_the_clocks_file(
 async def test_the_interval_write_puts_the_main_file_first(
     hass: HomeAssistant, freezer
 ):
-    """Within a carried write the main file goes first (#165).
+    """Within a carried write the main file goes first (rule STOR-02).
 
     The stamps cannot prove the order under test, because both files
     stamp with the same frozen clock, so this watches the calls. If
@@ -600,9 +593,9 @@ async def test_storage_roundtrip_with_devices(hass: HomeAssistant, hass_storage)
 async def test_a_stored_outbox_is_dropped_on_load(
     hass: HomeAssistant, hass_storage
 ):
-    """The dry-run outbox was retired at 0.9.11. An install that
-    carried one sheds it on the next load rather than paying for a
-    dead key in every write."""
+    """An install that carries the retired dry-run outbox sheds it on
+    the next load rather than paying for a dead key in every write
+    (rule STOR-19)."""
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
@@ -621,13 +614,12 @@ async def test_a_stored_outbox_is_dropped_on_load(
 async def test_an_older_record_gains_the_fields_this_version_adds(
     hass: HomeAssistant, hass_storage
 ):
-    """End to end through the load path (ruling #189).
+    """End to end through the load path (rule STOR-19).
 
-    A stored record from a version before the signal statistics
-    existed, with a stale statistics epoch so it takes the wipe
-    branch, which is precisely the branch whose hand-maintained
-    backfill had drifted and never set them. Every schema field is
-    present after setup, whichever branch the load took.
+    A stored record from before the signal statistics existed, with a
+    stale statistics epoch so it takes the wipe branch, the branch a
+    hand-kept backfill can miss. Every schema field is present after
+    setup, whichever branch the load took.
     """
     device, _eid = _register(hass, "older1", "Older Device")
     stored = _new_device_record("2026-07-01T00:00:00+00:00", TIME_BASE + 1000.0)
@@ -664,15 +656,15 @@ async def test_an_older_record_gains_the_fields_this_version_adds(
 async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
     hass: HomeAssistant, hass_storage
 ):
-    """Ruling #204. There is no raw layer under these records: a
+    """There is no raw layer under these records (rule STOR-19): a
     reading is folded into a daily figure as it arrives and the
     reading itself is never stored, so a wiped series is gone with
     nothing to rebuild it from.
 
     The epoch exists to relearn the rhythm, which its own log line
-    has always said. It wipes six fields and keeps the rest, so a
-    signal soak measured in weeks and a battery soak measured in
-    months both survive a rhythm rule changing.
+    says. It wipes six fields and keeps the rest, so a signal soak
+    measured in weeks and a battery soak measured in months both
+    survive a rhythm rule changing.
     """
     device, _eid = _register(hass, "ep2", "Soaking Device")
     stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
@@ -687,7 +679,7 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
         "data": {
             DATA_DEVICES: {device.id: stale},
             DATA_STATS_EPOCH: "an-older-epoch",
-            # Past the weighting change of ruling #259, so
+            # Past the weighting change (rule SIG-05), so
             # the one-shot clearing does not fire and this
             # test asks only what an epoch wipe keeps.
             DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
@@ -711,21 +703,20 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
 def test_the_kept_set_and_the_wipe_partition_the_schema():
     """The half that keeps this honest as fields are added.
 
-    A count that has to be maintained by hand drifts, which is the
-    fault #189 exists for. Here the wipe is derived, so what needs
-    pinning is that every schema field is either kept on purpose or
-    wiped on purpose, and none is in neither or both.
+    A count kept by hand drifts. Here the wipe is derived, so what
+    needs pinning is that every schema field is either kept on purpose
+    or wiped on purpose, and none is in neither or both (rule STOR-19).
     """
     schema = set(_new_device_record("", None))
     kept = set(EPOCH_KEPT)
     assert kept <= schema, sorted(kept - schema)
     wiped = schema - kept
-    # lognormal_days (0.24.0) counts days since a reset against
-    # daily_max, and an epoch wipe clears daily_max, so it is wiped
-    # with it: back to None, the whole (empty) history.
-    # The saved outage start (0.26.0, ruling #647) goes with the taint
-    # it feeds. How the current trouble began goes with the verdict, and
-    # so do the values held while it stands (rule WATCH-12).
+    # lognormal_days counts days since a reset against daily_max, and
+    # an epoch wipe clears daily_max, so it is wiped with it: back to
+    # None, the whole (empty) history.
+    # The saved outage start goes with the taint it feeds (rule UNAV-04).
+    # How the current trouble began goes with the verdict, and so do
+    # the values held while it stands (rule WATCH-12).
     assert len(wiped) == 10, sorted(wiped)
     assert wiped == {
         "down_since",
@@ -745,7 +736,7 @@ async def test_nothing_is_wiped_without_a_backup(
     hass: HomeAssistant, hass_storage
 ):
     """A wipe cannot be undone, so a backup that will not take is a
-    stop rather than a warning (ruling #204)."""
+    stop rather than a warning (rule STOR-19)."""
     device, _eid = _register(hass, "ep3", "Guarded Device")
     stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     stale[DEV_DAILY_MAX] = [600.0]
@@ -774,15 +765,11 @@ async def test_nothing_is_wiped_without_a_backup(
 
 
 def test_the_kept_set_names_constants_and_not_literals():
-    """Ruling #207. The first cut of this tuple spelled the stored
-    keys out as strings, which works and which the partition test
-    proves, but it was the only place in the package naming a stored
-    field by literal.
+    """Every entry in the clock fields tuple is a constant reference.
 
-    A constant's value changing would have moved CLOCK_FIELDS and
-    left this behind, and the failure would have been a field quietly
-    surviving a wipe. So the source is read as text: every entry has
-    to be a constant reference.
+    A stored key spelled as a literal string stays behind when a
+    constant's value changes, and the failure would be a field quietly
+    surviving a wipe. So the source is read as text (rule STOR-19).
     """
     source = Path(const.__file__).read_text(encoding="utf-8")
     start = source.index("EPOCH_KEPT = (")
@@ -800,11 +787,11 @@ def test_the_kept_set_names_constants_and_not_literals():
 
 
 def test_the_clock_fields_and_the_wipe_overlap_as_documented():
-    """The merge runs before the wipe because they overlap, and the
-    comment saying so carried a count that went stale twice (#207).
+    """The merge runs before the wipe because they overlap.
 
-    Pinned as a fact rather than a number in prose: some clock field
-    is wiped, so the ordering is load-bearing.
+    Pinned as a fact rather than a number in prose, because a count in
+    a comment goes stale: some clock field is wiped, so the ordering is
+    load-bearing (rule STOR-19).
     """
     overlap = set(CLOCK_FIELDS) & (
         set(_new_device_record("", None)) - set(EPOCH_KEPT)
@@ -817,12 +804,12 @@ def test_the_clock_fields_and_the_wipe_overlap_as_documented():
 async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
     hass: HomeAssistant, hass_storage
 ):
-    """Ruling #256, end to end through the load path.
+    """The signal conversion runs end to end through the load path
+    (rule STOR-19).
 
-    The failure this guards was invisible to every unit test: the
-    conversion was correct in isolation and unreachable in place,
-    because the reconciler runs first and makes an unmigrated record
-    look migrated. So the test drives the whole load, with a stored
+    A conversion can be correct in isolation and unreachable in place,
+    because the reconciler runs first and makes an unconverted record
+    look converted. So the test drives the whole load, with a stored
     record carrying the retired accumulators, and asserts the day
     survived with its real mean rather than restarting at zero.
     """
@@ -846,12 +833,12 @@ async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
     # The conversion ran (its arithmetic is pinned by the unit test
-    # in test_signal_stats), and the weighting change of ruling #259
+    # in test_signal_stats), and the weighting change (rule SIG-05)
     # then dropped the day it converted, because a day accumulated by
     # counting readings cannot continue by counting minutes. What
-    # this test guards is the load path: the legacy fields reach the
+    # this test guards is the load path: the old fields reach the
     # conversion before the reconciler deletes them, and the record
-    # comes out clean rather than half-migrated.
+    # comes out clean rather than half-converted.
     assert record["signal_count"] == 0
     assert record["signal_mean_run"] == 0.0
     assert "signal_sum" not in record
@@ -861,13 +848,12 @@ async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
 async def test_a_mixed_signal_history_is_cleared_at_load(
     hass: HomeAssistant, hass_storage
 ):
-    """The 0.15.6 discard, driven through the real load path.
+    """The two-scale discard, driven through the real load path.
 
-    Simulating the function against real records showed it picks the
-    right devices, but nothing drove it through setup, where it runs
-    before the reconciler and beside two other migrations. This seeds
-    a record holding both scales, starts the integration for real,
-    and reads what came out.
+    It runs before the reconciler and beside two other conversions, so
+    a test of the function alone does not prove it. This seeds a record
+    holding both scales, starts the integration for real, and reads
+    what came out (rule SIG-03).
     """
     mixed, _eid = _register(hass, "mix1", "ZHA Toilet Leak")
     clean, _eid2 = _register(hass, "cln1", "Zigbee2MQTT Door")
@@ -924,7 +910,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
         assert record[const.DEV_SIGNAL_ALT] is None
 
     # And the load leaves a file the shape check accepts, which is
-    # what the last-good copy is gated on (ruling #278).
+    # what the last-good copy is gated on (rule STOR-04).
     from custom_components.device_sentinel.normalise import check_records
 
     assert check_records(coord.data[DATA_DEVICES]) == []
@@ -957,12 +943,12 @@ async def test_the_clear_does_not_run_twice(
 async def test_stored_kinds_are_renamed_at_load(
     hass: HomeAssistant, hass_storage
 ):
-    """The 0.15.8 rewrite, driven through the real load path (#299).
+    """The kind rename, driven through the real load path (rule LIST-02).
 
-    Four problem kinds were renamed before the event payload could
-    publish them and make them a contract. Stored history keeps what
-    was written at the time, so the incidents, the additions journal
-    and the list itself are brought onto the one vocabulary here.
+    Four problem kinds were renamed before the event payload made them
+    a contract. Stored history keeps what was written at the time, so
+    the incidents, the additions journal and the list itself are
+    brought onto the one vocabulary here.
     """
     device, _eid = _register(hass, "kd1", "Renamed Device")
     hass_storage[STORAGE_KEY] = {
@@ -1112,7 +1098,7 @@ def test_no_source_file_holds_a_retired_kind_spelling():
 def test_the_notification_tags_were_not_swept_up_by_the_rename():
     """The phone tags are identities already on every installed
     phone, and a rename of the kinds must never touch them: changing
-    one costs a duplicate notification for no gain (#299)."""
+    one costs a duplicate notification for no gain (rule LIST-02)."""
     assert const.NOTIFY_FAMILY_IDS == {
         "battery": "device_sentinel_battery",
         "signal": "device_sentinel_signal",

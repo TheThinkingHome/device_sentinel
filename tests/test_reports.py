@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.27.4 (2026-10-25)
+# File: test_reports.py, Version: 0.27.10 (2026-10-27)
 
-"""The diagnostic files: telemetry and classification.
+"""The diagnostic files: telemetry, classification and silence episodes
+(rules BRIEF-14, BRIEF-15, BRIEF-16, FRZ-08).
 
 Device Sentinel writes two diagnostic reports beside the daily brief:
 device_telemetry.md, one row per device with its learned rhythm and
@@ -24,9 +25,8 @@ to freeze line, closes as resumed when the device speaks for itself or
 is stamped by an intervention when a reboot truncates it, with a lag
 column that separates a wedge from a device that was merely quiet, and
 a filter that keeps trivial fast-device silences and freeze-excluded
-devices out of the file. This file holds the diagnostic reports, their
-surface, and the silence episodes; the daily brief, which follows its
-own window rather than the calendar day, has its own file.
+devices out of the file. The daily brief, which follows its own window
+rather than the calendar day, has its own file.
 """
 
 import os
@@ -275,12 +275,11 @@ async def test_diagnostics_report_exclusions(hass: HomeAssistant):
 # ==================================================================
 
 async def _marks_coordinator(hass, options=None):
-    # These tests read the floor marks in the report, which were
-    # written when the floor was the line, so the margin is pinned off
-    # and they go on testing the floor. The margin has its own file.
-    # Both the margin and the trim became constants at ruling #311,
-    # so the pinning is done on the coordinator rather than through
-    # options nothing reads.
+    # These tests read the floor marks in the report, so the margin is
+    # pinned off and they go on testing the floor. The margin has its
+    # own file. The margin and the trim are constants, so the pinning
+    # is done on the coordinator rather than through options nothing
+    # reads (rule SIG-08).
     options = dict(options or {})
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -299,10 +298,9 @@ async def _marks_coordinator(hass, options=None):
 
 
 async def test_signal_cell_shows_the_floor_and_the_null_days(hass: HomeAssistant):
-    """One cell, the P5 window (ruling #322): the floor bold at its
-    earliest occurrence, a rail-only day's null as a dash, nothing
-    struck because the plain-minimum floor (ruling #323) has
-    nothing below it."""
+    """One cell, the P5 window: the floor bold at its earliest
+    occurrence, a rail-only day's null as a dash, nothing struck
+    because the plain-minimum floor has nothing below it (rule SIG-06)."""
     coord, device_id = await _marks_coordinator(hass)
     coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
         88.0, 90.0, None, 40.0, 92.0, 89.0, 91.0, 87.0,
@@ -317,9 +315,9 @@ async def test_battery_column_summarises_rather_than_listing(
     hass: HomeAssistant,
 ):
     """Ninety levels will not fit in a cell, so the column carries the
-    level and the changes the history supports (0.8.6). Five days is
-    short of a week, so neither change appears yet, and the level is
-    bold because it is at or below the threshold."""
+    level and the changes the history supports. Five days is short of
+    a week, so neither change appears yet, and the level is bold
+    because it is at or below the threshold."""
     coord, device_id = await _marks_coordinator(hass)
     record = coord.data["devices"][device_id]
     record[DEV_BATTERY_DAILY] = [95.0, 60.0, 22.0, 18.0, 15.0]
@@ -355,7 +353,7 @@ async def test_a_reading_outside_the_scale_says_so(
     hass: HomeAssistant,
 ):
     """LUX Outdoors reports around 198. That is recorded like any
-    other value (#128) and classified here, at rendering."""
+    other value (rule STOR-15) and classified here, at rendering."""
     coord, device_id = await _marks_coordinator(hass)
     record = coord.data["devices"][device_id]
     record[DEV_BATTERY_DAILY] = [198.0, 194.0, 198.0]
@@ -373,20 +371,20 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
-    # The trim word left with the ladder (ruling #322).
+    # The trim word left with the ladder (rule SIG-13).
     assert "SIGNAL |" in header
     assert "GAPS (K=" in header
     assert f"BAT LEVEL (floor {DEFAULT_LOW_THRESHOLD}%)" in header
     # The retired columns are gone.
-    # The retired LINE column, by its own name: BAD-DAY LINE arrived in
-    # 0.22.16 and is the dashboard's line, not that one.
+    # The retired LINE column, by its own name: BAD-DAY LINE is the
+    # dashboard's line, not that one.
     assert "| LINE |" not in header
     assert "FAMILY" not in header
     assert "SIG MIN" not in header
     assert "SIG FROZEN" not in header
 
-    # The floor-based figures gave way to the bad-day model in 0.22.16,
-    # the line that raises weak links and that the dashboard draws.
+    # The floor-based figures gave way to the bad-day model, the line
+    # that raises weak links and that the dashboard draws (rule SIG-08).
     assert "FLOOR/WK" not in header
     assert "MEAN\u00b1SD" not in header
     assert "| ITS NORMAL | BAD-DAY LINE |" in header
@@ -396,9 +394,8 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
-    # Fifteen since 0.23.17, the same count since 0.24.0: both rules'
-    # rhythms, the rule in use and its window, and the Log-Normal
-    # Percentile's working (ruling #542, amended).
+    # Fifteen columns: both rules' rhythms, the rule in use and its
+    # window, and the Log-Normal Percentile's working (rule BRIEF-15).
     assert (
         "| TRIMMED | LOG-NORMAL | RULE IN USE | WINDOW | "
         "DAYS READ / SET ASIDE | TYPICAL / SPREAD |" in header
@@ -417,8 +414,8 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
 
 
 async def test_the_enable_buttons_are_gone(hass: HomeAssistant):
-    """Ruling #696: the three Enable buttons went in 0.26.7; a device's
-    own switched-off entities are turned on from its device page."""
+    """The Enable buttons are gone; a device's own switched-off entities
+    are turned on from its device page (rule DASH-09)."""
     await _marks_coordinator(hass)
     for entity_id in (
         "button.device_sentinel_enable_signals",
@@ -433,8 +430,8 @@ async def test_the_enable_buttons_are_gone(hass: HomeAssistant):
 # ==================================================================
 
 def _plain_device(hass, uid, name):
-    """Build a watched device: one entity, because ruling #257 sets
-    aside a device with none."""
+    """Build a watched device: one entity, because a device with none is
+    set aside (rule WATCH-03)."""
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -504,7 +501,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
     record[DEV_LAST_ACTIVITY] = None
     coord.data["devices"][d.id] = record
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
 
     result = await coord.async_regenerate_reports()
@@ -655,8 +652,8 @@ async def test_empty_section_is_all_clear(hass: HomeAssistant):
 async def test_status_cell_reverted_to_plain_grammar(
     hass: HomeAssistant,
 ):
-    """The 0.6.1 icon is gone from STATUS: a faulted device reads
-    plain Reported there, and the icon lives in Devices With a Fault."""
+    """No icon in STATUS: a faulted device reads plain Reported there,
+    and the icon lives in Devices With a Fault."""
     device, eid = _register(hass, "s1", "Plain Status")
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -713,7 +710,7 @@ def _rhythm(coord, device_id, basis_seconds, silent_seconds):
 
 
 async def test_delta_high_range_widened(hass: HomeAssistant):
-    """#102: the asymmetric 2-to-8 range becomes 4 to 12, default 8."""
+    """The high-side range is 4 to 12 hours, default 8 (rule FRZ-06)."""
     assert FREEZE_DELTA_HIGH_HR_MIN == 4
     assert FREEZE_DELTA_HIGH_HR_MAX == 12
     assert DEFAULT_FREEZE_DELTA_HIGH_HR == 8
@@ -837,15 +834,15 @@ async def test_episodes_reach_diagnostics(hass: HomeAssistant):
 # ==================================================================
 
 async def test_share_is_half(hass: HomeAssistant):
-    """#105: a row opens halfway from rhythm to freeze line."""
+    """A row opens halfway from rhythm to freeze line (rule BRIEF-16)."""
     assert EPISODE_SHARE_PCT / 100.0 == 0.5
 
 
 async def test_fast_device_ignores_a_trivial_silence(
     hass: HomeAssistant,
 ):
-    """The 0.6.7 noise case: a 36-second rhythm silent for 50
-    seconds is a device behaving normally, not an episode."""
+    """A 36-second rhythm silent for 50 seconds is a device behaving
+    normally, not an episode (rule BRIEF-16)."""
     device, entity_id = _register(hass, "fd1", "Fast Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "1")
@@ -879,7 +876,7 @@ async def test_fast_device_opens_once_it_spends_its_patience(
 async def test_globally_muted_device_is_skipped(
     hass: HomeAssistant,
 ):
-    """#106: no verdict is possible, so no episode explains one."""
+    """No verdict is possible, so no episode explains one (rule BRIEF-16)."""
     device, entity_id = _register(hass, "ge1", "Global Excluded")
     coord = await setup_coordinator(hass, {CONF_MUTED_DEVICES: [device.id]})
     hass.states.async_set(entity_id, "1")
@@ -941,10 +938,9 @@ async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
 
 async def test_the_lowest_day_is_bold_and_struck_only_if_bad(hass: HomeAssistant):
     """The lowest day is bold, the dashboard's "lowest day". Strikes
-    mark bad days since 0.22.16, judged by the bad-day model; under the
-    floor model nothing could be struck, since no day sits below the
-    minimum (ruling #323). Here the dip to 84 is a bad day and the
-    only one."""
+    mark bad days, judged by the bad-day model; a floor model could
+    strike nothing, since no day sits below the minimum (rule SIG-08).
+    Here the dip to 84 is a bad day and the only one."""
     coord, device_id = await _marks_coordinator(hass)
     coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
         116.0, 116.0, 116.0, 120.0, 112.0, 112.0, 116.0, 84.0,
@@ -956,14 +952,13 @@ async def test_the_lowest_day_is_bold_and_struck_only_if_bad(hass: HomeAssistant
 async def test_the_episodes_header_says_when_the_newest_one_was(
     hass: HomeAssistant,
 ):
-    """Ruling #203. A quiet fleet can go days without a device passing
-    its own threshold, and the file then reads as though the recorder
-    stopped. On the reference fleet the last thing written was a
-    mesh-wide event that produced most of the file inside one hour,
-    which made four ordinary quiet days look like a fault.
+    """The episodes file says when it was last written (rule BRIEF-16).
 
-    The count alone cannot tell an empty stretch from a broken
-    recorder. The date can.
+    A quiet house can go days without a device passing its own
+    threshold, and the file then reads as though the recorder stopped,
+    with its last rows from one busy hour making ordinary quiet days
+    look like a fault. The count alone cannot tell an empty stretch
+    from a broken recorder. The date can.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "ep1", "Quiet Device")
@@ -1022,10 +1017,9 @@ async def test_a_report_directory_that_vanishes_does_not_raise(
     Every report write runs in the executor, and an executor job
     handles nothing: an OSError raised inside one escapes into Home
     Assistant's task machinery and lands in a person's log as an
-    unretrieved task exception. It surfaced as an intermittent
-    failure in continuous integration, where the midnight listener
-    fires after the test's configuration directory is gone
-    (ruling #234).
+    unretrieved task exception. In continuous integration the midnight
+    listener can fire after the test's configuration directory is gone
+    (rule CODE-06).
     """
     coord = await setup_coordinator(hass)
 
@@ -1060,13 +1054,12 @@ async def test_a_brief_that_cannot_be_written_is_not_sent(
 async def test_the_learned_statistics_table_has_matching_columns(
     hass: HomeAssistant,
 ):
-    """Issue reported 15 September against 0.19.14, still present.
+    """The header, separator and rows carry the same column count.
 
-    The Dwell column was removed from the header and from every data
-    row when the dwell chart went (0.19.x) and left in the separator,
-    so the header carried nine columns and the separator ten. Markdown
-    renderers treat that as a malformed table and print it as text.
-    Counting the pipes on all three lines is the whole test.
+    A column left in the separator alone gives the header nine columns
+    and the separator ten. Markdown renderers treat that as a malformed
+    table and print it as text. Counting the pipes on all three lines
+    is the whole test.
     """
     coord = await setup_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports)
@@ -1101,8 +1094,8 @@ async def test_diagnostics_redact_the_brief_targets(hass: HomeAssistant):
 
 
 async def test_one_failing_report_never_stops_the_rest(hass, caplog, monkeypatch):
-    """0.23.17 stopped every report after telemetry, and the brief, on
-    one impossible stored value (ruling #544)."""
+    """One impossible stored value must not stop every report after
+    telemetry, and the brief (rule STOR-07)."""
     coord, _ = await _marks_coordinator(hass)
 
     def boom(*args, **kwargs):
@@ -1120,9 +1113,9 @@ async def test_one_failing_report_never_stops_the_rest(hass, caplog, monkeypatch
 
 
 async def test_a_rail_in_the_fault_list_says_how_long(hass):
-    """Found on the reference rig's two rails, 0.23.19: the fault list
-    read "for ?" because the lookup asked for the kind by its name
-    before ruling #299, "signal", and the item stores "railed_signal"."""
+    """The fault list reads the rail's time, not "for ?": the item
+    stores the kind as "railed_signal", so the lookup asks by that name
+    (rule LIST-02)."""
     from custom_components.device_sentinel.const import TODO_KIND_RAILED_SIGNAL
 
     coord, device_id = await _marks_coordinator(hass)

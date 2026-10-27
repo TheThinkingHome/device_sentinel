@@ -3,15 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_timing.py, Version: 0.25.6 (2026-10-11)
+# File: test_storage_timing.py, Version: 0.27.10 (2026-10-27)
 
-"""When a save happens: coalescing, and what forces one.
+"""When a save happens: coalescing, and what forces one (rule STOR-02).
 
-One of the files split out of test_storage.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+Helpers are carried to every file that calls them rather than pooled,
+so each file reads on its own.
 """
 
 
@@ -84,9 +81,9 @@ class _StoreSpy:
     def _delay(self, data_func, delay):
         self.delays += 1
         self.last_delay = delay
-        # Nothing schedules a save through async_delay_save since the
-        # single deadline on the minute tick replaced it (ruling #165),
-        # so reaching here is a fault.
+        # Nothing schedules a save through async_delay_save, because the
+        # single deadline on the minute tick does it (rule STOR-02), so
+        # reaching here is a fault.
         raise AssertionError(f"async_delay_save was called with {delay}")
         self._real_delay(data_func, delay)
 
@@ -114,11 +111,10 @@ def _armed_and_silent(coord, device_id, basis_hours, share):
 
 async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
     """The first dirty tick opens the window; churn inside it writes
-    nothing; the window closing writes the hot file alone (#165)."""
-    # Pinned to a morning (#330, #198): run within about an hour of a
-    # Pacific midnight, the test's own ticks crossed it and the midnight
-    # save or fold changed what it counts (second gate of 11 October
-    # 2026, 06:00 to 06:45 UTC).
+    nothing; the window closing writes the hot file alone (rule STOR-02)."""
+    # Pinned to a morning, because near a Pacific midnight the test's
+    # own ticks cross it and the midnight save or fold changes what it
+    # counts (rule CODE-13).
     freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entity_id = _register(hass, "r1", "Routine Sensor")
     entry = await setup_entry(hass)
@@ -165,8 +161,8 @@ async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
 async def test_verdict_flip_saves_immediately(
     hass: HomeAssistant, freezer
 ):
-    """A freeze verdict on the tick takes the immediate tier, the
-    exact pre-0.6.5 behavior for anything that matters."""
+    """A freeze verdict on the tick takes the immediate tier, so
+    anything that matters is written at once (rule STOR-02)."""
     device, entity_id = _register(hass, "v1", "Verdict Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -199,8 +195,8 @@ async def test_acknowledgment_saves_immediately(hass: HomeAssistant):
     record = coord.data["devices"][device.id]
     record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
     record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 8 * 3600
-    # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # Past the startup grace, inside which nothing is judged or pushed
+    # (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     coord._judge_all_devices()
     coord._sync_problem_list()
@@ -215,11 +211,11 @@ async def test_delayed_save_serializes_live_data(hass: HomeAssistant):
     """The delayed write reads the state at write time, not at
     schedule time.
 
-    Under Phase C the serialized view is a filtered copy rather than
-    the live object, so identity can no longer be the assertion. What
-    the test protects is unchanged: the values written are the values
-    at write time. The clock fields are absent from the view by
-    design; that behaviour has its own tests in test_clock_strip.py.
+    The serialized view is a filtered copy rather than the live object,
+    so identity cannot be the assertion. What the test protects: the
+    values written are the values at write time. The clock fields are
+    absent from the view by design; that behavior has its own tests in
+    test_clock_strip.py.
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -251,14 +247,12 @@ async def test_dirty_ticks_write_once_per_window(
 ):
     """Continuous churn costs one write per interval, no more.
 
-    This is the 0.6.5 lesson restated for the new scheduler: a fleet
-    that is always dirty must neither write every tick nor push the
-    deadline forward forever. The deadline is a plain float that only
-    the write that satisfies it advances."""
-    # Pinned to a morning (#330, #198): run within about an hour of a
-    # Pacific midnight, the test's own ticks crossed it and the midnight
-    # save or fold changed what it counts (second gate of 11 October
-    # 2026, 06:00 to 06:45 UTC).
+    A fleet that is always dirty must neither write every tick nor push
+    the deadline forward forever. The deadline is a plain float that
+    only the write that satisfies it advances (rule STOR-02)."""
+    # Pinned to a morning, because near a Pacific midnight the test's
+    # own ticks cross it and the midnight save or fold changes what it
+    # counts (rule CODE-13).
     freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entity_id = _register(hass, "c1", "Churn Sensor")
     entry = await setup_entry(hass)
@@ -329,15 +323,12 @@ async def test_immediate_save_restarts_the_window(
 async def test_an_incident_schedules_the_main_file(
     hass: HomeAssistant, freezer
 ):
-    """Phase B left an incident with no write of its own, so it waited
-    for an unrelated critical change. It gets one now, on the shorter
-    cold window rather than the routine one.
+    """An incident gets a write of its own, on the shorter cold window
+    rather than the routine one, so it never waits for an unrelated
+    critical change (rule STOR-02).
 
-    Renamed in 0.10.3: this exercises the incident recorder, which is
-    what it always did. Its old name promised episode coverage that
-    its body never gave, and the two episode paths went unwired for
-    three releases behind that promise. The episode tests below are
-    the coverage the old name implied.
+    This exercises the incident recorder; the episode tests below cover
+    the episode paths.
     """
     device, _eid = _register(hass, "cw1", "Cold Device")
     entry = await setup_entry(hass)
@@ -364,13 +355,10 @@ async def test_opening_an_episode_schedules_the_main_file(
     """An episode exists only in the main file, so opening one has to
     schedule that file.
 
-    Before 0.10.3 it raised the routine flag instead, which writes the
-    clocks file, and the clocks file carries no episodes. The flag was
-    then cleared by that write, so nothing anywhere remembered the row
-    was unwritten and it waited on an unrelated cold change. This is
-    the split's own regression: _dirty meant write everything before
-    Phase B and means write the clocks after it, and this call site
-    was not moved up with its neighbours.
+    The routine flag writes the clocks file, which carries no episodes,
+    and is cleared by that write, so raising it here would leave nothing
+    remembering the row was unwritten until an unrelated cold change
+    (rule STOR-02).
     """
     device, eid = _register(hass, "ep1", "Episode Sensor")
     entry = await setup_entry(hass)
@@ -432,8 +420,8 @@ async def test_a_wave_of_cold_changes_costs_one_flag(
 ):
     """A bridge reconnect opens an episode on every device at once.
     Sixty full writes in ninety seconds would give back the saving
-    the split exists for. Sixty changes now set one flag, schedule
-    nothing, and the next interval write carries them all (#165)."""
+    the split exists for. Sixty changes set one flag, schedule
+    nothing, and the next interval write carries them all (rule STOR-02)."""
     _register(hass, "cw2", "Wave Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -479,10 +467,10 @@ async def test_a_cold_change_waits_at_most_one_interval(
 async def test_a_freeze_stamp_is_critical_not_merely_cold(
     hass: HomeAssistant, freezer
 ):
-    """The stamp starts the unavailable debounce and its clear is the
-    0.9.12 fix. A crash between one reaching disk and the other not
-    is how a device comes back reported down for hours, so neither
-    waits on a window."""
+    """The stamp starts the unavailable debounce, and its clear ends it.
+    A crash between one reaching disk and the other not is how a device
+    comes back reported down for hours, so neither waits on a window
+    (rule STOR-02)."""
     device, entity_id = _register(hass, "cw4", "Stamp Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data

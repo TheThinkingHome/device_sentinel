@@ -1,14 +1,13 @@
-"""Tests for ambiguous names and stale exclusion picks.
+"""Ambiguous names and stale exclusion picks (rules MUTE-04, DEV-04).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_stale_picks.py, Version: 0.27.4 (2026-10-25)
+# File: test_stale_picks.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-Two faults found on the reference system on the same morning, and
-they share a cause: a device the reports name but a person cannot
-find, and a pick the settings screen holds but cannot show. Both come
-from a surface printing less than it knows.
+Two faults with one cause: a device the reports name but a person
+cannot find, and a pick the settings screen holds but cannot show.
+Both come from a surface printing less than it knows.
 """
 
 from typing import Any
@@ -76,20 +75,20 @@ def test_a_pick_the_registry_still_holds_survives():
 
 
 def test_a_pick_the_registry_has_lost_is_pruned():
-    """The one case where absence is proof rather than inference
-    (ruling #45): the registry holds every device of every config
-    entry, loaded or not, so an id it cannot find belongs to hardware
-    that has been removed. Its name went with it, so keeping the pick
-    could only ever show a raw id."""
+    """The one case where absence is proof rather than inference: the
+    registry holds every device of every config entry, loaded or not, so
+    an id it cannot find belongs to hardware that has been removed. Its
+    name went with it, so keeping the pick could only ever show a raw id.
+    """
     registry = _FakeRegistry(set())
 
     assert _surviving_picks(["deleted"], set(), registry) == []
 
 
 def test_a_covered_pick_still_goes():
-    """The ladder of ruling #45 is unchanged: a broader exclusion
-    still erases the narrower pick it covers, whatever the registry
-    says."""
+    """The ladder is unchanged: a broader exclusion still erases the
+    narrower pick it covers, whatever the registry says (rule MUTE-04).
+    """
     registry = _FakeRegistry({"alive"})
 
     assert _surviving_picks(["alive"], {"alive"}, registry) == []
@@ -126,9 +125,9 @@ def test_the_picker_does_not_offer_a_deleted_pick():
 
 
 async def test_a_shared_name_reads_plainly(hass: HomeAssistant):
-    """The brief and the dashboard keep the plain name; the integration
-    is shown once, on the Settings lists alone (rule DEV-04, ruled 25
-    October 2026). It was appended here where a name was shared."""
+    """The brief and the dashboard keep the plain name; the integration is
+    shown once, on the Settings lists alone (rule DEV-04).
+    """
     first, _ = register_device(hass, "amb1", "Shared Name")
     second, _ = register_device(hass, "amb2", "Shared Name")
     alone, _ = register_device(hass, "amb3", "Its Own Name")

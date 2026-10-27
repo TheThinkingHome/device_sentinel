@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_outage_worst.py, Version: 0.27.10 (2026-10-27)
 
-"""The daily brief tells an outage by its worst moment (ruling #442).
+"""The daily brief tells an outage by its worst moment (rule UP-11).
 
-The second fleet's brief of 16 September said the Wi-Fi network went
-down "74 devices behind it", and said the same 74 when it came back.
-74 is every device tied to the network. 56 went down. The brief now
-records the most devices an outage had down at once, the figure its
-problem list row reached at its peak, and says it beside the total
+A Wi-Fi outage with 74 devices tied to it, of which 56 went down, must
+not say "74 devices behind it" both going down and coming back. The
+brief records the most devices an outage had down at once, the figure
+its problem list row reached at its peak, and says it beside the total
 when the outage ends. A row from an older release, which carries no
 such figure, reads as it always did.
 """
@@ -38,8 +37,8 @@ from tests.test_outage_wording import _bridge_back_with
 from tests.test_wifi_outage import _declared, _fall, _house, _rise
 from tests.test_wifi_recovery import _tick
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -103,8 +102,8 @@ async def test_the_brief_says_the_worst_beside_the_total(hass: HomeAssistant):
     base = {SYS_WHEN: 1789595686.0, SYS_DURATION: 610.0}
     wifi = {**base, SYS_KIND: SYS_WIFI_UP, SYS_SCOPE: "wifi",
             SYS_DEVICES: 74, SYS_WORST: 56}
-    # The network came back when its recovery began, which has its own
-    # line (ruling #444); this one is the outage ending.
+    # The network came back when its recovery began, which has its own line
+    # (rule BRIEF-07); this one is the outage ending.
     assert coord._system_event_sentence(wifi).startswith(
         "The WiFi outage ended at"
     )
@@ -178,9 +177,9 @@ def test_the_storage_check_knows_the_worst_field():
 
 
 async def test_a_single_device_reads_in_the_singular(hass: HomeAssistant):
-    """Ruling #452. "1 of its 1 device went down" reads as arithmetic
-    where a sentence would do. Seen on the reference rig's brief of 18
-    September, from the Brother outage staged the day before."""
+    """"1 of its 1 device went down" reads as arithmetic where a sentence
+    would do (rule UP-11).
+    """
     coord = await setup_coordinator(hass)
     row = {SYS_WHEN: 1789595686.0, SYS_DURATION: 300.0,
            SYS_KIND: SYS_INTEGRATION_UP, SYS_SCOPE: "brother",

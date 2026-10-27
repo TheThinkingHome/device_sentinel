@@ -3,25 +3,21 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.24.2 (2026-10-03)
+# File: test_signal_stats.py, Version: 0.27.10 (2026-10-27)
 
-"""The good-state statistics and the dwell chart (0.10.15).
+"""The good-state statistics, what each signal day keeps, and the
+signal sensors (rules SIG-05, SIG-07, SIG-09, SIG-10, SIG-11).
 
-Two features that exist for different futures. The running mean and
-standard deviation are what the Bayesian successor to percentile
-thresholding needs (#172), recorded ahead of the method: sum, sum of
-squares, and count, three floats per device, rolled at midnight into
-one mean, one deviation, and the day's maximum, then reset. They are
-clock-shaped, so they live in the hot file, and CLOCK_FIELDS
-membership is asserted here because that single tuple drives the hot
-write, the merge, and the Phase C strip all at once.
+The running mean and standard deviation are recorded ahead of any alert
+that uses them: sum, sum of squares, and count per device, rolled at
+midnight into one mean, one deviation, and the day's maximum, then
+reset. They are clock-shaped, so they live in the hot file, and
+CLOCK_FIELDS membership is asserted here because that single tuple
+drives the hot write, the merge and the strip all at once.
 
-The dwell chart is the human surface: a static HTML file under www,
-so a browser, an email client, and a dashboard Webpage card all
-render it, colored by band. Green to 5 percent always, yellow to the
-Red Threshold slider, red above it, and every red device is pulled
-out as an anomaly and described in full. It is report coloring only:
-nothing alerts from it (#59).
+A weak signal raises no alert yet (rule SIG-10): rails and weak links
+are counted on their own sensors, and the brief carries no weak-signal
+line.
 """
 
 from __future__ import annotations
@@ -72,7 +68,7 @@ from custom_components.device_sentinel.const import (
 from .helpers import registry_settled, register_device, setup_coordinator, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -117,7 +113,7 @@ async def test_readings_accumulate_and_rails_do_not(
     record = coord.data[DATA_DEVICES][device.id]
 
     # A minute apart, because the mean and deviation weigh minutes
-    # held rather than readings taken (ruling #259): a value fed at
+    # held rather than readings taken (rule SIG-05): a value fed at
     # the same instant as the last was held for no time and counts
     # for nothing. One minute each gives the three equal weight.
     for index, value in enumerate((100.0, 120.0, 110.0)):
@@ -149,7 +145,7 @@ async def test_the_roll_produces_mean_deviation_and_maximum(
     device, _ = register_device(hass, "st2", "Stats Device")
     await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
-    # A minute each, so the three weigh equally (ruling #259): the
+    # A minute each, so the three weigh equally (rule SIG-05): the
     # fold feeds the last value's minute itself, which is why the
     # roll time is one minute past the last reading.
     for index, value in enumerate((100.0, 120.0, 110.0)):
@@ -186,14 +182,14 @@ async def test_a_day_with_no_readings_appends_nothing(
 async def test_a_held_value_cannot_fabricate_a_day(
     hass: HomeAssistant,
 ):
-    """A silent day writes no row however long the value was held.
+    """A silent day writes no row however long the value was held
+    (rule SIG-05).
 
-    The fault this pins (ruling #305): the Welford count is
-    time-weighted and the held value accrues minutes through silence
-    (#253), so a device that reported once and went quiet weighed a
-    full day at every following fold and the fold wrote a row of
-    statistics for a day that never happened, with None in the
-    maximum. Nine such rows on the first external fleet.
+    The count is time-weighted and the held value accrues minutes
+    through silence, so without this a device that reported once and
+    went quiet would weigh a full day at every following fold, and the
+    fold would write a row of statistics for a day that never
+    happened, with None in the maximum.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st4", "Once Device")
@@ -218,10 +214,10 @@ async def test_a_held_value_cannot_fabricate_a_day(
 async def test_a_rail_only_day_writes_the_rail_and_nulls(
     hass: HomeAssistant,
 ):
-    """A day of nothing but rails keeps its evidence (ruling #305).
+    """A day of nothing but rails keeps its evidence (rule SIG-05).
 
-    Three consecutive rail days are what confirms a rail (#78), so
-    the day cannot be dropped; and there is no statistic to record,
+    Three consecutive rail days are what confirms a rail (rule SIG-07),
+    so the day cannot be dropped; and there is no statistic to record,
     so the row carries the rail count, a zero reading count, and
     null in every statistic, keeping the eight series aligned.
     """
@@ -253,13 +249,12 @@ async def test_a_rail_only_day_writes_the_rail_and_nulls(
 async def test_the_load_leaves_zero_count_rows_alone(
     hass: HomeAssistant, hass_storage
 ):
-    """The #305 load repair left with the rows it repaired (#322).
+    """An old zero-count, zero-rail row is left alone at load.
 
     The guarded fold cannot write a fabricated row, and the rail
-    verdict requires rail above zero, so a legacy zero-count
-    zero-rail row is inert: it is neither repaired nor read as
-    evidence. The erased series are swept by the reconciler on the
-    same load.
+    verdict requires rail above zero, so such a row is inert: it is
+    neither repaired nor read as evidence. The erased series are swept
+    by the reconciler on the same load.
     """
     from custom_components.device_sentinel.const import (
         DATA_LAST_VERSION,
@@ -318,7 +313,7 @@ async def test_the_load_leaves_zero_count_rows_alone(
 async def test_the_brief_carries_no_signal_anomaly_line(
     hass: HomeAssistant,
 ):
-    """Dwell's brief line is retired with dwell (ruling #310).
+    """The brief carries no signal line (rule SIG-10).
 
     The bad-day sentence lives on the signal report until its
     thresholds have earned the brief, so even a screaming device
@@ -341,7 +336,7 @@ async def test_the_brief_carries_no_signal_anomaly_line(
 async def test_the_brief_is_a_page_in_the_reports_folder(
     hass: HomeAssistant,
 ):
-    """daily_brief.html (#178), in the reports folder since 0.23.5.
+    """daily_brief.html, in the reports folder (rule BRIEF-14).
 
     Rendered from the Markdown text itself so the two cannot drift:
     the heading and the problem table arrive as HTML, and the page
@@ -354,7 +349,7 @@ async def test_the_brief_is_a_page_in_the_reports_folder(
     record[DEV_BATTERY_VALUE] = 40.0
     # Falling in small steps: a cell that falls only in steps of five
     # or more is judged by the low threshold alone and never
-    # forecast (0.23.1), and this test needs one in the brief.
+    # forecast (rule BAT-09), and this test needs one in the brief.
     record["battery_daily_value"] = [52.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -367,8 +362,8 @@ async def test_the_brief_is_a_page_in_the_reports_folder(
 
 
 async def test_the_brief_is_one_file(hass: HomeAssistant):
-    """No Markdown brief since 0.10.18, and no dated copies since
-    0.23.5: one daily_brief.html, and nothing written under www."""
+    """No Markdown brief and no dated copies: one daily_brief.html, and
+    nothing written under www (rule BRIEF-14)."""
     import glob as _glob
 
     coord = await setup_coordinator(hass)
@@ -380,9 +375,9 @@ async def test_the_brief_is_one_file(hass: HomeAssistant):
 
 
 async def test_the_diagnostics_live_one_level_up(hass: HomeAssistant):
-    """0.10.18: the maintainer files write to device_sentinel itself,
-    and a leftover set in the old diagnostics subfolder is cleaned
-    while anything else in that folder is left alone."""
+    """The maintainer files write to device_sentinel itself, and a
+    leftover set in the old diagnostics subfolder is cleaned while
+    anything else in that folder is left alone (rule BRIEF-14)."""
     old_dir = hass.config.path("device_sentinel", "diagnostics")
     os.makedirs(old_dir, exist_ok=True)
     for name in ("device_telemetry.md", "not_ours.txt"):
@@ -404,19 +399,15 @@ async def test_the_diagnostics_live_one_level_up(hass: HomeAssistant):
 
 
 async def test_the_email_body_is_the_page(hass: HomeAssistant):
-    """#135 as amended: the html payload is the exact string written
-    to the brief file, one rendering for disk and mail.
+    """The html payload is the exact string written to the brief file,
+    one rendering for disk and mail (rules BRIEF-11, BRIEF-12).
 
-    Rewritten in 0.10.19. As first written this test took an
-    in-progress write and any text at all, and asserted the payload
-    matched the current file, which is what the fault of #184 did
-    every morning: it paired the closed day's text with a page
-    belonging to another window. The rule it was meant to hold is
-    that the mail carries the page of the document being sent, so it
-    now takes a closing write and the text that write returned. Since
-    0.23.5 there is no dated file to hold the closed day, so the page
-    is rendered from that text, which is exactly what the writer
-    wrote before it opened the new day.
+    The mail carries the page of the document being sent, so the test
+    takes a closing write and the text that write returned. Pairing
+    the closed day's text with the current file would send a page
+    belonging to another window. There is no dated file to hold the
+    closed day, so the page is rendered from that text, which is what
+    the writer wrote before it opened the new day.
     """
     coord = await setup_coordinator(hass)
     text = await hass.async_add_executor_job(
@@ -429,7 +420,7 @@ async def test_the_email_body_is_the_page(hass: HomeAssistant):
     assert payload["message"] == text
 
 
-# ------------------------------------ the good-state ceiling (#193)
+# --------------------------------------------------- the signal history
 
 def _seed_signal(coord, device_id, p5_days, mean, sd):
     """Give a device a P5 history and yesterday's statistics."""
@@ -440,20 +431,18 @@ def _seed_signal(coord, device_id, p5_days, mean, sd):
     return record
 
 
-# ------------------------------- the window and the ladder (#196)
+# ------------------------------------------------- rails and weak links
 
 async def test_weak_links_are_counted_apart_from_rails(
     hass: HomeAssistant,
 ):
-    """Ruling #211. Signal: Problems counted one kind under a plural
-    name, so a fleet with no rails read zero and looked inert. Adding
-    weak links to it would have made one number mean two things, and
-    the two are not alike: a rail is a broken measurement confirmed
-    over three days, a weak link is a live reading that moves.
+    """Rails and weak links are counted apart (rule SIG-09).
 
-    So they are counted apart, the way Battery: Low and Battery:
-    Falling are, and the weak rule is the one the brief and the chart
-    already use.
+    One number for both would mean two things, and the two are not
+    alike: a rail is a broken measurement confirmed over three days, a
+    weak link is a live reading that moves. So they are counted apart,
+    the way Battery: Low and Battery: Falling are, and the weak rule is
+    the one the brief and the chart already use.
     """
     coord = await setup_coordinator(hass, {})
     weak, _ = register_device(hass, "sp1", "Weak Link")
@@ -472,8 +461,8 @@ async def test_weak_links_are_counted_apart_from_rails(
     assert rows[0]["device_id"] == weak.id
     assert rows[0]["fall"] == 60.0
 
-    # And it stays off the list that notifies, which is the whole
-    # point of the split (rulings #59 and #210).
+    # And it stays off the list that notifies, which is the point of
+    # the split (rules SIG-09, SIG-10).
     assert coord.signal_problem_list == []
     assert coord.signal_problem_count == 0
     assert not any(
@@ -552,7 +541,7 @@ async def test_the_retired_signal_problems_sensor_is_swept(
     hass: HomeAssistant,
 ):
     """Signal: Problems became two sensors, so its registry entry is
-    removed rather than left as an unavailable row (ruling #211).
+    removed rather than left as an unavailable row (rule SIG-09).
     """
     from homeassistant.helpers import entity_registry as er
 
@@ -569,12 +558,12 @@ async def test_the_retired_signal_problems_sensor_is_swept(
 async def test_the_fold_records_count_line_and_rail(
     hass: HomeAssistant,
 ):
-    """Rulings #245, #322: the day folds the count and the rail.
+    """The day folds the count and the rail (rule SIG-05).
 
     The count says how much weight the day's statistics deserve,
     and the rail count says why a day's real statistics are thin.
-    Both trim on the same retention as the series beside them. The
-    line series left with the dwell record (ruling #322).
+    Both trim on the same retention as the series beside them. No
+    line series is kept (rule SIG-13).
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs7", "Recorded Link")
@@ -597,15 +586,14 @@ async def test_the_fold_records_count_line_and_rail(
 async def test_an_episode_carries_its_signal_snapshot(
     hass: HomeAssistant,
 ):
-    """Ruling #246: the join is captured when the silence begins.
+    """The join is captured when the silence begins (rule SIG-11).
 
     The anchor is the correlation between signal level and rhythm
     stress, and the statistics have moved on by the time anyone
-    analyzes them, so the episode row stamps the last reading, the
-    day's running mean and deviation, and the line in effect at its
-    open. A completed episode folds a compact row into the
-    signal_stress series, which rides the history retention rather
-    than the fourteen-day episode trim.
+    analyzes them, so the episode row stamps the last reading and the
+    day's running mean and deviation at its open. A completed episode
+    folds a compact row into the signal_stress series, which rides the
+    history retention rather than the fourteen-day episode trim.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs8", "Stressed Link")
@@ -613,7 +601,7 @@ async def test_an_episode_carries_its_signal_snapshot(
     record = _seed_signal(
         coord, device.id, [100.0] * 14, 140.0, 20.0
     )
-    # A minute apart so the first value is weighed (ruling #259).
+    # A minute apart so the first value is weighed (rule SIG-05).
     for index, value in enumerate((140.0, 136.0)):
         coord._feed_signal(record, value, 1000.0 + index * 60.0)
 
@@ -621,10 +609,10 @@ async def test_an_episode_carries_its_signal_snapshot(
     assert snapshot[EP_SIG_VALUE] == 136.0
     # 140 for its one held minute; the 136 that follows has been held
     # for no time yet, so the day's mean is 140 rather than the
-    # average of the two readings (ruling #259).
+    # average of the two readings (rule SIG-05).
     assert snapshot[EP_SIG_MEAN] == pytest.approx(140.0, abs=0.01)
-    # No line since 0.23.19: the reading and the good state are what
-    # #172 needs; the dwell line is retired from recording (#310).
+    # No line: the reading and the good state are what is kept
+    # (rules SIG-11, SIG-13).
     assert "line" not in snapshot
 
     episode = {
@@ -649,7 +637,7 @@ async def test_an_episode_carries_its_signal_snapshot(
         for row in coord.data[DATA_SIGNAL_STRESS]
     )
 
-# ------------------------------------ the percentile recording (#253)
+# -------------------------------------------- the percentile recording
 
 async def test_psquare_matches_ground_truth_on_a_dense_stream(
     hass: HomeAssistant
@@ -683,10 +671,10 @@ async def test_psquare_matches_ground_truth_on_a_dense_stream(
 async def test_percentiles_are_time_weighted_not_reading_weighted(
     hass: HomeAssistant
 ):
-    """Ruling #253's whole point: a sparse reporter's held value
-    counts by duration. Two readings, one held for 95 minutes at 100
-    and one for 5 minutes at 40, must give a P50 near 100, where a
-    reading-weighted median of the two values would sit at 70."""
+    """A sparse reporter's held value counts by duration (rule SIG-05).
+    Two readings, one held for 95 minutes at 100 and one for 5 minutes
+    at 40, must give a P50 near 100, where a reading-weighted median of
+    the two values would sit at 70."""
     coord = await setup_coordinator(hass)
     record = {}
     coord._feed_signal(record, 100.0, 0.0)
@@ -699,14 +687,12 @@ async def test_percentiles_are_time_weighted_not_reading_weighted(
 async def test_the_load_path_converts_a_legacy_day_exactly(
     hass: HomeAssistant
 ):
-    """Ruling #256: the conversion runs at load, before the
-    reconciler deletes the legacy pair, and is arithmetic rather
-    than approximation. Written after the 0.12.19 build shipped the
-    same conversion inside the reading path, where it could never
-    run: by then the reconciler had already removed the sums it
-    needed and inserted the running mean it tested for, so the day
-    restarted at zero against a full count and every running mean on
-    the fleet drifted toward a tenth of its value.
+    """The conversion runs at load, before the reconciler deletes the
+    old pair, and is arithmetic rather than approximation
+    (rule STOR-19). Inside the reading path it could never run: the
+    reconciler would already have removed the sums it needs, so the
+    day would restart at zero against a full count and every running
+    mean would drift toward a tenth of its value.
     """
     coord = await setup_coordinator(hass)
     readings = [140.0, 136.0, 148.0, 132.0]
@@ -734,13 +720,14 @@ async def test_the_load_path_converts_a_legacy_day_exactly(
 async def test_a_day_a_broken_release_corrupted_is_dropped_once(
     hass: HomeAssistant
 ):
-    """The repair half of #256, and its one-shot gate.
+    """The repair after a broken conversion, and its one-shot gate
+    (rule STOR-19).
 
-    A record from 0.12.19 or 0.12.20 carries a full count with a
-    running mean built from only the readings since the upgrade, and
-    the sums that could rebuild it are gone. The day in progress is
-    dropped so the fold cannot write a false mean into the ninety-day
-    series, and the marker stops a later restart dropping another.
+    A record with a full count and a running mean built from only the
+    readings since an upgrade has lost the sums that could rebuild it.
+    The day in progress is dropped so the fold cannot write a false
+    mean into the ninety-day series, and the marker stops a later
+    restart dropping another.
     """
     coord = await setup_coordinator(hass)
     damaged = {
@@ -786,11 +773,9 @@ async def test_a_rail_day_does_not_crash_the_readers(
 ):
     """The readers and the reports survive a null day.
 
-    The 20 August outage: the first fold under the #305 guard wrote a
-    rail-only row with null statistics, exactly as designed, and a
-    reader took the whole integration down on it. The good-state
-    ceiling that crashed went with the dwell line in 0.23.19; the
-    guard that matters, every reader surviving the row, stays.
+    A rail-only row with null statistics is written as designed, and a
+    reader that crashes on it takes the whole integration down, so
+    every reader must survive the row (rule SIG-05).
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st8", "Railed All Day")

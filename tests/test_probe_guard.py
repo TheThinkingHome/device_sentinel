@@ -3,23 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_probe_guard.py, Version: 0.23.10 (2026-09-26)
+# File: tests/test_probe_guard.py, Version: 0.27.10 (2026-10-27)
 
-"""Extended Diagnostics records and never judges (0.23.10).
+"""Extended Diagnostics records and never judges (rule STACK-11).
 
-Found by the adversarial campaign of 26 September on 0.23.9. The probe
-ran unguarded in the minute tick, ahead of the freeze judgment, and at
-the start of the midnight fold. A studied library that threw stopped
-the tick every minute it misbehaved, so nothing was judged, listed or
-saved, and aborted the fold for every device in the house. The three
-throws below are each a library object behaving oddly: a Lutron
-session torn down mid-read, a Matter attribute table with a key that is
-not text, and a Z-Wave status from a newer library. With Extended
-Diagnostics off the same objects are harmless, which is the control.
+The probe runs in the minute tick, ahead of the freeze judgment, and at
+the start of the midnight fold. A studied library that throws must not
+stop the tick, so that nothing is judged, listed or saved, or abort the
+fold for every device in the house. The three throws below are each a
+library object behaving oddly: a Lutron session torn down mid-read, a
+Matter attribute table with a key that is not text, and a Z-Wave status
+from a newer library. With Extended Diagnostics off the same objects
+are harmless, which is the control.
 
-Also from the campaign: the lines a tick holds for the next one were
-lost at every stop, and a probe file that could not be written raised
-an anonymous traceback every minute.
+Also: the lines a tick holds for the next one survive a stop, and a
+probe file that cannot be written does not raise an anonymous
+traceback every minute.
 """
 
 from __future__ import annotations
@@ -233,14 +232,13 @@ async def test_a_file_that_cannot_be_written_is_said_once(hass: HomeAssistant, c
         os.rmdir(path)
 
 
-# ------------------------------------------- found testing 0.23.10 itself
+# ------------------------------------------- stops and the download
 
-# Three more, from simulating 0.23.10 on 26 September before it shipped:
-# Home Assistant does not unload integrations when it stops, so the
-# write at the unload never ran at a restart; that write sat ahead of
-# the unload's save and a throw from it skipped the save and the
-# clean-stop marker; and the diagnostics download failed outright when
-# a studied library threw.
+# Three more: Home Assistant does not unload integrations when it stops,
+# so a write at the unload never runs at a restart; a write ahead of the
+# unload's save must not skip the save and the clean-stop marker when it
+# throws; and the diagnostics download must not fail when a studied
+# library throws.
 
 
 async def test_a_home_assistant_restart_writes_the_held_lines(hass: HomeAssistant):

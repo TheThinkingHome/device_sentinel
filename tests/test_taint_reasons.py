@@ -3,20 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_taint_reasons.py, Version: 0.11.6 (2026-08-04)
+# File: test_taint_reasons.py, Version: 0.27.10 (2026-10-27)
 
-"""Why a gap went unlearned, and the record saying so (#164).
+"""Why a gap went unlearned, and the record saying so (rule FRZ-14).
 
-A taint suppresses learning for one completed gap. It used to be a
-bare true or false, so the one line that turned it into words could
-name only the commonest cause and every excluded gap read
-"unavailable" whatever the device had done. This file pins the four
-behaviours that replace it: the reason is the state the device was
-actually in, a stored boolean is carried forward as the only reason
-it could have meant, the widest cause wins when an intervention
-outranks the symptom, and the promotion is resolved at the episode
-rather than at the report because the storm behind a reconnect has
-released long before the devices behind it come back.
+A taint suppresses learning for one completed gap. A bare true or
+false could name only the commonest cause, so every excluded gap would
+read "unavailable" whatever the device had done. This file pins the
+four behaviours instead: the reason is the state the device was
+actually in, a stored boolean is carried forward as the only reason it
+could have meant, the widest cause wins when an intervention outranks
+the symptom, and the promotion is resolved at the episode rather than
+at the report because the storm behind a reconnect has released long
+before the devices behind it come back.
 """
 
 from datetime import timedelta

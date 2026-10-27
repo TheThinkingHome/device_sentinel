@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_wording.py, Version: 0.23.16 (2026-09-29)
+# File: tests/test_outage_wording.py, Version: 0.27.10 (2026-10-27)
 
-"""What a bridge's row says, down and recovering (rulings #442, #443).
+"""What a bridge's row says, down and recovering (rule UP-11).
 
-The second fleet's coordinator pull of 16 September read "ZHA
-recovering: 14 of 14 devices remain unavailable" beside "0 of the 14
-devices have already recovered". The total a down row prints is every
-device behind the bridge, and the total a recovering row prints is
-what went down, so each now names which total it is. And a recovery
+The total a down row prints is every device behind the bridge, and the
+total a recovering row prints is what went down, so each names which
+total it is; otherwise "14 of 14 devices remain unavailable" sits
+beside "0 of the 14 devices have already recovered". And a recovery
 with nothing back yet says what it is waiting for.
 """
 

@@ -3,20 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_readers.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_stack_readers.py, Version: 0.27.10 (2026-10-27)
 
-"""The Z-Wave and Matter readers in shadow (0.23.8).
+"""The Z-Wave and Matter readers in shadow (rules STACK-05, STACK-06,
+STACK-12).
 
-The stack probe names each node's device (#478), sets Device
-Sentinel's own view of that device beside the stack's, says whether
-they agree, and records the coordinators. Nothing acts on either side.
-The fakes follow the shapes read on 25 September 2026 in the code Home
-Assistant 2026.9.2 ships and the libraries it pins
-(Project__Stack_Readers.md).
-
-The tests that are not guards fail on 0.23.7, which names no device,
-writes nothing when a Z-Wave plug is unplugged, and records neither
-coordinator.
+The stack probe names each node's device, sets Device Sentinel's own
+view of that device beside the stack's, says whether they agree, and
+records the coordinators. Nothing acts on either side. The fakes follow
+the shapes in the code Home Assistant 2026.9.2 ships and the libraries
+it pins.
 """
 
 from __future__ import annotations
@@ -114,7 +110,8 @@ def _lines(coord, node):
 
 
 async def test_each_node_names_its_device(hass: HomeAssistant):
-    """#478, through the identifiers Home Assistant registers."""
+    """Each node names its device, through the identifiers Home Assistant
+    registers (rule STACK-12)."""
     zentry, _client = _zwave(hass, {10: _plug(10)})
     p03 = _device(hass, zentry, ZWAVE_DOMAIN, f"{HOME}-10", "P03 Z-Wave Smart plug")
     mentry, _client = _matter(hass, [SimpleNamespace(node_id=22, available=True, node_data=SimpleNamespace(attributes={}))])
@@ -125,9 +122,9 @@ async def test_each_node_names_its_device(hass: HomeAssistant):
 
 
 async def test_an_unplugged_plug_that_stays_alive_is_still_recorded(hass: HomeAssistant):
-    """Research finding 4: Tim Plas's P03 read alive three days after it
-    was last heard. The line comes from last seen passing the device's
-    window, and Device Sentinel's frozen verdict agrees with it."""
+    """A Z-Wave plug can read alive three days after it was last heard.
+    The line comes from last seen passing the device's window, and
+    Device Sentinel's frozen verdict agrees with it (rule STACK-05)."""
     now = dt_util.utcnow()
     zentry, _client = _zwave(hass, {10: _plug(10, 4, now - timedelta(days=3))})
     p03 = _device(hass, zentry, ZWAVE_DOMAIN, f"{HOME}-10", "P03 Z-Wave Smart plug")
@@ -206,8 +203,8 @@ async def test_an_away_matter_node_and_an_unavailable_device_agree(hass: HomeAss
 
 
 async def test_matter_wifi_nodes_are_named_when_wifi_goes_down(hass: HomeAssistant):
-    """#412's exception, observed: which Matter Wi-Fi nodes went away
-    with Device Sentinel's Wi-Fi outage and which did not."""
+    """Which Matter Wi-Fi nodes went away with Device Sentinel's Wi-Fi
+    outage and which did not (rule UP-15)."""
     away = SimpleNamespace(node_id=19, available=False, node_data=SimpleNamespace(attributes={"0/49/65532": 1}))
     up = SimpleNamespace(node_id=20, available=True, node_data=SimpleNamespace(attributes={"0/49/65532": 1}))
     thread = SimpleNamespace(node_id=22, available=False, node_data=SimpleNamespace(attributes={"0/49/65532": 2}))
@@ -254,9 +251,9 @@ async def test_the_day_counts_what_agreed(hass: HomeAssistant):
 
 
 async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
-    """Lines stored before 0.23.9 move into the file once, oldest
-    first, and storage lets them go; a line written before 0.23.8 has
-    no Device Sentinel column and still renders."""
+    """Lines stored by an older release move into the file once, oldest
+    first, and storage lets them go; a line with no Device Sentinel
+    column still renders (rule STACK-12)."""
     zentry, _client = _zwave(hass, {10: _plug(10)})
     p03 = _device(hass, zentry, ZWAVE_DOMAIN, f"{HOME}-10", "P03 Z-Wave Smart plug")
     coord = await _studied(hass)
@@ -265,8 +262,8 @@ async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
     ]
     # The file is written off the event loop, and a job started from a
     # test is a background task, which async_block_till_done waits for
-    # only when asked. Without it the file was sometimes read before
-    # the write landed: one gate run of 26 September (0.23.10).
+    # only when asked. Without it the file can be read before the write
+    # lands (rule CODE-06).
     coord.probe_tick(1000.0)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert coord.data[DATA_STACK_PROBE] == []
@@ -283,7 +280,7 @@ async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
 
 async def test_the_file_rolls_over_at_its_cap(hass: HomeAssistant, monkeypatch):
     """At the cap the file becomes .1, older ones move up to .3, and
-    the oldest is dropped (0.23.9)."""
+    the oldest is dropped (rule STACK-12)."""
     from custom_components.device_sentinel import report_maintainer
 
     monkeypatch.setattr(report_maintainer, "PROBE_FILE_MAX_BYTES", 4000)
@@ -302,8 +299,8 @@ async def test_the_file_rolls_over_at_its_cap(hass: HomeAssistant, monkeypatch):
         assert "line 0-0" not in handle.read(), "the oldest file is dropped"
 
 async def test_the_flapping_description_keeps_its_capitals(hass: HomeAssistant, freezer):
-    """Tim Plas's list read "since september 25, 2026 at 2:04 pm":
-    str.capitalize() lowered everything after the first letter."""
+    """The flapping description keeps its capitals: str.capitalize()
+    would read "since september 25, 2026 at 2:04 pm"."""
     from custom_components.device_sentinel.const import TODO_DESCRIPTION
 
     from .test_flapping import _drop, _item, _shed

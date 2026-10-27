@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.27.8 (2026-10-27)
+# File: test_retention.py, Version: 0.27.10 (2026-10-27)
 
-"""How much is kept, and what reads only a window of it.
+"""How much is kept, and what reads only a window of it (rule STOR-14).
 
-One of the files split out of test_storage.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+One of the files split out of a larger storage test file by subject.
+Helpers are carried to every file that calls them rather than pooled,
+so each file reads on its own.
 """
 
 
@@ -177,15 +175,12 @@ async def test_freeze_kinds_alias_their_verdicts(hass: HomeAssistant):
 async def test_every_kind_has_words_everywhere(
     hass: HomeAssistant,
 ):
-    """The guard that failed to guard (ruling #215).
+    """Every kind has words (rule LIST-02).
 
-    Five tables map a kind to words. This test existed for exactly
-    the case where one is missed, and it listed the kinds by hand, so
-    when the falling kind arrived the list did not grow and the test
-    kept passing while checking six of seven. A person's brief read
-    "battery_falling" and "Door 2nd Bedroom 0s" for a day.
-
-    It now reads TODO_KINDS_ALL, so a kind added without wording
+    Five tables map a kind to words. A test that lists the kinds by hand
+    keeps passing when a new kind arrives and the list does not grow, and
+    a person's brief then reads "battery_falling" and "Door 2nd Bedroom
+    0s". So this reads TODO_KINDS_ALL, and a kind added without wording
     fails here rather than in a brief.
     """
     entry = await setup_entry(hass)
@@ -222,9 +217,9 @@ async def test_every_kind_has_words_everywhere(
 
 
 async def test_the_kind_list_is_the_whole_list(hass: HomeAssistant):
-    """TODO_KINDS_ALL has to actually hold every kind, or the guard
-    above is checking a subset again (ruling #215). Read from the
-    source: every TODO_KIND_ constant must appear in it.
+    """TODO_KINDS_ALL has to actually hold every kind, or the guard above is
+    checking a subset (rule LIST-02). Read from the source: every
+    TODO_KIND_ constant must appear in it.
     """
     from custom_components.device_sentinel import const
 
@@ -257,11 +252,10 @@ async def test_the_columns_show_the_window_and_not_the_season(
 ):
     """A season of history must not widen the report's columns.
 
-    The signal column shows exactly the window the floor is computed
-    over, thirty days since ruling #196. Showing fewer would leave
-    the marked value outside the cell on any device whose worst days
-    sit further back, and a reader would see every reading struck
-    with none marked.
+    The signal column shows exactly the window the floor is computed over,
+    thirty days (rule SIG-06). Showing fewer would leave the marked value
+    outside the cell on any device whose worst days sit further back, and
+    a reader would see every reading struck with none marked.
     """
     device, _ = _register(hass, "co1", "Column Sensor")
     entry = await setup_entry(hass)
@@ -282,9 +276,9 @@ async def test_the_columns_show_the_window_and_not_the_season(
 async def test_the_maintainer_files_live_at_the_top(
     hass: HomeAssistant,
 ):
-    """The maintainer files sit at the top of the reports folder and
-    the old diagnostics subfolder is emptied of them (#178). Since
-    0.23.5 the brief sits there beside them, as one file."""
+    """The maintainer files sit at the top of the reports folder, the brief
+    beside them as one file, and the old diagnostics subfolder is emptied
+    of them (rule BRIEF-14)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     await hass.async_add_executor_job(coord._write_reports, "test")
@@ -438,9 +432,8 @@ async def test_the_slider_reaches_the_advanced_screen(
 async def test_the_report_states_the_retention_in_force(
     hass: HomeAssistant,
 ):
-    """The tunables line said "keep 14 days" after retention became a
-    setting, telling a reader it kept a fortnight while keeping three
-    months (0.8.10)."""
+    """The tunables line says how long retention really keeps, never a fixed
+    "keep 14 days" while keeping three months."""
     _register(hass, "tu1", "Tunable Sensor")
     entry = await setup_entry(hass, {CONF_RETENTION_DAYS: 180})
     coord = entry.runtime_data
@@ -575,10 +568,9 @@ async def test_applying_the_same_settings_records_nothing(
     ] == []
 
 
-# A cut in retention trims every series at the next fold, whether or
-# not the day appended to it (ruling #131). Found by the adversarial
-# round of 29 September 2026: a device with no gap that day kept 73 days
-# after a cut from 180 to 30.
+# A cut in retention trims every series at the next fold, whether or not
+# the day appended to it, so a device with no gap that day does not keep
+# 73 days after a cut from 180 to 30 (rule STOR-14).
 
 
 async def test_a_cut_in_retention_trims_a_device_that_learned_nothing(

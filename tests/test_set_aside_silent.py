@@ -3,27 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_silent.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_set_aside_silent.py, Version: 0.27.10 (2026-10-27)
 
-"""Replay a restart against both real fleets and count what it says.
+"""A restart replayed against both real fleets sets the entityless
+devices aside silently, and real recoveries still announce (rules
+WATCH-03, WATCH-10).
 
-The method this file exists to serve: reproduce the whole fault at
-fleet scale before changing anything, then run the same simulation
-after the fix and require it to come out silent, with real
-recoveries still announcing.
-
-What is real here and what is not, stated plainly:
+What is real here and what is not:
 
   real  every device record, taken from the fleet's own storage
         file: its learned maxima, its first_observed, its clocks
   real  which devices leave the watched set, taken from what each
-        fleet actually did: James's ZHA coordinator, and the eight
-        devices Tim's brief names as never reported at every restart
-        and recovering five minutes later
+        fleet did: one fleet's ZHA coordinator, and the other's eight
+        devices that went never reported at every restart and
+        recovered five minutes later
   not   the registry itself, which the harness builds
 
 It reports counts rather than asserting them, so the same file
-answers before and after.
+answers before and after a change.
 """
 
 from __future__ import annotations
@@ -51,20 +48,18 @@ from tests.conftest import fleet_data, fleet_path
 from tests.helpers import settle_parked, record_events, register_device, setup_coordinator
 
 # The fleet files live outside the repository. When they are absent
-# the fleet-scale runs are skipped and the behavioural tests below
-# still run, so the suite is honest about what it checked rather
-# than silently proving less.
+# the fleet-scale runs are skipped and the behavior tests below still
+# run, so the suite is honest about what it checked rather than
+# silently proving less.
 JAMES = fleet_path("reference", "device_sentinel.storage")
-# The second fleet's committed house. Until 8 October 2026 this read a
-# capture of 26 August that was never committed, so its cases skipped
-# everywhere and only the reference fleet was checked.
+# The second fleet's committed house.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
-# What each fleet actually did. James's coordinator has no entities
-# and is watched for the length of the startup grace at every
-# restart. Tim's brief names eight devices going never reported at
-# every restart and recovering after exactly five minutes, which is
-# the same window closing.
+# What each fleet did. The first fleet's coordinator has no entities and
+# is watched for the length of the startup grace at every restart. The
+# second fleet has eight devices going never reported at every restart
+# and recovering after exactly five minutes, which is the same window
+# closing.
 JAMES_LEAVERS = 1
 TIM_LEAVERS = 8
 
@@ -88,10 +83,9 @@ async def _run_restart_cycle(
     records = _fleet_records(path)
     heard: list[dict] = record_events(hass, EVENT_RECOVERED)
 
-    # The leavers as they really are on both fleets: a registry
-    # device with no entity of any kind, owned by an integration that
-    # has not finished loading, inside the startup window. That is
-    # the ZHA coordinator at every restart, and Tim's eight.
+    # The leavers as they really are on both fleets: a registry device
+    # with no entity of any kind, owned by an integration that has not
+    # finished loading, inside the startup window.
     owner = MockConfigEntry(domain="leaver_stack", title="Leaver Stack")
     owner.add_to_hass(hass)
     registry = dr.async_get(hass)
@@ -325,7 +319,7 @@ async def test_a_device_whose_entities_are_all_disabled_still_qualifies(
     A device whose entities exist but are switched off is not the
     same as a device with none. Those entities can be switched on,
     and the never-reported row is the prompt to do it, so it keeps
-    its verdict (ruling #257 and #369).
+    its verdict (rule WATCH-03).
     """
     from homeassistant.helpers import entity_registry as er
 
@@ -395,9 +389,9 @@ async def test_an_ordinary_silent_device_still_qualifies(
 async def test_a_set_aside_fires_a_withdrawal_not_a_recovery(
     hass: HomeAssistant,
 ):
-    """#289 promised every fault an answer; #368 silenced the
-    recovery for a device that never came back; #370 answers with a
-    withdrawal instead. Exactly one, carrying the kinds and why."""
+    """A device set aside never came back, so its fault is answered with
+    a withdrawal, not a recovery: exactly one, carrying the kinds and
+    why (rule LIST-09)."""
     from custom_components.device_sentinel.const import EVENT_WITHDRAWN
 
     withdrawn: list[dict] = record_events(hass, EVENT_WITHDRAWN)

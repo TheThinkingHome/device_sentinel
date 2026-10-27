@@ -3,23 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.26.7 (2026-10-19)
+# File: test_repairs.py, Version: 0.27.10 (2026-10-27)
 
-"""What reaches the Repairs panel, and what is kept out of it.
+"""What reaches the Repairs panel, and what is kept out of it
+(rules REP-01 to REP-07).
 
-Rulings #292 through #297, #300 and #301. Four issues, none of them
-about a device, each raised on a condition and deleted the moment it
-clears.
+Four cards, none of them about a device, each raised on a condition
+and deleted the moment it clears.
 
-Three of these tests would have caught a real fault rather than a
-hypothetical one. The grace test is the whole reason the load-time
-shape check stores its result instead of raising where it runs. The
-translation test exists because Repairs renders from the translation
-files alone, so an identifier without an entry shows a person a raw
-key and no Python test would notice. And the fixable-versus-text test
-pins the sentence saying the repair is not built to the flag that
-makes it true, so the day Heal ships, the release that makes the
-issue fixable has to correct the words in the same change.
+The grace test is why the load-time shape check stores its result
+instead of raising where it runs. The translation test exists because
+Repairs renders from the translation files alone, so an identifier
+without an entry shows a person a raw key and no Python test would
+notice. The fixable-versus-text test ties a card's words to the flag
+that makes them true, so a change to one must change the other.
 """
 
 from __future__ import annotations
@@ -80,12 +77,11 @@ def _disabled_battery_entity(hass: HomeAssistant, uid: str) -> None:
 
 
 async def test_no_issue_is_about_a_device(hass: HomeAssistant) -> None:
-    """No identifier carries a device id (ruling #292).
+    """No identifier carries a device id (rule REP-01).
 
-    The rule is that Repairs is never a second copy of the problem
-    list. The mechanical form of it is that every issue this
-    integration can raise is one of four fixed strings, so no code
-    path can key one on a device.
+    Repairs is never a second copy of the problem list. Every card this
+    integration can raise is one of four fixed strings, so no code path
+    can key one on a device.
     """
     coordinator = await setup_coordinator(hass)
     device, _ = register_device(hass, "dev_a")
@@ -104,23 +100,21 @@ async def test_nothing_raised_during_the_startup_grace(
     hass: HomeAssistant, hass_storage
 ) -> None:
     """Setup alone raises nothing, however bad the storage is
-    (ruling #291).
+    (rule REP-07).
 
-    The fault is planted in the stored file rather than assigned to
-    the coordinator afterwards, so the load-time check finds it for
-    itself. That distinction is the test: an earlier version of this
-    set the faults after setup had finished, which meant the load
-    check ran against an empty file and the test passed whether or
-    not the issue was held. Raising from inside _check_storage_shape
-    now fails here, which was the whole claim.
+    The fault is planted in the stored file rather than set on the
+    coordinator after setup, so the load-time check finds it for
+    itself. A fault set after setup would leave the check reading an
+    empty file, and the test would pass whether or not the card was
+    held. Raising from inside _check_storage_shape fails here.
     """
     device, _ = register_device(hass, "dev_grace")
     # first_observed rather than a series or the taint. The load path
-    # legitimately rewrites several fields before the check runs: the
-    # epoch clears the statistics and #164's coercion repairs an old
-    # taint, so a fault planted in either heals itself before the
-    # check can see it and the test would prove nothing. This field
-    # nothing on that path touches.
+    # rewrites several fields before the check runs: the epoch clears
+    # the statistics and a coercion repairs an old taint, so a fault
+    # planted in either heals itself before the check can see it and
+    # the test would prove nothing. Nothing on that path touches this
+    # field.
     record = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
     record[DEV_FIRST_OBSERVED] = 12345
     hass_storage[STORAGE_KEY] = {
@@ -132,7 +126,7 @@ async def test_nothing_raised_during_the_startup_grace(
     await hass.async_block_till_done()
 
     # The gate has run, repaired the planted fault, and left the
-    # notice for the person (ruling #370).
+    # notice for the person (rule STOR-09).
     assert coordinator._repair_notice
     # And nothing has reached Settings, because grace has not closed.
     assert _issue(hass, REPAIR_STORAGE_REPAIRED) is None
@@ -149,7 +143,7 @@ async def test_storage_repaired_raised_and_cleared(
     hass: HomeAssistant,
 ) -> None:
     """Raised while a repair notice stands, deleted on the next
-    clean pass (rulings #294, #370)."""
+    clean pass (rules REP-04, REP-02)."""
     coordinator = await setup_coordinator(hass)
     coordinator._repair_notice = {
         "moment": "load",
@@ -179,9 +173,9 @@ async def test_the_notice_names_what_and_where(
     hass: HomeAssistant,
 ) -> None:
     """The card carries what was repaired and where the originals
-    are, composed from the repair itself (ruling #370). A card
-    saying "load: 1 fault(s) in 1 record(s)" told a person nothing
-    they could act on; this names the table and the folder."""
+    are, composed from the repair itself (rule REP-02). A card
+    saying "load: 1 fault(s) in 1 record(s)" tells a person nothing
+    they can act on; this names the table and the folder."""
     coordinator = await setup_coordinator(hass)
     coordinator.data.setdefault("incidents", []).append("junk")
     await coordinator._save_main()
@@ -198,8 +192,8 @@ async def test_the_notice_names_what_and_where(
 async def test_the_retired_shape_card_is_cleared_on_upgrade(
     hass: HomeAssistant,
 ) -> None:
-    """An install upgraded while the three-option card stood must
-    not keep a card whose flow no longer exists (ruling #370)."""
+    """An install upgraded while the three-option card stood does not
+    keep a card whose flow no longer exists (rule REP-02)."""
     coordinator = await setup_coordinator(hass)
     ir.async_create_issue(
         hass,
@@ -218,8 +212,8 @@ async def test_the_retired_shape_card_is_cleared_on_upgrade(
 async def test_recurrence_updates_rather_than_stacks(
     hass: HomeAssistant,
 ) -> None:
-    """A second repair changes the open issue; it does not add one
-    (ruling #293)."""
+    """A second repair changes the open card; it does not add one
+    (rule REP-03)."""
     coordinator = await setup_coordinator(hass)
     register_device(hass, "dev_one")
     register_device(hass, "dev_two")
@@ -252,11 +246,11 @@ async def test_recurrence_updates_rather_than_stacks(
 async def test_the_four_retired_cards_are_never_raised(
     hass: HomeAssistant,
 ) -> None:
-    """Ruling #697: a switched-off battery sensor on a long-settled
-    install with nowhere to send anything, and both clock notices'
-    conditions standing, raise no card at either moment. The sensor
-    is a Recommendations card now (#698), the target a recommendation,
-    and the clocks are told in the brief."""
+    """A switched-off battery sensor on a long-settled install with
+    nowhere to send anything, and both clock notices' conditions
+    standing, raise no card at either moment. The sensor is a
+    Recommendations card, the target a recommendation, and the clocks
+    are told in the brief (rules REP-01, REC-05)."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     _disabled_battery_entity(hass, "dev_batt")
@@ -275,9 +269,9 @@ async def test_the_four_retired_cards_are_never_raised(
 async def test_a_retired_card_held_from_before_is_cleared(
     hass: HomeAssistant,
 ) -> None:
-    """An install that showed one of the four cards under 0.26.6 loses
-    it at the first evaluation (ruling #697), and its Fix button, if
-    pressed first, only closes it."""
+    """An install that still shows one of the four retired cards loses
+    it at the first evaluation, and its Fix button, if pressed first,
+    only closes it (rule REP-02)."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     for issue_id in REPAIRS_RETIRED:
@@ -296,8 +290,8 @@ async def test_a_retired_card_held_from_before_is_cleared(
 
 
 def test_the_four_retired_cards_have_no_strings() -> None:
-    """Ruling #697: the retired identifiers are out of REPAIRS_ALL and
-    their words are gone from both string files."""
+    """The retired identifiers are out of REPAIRS_ALL and their words
+    are gone from both string files (rule REP-02)."""
     strings = json.loads((COMPONENT / "strings.json").read_text())
     for issue_id in REPAIRS_RETIRED:
         assert issue_id not in strings["issues"]
@@ -393,9 +387,9 @@ def test_every_identifier_has_translations() -> None:
 
 
 def test_the_retired_card_has_no_strings_and_no_flow() -> None:
-    """The three-option storage card is retired (ruling #370): its
-    strings are gone, its identifier is out of REPAIRS_ALL, and the
-    notice that replaced it carries a confirm step."""
+    """The three-option storage card is retired: its strings are gone,
+    its identifier is out of REPAIRS_ALL, and the notice that replaced
+    it carries a confirm step (rules REP-02, REP-06)."""
     strings = json.loads((COMPONENT / "strings.json").read_text())
     assert REPAIR_STORAGE_SHAPE not in strings["issues"]
     assert REPAIR_STORAGE_SHAPE not in REPAIRS_ALL
@@ -404,11 +398,11 @@ def test_the_retired_card_has_no_strings_and_no_flow() -> None:
 
 
 def test_no_issue_uses_critical_severity() -> None:
-    """Critical is never used (ruling #295).
+    """Critical is never used (rule REP-05).
 
-    A source scan rather than a behavioural test, because the wrong
-    severity is a value nobody would think to assert on and the file
-    that could introduce it is one file.
+    A source scan rather than a behavioral test, because the wrong
+    severity is a value nobody would think to assert on and only one
+    file could introduce it.
     """
     source = (COMPONENT / "repairs.py").read_text()
     assert "CRITICAL" not in source
@@ -418,8 +412,8 @@ def test_no_issue_uses_critical_severity() -> None:
 
 
 async def test_unload_clears_every_issue(hass: HomeAssistant) -> None:
-    """Nothing this integration raised outlives it (rulings #240,
-    #294)."""
+    """Nothing this integration raised outlives it (rules STOR-24,
+    REP-04)."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     register_device(hass, "dev_unload")
@@ -451,14 +445,13 @@ async def test_unknown_issue_gets_a_harmless_flow(
 async def test_the_brief_send_is_what_evaluates_repairs(
     hass: HomeAssistant, hass_storage
 ) -> None:
-    """The scheduled send judges; the fold no longer does.
+    """The scheduled send judges; the fold does not (rule REP-07).
 
-    Ruling #309. A card raised at midnight is read by nobody, and an
-    install rebooting nightly after midnight closes its grace and
-    clears the card before morning. Driving the two real scheduled
-    callbacks rather than calling the evaluator by hand is the
-    point: it proves the wiring, which is exactly where 0.16.9's
-    stitch went wrong. Since #697 the missing target is the card a
+    A card raised at midnight is read by nobody, and an install
+    rebooting nightly after midnight closes its grace and clears the
+    card before morning. The test drives the two real scheduled
+    callbacks rather than calling the evaluator by hand, because the
+    wiring is where this goes wrong. The missing target is the card a
     person can cause, so it carries the proof.
     """
     entry = await setup_entry(
@@ -477,13 +470,12 @@ async def test_the_brief_send_is_what_evaluates_repairs(
 
 
 def test_every_fixable_issue_carries_a_flow_and_no_description():
-    """hassfest rejects an issue holding both (ruling #351).
+    """hassfest rejects an issue holding both (rule REP-06).
 
-    Found when a validate run failed on 0.18.6: `storage_restored`
-    was written with a description beside its fix_flow, which no
-    integration in Home Assistant core does. A fixable issue shows its
-    flow's first step, so the description is never read and its
-    presence is a schema error rather than a redundancy.
+    A fixable issue shows its flow's first step, so a description
+    beside its fix_flow is never read, and no integration in Home
+    Assistant core has one. Its presence is a schema error, not a
+    redundancy.
     """
     import json
     from pathlib import Path
