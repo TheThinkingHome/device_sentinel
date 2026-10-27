@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_entry_rows.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_integration_entry_rows.py, Version: 0.27.6 (2026-10-26)
 
 """An integration's row, count, phase and push when it has several
 config entries (rules UP-05, UP-09, UP-10, UP-11).
@@ -14,9 +14,12 @@ entry that is its only device's claims nothing and takes no part in the
 row or the push. One entry back while another is still down moves no
 phase, so nothing is pushed until the integration is over, and then the
 over push goes, across restarts too, telling the integration's own
-outage. An entry's size is decided when it falls.
+outage from its own stored start and worst. An entry's size is decided
+when it falls.
 """
 from __future__ import annotations
+
+import re
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -33,7 +36,9 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_SINCE,
     INTEGRATION_DOWN_DWELL_SECONDS,
     SYS_INTEGRATION_DOWN,
+    SYS_INTEGRATION_UP,
     SYS_KIND,
+    SYS_WHEN,
     UPSTREAM_SETTLE_SECONDS,
 )
 from custom_components.device_sentinel.interventions import DATA_INTEGRATION_SEEN
@@ -425,3 +430,217 @@ async def test_two_entries_over_push_counts_both_entries(
     overs = [w for _n, r, w in sent if r]
     assert len(overs) == 1, sent
     assert "5 of its 5 devices went down." in overs[0], overs[0]
+
+
+# The over push tells the outage the phone heard, from its own stored
+# start, return and worst, never an entry's return row in the events log:
+# an earlier outage's return of the same entry is not this one. It ends at
+# the last return, as the brief tells it, not when the push is sent after
+# the hand-back (rule UP-09).
+
+
+def _last_return(coord):
+    """When the last entry of the integration came back, as the brief's
+    own row for it says."""
+    return max(
+        row[SYS_WHEN] for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row.get(SYS_KIND) == SYS_INTEGRATION_UP and row.get("scope") == DOMAIN
+    )
+
+
+def _record_timed_words(coord, sent):
+    """Record each push's words and the moment it was sent."""
+    async def _push(name, count, recovered=False):
+        moment = dt_util.utcnow().timestamp()
+        if recovered:
+            sent.append((name, True, coord._upstream_return_words(name), moment))
+            coord._upstream_announced.pop(name, None)
+        else:
+            sent.append((name, False, coord._upstream_down_words(name, count), moment))
+            coord._upstream_announced[name] = count
+
+    coord.async_push_upstream = _push
+
+
+def _clear(coord, devices):
+    for device in devices:
+        record = coord.data[DATA_DEVICES].setdefault(device.id, {})
+        record.pop(DEV_FROZEN_CATEGORY, None)
+        record.pop(DEV_FROZEN_SINCE, None)
+
+
+def _minutes(words):
+    found = re.search(r"after (\d+)m\.", words)
+    assert found, words
+    return int(found.group(1))
+
+
+async def _fall(hass, freezer, coord, sources, devices):
+    """The entries fall together; returns the moment they fell."""
+    for source in sources:
+        source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    await walk(hass, freezer, INTEGRATION_DOWN_DWELL_SECONDS + 30)
+    fell = min(coord._entry_down_at[source.entry_id] for source in sources)
+    _down(coord, devices, fell + 30)
+    await walk(hass, freezer, UPSTREAM_SETTLE_SECONDS + 120)
+    return fell
+
+
+async def _yesterday_outage(hass, freezer, coord, a, da, sent):
+    """Entry a's outage the day before: down, back, over, all told,
+    then most of a day of quiet with its return row still in the log."""
+    await _fall(hass, freezer, coord, [a], da)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    _clear(coord, da)
+    await walk(hass, freezer, BRIDGE_HANDBACK_SECONDS + 300)
+    assert [r for _n, r, _w, _m in sent] == [False, True], sent
+    sent.clear()
+    await walk(hass, freezer, 20 * 3600, step=1800)
+
+
+async def test_entry_unwatched_while_down_over_push_does_not_retell_yesterday(
+    hass: HomeAssistant, freezer
+):
+    """Entry a (two devices) was down yesterday and came back. Today it
+    is down again and pushed, and its devices are excluded while it is
+    down, so it closes as no longer watched. The over push says so, as
+    the brief does, and does not tell yesterday's return as today's."""
+    a, da = _hub(hass, "a", devices=2)
+    coord = await setup_coordinator(hass)
+    await past_grace(hass, freezer)
+    _watch(coord, da)
+    sent: list = []
+    _record_timed_words(coord, sent)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    await walk(hass, freezer, 120)
+    await _yesterday_outage(hass, freezer, coord, a, da, sent)
+    await _fall(hass, freezer, coord, [a], da)
+    assert [r for _n, r, _w, _m in sent] == [False], sent
+    for device in da:
+        coord._watched.pop(device.id, None)
+    await walk(hass, freezer, BRIDGE_HANDBACK_SECONDS + 300)
+    overs = [w for _n, r, w, _m in sent if r]
+    assert len(overs) == 1, sent
+    assert "came back" not in overs[0], overs[0]
+    assert overs[0].startswith(
+        f"Device Sentinel stopped watching the {DOMAIN} integration at "
+    ), overs[0]
+    assert _seen(coord) == {}, _seen(coord)
+
+
+async def test_sibling_unwatched_while_down_over_push_times_today(
+    hass: HomeAssistant, freezer
+):
+    """Hubs a (two devices) and b (three). a was down yesterday and came
+    back. Today both fall, pushed as 5 of 5; a's devices are excluded
+    while it is down and b returns. The over push is timed from today's
+    fall to b's return and counts the 5 the down push told,
+    not a span stretched back to yesterday."""
+    a, da = _hub(hass, "a", devices=2)
+    b, db = _hub(hass, "b", devices=3)
+    coord = await setup_coordinator(hass)
+    await past_grace(hass, freezer)
+    _watch(coord, da + db)
+    sent: list = []
+    _record_timed_words(coord, sent)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    b.mock_state(hass, ConfigEntryState.LOADED)
+    await walk(hass, freezer, 120)
+    await _yesterday_outage(hass, freezer, coord, a, da, sent)
+    fell = await _fall(hass, freezer, coord, [a, b], da + db)
+    assert [r for _n, r, _w, _m in sent] == [False], sent
+    for device in da:
+        coord._watched.pop(device.id, None)
+    await walk(hass, freezer, 120)
+    b.mock_state(hass, ConfigEntryState.LOADED)
+    _clear(coord, db)
+    await walk(hass, freezer, BRIDGE_HANDBACK_SECONDS + 300)
+    overs = [(w, m) for _n, r, w, m in sent if r]
+    assert len(overs) == 1, sent
+    words, moment = overs[0]
+    assert words.startswith(f"The {DOMAIN} integration came back at "), words
+    back = _last_return(coord)
+    assert moment > back, (moment, back)
+    assert _minutes(words) == round((back - fell) / 60), (words, back - fell)
+    assert "5 of its 5 devices went down." in words, words
+
+
+async def test_entry_that_fell_twice_keeps_the_outage_start(
+    hass: HomeAssistant, freezer
+):
+    """Hub a falls first and is pushed; hub b falls ten minutes later.
+    a comes back, falls again and comes back; b returns last. The
+    outage the phone heard began with a's first fall, so the over push
+    is timed from it, to b's return."""
+    a, da = _hub(hass, "a", devices=2)
+    b, db = _hub(hass, "b", devices=3)
+    coord = await setup_coordinator(hass)
+    await past_grace(hass, freezer)
+    _watch(coord, da + db)
+    sent: list = []
+    _record_timed_words(coord, sent)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    b.mock_state(hass, ConfigEntryState.LOADED)
+    await walk(hass, freezer, 120)
+    t0 = dt_util.utcnow().timestamp()
+    a.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    await walk(hass, freezer, 120)
+    fell = coord._entry_down_at[a.entry_id]
+    assert fell >= t0, (fell, t0)
+    _down(coord, da, fell + 30)
+    await walk(hass, freezer, 480)
+    b.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    await walk(hass, freezer, 120)
+    _down(coord, db, coord._entry_down_at[b.entry_id] + 30)
+    await walk(hass, freezer, 480)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    _clear(coord, da)
+    await walk(hass, freezer, 600)
+    a.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    await walk(hass, freezer, 120)
+    # Its second fall takes one device of two; its first took both, and
+    # the over push keeps the most the outage had down.
+    _down(coord, da[:1], coord._entry_down_at[a.entry_id] + 30)
+    await walk(hass, freezer, 480)
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    _clear(coord, da)
+    await walk(hass, freezer, 1320)
+    b.mock_state(hass, ConfigEntryState.LOADED)
+    _clear(coord, db)
+    await walk(hass, freezer, BRIDGE_HANDBACK_SECONDS + 300)
+    overs = [(w, m) for _n, r, w, m in sent if r]
+    assert len(overs) == 1, sent
+    words, moment = overs[0]
+    back = _last_return(coord)
+    assert moment > back, (moment, back)
+    assert _minutes(words) == round((back - fell) / 60), (words, back - fell)
+    assert "5 of its 5 devices went down." in words, words
+
+
+async def test_over_push_after_a_restart_keeps_the_outage_start(
+    hass: HomeAssistant, freezer
+):
+    """Both hubs down and pushed; a returns, the house restarts, then b
+    returns. The over push is timed from the first fall, read from the
+    stored outage, across the restart."""
+    coord, a, da, b, db = await _both_down_pushed(hass, freezer)
+    fell = min(coord._entry_down_at[a.entry_id], coord._entry_down_at[b.entry_id])
+    a.mock_state(hass, ConfigEntryState.LOADED)
+    await walk(hass, freezer, 240)
+    coord = await restart(hass, freezer, down=120)
+    _watch(coord, da + db)
+    sent: list = []
+    _record_timed_words(coord, sent)
+    await past_grace(hass, freezer)
+    await walk(hass, freezer, 240)
+    assert sent == [], sent
+    b.mock_state(hass, ConfigEntryState.LOADED)
+    await walk(hass, freezer, BRIDGE_HANDBACK_SECONDS + 240)
+    overs = [(w, m) for _n, r, w, m in sent if r]
+    assert len(overs) == 1, sent
+    words, moment = overs[0]
+    assert words.startswith(f"The {DOMAIN} integration came back at "), words
+    back = _last_return(coord)
+    assert moment > back, (moment, back)
+    assert _minutes(words) == round((back - fell) / 60), (words, back - fell)
+    assert _seen(coord) == {}, _seen(coord)

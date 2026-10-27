@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unwatched_time_cases.py, Version: 0.27.5 (2026-10-26)
+# File: test_unwatched_time_cases.py, Version: 0.27.6 (2026-10-26)
 
 """The return from being set aside is dated once (ruling #648).
 
@@ -136,8 +136,7 @@ async def test_the_upgrade_does_not_clear_a_standing_freeze(hass: HomeAssistant,
             if isinstance(stored, dict):
                 stored.pop(DEV_WATCHED_FROM, None)
 
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, down=120, before_setup=as_0256, keep_states=True)
+    coord = await restart(hass, freezer, down=120, before_setup=as_0256)
     record = rec(coord, device.id)
     await past_grace(hass, freezer)
     seen = []
@@ -361,8 +360,7 @@ async def test_a_damaged_start_kind_does_not_shorten_a_freeze(
     def damage():
         hass_storage[STORAGE_KEY]["data"][DATA_DEVICES][device.id][DEV_DOWN_BEGAN_AS] = value
 
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, down=120, before_setup=damage, keep_states=True)
+    coord = await restart(hass, freezer, down=120, before_setup=damage)
     events = record_events(hass, EVENT_RECOVERED)
     await past_grace(hass, freezer)
     await walk(hass, freezer, 600)

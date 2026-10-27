@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_diagnostics_privacy.py, Version: 0.27.6 (2026-10-26)
 
 """Network addresses leave the diagnostics download (0.23.19).
 
@@ -142,3 +142,35 @@ async def test_the_download_keeps_zigbee_addresses_and_hides_a_mac(hass: HomeAss
     assert "Sensor 00:12:4b:00:1c:a1:b2:c3" in text
     assert "MAC-02" not in text
     assert "Sensor 0x00124b001ca1b2c4" in text
+
+
+async def test_held_values_do_not_reach_the_download(hass: HomeAssistant, freezer):
+    """The values a device holds while a verdict stands are its own
+    states, and the download carries no states (0.25.0): only how many
+    it holds goes (rule WATCH-12)."""
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.device_sentinel.const import (
+        DEV_FROZEN_CATEGORY,
+        DEV_HELD_VALUES,
+        DEV_LAST_ACTIVITY,
+    )
+
+    from .outage_helpers import PIN, arm, entry_of, past_grace, rec, walk
+
+    secret = "12 Example Street, Springfield"
+    freezer.move_to(PIN)
+    device, (eid,) = register_device(hass, "lock", "Front Door")
+    hass.states.async_set(eid, secret)
+    coord = (await setup_entry(hass)).runtime_data
+    record = arm(coord, device.id, rhythm=600.0)
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 4 * 3600
+    await past_grace(hass, freezer)
+    await walk(hass, freezer, 120)
+    assert rec(coord, device.id)[DEV_FROZEN_CATEGORY] == "frozen"
+    assert rec(coord, device.id)[DEV_HELD_VALUES]
+    out = await async_get_config_entry_diagnostics(hass, entry_of(hass))
+    assert secret not in json.dumps(out, default=str)
+    assert DEV_HELD_VALUES not in out["devices"][device.id]["statistics"]
+    assert out["devices"][device.id]["held_value_count"] == 1
+    assert out["classification"]["held_values"]["devices_with_held_values"] == 1

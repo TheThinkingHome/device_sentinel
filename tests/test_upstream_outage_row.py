@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_upstream_outage_row.py, Version: 0.27.4 (2026-10-25)
+# File: test_upstream_outage_row.py, Version: 0.27.6 (2026-10-26)
 
 """An upstream outage on a healthy house is reported (rules UP-05, UP-08,
 UP-09, UP-11).
@@ -96,7 +96,9 @@ async def test_integration_outage_of_a_healthy_house(hass: HomeAssistant, freeze
     await walk(hass, freezer, 14 * 60)
     assert _rows(coord) == []
 
-    # The recovery push gives how long it was down, in the brief's words.
+    # The recovery push gives how long it was down, in the brief's words,
+    # timed from the fall to the return, not to the end of the hand-back
+    # when the push is sent (rule UP-09).
     messages = _messages(phone)
     assert len(messages) == 2
     assert messages[1].startswith(f"The {DOM} integration came back at ")

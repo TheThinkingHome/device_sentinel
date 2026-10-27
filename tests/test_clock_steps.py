@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_steps.py, Version: 0.27.5 (2026-10-26)
+# File: test_clock_steps.py, Version: 0.27.6 (2026-10-26)
 
 """Time across a clock step is unknown (ruling #651).
 
@@ -187,8 +187,7 @@ async def test_a_frozen_device_stays_frozen_across_a_restart_and_a_clock_step(ha
     events = record_events(hass, EVENT_RECOVERED)
     await _minute(hass, freezer, coord, 3 * 60)
     assert rec(coord, device.id)[DEV_FROZEN_CATEGORY] == "frozen"
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, down=300, keep_states=True)
+    coord = await restart(hass, freezer, down=300)
     await past_grace(hass, freezer)
     box = _mono(coord)
     record = rec(coord, device.id)

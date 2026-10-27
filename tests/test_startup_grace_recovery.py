@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_startup_grace_recovery.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_startup_grace_recovery.py, Version: 0.27.6 (2026-10-26)
 
 """A device that really reports inside the startup grace (rule WATCH-10).
 
@@ -46,8 +46,7 @@ async def _frozen_door_across_a_restart(hass, freezer):
     await walk(hass, freezer, 120)
     assert rec(coord, device.id)[DEV_FROZEN_CATEGORY] == "frozen"
     assert [f["device_id"] for f in faults] == [device.id]
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, keep_states=True)
+    coord = await restart(hass, freezer)
     assert coord._in_startup_grace()
     assert _listed(coord, device.id)
     return device, eid, coord
@@ -111,8 +110,7 @@ async def test_a_held_recovery_survives_a_restart_inside_the_grace(
     hass.states.async_set(eid, "off")
     await hass.async_block_till_done()
     await walk(hass, freezer, 60)
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, down=60, keep_states=True)  # a second restart
+    coord = await restart(hass, freezer, down=60)  # a second restart
     await walk(hass, freezer, 7 * 60)
     await hass.async_block_till_done()
     assert [e["device_id"] for e in recovered] == [device.id]
@@ -128,8 +126,7 @@ async def test_a_sent_recovery_is_not_sent_again_after_a_restart(
     await hass.async_block_till_done()
     await walk(hass, freezer, 6 * 60)  # the grace closes and sends it
     assert len(recovered) == 1
-    # Known Gap 63, the boot hand-back read as a report: states kept.
-    coord = await restart(hass, freezer, down=60, keep_states=True)
+    coord = await restart(hass, freezer, down=60)
     assert coord._held_recoveries == []
     await walk(hass, freezer, 7 * 60)
     await hass.async_block_till_done()

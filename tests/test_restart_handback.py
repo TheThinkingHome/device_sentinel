@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_restart_handback.py, Version: 0.27.5 (2026-10-26)
+# File: test_restart_handback.py, Version: 0.27.6 (2026-10-26)
 
 """Restarts, and the values they hand back.
 
@@ -57,7 +57,9 @@ async def _cross_during_restart(hass, freezer, uid, lead, down):
     await walk(hass, freezer, to_go, step=300)
     assert record[DEV_FROZEN_CATEGORY] is None
     stopped = dt_util.utcnow().timestamp()
-    # Known Gap 63, the boot hand-back read as a report: states kept.
+    # States kept: the device is working at the stop, so it holds no
+    # values, and a value handed back at the start is read as a report
+    # (rule WATCH-12 keeps values only for a device with a verdict).
     coord = await restart(hass, freezer, down=down, keep_states=True)
     started = dt_util.utcnow().timestamp()
     await walk(hass, freezer, lead + 30 * 60, step=60)
