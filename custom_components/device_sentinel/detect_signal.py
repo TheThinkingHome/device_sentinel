@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.27.7 (2026-10-27)
+# File: detect_signal.py, Version: 0.27.9 (2026-10-27)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -74,7 +74,6 @@ from .const import (
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
     CONF_BADDAY_SENSITIVITY,
-    DATA_DEVICES,
     DEFAULT_BADDAY_BASELINE_DAYS,
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
@@ -891,7 +890,10 @@ class SignalMixin:
         """
         railed = {row["device_id"] for row in self.signal_problem_list}
         weak = []
-        for device_id, record in (self.data.get(DATA_DEVICES) or {}).items():
+        # Watched devices only: a set-aside device with a bad last day
+        # stayed counted for as long as it was set aside (rules SIG-09,
+        # WATCH-09).
+        for device_id, record in self.watched_records():
             if device_id in railed or self.is_held(device_id):  # type: ignore[attr-defined]
                 continue
             if (
@@ -968,9 +970,8 @@ class SignalMixin:
                     device_id, frozenset()
                 ),
             }
-            for device_id, record in self.data.get(
-                DATA_DEVICES, {}
-            ).items()
+            # Watched devices only (rule WATCH-09).
+            for device_id, record in self.watched_records()
             if (
                 record.get(DEV_SIGNAL_VALUE) is not None
                 or record.get(DEV_SIGNAL_DAILY_P5)

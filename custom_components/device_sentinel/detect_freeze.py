@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.8 (2026-10-27)
+# File: detect_freeze.py, Version: 0.27.9 (2026-10-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -584,7 +584,8 @@ class FreezeMixin:
     def rule_counts_fold(self, now: float) -> None:
         """Write the day's line of the two rules and begin the counts again."""
         trimmed = lognormal = 0
-        for record in self.data[DATA_DEVICES].values():
+        # Watched devices only (rules SIG-09, WATCH-09).
+        for _device_id, record in self.watched_records():
             found = self._freeze_rhythm(record)
             if not found:
                 continue

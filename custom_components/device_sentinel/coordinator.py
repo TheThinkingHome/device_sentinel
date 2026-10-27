@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.8 (2026-10-27)
+# File: coordinator.py, Version: 0.27.9 (2026-10-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -295,6 +295,7 @@ from .const import (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_DAILY_DATES,
+    PAIRING_GRACE_SECONDS_DEFAULT,
 )
 from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
@@ -333,6 +334,7 @@ from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
 from .stacks import is_node_status, node_dead, node_heard, node_up
+from .stacks import reader_for_domain
 from .stacks import last_heard as stack_last_heard
 from .store import StorageMixin, _watched_seconds
 
@@ -2626,6 +2628,7 @@ class DeviceSentinelCoordinator(
         battery_own: dict[str, bool] = {}
         last_seen_own: dict[str, bool] = {}
         signal_own_entities: set[str] = set()
+        signal_device_of: dict[str, str] = {}
         deviceless = 0
         with_entities: set[str] = set()
         stack_words: set[str] = set()
@@ -2744,6 +2747,7 @@ class DeviceSentinelCoordinator(
                 if ent.disabled_by is None:
                     signal_entities.add(ent.entity_id)
                     signal_devices.add(ent.device_id)
+                    signal_device_of[ent.entity_id] = ent.device_id
                     if own:
                         signal_own_entities.add(ent.entity_id)
             if ent.disabled_by is None and self._is_battery(ent):
@@ -2896,6 +2900,14 @@ class DeviceSentinelCoordinator(
         # (nineteenth adversarial round of 0.26.6).
         self._node_status_ids = set(node_status_entity.values()) | stack_words
         self._device_entries = device_entries
+        # Another integration's signal reading is used only where the
+        # device has none of its own (rule WATCH-02): both fed the one
+        # series before, so two scales mixed in one day.
+        with_own = {signal_device_of[e] for e in signal_own_entities if e in signal_device_of}
+        signal_entities = {
+            e for e in signal_entities
+            if e in signal_own_entities or signal_device_of.get(e) not in with_own
+        }
         self._signal_entities = signal_entities
         self._signal_devices = signal_devices
         self._battery_entity = battery_entity
@@ -2952,7 +2964,7 @@ class DeviceSentinelCoordinator(
                 came_back = False
                 if isinstance(record, dict) and record.get(DEV_REMOVED_SINCE) is not None:
                     returned.append(device_id)
-                    self._welcome_back(device_id, record)
+                    self._welcome_back(device_id, record, watched.get(device_id))
                     came_back = True
                 if device_id in watched:
                     returning = (
@@ -4421,6 +4433,19 @@ class DeviceSentinelCoordinator(
         # decision above stands and nothing is made worse (ruling #147).
         if self._recovered_during_pairing(device_id, now):
             learned = LEARNED_PAIRING
+            # A re-pair starts the device's 42-day count again, as a
+            # ZHA re-pair does (rule FRZ-05): a device that was down, or
+            # silent past its window, and came back while pairing was
+            # open. A device reporting on its rhythm while someone pairs
+            # another keeps its count.
+            window = self._freeze_window(record)
+            if category is not None or (
+                last is not None
+                and window is not None
+                and stamp - last > window
+            ):
+                record[DEV_LOGNORMAL_DAYS] = 0
+                self._mark_cold_dirty()
             if not tainted and learned_gap is not None:
                 # Undo the daily-max update this gap just made, so a
                 # pairing gap never widens the learned rhythm. The
@@ -5281,7 +5306,9 @@ class DeviceSentinelCoordinator(
             self._dirty = True
             self._critical = True
 
-    def _welcome_back(self, device_id: str, record: dict[str, Any]) -> None:
+    def _welcome_back(
+        self, device_id: str, record: dict[str, Any], domain: str | None = None
+    ) -> None:
         """A removed device is back in Home Assistant with its old id
         (ruling #622). The rhythm stays; the set-aside stamp, kept,
         refuses the gap across the absence at its first report. The
@@ -5311,6 +5338,27 @@ class DeviceSentinelCoordinator(
                 record[DEV_TAINTED] = False
         record[DEV_REMOVED_SINCE] = None
         record[DEV_REMOVED_NAME] = None
+        # Removed and added again while its coordinator's pairing is
+        # open: the usual Zigbee2MQTT re-pair, which restarts the
+        # 42-day count (rule FRZ-05). Decided here, on its return, since
+        # its first report may come after pairing has closed, or carry
+        # a Last Seen older than this moment (0.27.9 rounds 2 and 3).
+        if domain is None:
+            # Set aside at its return, as a Zigbee2MQTT device is while
+            # its entities are still being made: read from its owner.
+            device = dr.async_get(self.hass).async_get(device_id)
+            domain = self._primary_domain(device) if device is not None else None  # type: ignore[arg-type]
+        for domain in [domain] if domain else []:
+            reader = reader_for_domain(self._bridge_readers, domain)
+            try:
+                pairing = reader is not None and reader.pairing_active_within(
+                    PAIRING_GRACE_SECONDS_DEFAULT, dt_util.utcnow().timestamp()
+                )
+            except Exception:  # noqa: BLE001 - a reader never breaks a rebuild
+                pairing = False
+            if pairing:
+                record[DEV_LOGNORMAL_DAYS] = 0
+                break
         self._mark_cold_dirty()
 
     def held_records(self) -> list[dict[str, Any]]:
@@ -5791,7 +5839,7 @@ class DeviceSentinelCoordinator(
             return str(record[DEV_REMOVED_NAME])
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
-        domain = self._primary_domain(device) if device is not None else None
+        domain = self._primary_domain(device) if device is not None else None  # type: ignore[arg-type]
         return display_name(device, domain, device_id)
 
     @property

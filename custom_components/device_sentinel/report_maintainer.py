@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.27.4 (2026-10-25)
+# File: report_maintainer.py, Version: 0.27.9 (2026-10-27)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -469,6 +469,9 @@ class MaintainerReportMixin:
         def _elapsed(seconds: float | None) -> str:
             if seconds is None:
                 return "?"
+            # Words from two days up, as the Daily Brief (rule GEN-09).
+            if seconds >= LONG_SPAN_SECONDS:
+                return long_span(seconds)
             return compact_span(seconds)
 
         def _age_from_epoch(since: float | None) -> str:

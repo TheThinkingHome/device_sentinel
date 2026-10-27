@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.8 (2026-10-27)
+# File: report_brief.py, Version: 0.27.9 (2026-10-27)
 
 """The daily brief: the one report written for a person.
 
@@ -962,8 +962,10 @@ class BriefMixin:
             what = action[1] if len(action) > 1 else ""
             plain = {
                 "device_joined": "re-paired",
+                "re-pair": "re-paired",
                 "raw_device_initialized": "reconfigured",
-                "device_fully_initialized": "re-paired or reconfigured",
+                # A full init with no join before it (rule FRZ-05).
+                "device_fully_initialized": "reconfigured",
                 "device_removed": "removed",
             }.get(what, "handled")
             return f"{plain} by hand"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.7 (2026-10-27)
+# File: dashboard.py, Version: 0.27.9 (2026-10-27)
 
 """What the dashboard reads from the coordinator.
 
@@ -998,9 +998,12 @@ class DeviceViewMixin:
             return verdict
         if device_id not in self._watched:
             return STATUS_SET_ASIDE
-        if self._connection_only(device_id):  # type: ignore[attr-defined]
+        if self._connection_only(device_id) or self.judged_by_hub(device_id):  # type: ignore[attr-defined]
             # Its connection is its report, and it is not down (James,
             # 17 October 2026; fifteenth adversarial round of 0.26.6).
+            # A device its hub judges is never called never reported:
+            # a Pico nobody has pressed is fine (rule FRZ-01, the
+            # device-page plan of 27 October 2026).
             return STATUS_REPORTING
         if record.get(DEV_LAST_ACTIVITY) is None:
             return STATUS_NEVER_REPORTED
@@ -1015,6 +1018,29 @@ class DeviceViewMixin:
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
         )
 
+    def _judged_by(self, device_id: str) -> dict[str, Any] | None:
+        """How a device never judged for freezing is judged, for its page
+        and its Devices row (James, 27 October 2026): by its hub, named,
+        or by its connection. None for a device judged by a window, or
+        by being available (#710), which keeps its own words.
+
+        A device a hub controls is never frozen whether or not the hub
+        is watched (judged_by_hub); "hub_page" says whether the hub has
+        a Device Sentinel page, else the link opens Home Assistant's.
+        A hub itself is judged by its connection.
+        """
+        hub = self.hub_of(device_id)  # type: ignore[attr-defined]
+        if hub is not None:
+            return {
+                "how": "hub",
+                "hub_id": hub,
+                "hub_name": self._device_name(hub),
+                "hub_page": hub in self._watched,
+            }
+        if self.judged_by_hub(device_id) or self._connection_only(device_id):  # type: ignore[attr-defined]
+            return {"how": "connection"}
+        return None
+
     def dashboard_devices(self) -> list[dict[str, Any]]:
         """One row per watched device, by name."""
         records = self.data.get(DATA_DEVICES) or {}
@@ -1026,13 +1052,11 @@ class DeviceViewMixin:
             problem = problems.get(device_id)
             # No window for a device judged by being available (#710), or
             # by its connection alone, as its page has it (0.27.3).
-            judged_by_window = (
-                not self._judged_available(device_id, record)
-                and not self._connection_only(device_id)  # type: ignore[attr-defined]
-                # Nor a hub, or a device its hub judges (#664, #665):
-                # neither is judged by a window (adversarial round).
-                and not self.hub_takes_over(device_id)  # type: ignore[attr-defined]
-            )
+            # Nor a hub, or a device a hub controls, watched or not
+            # (#664, #665; James, 27 October 2026): neither is judged
+            # by a window, and the row says how it is judged.
+            judged_by = self._judged_by(device_id)
+            judged_by_window = not self._judged_available(device_id, record) and judged_by is None
             # A device with no learned day yet is learning too, as its
             # page says (adversarial round of 0.27.3).
             window = (
@@ -1054,6 +1078,8 @@ class DeviceViewMixin:
                 # Still learning its window: days held, not yet enough
                 # (0.27.3). The cell reads "learning", not blank.
                 "window_learning": judged_by_window and window is None,
+                # By its hub or by its connection, in place of a window.
+                "judged_by": judged_by,
                 "type": self.type_words(device_id),
                 # For the tab's Area and Label filters (ruling #658).
                 **self._area_and_labels(device_id),
@@ -1319,6 +1345,10 @@ class DeviceViewMixin:
                 # called frozen while available (#710, #718): the page says so in
                 # place of its window (adversarial round of 0.26.8).
                 "available_rule": self._judged_available(device_id, record),
+                # Never judged for freezing (James, 27 October 2026): by
+                # its hub or by its connection. The page shows this in
+                # place of the window, the wait rule and the learning line.
+                "judged_by": self._judged_by(device_id),
                 # The rule in use, as people read it: "37-Day
                 # Log-Normal Percentile" (0.24.0).
                 "rule": self.rule_label(self._freeze_rhythm(record)),
@@ -1634,7 +1664,13 @@ class BriefViewMixin:
                 continue
             rows.append({
                 "device_id": device_id,
-                "name": row.get(INC_NAME) or self._device_name(device_id),
+                # The name it has today, as every surface (rule DEV-02);
+                # the stored one only for a device no longer known.
+                "name": (
+                    self._device_names.get(device_id)
+                    or row.get(INC_NAME)
+                    or self._device_name(device_id)
+                ),
                 # The words the brief used when it opened: a past day
                 # has no record of the level it read that night.
                 "problem": self._brief_phrase(row),
@@ -1803,36 +1839,49 @@ class TrendsViewMixin:
         return cells
 
     def battery_model_paces(self) -> dict[str, dict[str, Any]]:
-        """For each cell, how fast the others of its model fall (#738).
+        """For each cell, how fast the others of its model fall (rule BAT-16).
 
         Others means the cells of the same maker and model, the grouping
-        By Model uses, the cell itself left out; the pace is the middle
-        of their falls over the last four weeks, points a week. Shown
-        beside a battery as context and never used as its time left:
-        measured on both houses on 23 October 2026, a battery given its
-        sisters' pace missed its own by about as much as the pace itself,
-        since a door opened forty times a day and one opened twice share
-        a model, not a drain. At least two others, or nothing is said.
+        By Model uses, the cell itself left out. A cell with no weekly
+        fall yet (under four weeks of history, risen or flat) is left out rather than
+        counted as losing nothing, which pulled the pace toward zero.
+        The pace is a range, the slowest and the fastest of the others'
+        falls over the last four weeks, points a week. Shown beside a
+        battery as context and never used as its time left: measured on
+        both houses on 23 October 2026, a battery given its sisters' pace
+        missed its own by about as much as the pace itself, since a door
+        opened forty times a day and one opened twice share a model, not
+        a drain. At least two others with a fall, or nothing is said.
         """
         registry = dr.async_get(self.hass)
-        groups: dict[tuple[str, str], list[tuple[str, float]]] = {}
+        groups: dict[tuple[str, str], list[tuple[str, float | None]]] = {}
         for device_id, _record, series in self._battery_cells():
             device = registry.async_get(device_id)
             key = (
                 device_field(device, "manufacturer") or "not reported",
                 device_field(device, "model") or "not reported",
             )
-            groups.setdefault(key, []).append((device_id, (battery_month_drop(series) or 0.0) / 3))
+            drop = battery_month_drop(series)
+            groups.setdefault(key, []).append(
+                (device_id, drop / 3 if drop is not None else None)
+            )
         paces: dict[str, dict[str, Any]] = {}
         for (maker, model), cells in groups.items():
-            if len(cells) < BATTERY_MODEL_PACE_MIN_OTHERS + 1:
-                continue
             for device_id, _own in cells:
-                others = [fall for other, fall in cells if other != device_id]
+                others = [
+                    fall for other, fall in cells
+                    # A cell that rose (a new cell, a recharge) or held
+                    # flat (a cell that reads 100 for weeks) has no fall
+                    # to give.
+                    if other != device_id and fall is not None and fall > 0
+                ]
+                if len(others) < BATTERY_MODEL_PACE_MIN_OTHERS:
+                    continue
                 paces[device_id] = {
                     "model": f"{maker} {model}",
                     "others": len(others),
-                    "pace": round(_middle(others), 2),
+                    "pace_low": round(min(others), 2),
+                    "pace_high": round(max(others), 2),
                 }
         return paces
 

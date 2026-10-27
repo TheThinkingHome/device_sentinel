@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.8 (2026-10-27)
+# File: journal.py, Version: 0.27.9 (2026-10-27)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -258,7 +258,15 @@ class JournalMixin:
             daily = record.get(DEV_DAILY_MAX) or []
             if len(daily) < FREEZE_ARMING_DAYS:
                 continue
-            basis, _ = self._trimmed_maximum(daily)
+            # The rhythm of the rule in use, the one the freeze line is
+            # built from, so the episode always opens before the device
+            # is called frozen (rules FRZ-08, BRIEF-16). The 14-Day
+            # Trimmed Maximum alone opened late whenever the 42-Day
+            # Log-Normal Percentile was the shorter.
+            found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
+            basis = found.get("rhythm") if found else None
+            if basis is None:
+                basis, _ = self._trimmed_maximum(daily)
             if basis is None or basis <= 0:
                 continue
             window = self._freeze_window(record)

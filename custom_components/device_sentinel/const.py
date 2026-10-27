@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.7 (2026-10-27)
+# File: const.py, Version: 0.27.9 (2026-10-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -382,6 +382,8 @@ ZHA_HANDLED_TAIL_SECONDS = 60.0
 ZHA_FULL_INIT = "device_fully_initialized"
 ZHA_JOINED = "device_joined"
 ZHA_RAW_INIT = "raw_device_initialized"
+# A handling filed as a re-pair: a full init after a join (rule FRZ-05).
+ZHA_REPAIR = "re-pair"
 ZHA_INITIALIZED = "INITIALIZED"
 ZHA_HANDLING_WINDOW_SECONDS = 900.0
 # Handlings begun and not yet answered are kept for at most this many

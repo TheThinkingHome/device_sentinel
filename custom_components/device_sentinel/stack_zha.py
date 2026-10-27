@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.27.8 (2026-10-27)
+# File: stack_zha.py, Version: 0.27.9 (2026-10-27)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -80,6 +80,7 @@ from .const import (
     ZHA_PERMIT_LONGEST_SECONDS,
     ZHA_PERMIT_SERVICE,
     ZHA_RAW_INIT,
+    ZHA_REPAIR,
 )
 
 STACK = STACK_ZHA
@@ -367,6 +368,10 @@ class ZhaJoinObserver:
         # IEEE address -> when a person's handling of it began, on the
         # monotonic clock, so a clock change moves nothing (#719).
         self._begun: dict[str, float] = {}
+        # The addresses whose handling began with a join: a re-pair,
+        # told apart from a reconfigure, which begins with a raw init
+        # (rule FRZ-05).
+        self._joined: set[str] = set()
         # Until when pairing is open, on the same clock.
         self._pairing_until: float = -math.inf
         self._unsubscribe_permit: Any = None
@@ -493,10 +498,18 @@ class ZhaJoinObserver:
         now = dt_util.utcnow().timestamp()
         tick = time.monotonic()
         if kind == ZHA_RAW_INIT and isinstance(ieee, str) and ieee:
+            # A raw init inside a re-pair (zigpy sends one for a device
+            # being paired) keeps the join: remove and pair again is a
+            # re-pair, not a reconfigure.
+            if not self._begun_lately(ieee, tick):
+                self._joined.discard(ieee)
             self._begin(ieee, tick)
         if kind == ZHA_JOINED and isinstance(ieee, str) and ieee:
             if tick <= self._pairing_until:
                 self._begin(ieee, tick)
+                self._joined.add(ieee)
+                while len(self._joined) > ZHA_BEGUN_KEPT:
+                    self._joined.pop()
             else:
                 # A device that changed its own network address joins
                 # again with nobody near it (adversarial round of
@@ -543,11 +556,19 @@ class ZhaJoinObserver:
             # would attach a person's action to the wrong record.
             return
         self.handled[registry_id] = now
+        # A full init after a join is a re-pair, and is filed as one: it
+        # alone restarts the device's 42-day count (rule FRZ-05).
+        filed = (
+            ZHA_REPAIR
+            if kind == ZHA_FULL_INIT and isinstance(ieee, str) and ieee in self._joined
+            else kind
+        )
         if kind == ZHA_FULL_INIT and info.get("pairing_status") == ZHA_INITIALIZED and isinstance(ieee, str):
             # The last message of a pairing: the handling is done.
             self._begun.pop(ieee, None)
+            self._joined.discard(ieee)
         if self._record is not None:
-            self._record(registry_id, kind)
+            self._record(registry_id, filed)
 
     def _begin(self, ieee: str, tick: float) -> None:
         """A person's handling of this address began now."""

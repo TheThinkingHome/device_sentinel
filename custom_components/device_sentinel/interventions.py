@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.8 (2026-10-27)
+# File: interventions.py, Version: 0.27.9 (2026-10-27)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -61,6 +61,7 @@ from .const import (
     SYS_WIFI_DOWN,
     SYS_WIFI_UP,
     SYS_DEVICE_HANDLED,
+    ZHA_REPAIR,
     ZHA_HANDLED_TAIL_SECONDS,
     REPAIR_MOMENT_GRACE,
     BROKER_DOWN,
@@ -313,12 +314,13 @@ class InterventionMixin:
         """
         if device_id not in self._watched:
             return
-        # A re-pair or a removal starts the device's rhythm again: the
-        # Log-Normal Percentile counts from here (#542, amended in
-        # 0.24.0). Set on every message of the handling, before the
-        # refresh below returns early, which is harmless: zero is zero.
+        # A re-pair starts the device's rhythm again: the Log-Normal
+        # Percentile counts from here (#542, amended in 0.24.0). A
+        # reconfigure or a removal does not, since neither changes how
+        # the device reports (rule FRZ-05). Set before the refresh
+        # below returns early, which is harmless: zero is zero.
         record = self.data[DATA_DEVICES].get(device_id)
-        if record is not None:
+        if record is not None and kind == ZHA_REPAIR:
             record[DEV_LOGNORMAL_DAYS] = 0
             self._mark_cold_dirty()
         now = dt_util.utcnow().timestamp()

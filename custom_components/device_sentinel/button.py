@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.26.7 (2026-10-19)
+# File: button.py, Version: 0.27.9 (2026-10-27)
 
 """Button platform for the Device Sentinel integration.
 
@@ -102,7 +102,8 @@ class DeviceSentinelActionButton(ButtonEntity):
             sw_version=coordinator.version,
         )
         self._attr_extra_state_attributes = {
-            ATTR_SENTINEL_TYPE: "enable_assist",
+            # Each button names its own kind (rule REL-16).
+            ATTR_SENTINEL_TYPE: key,
             ATTR_SENTINEL_VERSION: coordinator.version,
         }
 

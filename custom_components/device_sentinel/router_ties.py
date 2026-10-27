@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.8 (2026-10-27)
+# File: router_ties.py, Version: 0.27.9 (2026-10-27)
 
 """Router ties: which watched devices a router says have left.
 
@@ -80,6 +80,7 @@ import re
 from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.config_entries import SOURCE_IGNORE
 from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -570,11 +571,22 @@ class RouterTiesMixin:
         hardware and lets a device be tied to its own tracker.
         """
         registry = er.async_get(self.hass)
+        # Only trackers of an entry set up to run: a router integration
+        # the person ignored or disabled is not one the house has (rule
+        # MUTE-02).
+        dead = {
+            entry.entry_id
+            for domain in ROUTER_INTEGRATIONS
+            for entry in self.hass.config_entries.async_entries(domain)
+            if entry.disabled_by is not None
+            or entry.source == SOURCE_IGNORE
+        }
         return {
             entry.platform
             for entry in registry.entities.values()
             if entry.domain == "device_tracker"
             and entry.platform in ROUTER_INTEGRATIONS
+            and entry.config_entry_id not in dead
         }
 
     def _first_seen_exclusions_present(self) -> set[str]:

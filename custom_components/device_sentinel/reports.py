@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.27.4 (2026-10-25)
+# File: reports.py, Version: 0.27.9 (2026-10-27)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -150,7 +150,12 @@ class ReportWritingMixin(
         """
         if seconds is None:
             return "-"
-        return compact_span(float(seconds), cap=self.gap_cap())  # type: ignore[attr-defined]
+        value = float(seconds)
+        cap = self.gap_cap()  # type: ignore[attr-defined]
+        # Words from two days up, as the Daily Brief (rule GEN-09).
+        if value >= LONG_SPAN_SECONDS and (cap is None or value < cap):
+            return long_span(value)
+        return compact_span(value, cap=cap)
 
     @staticmethod
     def _human_span(seconds: float | None) -> str:

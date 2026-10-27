@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.23.19 (2026-09-30)
+# File: report_signal.py, Version: 0.27.9 (2026-10-27)
 
 """The signal cells of the telemetry, and the bad-day judgment.
 
@@ -30,13 +30,16 @@ alone.
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 from typing import Any
 
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEV_SIGNAL_DAILY_P5,
     SIGNAL_DAYS_KEEP,
 )
+from .daily_dates import FAMILY_SIGNAL, dates_for
 
 
 class SignalReportMixin:
@@ -103,10 +106,18 @@ class SignalReportMixin:
         day's null shows as a dash.
         """
         full = list(record.get(DEV_SIGNAL_DAILY_P5) or [])
-        stored = full[-SIGNAL_DAYS_KEEP:]
+        # The last thirty calendar days, as the device page reads them
+        # (rule SIG-06): thirty rows reached back about sixty days on a
+        # device with silent days.
+        end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+        dates = dates_for(record, FAMILY_SIGNAL, len(full), end)
+        first = end - timedelta(days=SIGNAL_DAYS_KEEP - 1)
+        offset = next(
+            (i for i, when in enumerate(dates) if when >= first), len(full)
+        )
+        stored = full[offset:]
         if not stored:
             return "-"
-        offset = len(full) - len(stored)
         real = [
             value
             for value in stored
