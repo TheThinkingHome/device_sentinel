@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.4 (2026-10-25)
+// File: panel.js, Version: 0.27.7 (2026-10-27)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -676,6 +676,9 @@ class DeviceSentinelPanel extends HTMLElement {
       : TAB_BY_SLUG[path.replace(/^\/+|\/+$/g, "")] || "Daily Brief";
     const changed = JSON.stringify(next) !== JSON.stringify(this._view)
       || tab !== this._tab || from !== this._from;
+    // The Send to Battery Notes offer belongs to the save that made it:
+    // leaving the tab ends it (first adversarial round of 0.27.7).
+    if (changed) this._recReport = null;
     this._view = next;
     this._tab = tab;
     this._from = from;
@@ -1273,8 +1276,13 @@ class DeviceSentinelPanel extends HTMLElement {
   _paintRecommendations() {
     const { closing } = this._snapshot.recommendations;
     const { lines, cards: devices } = this._recsInView();
+    const report = this._recReport ? el("div", { class: "actrow" },
+      el("span", { class: "muted" }, `${this._recReport.name} saved. Battery Notes' library does not list this yet.`),
+      el("a", { class: "chip", href: this._recReport.url, target: "_blank", rel: "noopener noreferrer",
+        style: "display:inline-flex;align-items:center;text-decoration:none",
+        onclick: () => { this._recReport = null; } }, "Send to Battery Notes")) : null;
     if (!lines.length && !devices.length) {
-      this._pane.replaceChildren(el("p", {}, "Nothing to recommend right now."));
+      this._pane.replaceChildren(el("p", {}, "Nothing to recommend right now."), ...(report ? [report] : []));
       return;
     }
     const cards = lines.map((line) => {
@@ -1283,6 +1291,28 @@ class DeviceSentinelPanel extends HTMLElement {
       const title = at > 0 ? text.slice(0, at) : "";
       const rest = (at > 0 ? text.slice(at + 1) : text).trim();
       const body = rest.charAt(0).toUpperCase() + rest.slice(1);
+      // An integration recommended for exclusion (Ruled Change 70): its
+      // devices, and Exclude beside the tick that keeps it watched.
+      if (line.exclude) {
+        const devices = line.devices || [];
+        return el("article", { class: line.acknowledged ? "rec acked" : "rec" },
+          title ? el("h3", {}, title) : null,
+          el("p", {}, body),
+          devices.length ? el("p", { class: "muted" }, devices.join(", ")) : null,
+          el("div", { class: "actrow" },
+            el("button", { class: "chip", type: "button", onclick: async (ev) => {
+              ev.target.disabled = true;
+              try {
+                await this._call({ type: "device_sentinel/integration_exclude", domain: line.exclude, on: true });
+              } catch (err) {
+                ev.target.disabled = false;
+                ev.target.after(el("span", { class: "actnote refused" }, err.message || "Home Assistant refused the change."));
+                return;
+              }
+              await this._refresh();
+            } }, "Exclude"),
+            el("label", { class: "actrow" }, this._ackBox(line.acknowledged, { line: line.key }), "Keep watching it")));
+      }
       return el("article", { class: line.acknowledged ? "rec acked" : "rec" },
         title ? el("h3", {}, title) : null,
         el("p", {}, body),
@@ -1306,7 +1336,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // Every card is a suggestion and none is required (0.25.6):
       // no card is singled out as more needed than another.
       el("p", { style: "margin:0" }, `${count} ${count === 1 ? "recommendation" : "recommendations"} to help Device Sentinel run better. None of them is required.`),
-      ...cards, ...deviceCards,
+      report, ...cards, ...deviceCards,
       el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing)));
     const target = scrollTo ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === scrollTo) : null;
     // A scroll is a nicety; a browser without one still shows the tab.
@@ -1369,7 +1399,7 @@ class DeviceSentinelPanel extends HTMLElement {
       const note = el("span", { class: "small" }, "");
       const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
       let action = null;
-      if (card.kind === "power") action = this._recPowerPicker(row.device_id, refresh, fail);
+      if (card.kind === "power") action = this._recPowerPicker(row.device_id, refresh, fail, row.name);
       if (card.kind === "type") action = this._recTypePicker(row.device_id, refresh, fail);
       // A model split between types (0.25.3): which model, and what
       // this device is.
@@ -1432,7 +1462,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The Power choices in a list row (0.24.9), as the device page's pencil
   // offers them; Save sets the whole model, as there.
-  _recPowerPicker(deviceId, refresh, fail) {
+  _recPowerPicker(deviceId, refresh, fail, deviceName = "") {
     const power = this._snapshot.recommendations.power || {};
     const [qmin, qmax] = power.quantity || [1, 8];
     const wired = power.wired || [];
@@ -1454,7 +1484,14 @@ class DeviceSentinelPanel extends HTMLElement {
       const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value, source: "recommendations" };
       if (!wired.includes(select.value)) message.quantity = Number(quantity.value);
       if (select.value === power.other) message.other = other.value;
-      try { await this._call(message); await refresh(); } catch (err) { fail(err); }
+      try {
+        const reply = await this._call(message);
+        // The device leaves the card once saved, so Send to Battery
+        // Notes is offered above the cards (rule DEV-09).
+        this._recReport = reply && reply.report_url
+          ? { device_id: deviceId, name: deviceName, url: reply.report_url } : null;
+        await refresh();
+      } catch (err) { fail(err); }
     } }, "Save");
     return el("span", { class: "actrow" }, select, quantity, other, save);
   }
@@ -1974,11 +2011,13 @@ class DeviceSentinelPanel extends HTMLElement {
           types: [[group[0].type || "", group.length]] };
       }).sort((a, b) => a.rate - b.rate || b.cells - a.cells);
     }
-    const cellCount = chosen ? cells.length : page.cells;
     // Three parts that add up to the cells (0.27.3): a cell at or under
     // the threshold that is also falling is counted once, as falling.
     const fallingIds = new Set(falling.map((row) => row.device_id));
     const lowOnly = low.filter((row) => !fallingIds.has(row.device_id)).length;
+    // The total counted from the same cells as its parts (rule BAT-18):
+    // a new cell, or one just replaced, is in both or neither.
+    const cellCount = falling.length + lowOnly + steadyAll.length;
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, `
       + (lowOnly ? `${lowOnly} at or under your threshold of ${page.threshold}% and not falling, ` : "")
@@ -4157,7 +4196,7 @@ class DeviceSentinelPanel extends HTMLElement {
         const cells = [
           el("td", {}, percent ? levelText(b.now) : `${b.now}`),
           ...weeks.map((w, i) => el("td", {}, `${w.toFixed(1)}${unit}`, el("div", { class: "small" }, change(i)))),
-          el("td", {}, b.reading || (above ? "" : "steady")),
+          el("td", {}, b.coarse ? "coarse" : (b.reading || (above ? "" : "steady"))),
           el("td", b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, b.left || "\u2013"),
         ];
         figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
@@ -4167,8 +4206,10 @@ class DeviceSentinelPanel extends HTMLElement {
       // The time left ends at the threshold (#730), said once with why.
       const reaches = b.sentence && b.left && typeof b.target === "number" && b.target > 0
         ? ` It reaches your ${b.target}% in ${b.left}. Many devices stop working before their battery reaches 0%.` : "";
+      // A coarse cell is judged by the low threshold alone (rule BAT-10).
       const meaning = el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        b.sentence ? `${b.sentence}${reaches}` : (above
+        b.coarse ? "Coarse: this battery reports its level in large steps, so only your low threshold is judged and no time left is offered."
+        : b.sentence ? `${b.sentence}${reaches}` : (above
           // Judged only near the threshold (ruling #725), and with four
           // weeks of readings (#733): nothing is said.
           ? ""
