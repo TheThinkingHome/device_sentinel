@@ -59,6 +59,10 @@ Use the bug report form. It asks for your diagnostics download (**Settings > Dev
 
 Welcome, especially the real-situation kind: what happened in your home that this would have caught? Catching real failures comes first, everything else after.
 
+## The Rules Device Sentinel Follows
+
+Everything Device Sentinel does follows a written rule, in plain words, in the [Device Sentinel Rulebook](developer/Main__Rulebook.md). Each rule has an ID, such as FRZ-05, and the code cites that ID wherever it carries the rule out. When Device Sentinel does something you didn't expect, the rulebook says what it is meant to do, and an issue can name the rule it breaks.
+
 ## Pull Requests
 
 Code is held until 1.0. Device Sentinel follows a single design under active development, and outside code, however good, would collide with work already in motion. After 1.0 this section changes.
