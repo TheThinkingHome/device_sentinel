@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_campaign.py, Version: 0.27.4 (2026-10-25)
+# File: test_lutron_campaign.py, Version: 0.27.7 (2026-10-27)
 
 """Christopher Robert's Lutron campaign of 20 September 2026, replayed (#663 to #665).
 
@@ -254,13 +254,15 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
         hub.plug_in()
         await _settle_library()
         assert hub.bridge._leap is not None
-        # Back within a minute check of its return, before his next unplug.
+        # Back within a minute check of its return, before his next
+        # unplug; its row waits a minute before it leaves (rule LIST-06).
         await _until(hass, freezer, _at(back) + timedelta(seconds=75))
-        assert _items(coord) == {}
+        assert set(_items(coord)) <= set(coord._parked)
 
     hub_faults = [f["device_id"] for f in faults]
     assert hub_faults == [hub_ids["Basement"]] * 2 + [hub_ids["Garage"]] * 2
-    assert [r["device_id"] for r in recovered] == hub_faults
+    # The last return is still in its minute's wait (rule LIST-06).
+    assert [r["device_id"] for r in recovered] + list(coord._parked) == hub_faults
     # Each outage dated from the first minute check that saw it, not
     # from the check that confirmed it a minute later.
     since = [f.get("since") for f in faults]

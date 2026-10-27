@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_verdict.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_set_aside_verdict.py, Version: 0.27.7 (2026-10-27)
 
 """The stale verdict of a set-aside device, and what it cost.
 
@@ -35,7 +35,7 @@ from custom_components.device_sentinel.const import (
     EVENT_RECOVERED,
 )
 
-from tests.helpers import record_events, register_device, setup_coordinator
+from tests.helpers import settle_parked, record_events, register_device, setup_coordinator
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
 
@@ -125,6 +125,7 @@ async def test_a_recovery_is_timed_from_the_absence_that_ended(
     coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
+    await settle_parked(hass, coord)
 
     mine = [r for r in recoveries if r.get("device_id") == device.id]
     assert mine, "a watched device's recovery was not announced"
@@ -223,6 +224,7 @@ async def test_the_cause_is_bounded_to_the_incident_that_closed(
     coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
+    await settle_parked(hass, coord)
 
     mine = [c for c in causes if c.get("device_id") == device.id]
     assert mine, "no recovery fired"

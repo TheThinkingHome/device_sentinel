@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_saved_outage_start_edges.py, Version: 0.26.0 (2026-10-12)
+# File: test_saved_outage_start_edges.py, Version: 0.27.7 (2026-10-27)
 
 """The device's saved outage start at its edges (ruling #647).
 
@@ -204,6 +204,8 @@ async def _run(hass, freezer, uid, step, drop_after_step, gap=20 * 60, pre_down=
     real += gap
     hass.states.async_set(eids[0], "22.5")
     await hass.async_block_till_done()
+    # Its recovery is told after a minute's wait (rule LIST-06).
+    await _minute(hass, freezer, coord, 2)
     return downs(events, device.id), real, seen
 
 

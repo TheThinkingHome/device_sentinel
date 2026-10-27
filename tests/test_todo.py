@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.27.4 (2026-10-25)
+# File: test_todo.py, Version: 0.27.7 (2026-10-27)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -61,7 +61,7 @@ from custom_components.device_sentinel.const import (
     UNASSIGNED_AREA,
 )
 from custom_components.device_sentinel.normalise import repair_tables
-from tests.helpers import record_events, register_device, setup_coordinator, setup_entry
+from tests.helpers import record_events, register_device, settle_parked, setup_coordinator, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
 # a time before 2020 as impossible (ruling #544).
@@ -281,6 +281,7 @@ async def test_a_hand_deletion_does_not_orphan_a_live_episode(
     record[DEV_FROZEN_CATEGORY] = None
     record[DEV_FROZEN_SINCE] = None
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
 
     units = coord._pair_incidents(coord.data[DATA_INCIDENTS])
     unpaired = [
@@ -340,6 +341,7 @@ async def test_detection_adds_and_recovery_deletes(hass: HomeAssistant):
 
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     assert _item_for(coord, device.id) is None
 
 
@@ -425,6 +427,7 @@ async def test_acknowledged_item_updates_and_recovers(
     _clear_freeze(coord, device.id)
     coord.data["devices"][device.id][DEV_BATTERY_LOW] = False
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     assert _item_for(coord, device.id) is None
 
 
@@ -500,6 +503,7 @@ async def test_battery_flip_syncs_without_a_tick(hass: HomeAssistant):
 
     hass.states.async_set(eids["pct"], "35")
     coord._evaluate_battery(device.id)
+    await settle_parked(hass, coord)
     assert _item_for(coord, device.id) is None
 
 
@@ -802,6 +806,7 @@ async def test_nothing_fires_during_the_startup_grace(hass: HomeAssistant):
     coord._grace_until = 0.0
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     _freeze(coord, device.id, since=TIME_BASE + 2_000_000.0)
     coord._sync_problem_list()
     await hass.async_block_till_done()
@@ -823,6 +828,7 @@ async def test_a_recovery_names_the_kind_and_how_it_ended(
 
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     await hass.async_block_till_done()
 
     assert len(recovered) == 1, recovered
@@ -941,6 +947,7 @@ async def test_a_whole_line_clearing_answers_every_fault(
     _clear_freeze(coord, device.id)
     hass.states.async_set(eids["pct"], "88")
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     await hass.async_block_till_done()
 
     kinds = [payload["kind"] for payload in recovered]
@@ -985,6 +992,7 @@ async def test_a_lesser_kind_clearing_under_a_worse_one_is_silent(
     # Then the device comes back, and only that fires.
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     await hass.async_block_till_done()
     assert [p["kind"] for p in recovered] == [TODO_KIND_UNAVAILABLE]
 

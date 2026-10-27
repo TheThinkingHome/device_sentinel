@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_hub.py, Version: 0.26.6 (2026-10-18)
+# File: test_lutron_hub.py, Version: 0.27.7 (2026-10-27)
 
 """Lutron: judged by its hub (rulings #663 to #665).
 
@@ -182,7 +182,7 @@ async def test_a_hub_that_comes_back_is_recovered(hass: HomeAssistant, freezer):
     await _tick(hass, freezer, n=5)
     assert _item(h.coord, h.g_hub.id) is not None
     h.garage.runtime_data.bridge._leap = SESSION
-    await _tick(hass, freezer)
+    await _tick(hass, freezer, n=2)
     assert _item(h.coord, h.g_hub.id) is None
     assert [r["device_id"] for r in recovered] == [h.g_hub.id]
 
@@ -306,7 +306,7 @@ async def test_the_device_pages_carry_the_hub(hass: HomeAssistant, freezer):
     assert {m["standing"] for m in page["behind"]} == {"Watched, waiting for its hub"}
     assert page["outages"] and page["outages"][0]["end"] is None
     h.garage.runtime_data.bridge._leap = SESSION
-    await _tick(hass, freezer)
+    await _tick(hass, freezer, n=2)
     page = h.coord.hub_self_view(h.g_hub.id, dt_util.utcnow().timestamp())
     assert page["up"] is True and page["outages"][0]["end"] is not None
 

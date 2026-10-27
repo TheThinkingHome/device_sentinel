@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_battery.py, Version: 0.27.7 (2026-10-27)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -147,7 +147,11 @@ async def test_threshold_and_hysteresis(hass: HomeAssistant):
     assert rec[DEV_BATTERY_LOW] is True
     assert rec[DEV_BATTERY_SINCE] == since_first  # since carried
 
-    hass.states.async_set(eids["pct"], "22")  # past margin: recovers
+    hass.states.async_set(eids["pct"], "23")  # at the margin: still low (rule BAT-03)
+    await hass.async_block_till_done()
+    assert rec[DEV_BATTERY_LOW] is True
+
+    hass.states.async_set(eids["pct"], "24")  # above the margin: recovers
     await hass.async_block_till_done()
     assert rec[DEV_BATTERY_LOW] is False
     assert rec[DEV_BATTERY_SINCE] is None
@@ -248,7 +252,7 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert row["since"] is not None
     assert row["area"] == "Unassigned"
     assert state.attributes["low_threshold"] == DEFAULT_LOW_THRESHOLD
-    assert state.attributes["clear_margin"] == 2
+    assert state.attributes["clear_margin"] == 3
 
 
 async def test_since_survives_reload(hass: HomeAssistant, hass_storage):
@@ -587,7 +591,8 @@ async def test_the_phrase_never_calls_a_recovery_a_fall(
 
     record[DEV_BATTERY_VALUE] = 7.7
     said = coord._battery_phrase(device.id, False)
-    assert said == "battery fell to 7.7%"
+    assert said.startswith("battery crossed the threshold")
+    assert said.endswith(". Its current level is 7.7%")
 
     record[DEV_BATTERY_VALUE] = None
     assert coord._battery_phrase(device.id, False) == "battery read low"

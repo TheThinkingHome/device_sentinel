@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_dashboard_api.py, Version: 0.27.7 (2026-10-27)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -26,7 +26,7 @@ from custom_components.device_sentinel.const import (
     DEFAULT_MAINTENANCE_MINUTES,
     SYS_RESTART,
 )
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import settle_parked, register_device, setup_coordinator
 
 
 class _Reader:
@@ -199,6 +199,7 @@ async def test_the_marker_moves_when_a_problem_opens_and_closes(hass: HomeAssist
     record[DEV_FROZEN_CATEGORY] = None
     record[DEV_FROZEN_SINCE] = None
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     assert coord.change_marker > opened
 
 

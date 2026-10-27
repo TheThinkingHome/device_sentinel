@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_upstream_loading.py, Version: 0.27.7 (2026-10-27)
 
 """An upstream that has not loaded yet is loading, not down (#445).
 
@@ -59,7 +59,7 @@ from custom_components.device_sentinel.const import (
     TODO_KINDS,
     ZHA_DOWN_DWELL_SECONDS,
 )
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import settle_parked, register_device, setup_coordinator
 
 
 def _kinds(coord):
@@ -330,5 +330,6 @@ async def test_a_real_recovery_still_closes_the_problem(hass: HomeAssistant):
     record[DEV_FROZEN_CATEGORY] = None
     record[DEV_FROZEN_SINCE] = None
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     assert coord.data[DATA_TODO_ITEMS] == []
     assert len(_resolved(coord, device.id)) == 1

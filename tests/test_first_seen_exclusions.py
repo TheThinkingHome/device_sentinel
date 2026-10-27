@@ -3,14 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_first_seen_exclusions.py, Version: 0.26.8 (2026-10-20)
+# File: test_first_seen_exclusions.py, Version: 0.27.7 (2026-10-27)
 
-"""Music Assistant and the television integrations, excluded when first seen (ruling #711).
+"""Music Assistant, the television integrations, Alexa Media Player and
+Google Cast, excluded when first seen on a new install (ruling #711,
+Ruled Change 69, rule MUTE-02).
 
-A new install starts with them on its exclusion list. An install that
-already exists gets each added once, the first time it is seen, as a
-router integration is (#420), and a person who takes one off keeps it
-off. On the reference rig, 19 October 2026, Music Assistant's player
+A new install starts with them on its exclusion list, and in its first
+run one seen is added once, as a router integration is (#420); a person
+who takes one off keeps it off. Each test here is a house in its first
+run (setup count 1). A house that already exists gets a recommendation
+instead (Ruled Change 70): test_exclusion_recommendations.py. On the reference rig, 19 October 2026, Music Assistant's player
 for the LG television brought back a television excluded through
 webostv, and opened an unavailable incident each time it was switched
 off.
@@ -33,10 +36,13 @@ from custom_components.device_sentinel.const import (
 
 from .helpers import setup_coordinator
 
-SEVEN = ("music_assistant", "webostv", "androidtv", "androidtv_remote", "samsungtv", "apple_tv", "dlna_dmr")
+SEVEN = (
+    "music_assistant", "webostv", "androidtv", "androidtv_remote", "samsungtv", "apple_tv", "dlna_dmr",
+    "alexa_media", "cast",
+)
 
 
-def test_the_seven_are_on_a_new_installs_list():
+def test_the_nine_are_on_a_new_installs_list():
     assert AUTO_EXCLUDED_INTEGRATIONS == SEVEN
     assert set(SEVEN) <= set(DEFAULT_EXCLUDED_INTEGRATIONS)
     # What was there before stays.
@@ -60,7 +66,7 @@ def _player(hass, domain="music_assistant", uid="kitchen"):
 
 
 async def _existing_house(hass, saved):
-    """An install from before 0.26.8: its own saved list, nothing seen."""
+    """A house in its first run with its own saved list, nothing seen."""
     coord = await setup_coordinator(hass)
     # As if the setup just run were 0.26.7's: nothing seen, nothing told.
     coord.data["routers_seen"] = []

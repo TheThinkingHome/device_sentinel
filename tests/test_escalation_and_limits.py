@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_escalation_and_limits.py, Version: 0.27.7 (2026-10-27)
 
 """A worse problem replacing a lesser one, and lines a person reads.
 
@@ -46,7 +46,7 @@ from custom_components.device_sentinel.durations import long_span
 from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.records import _new_device_record
 
-from .helpers import register_device, setup_coordinator
+from .helpers import settle_parked, register_device, setup_coordinator
 
 # A real moment for the fixtures' stamps: the storage check refuses
 # a time before 2020 as impossible (ruling #544).
@@ -95,6 +95,7 @@ async def test_a_real_recovery_still_reads_as_one(hass: HomeAssistant):
     coordinator._sync_problem_list()
     coordinator.data[DATA_DEVICES][device.id][DEV_FROZEN_CATEGORY] = None
     coordinator._sync_problem_list()
+    await settle_parked(hass, coordinator)
     closed = [
         row
         for row in coordinator.data[DATA_INCIDENTS]

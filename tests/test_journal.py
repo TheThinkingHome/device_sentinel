@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.27.4 (2026-10-25)
+# File: test_journal.py, Version: 0.27.7 (2026-10-27)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -81,7 +81,7 @@ from custom_components.device_sentinel.const import (
     SYS_WHEN,
 )
 
-from tests.helpers import setup_coordinator
+from tests.helpers import settle_parked, setup_coordinator
 
 DOMAIN = "device_sentinel"
 
@@ -282,6 +282,7 @@ async def test_opening_and_resolution_land_on_the_timeline(
 
     _unfreeze(coord, device.id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     resolved = _events(coord, INCIDENT_RESOLVED)
     assert len(resolved) == 1
     assert resolved[0][INC_KIND] == "frozen"
@@ -427,6 +428,7 @@ async def test_resolution_borrows_its_cause(hass: HomeAssistant):
     coord._sync_problem_list()
     coord._record_activity(device.id, None, entity_id, "2")  # resumes
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
 
     resolved = _events(coord, INCIDENT_RESOLVED)
     assert resolved
@@ -447,6 +449,7 @@ async def test_battery_resolution_has_no_cause(hass: HomeAssistant):
     coord._sync_problem_list()
     record[DEV_BATTERY_LOW] = False
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
     resolved = _events(coord, INCIDENT_RESOLVED)
     assert resolved[-1][INC_KIND] == TODO_KIND_LOW_BATTERY
     assert resolved[-1][INC_CAUSE] is None
@@ -686,6 +689,7 @@ async def test_the_resolve_carries_the_duration_it_was_given(
 
     _unfreeze(coord, device_id)
     coord._sync_problem_list()
+    await settle_parked(hass, coord)
 
     resolved = [
         r for r in coord.data[DATA_INCIDENTS]

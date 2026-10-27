@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.26.6 (2026-10-17)
+# File: test_brief_wording.py, Version: 0.27.7 (2026-10-27)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -68,7 +68,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_NEVER_REPORTED,
 )
 
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import settle_parked, register_device, setup_coordinator
 
 
 @pytest.fixture(autouse=True)
@@ -453,7 +453,7 @@ async def test_battery_level_agrees_everywhere(hass: HomeAssistant):
     coord._sync_problem_list()
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    assert "battery fell to 0%" in text      # history, prose and table
+    assert "Its current level is 0%" in text      # history, prose and table (rule BAT-03)
     assert "battery fell low" not in text
     assert "battery is at 0%" in text        # standing state
 
@@ -561,7 +561,8 @@ async def test_recovery_of_an_acknowledged_device_is_news(
     record = coord.data["devices"][device.id]
     record[DEV_FROZEN_CATEGORY] = None
     record[DEV_FROZEN_SINCE] = None
-    coord._sync_problem_list()          # deletes the item
+    coord._sync_problem_list()
+    await settle_parked(hass, coord)    # deletes the item, a minute on
     await hass.async_add_executor_job(coord._write_reports, "test")
 
     text = read_brief(hass)

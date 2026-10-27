@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_falling_surfaces.py, Version: 0.27.7 (2026-10-27)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -33,6 +33,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
+    EVENT_FAULT,
     CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
@@ -51,7 +52,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
-from tests.helpers import card_message, setup_coordinator
+from tests.helpers import card_message, record_events, setup_coordinator
 
 # Every kind, and the list row that puts it on the card. Iterated
 # against TODO_KINDS_ALL below, so a kind added without a route to
@@ -129,8 +130,9 @@ def _seed(coord, device_id: str, level: float):
     record[DEV_BATTERY_DAILY] = [round(value - S63[-1] + level, 1) for value in S63]
 
 
-def _events(coord) -> list[tuple[str, str, bool]]:
-    """Run one sync and return what the dispatch would have sent."""
+def _events(coord, later=False) -> list[tuple[str, str, bool]]:
+    """Run one sync and return what the dispatch would have sent;
+    `later`, a minute on, when a cleared item leaves (rule LIST-06)."""
     seen: list[list[tuple[str, str, bool]]] = []
     original = coord._dispatch_notifications
 
@@ -139,7 +141,16 @@ def _events(coord) -> list[tuple[str, str, bool]]:
         original()
 
     coord._dispatch_notifications = spy
-    coord._sync_problem_list()
+    if later:
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from homeassistant.util import dt as dt_util
+
+        with patch.object(dt_util, "utcnow", return_value=dt_util.utcnow() + timedelta(seconds=61)):
+            coord._sync_problem_list()
+    else:
+        coord._sync_problem_list()
     coord._dispatch_notifications = original
     return seen[-1] if seen else []
 
@@ -207,6 +218,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     # syncs the list itself. Watching an explicit sync afterwards sees
     # nothing, because the crossing has already happened by then.
     collected: list[tuple] = []
+    faults = record_events(hass, EVENT_FAULT)
     original = coord._dispatch_notifications
 
     def spy() -> None:
@@ -225,10 +237,12 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     assert kinds[device.id] == {TODO_KIND_LOW_BATTERY}
 
     assert [recovery for _, _, recovery in collected] == [False]
+    # And the bus hears the crossing too (James, 27 October 2026).
+    assert [f["kinds"] for f in faults] == [[TODO_KIND_LOW_BATTERY]]
     assert "no longer" not in collected[0][1]
-    # The brief's words for a low battery (James, 25 October 2026;
-    # rule NOTE-10).
-    assert collected[0][1].endswith("Door 2nd Bedroom battery fell to 16%.")
+    # The brief's words for a low battery (rules NOTE-10, BAT-03).
+    assert "Door 2nd Bedroom battery crossed the threshold on " in collected[0][1]
+    assert collected[0][1].endswith(". Its current level is 16%.")
 
 
 async def test_the_card_names_a_falling_cell(hass: HomeAssistant):

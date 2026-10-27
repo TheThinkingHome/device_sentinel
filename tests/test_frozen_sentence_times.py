@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_frozen_sentence_times.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_frozen_sentence_times.py, Version: 0.27.7 (2026-10-27)
 
 """The frozen sentence's quiet and return times, across a longer wait,
 midnight and the clock change, from the adversarial rounds on 0.26.5 of
@@ -62,6 +62,8 @@ async def test_a_freeze_cleared_by_a_longer_wait_is_not_told_as_a_report(
     await _minutes_on(hass, freezer, 1)
     assert record[DEV_FROZEN_CATEGORY] is None
     assert record[DEV_LAST_ACTIVITY] == heard, "precondition: it never reported"
+    # Its line leaves a minute after it cleared (rule LIST-06).
+    await _minutes_on(hass, freezer, 2)
 
     rows = [
         r for r in coord.data[DATA_INCIDENTS]

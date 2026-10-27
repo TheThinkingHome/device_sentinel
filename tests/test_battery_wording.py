@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.24.11 (2026-10-07)
+# File: tests/test_battery_wording.py, Version: 0.27.7 (2026-10-27)
 
 """What the brief says when a battery level jumps.
 
@@ -136,7 +136,8 @@ async def test_a_battery_still_low_says_its_level(hass: HomeAssistant):
     device, _ = register_device(hass, "cell", name="Door Sensor")
     coord = await setup_coordinator(hass)
     coord.data["devices"][device.id][DEV_BATTERY_VALUE] = 8.0
-    assert coord._battery_phrase(device.id, False) == "battery fell to 8%"
+    # When it crossed is not on this record, so no day is given (rule BAT-03).
+    assert coord._battery_phrase(device.id, False) == "battery crossed the threshold. Its current level is 8%"
 
 async def test_a_battery_back_up_says_recovered(hass: HomeAssistant):
     device, _ = register_device(hass, "cell", name="Door Sensor")

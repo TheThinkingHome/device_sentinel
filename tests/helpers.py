@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.26.6 (2026-10-18)
+# File: helpers.py, Version: 0.27.7 (2026-10-27)
 
 """Shared test helpers, one canonical version of each.
 
@@ -360,4 +360,22 @@ async def registry_settled(hass: HomeAssistant) -> None:
         debouncer.async_cancel()
         if pending:
             coord._rebuild_and_notify()
+    await hass.async_block_till_done()
+
+
+async def settle_parked(hass, coordinator) -> None:
+    """A minute passes for the items whose last problem cleared (rule
+    LIST-06, 0.27.7): each waits 60 seconds before it leaves and its
+    recovery is told, dated when it cleared. For tests that do not move
+    the clock, the list is synced as it would be a minute on."""
+    from datetime import timedelta
+    from unittest.mock import patch
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.device_sentinel.const import INCIDENT_SETTLE_SECONDS
+
+    later = dt_util.utcnow() + timedelta(seconds=INCIDENT_SETTLE_SECONDS + 1)
+    with patch.object(dt_util, "utcnow", return_value=later):
+        coordinator._sync_problem_list()
     await hass.async_block_till_done()

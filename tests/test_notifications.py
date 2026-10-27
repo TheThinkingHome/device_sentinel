@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.27.4 (2026-10-25)
+# File: test_notifications.py, Version: 0.27.7 (2026-10-27)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -71,7 +71,7 @@ from custom_components.device_sentinel.notifier import (
     _in_quiet_hours,
 )
 
-from tests.helpers import registry_settled, register_device, setup_coordinator, setup_entry
+from tests.helpers import settle_parked, registry_settled, register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 STORAGE_KEY = f"{DOMAIN}.storage"
@@ -883,6 +883,7 @@ async def test_a_fault_that_heals_inside_the_hold_is_never_announced(
     record[DEV_FROZEN_SINCE] = None
     coord._sync_problem_list()
     await hass.async_block_till_done()
+    await settle_parked(hass, coord)
     assert coord._held_events == {}
 
     # And nothing arrives when the original hold would have matured.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_silent.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_set_aside_silent.py, Version: 0.27.7 (2026-10-27)
 
 """Replay a restart against both real fleets and count what it says.
 
@@ -48,7 +48,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from tests.conftest import fleet_data, fleet_path
-from tests.helpers import record_events, register_device, setup_coordinator
+from tests.helpers import settle_parked, record_events, register_device, setup_coordinator
 
 # The fleet files live outside the repository. When they are absent
 # the fleet-scale runs are skipped and the behavioural tests below
@@ -205,6 +205,7 @@ async def test_a_real_recovery_still_announces(hass: HomeAssistant) -> None:
     coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
+    await settle_parked(hass, coord)
 
     mine = [h for h in heard if h.get("device_id") == device.id]
     print("REAL RECOVERY EVENTS:", len(mine), [h.get("down_for") for h in mine])
@@ -275,6 +276,7 @@ async def test_a_problem_clearing_while_watched_still_announces(
     coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
+    await settle_parked(hass, coord)
 
     mine = [h for h in heard if h.get("device_id") == device.id]
     print("WATCHED-THROUGHOUT RECOVERIES:", len(mine))

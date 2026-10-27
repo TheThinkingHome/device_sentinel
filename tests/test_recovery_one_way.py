@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.26.6 (2026-10-18)
+# File: tests/test_recovery_one_way.py, Version: 0.27.7 (2026-10-27)
 
 """A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
 
@@ -646,9 +646,11 @@ async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_repor
     record[DEV_DAILY_MAX] = [12 * 3600.0] * (FREEZE_ARMING_DAYS + 2)
     await _minutes_on(hass, freezer, 1)
     assert record["frozen_category"] is None
+    # Told after the minute's wait (rule LIST-06), timed to the clear.
+    now = dt_util.utcnow().timestamp()
+    await _minutes_on(hass, freezer, 2)
     mine = [r for r in recoveries if r.get("device_id") == device.id]
     assert len(mine) == 1
-    now = dt_util.utcnow().timestamp()
     assert abs(mine[0]["down_for"] - (now - last_report)) <= 61, (mine[0], now - last_report)
 
 
@@ -702,6 +704,7 @@ async def test_a_report_stamped_before_the_opening_by_its_last_seen_clock(hass: 
     hass.states.async_set(seen.entity_id, heard.isoformat())
     hass.states.async_set(eid, "2")
     await hass.async_block_till_done()
+    await _tick(n=2)
     mine = [r for r in recoveries if r.get("device_id") == device.id]
     assert len(mine) == 1, mine
     expected = dt_util.utcnow().timestamp() - old.timestamp()
