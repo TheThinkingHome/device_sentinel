@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.7 (2026-10-27)
+// File: panel.js, Version: 0.27.9 (2026-10-27)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -60,10 +60,23 @@ const levelText = (v) => (typeof v === "number" && Number.isFinite(v) ? `${level
 // for a healthy one.
 const lithiumWords = (type) => `A lithium cell (${type}) holds its level near full for most of its life and falls quickly at the end, `
   + "so a steady reading says little about how long it has left.";
-// The others of its model, as context and never as a time left (#738).
-const modelPaceWords = (pace) => pace && typeof pace.pace === "number"
-  ? `The ${pace.others} other cells of this model (${pace.model}) lose ${pace.pace <= 0.05 ? "almost nothing" : `about ${levelNumber(pace.pace)} points`} a week.`
-  : "";
+// The others of its model, as context and never as a time left (#738):
+// the slowest and fastest of them, sent only when two or more have a
+// weekly fall (Ruled Change 26, rule BAT-16, 0.27.9).
+const modelPaceRange = (pace) => (pace && typeof pace.pace_low === "number" && typeof pace.pace_high === "number"
+  ? (levelNumber(pace.pace_low) === levelNumber(pace.pace_high) ? levelNumber(pace.pace_low)
+    : `${levelNumber(pace.pace_low)} to ${levelNumber(pace.pace_high)}`)
+  : "");
+// "1 point", not "1 points"; a range that rounds to nothing reads
+// "almost nothing", as before 0.27.9.
+const modelPaceWords = (pace) => {
+  const range = modelPaceRange(pace);
+  if (!range) return "";
+  const high = levelNumber(pace.pace_high);
+  if (high === "0") return "Others of this model lose almost nothing a week.";
+  const said = levelNumber(pace.pace_low) === "0" && range !== high ? `up to ${high}` : range;
+  return `Others of this model lose ${said} ${said === "1" || said === "up to 1" ? "point" : "points"} a week.`;
+};
 const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
@@ -856,6 +869,20 @@ class DeviceSentinelPanel extends HTMLElement {
     }, text);
   }
 
+  // How a device never judged for freezing is judged (James, 27 October
+  // 2026): "Judged by its hub, Garage Smart Bridge", the name a link to
+  // the hub's page here, or Home Assistant's when the hub is not
+  // watched; or "Judged by its connection". Null for any other device.
+  _judgedByWords(judged, stop = "") {
+    if (!judged) return null;
+    if (judged.how === "hub") {
+      const path = judged.hub_page ? this._devicePath(judged.hub_id)
+        : `/config/devices/device/${encodeURIComponent(judged.hub_id)}`;
+      return el("span", {}, "Judged by its hub, ", this._link(judged.hub_name || "its hub", path), stop);
+    }
+    return el("span", {}, `Judged by its connection${stop}`);
+  }
+
   _build() {
     const root = this.shadowRoot;
     root.append(el("style", {}, STYLE));
@@ -1331,11 +1358,15 @@ class DeviceSentinelPanel extends HTMLElement {
       scrollTo = open;
     }
     const deviceCards = devices.map((card) => this._recDeviceCard(card, this._openCards.has(card.kind)));
-    const count = lines.length + devices.length;
+    // The rows and lines not ticked, as the tab name and the Active
+    // Recommendations button count them (Ruled Change 27, rule REC-01).
+    const count = this._activeRecs();
     this._keepScroll(() => this._pane.replaceChildren(
       // Every card is a suggestion and none is required (0.25.6):
       // no card is singled out as more needed than another.
-      el("p", { style: "margin:0" }, `${count} ${count === 1 ? "recommendation" : "recommendations"} to help Device Sentinel run better. None of them is required.`),
+      el("p", { style: "margin:0" }, count
+        ? `${count} ${count === 1 ? "recommendation" : "recommendations"} to help Device Sentinel run better. None of them is required.`
+        : "Nothing to recommend right now."),
       report, ...cards, ...deviceCards,
       el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing)));
     const target = scrollTo ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === scrollTo) : null;
@@ -2151,7 +2182,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
           : simpleView ? el("span", { class: "muted" }, "Not set") : this._link("Not set", this._devicePath(row.device_id))),
         // How fast the others of its model fall (#738).
-        el("td", { class: "num" }, row.model_pace ? `${levelNumber(row.model_pace.pace)}` : "\u2013"))))));
+        el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
     const unreadable = unreadableRows.length
       ? el("div", {}, el("div", { class: "scroll" }, el("table", {},
         el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
@@ -2194,8 +2225,8 @@ class DeviceSentinelPanel extends HTMLElement {
       // A WEEK line hid behind the lithium one on a house of no coin cell).
       steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left.") : null,
-      steadyAll.some((row) => row.model_pace) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "MODEL, A WEEK is how many points the other cells of the same model lose a week: context, not this cell's time left.") : null,
+      steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+        "MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest: context, not this cell's time left.") : null,
       !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "Not set: no battery type is known for the device. Open it and set the type with the pencil on its Power row; one answer covers every device of the same model.") : null,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
@@ -2490,7 +2521,8 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
         el("td", {}, ago(row.last_activity, at)),
         el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
-        el("td", { class: "num" }, row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")))));
+        el("td", { class: "num" }, row.judged_by ? this._judgedByWords(row.judged_by)
+          : row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")))));
     // The order a device page's Previous and Next follow (0.24.9).
     this._lists = { ...(this._lists || {}), [TAB_SLUG.Devices]: rows.map((row) => row.device_id) };
     const typeFilter = el("select", { class: "actinput", "aria-label": "Show one type",
@@ -2707,7 +2739,9 @@ class DeviceSentinelPanel extends HTMLElement {
           "Turn it on")) : null,
         this._actNote("nodestatus"));
     }
-    const word = WORDS[who.node_status] || who.node_status;
+    // Any other reading, such as "unavailable" after a reload, is not a
+    // status of the node (rule STACK-05, 0.27.9).
+    const word = WORDS[who.node_status] || "not known yet";
     return el("span", who.node_status === "dead" ? { style: "color:var(--error-color, #db4437)" } : {}, word);
   }
 
@@ -2822,7 +2856,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // Notes' own, redrawn small (MIT, credited in the integration's
   // data folder), and opens its repository; the owner's is Device
   // Sentinel's shield. Each has a version for the dark theme.
-  _powerIcon(power) {
+  _powerIcon(power, deviceId) {
     const dark = !!(this._hass && this._hass.themes && this._hass.themes.darkMode);
     const icon = svg("svg", { width: 20, height: 20, viewBox: "0 0 24 24", "aria-hidden": "true" });
     if (power.source === "library") {
@@ -2845,7 +2879,11 @@ class DeviceSentinelPanel extends HTMLElement {
       svg("path", { d: "M12 2 L20 5 V11 C20 16.5 16.6 20.7 12 22 C7.4 20.7 4 16.5 4 11 V5 Z", fill: c.shield }),
       svg("path", { d: "M6.5 12.5 H9.4 L10.9 9.2 L13.1 15.6 L14.6 12.5 H17.5", fill: "none", stroke: c.trace,
         "stroke-width": 1.6, "stroke-linecap": "round", "stroke-linejoin": "round" }));
-    return el("span", { class: "powericon", title: "Entered on this page", role: "img", "aria-label": "Entered on this page" }, icon);
+    // An answer set on another device of its model names that device,
+    // as the line under the row does (rule DEV-07, 0.27.9).
+    const title = power.set_on && power.set_on !== deviceId
+      ? `Entered on ${power.set_on_name || "another device"}` : "Entered on this page";
+    return el("span", { class: "powericon", title, role: "img", "aria-label": title }, icon);
   }
 
   // A day as the dashboard writes one: Oct 18, 2026.
@@ -2938,7 +2976,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const acts = who.actions;
     const e = this._edit(who.device_id);
     const shown = el("div", { class: "actrow" }, el("span", {}, power.words),
-      power.source ? this._powerIcon(power) : null,
+      power.source ? this._powerIcon(power, who.device_id) : null,
       acts ? this._editMark("Change what powers this device", () => {
         const entry = power.entry;
         const wired = power.wired || [power.mains, power.usb];
@@ -3042,7 +3080,9 @@ class DeviceSentinelPanel extends HTMLElement {
         ? el("button", { class: "linkbtn", type: "button", onclick: open }, "Not known, click to set")
         : el("span", { class: "muted" }, "Not known");
     const shown = el("div", { class: "actrow" }, words,
-      kind.source === "owner" ? this._powerIcon({ source: "owner" }) : null,
+      // The hover names where the answer was entered, as the Power
+      // row's does (rule DEV-07).
+      kind.source === "owner" ? this._powerIcon({ source: "owner", set_on: kind.set_on, set_on_name: kind.set_on_name }, who.device_id) : null,
       acts && kind.words ? this._editMark("Change what this device is", open) : null);
     const elsewhere = kind.source === "owner" && kind.set_on && kind.set_on !== who.device_id;
     const covers = kind.source === "owner" && kind.covers > 1;
@@ -3442,6 +3482,8 @@ class DeviceSentinelPanel extends HTMLElement {
     // that is frozen or never reported (ruling #694).
     const simple = this._isSimple();
     const rhythmShown = !simple || ["frozen", "never_reported"].includes(status.category);
+    // By its hub or by its connection: never judged for freezing.
+    const judged = status.judged_by || null;
     const statusBox = el("div", { class: "devstatus" },
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
@@ -3449,15 +3491,19 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "muted" }, status.connection
           // Judged by its connection alone (James, 17 October 2026).
           ? `Judged by its connection: ${status.connection}.`
+          // Never judged for freezing: one sentence in place of the
+          // window and the learning line (James, 27 October 2026).
+          : judged
+            ? this._judgedByWords(judged, ".")
           // A Matter device of a type that reports only on use (#710, #718).
           : status.available_rule
             ? `Last report ${ago(status.last_activity, now)}. Not called frozen while Home Assistant shows it available.`
           : status.window
             ? `Last report ${ago(status.last_activity, now)}. Called frozen after a gap of ${span(status.window)}.`
             : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
-      rhythmShown && status.window && !status.connection && !status.available_rule ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
+      rhythmShown && status.window && !status.connection && !judged && !status.available_rule ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
         el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${colour}` })) : null,
-      rhythmShown && status.window && !status.connection && !status.available_rule ? el("div", { class: "statusline small" },
+      rhythmShown && status.window && !status.connection && !judged && !status.available_rule ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
     // The Identity section (0.24.9): who the device is first, then three
@@ -3593,7 +3639,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ]),
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
-      ...(status.rule && rhythmShown && !status.available_rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
+      ...(status.rule && rhythmShown && !status.available_rule && !judged ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
       // What is muted and why, with the toggles (0.24.5).
       ...(acts ? [["Muted", this._mutedCell(who, hub)]] : []),
       // Excluded, with its button (0.25.6).
@@ -3654,7 +3700,7 @@ class DeviceSentinelPanel extends HTMLElement {
     ].filter(Boolean);
     // Where the 42-day chart stood while it counts again (0.27.3).
     const again = !rhythmBox.lognormal_days && rhythmBox.counting_again;
-    if (again && charts.length && !status.connection) {
+    if (again && charts.length && !status.connection && !judged) {
       const since = new Date(`${again.since}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
       charts.push(el("div", { class: "rulebox" },
         el("div", { class: "ruletitle" }, "Log-Normal Percentile"),
@@ -3670,8 +3716,9 @@ class DeviceSentinelPanel extends HTMLElement {
       // A device judged by its connection reports nothing to learn a
       // rhythm from (0.27.3).
       ...(status.connection ? [el("p", { style: "margin:0;line-height:1.5" }, "Judged by its connection: no rhythm to learn.")]
+        : judged ? [el("p", { style: "margin:0;line-height:1.5" }, this._judgedByWords(judged, "."))]
         : charts.length ? charts : [el("p", { style: "margin:0;line-height:1.5" }, "Not enough days yet to learn its rhythm.")]),
-      charts.length > 1 && !again ? el("p", { class: "small", style: "margin:8px 0 0;line-height:1.6" },
+      charts.length > 1 && !again && !judged ? el("p", { class: "small", style: "margin:8px 0 0;line-height:1.6" },
         `Device Sentinel uses whichever of the two is shorter. The 14-day rule adjusts to a change within days, and the 42-day rule within weeks. A change to the device or the mesh around it, such as a firmware update, a new battery, a re-pair or a new router nearby, can leave the 42-day rule out of date.${
           // The button is not offered in Simple, so nor is the advice
           // to press it (rule DASH-04).
@@ -3762,7 +3809,8 @@ class DeviceSentinelPanel extends HTMLElement {
         rhythmShown
           ? el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm)
           : el("div", {}, el("h3", { class: "section" }, "Identity"), idTable),
-        ...(rhythmShown ? [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences] : []),
+        // No gaps for a device never judged for freezing, as Advanced.
+        ...(rhythmShown && !judged ? [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences] : []),
         ...(batteryChart ? [el("h3", { class: "section" }, "Battery"), batteryChart] : [])]);
       this._paintReadings();
       return;
@@ -3770,7 +3818,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._pane.replaceChildren(back, head, statusBox,
       el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       // No silences for a device judged by its connection (0.27.3).
-      ...(status.connection ? [] : [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences]),
+      ...(status.connection || judged ? [] : [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences]),
       this._graphs(page),
       el("p", { class: "muted", style: "margin:0" },
         "The Battery and Signal tabs open this page for any device, so these two graphs are where a battery or signal question ends."));
