@@ -2,9 +2,9 @@
 # Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/update_battery_library.py, Version: 0.24.7 (2026-10-05)
+# File: tools/update_battery_library.py, Version: 0.27.10 (2026-10-27)
 
-"""Refresh the Battery Notes library Device Sentinel ships (0.24.7).
+"""Refresh the Battery Notes library Device Sentinel ships (rule REL-15).
 
 Run before each Latest release, from the repository's top folder:
 

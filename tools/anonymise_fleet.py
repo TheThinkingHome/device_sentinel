@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.26.8 (2026-10-21)
+# File: tools/anonymise_fleet.py, Version: 0.27.10 (2026-10-27)
 
 """Build the committed fleet set from real houses' files.
 
@@ -24,9 +24,9 @@ folders: the storage, clocks, answers or power, and history files under
 their own names, and in place of the diagnostics a small
 `config_entry-device_sentinel-fleet.json` holding only what the suite
 reads from it, each device's name and the entry's options. The answers
-file holds every pencil answer since 0.25.1, power and type alike, and
+file holds every pencil answer, power and type alike, and
 its model keys are replaced as the power file's are. The history file,
-written beside the main file since 0.26.2, holds every day older than
+written beside the main file, holds every day older than
 the main file's thirty, keyed by the same device ids, and is replaced
 the same way the storage file is.
 
@@ -76,14 +76,12 @@ ANY_ID = re.compile(
 # The fields that carry a device's name, and the ones that carry a name
 # inside a sentence.
 # A removed device's record keeps the name it had for thirty days
-# (0.25.5), first seen in a committed house at the refresh of
-# 21 October 2026.
+# (rule WATCH-07).
 NAME_FIELDS = {"name", "sort_name", "removed_name"}
 # A problem-list item for an upstream, keyed "upstream:<domain>", names
 # an integration, not a person's device, and its name is the domain
 # the rest of the file carries as a scope. Anonymizing it as a device
-# name made the leak check find the domain everywhere: the second
-# fleet's "switchbot" item of 24 September (0.23.3).
+# name made the leak check find the domain everywhere.
 UPSTREAM_PREFIX = "upstream:"
 
 
@@ -96,15 +94,15 @@ STORAGE_NAMES = (
     ("device_sentinel.storage", "device_sentinel.clocks"),
     ("device_sentinel_storage.json", "device_sentinel_clocks.json"),
 )
-# The pencil's answers: the answers file since 0.25.1, the power file
-# before it. A house carries one or the other, under the same spelling
-# as its storage file.
+# The pencil's answers: the answers file, or the older power file. A
+# house carries one or the other, under the same spelling as its
+# storage file.
 ANSWER_NAMES = {
     "device_sentinel.storage": ("device_sentinel.answers", "device_sentinel.power"),
     "device_sentinel_storage.json": ("device_sentinel_answers.json", "device_sentinel_power.json"),
 }
-# The days older than the main file's thirty, in a file of their own
-# since 0.26.2, under the same spelling as the storage file.
+# The days older than the main file's thirty, in a file of their own,
+# under the same spelling as the storage file.
 HISTORY_NAMES = {
     "device_sentinel.storage": "device_sentinel.history",
     "device_sentinel_storage.json": "device_sentinel_history.json",
@@ -165,7 +163,7 @@ class House:
         The stand-in keeps the key's shape, a list of three with the
         same parts empty, so the suite can give a device the maker and
         model the entry names. The real key stays out: an ESPHome
-        device's maker is often a name its owner chose (0.25.0).
+        device's maker is often a name its owner chose.
         """
 
         def make(n: int) -> str:
@@ -232,7 +230,7 @@ def _walk(value: Any, house: House, names: list[str], field: str = "") -> Any:
 
 def _model_keys(part: Any, house: House) -> None:
     """Replace every model key in one part of the pencil's answers, the
-    models table's keys and a device copy's `model` field (0.24.7)."""
+    models table's keys and a device copy's `model` field."""
     if not isinstance(part, dict):
         return
     models = part.get("models")
@@ -253,7 +251,7 @@ def _power_models(power: Any, house: House) -> Any:
 
 def _answers_models(answers: Any, house: House) -> Any:
     """The answers file with every model key replaced by its stand-in,
-    in both its parts: what powers a device and what it is (0.25.1)."""
+    in both its parts: what powers a device and what it is (rule STOR-20)."""
     data = answers.get("data") if isinstance(answers, dict) else None
     if isinstance(data, dict):
         for part in ("power", "types"):
