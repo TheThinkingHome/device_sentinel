@@ -3,24 +3,21 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: escalation.py, Version: 0.25.5 (2026-10-10)
+# File: escalation.py, Version: 0.27.10 (2026-10-27)
 
 """A problem replaced by a worse one, told as the change it is.
 
-The reference rig's watering sensor moved from frozen to unavailable
-at the nightly reboot. The problem list wrote two rows in the same
-pass: the unavailable one opened and the frozen one closed. 0.22.26
-marked the closing row as superseded and stopped crediting the reboot,
-but no reader looked at the mark, so the brief, its table, its counts
-and the dashboard still said the device "recovered after 31.6h". A
-battery forecast coming true did the same: "running down" closed as
-"recovered" in the second the battery was marked low.
+A device that moves from frozen to unavailable gets two rows in the
+same pass: the unavailable one opens and the frozen one closes, marked
+superseded. Told alone, the closing row says the device "recovered".
+A battery forecast coming true does the same: "running down" closes
+in the second the battery is marked low.
 
 Readers pass their rows through `fold` first. A superseded closing is
 joined to the worse opening of the same family written beside it, and
 the pair becomes one row that the composer tells in the owner's words,
 "was marked unavailable from frozen" and "battery was marked low from
-running down" (0.22.27). The copy carries the lesser kind under
+running down" (rule LIST-07). The copy carries the lesser kind under
 `ESCALATED_FROM`; stored rows are never touched, so the key never
 reaches a file.
 
@@ -28,7 +25,7 @@ Only the same family pairs. A device going silent can clear its signal
 rail in the same pass, and a silence is not a worse signal, so that
 row reads as it always did. A superseded closing with no opening
 beside it, because a trim or a repair removed it, also reads as it
-always did, as does any row written before 0.22.26.
+always did, as does an older row with no superseded mark.
 """
 
 from __future__ import annotations
@@ -152,13 +149,12 @@ def fold(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def withdrawals_once(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """A device leaving with several problems, told once (0.25.5).
+    """A device leaving with several problems, told once (rule LIST-09).
 
     A device set aside or removed closes each kind on its line with an
-    action row of its own, so each kind's story ends. The brief and the
-    Daily Brief tab told each of those rows, and a device with three
-    problems "was removed from Home Assistant" three times. The rows
-    stay in the record; the telling keeps one row for each leaving. One
+    action row of its own, so each kind's story ends. Told row by row, a
+    device with three problems "was removed from Home Assistant" three
+    times. The rows stay in the record; the telling keeps one row for each leaving. One
     leaving writes its rows microseconds apart, so rows of the same
     device and cause less than a second from the one kept are the same
     leaving, wherever a second boundary falls.

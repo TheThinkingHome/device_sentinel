@@ -3,27 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.27.8 (2026-10-27)
+# File: study.py, Version: 0.27.10 (2026-10-27)
 
 """Gather what building support for somebody's hardware requires.
 
 Support for a router, a stack or an integration stalls on the same
-thing every time: nobody working on this owns one, and reading a
-vendor's source produces support that looks right and fails on
-contact with a real system. Ruling #393 answers that by asking the
-person who does own one, through a toggle they choose, into a file
-they attach themselves. Nothing is transmitted.
+thing: nobody working on Device Sentinel owns one, and support built
+from a vendor's source looks right and fails on a real system. So the
+person who owns one turns on a toggle and attaches the file
+themselves. Nothing is transmitted (rule STACK-11).
 
-**A photograph is not enough**, and that is the lesson this file is
-built around. The two faults that cost the most releases could not
-have been seen in a snapshot:
+**A photograph is not enough.** Two kinds of fault cannot be seen in
+a snapshot:
 
 1. A router's trackers going away during an outage, how many and how
    fast, which is the whole of what detection needs.
-2. What a client publishes *while disconnected*. On the reference
-   fleet a router relabelled seven wireless clients as wired the
-   moment they left, the tie set fell from twelve to six, and it did
-   not heal (#389).
+2. What a client publishes *while disconnected*. A router can
+   relabel wireless clients as wired the moment they leave, and the
+   tie set falls and does not heal (rule UP-14).
 
 So a study keeps two things: a snapshot of how the world looks now,
 and the distinct shapes of every transition it has seen.
@@ -41,21 +38,21 @@ keys the stored one lacked or values where it held nulls.
 toggle goes off, and what was collected is dropped at the next fold,
 the same way everything else here ages out.
 
-**The stack probe lives here too** (0.23.8). For a studied stack,
-Z-Wave, Matter, Hue, SmartThings, Tuya or Lutron, each minute compares
-what the stack says about a node with Device Sentinel's own view of
-the same device, and writes a line to `stack_probe.md` when either
+**The stack probe lives here too.** For a studied stack, Z-Wave,
+Matter, Hue, SmartThings, Tuya or Lutron, each minute compares what
+the stack says about a node with Device Sentinel's own view of the
+same device, and writes a line to `stack_probe.md` when either
 changes: the readers in shadow, which judge nothing. That file is not
 dropped at the fold; it is kept and rolled at its cap like the other
-reports.
+reports (rule STACK-12).
 
-Hue and SmartThings are read more fully from 0.26.4, still by sampling
-once a minute from memory: no callback is added to either library and
-nothing is sent to a bridge or a cloud. Each bridge's or cloud's line
-also carries when Device Sentinel last heard any of its devices, how
-often its state changed in the last hour, and, for Hue, the bridge's
-clock on its newest event and when the library last lost its stream.
-The diagnostics download gains a section for each.
+Hue and SmartThings are read by sampling once a minute from memory:
+no callback is added to either library and nothing is sent to a
+bridge or a cloud. Each bridge's or cloud's line also carries when
+Device Sentinel last heard any of its devices, how often its state
+changed in the last hour, and, for Hue, the bridge's clock on its
+newest event and when the library last lost its stream. The
+diagnostics download gains a section for each.
 """
 
 from __future__ import annotations
@@ -110,20 +107,19 @@ from .study_stacks import (
 )
 
 # The probe's own word for Device Sentinel's stance where "reporting"
-# would claim a verdict never reached (0.23.11): a muted device is not
-# judged, and one still learning (STATUS_LEARNING) has no window.
+# would claim a verdict never reached: a muted device is not judged,
+# and one still learning (STATUS_LEARNING) has no window.
 PROBE_MUTED = "muted"
 
-# What the Z-Wave library announces about a node as it happens, recorded
-# with the moment (0.23.11). A device awake for seconds is asleep again
-# by the next minute's reading, which is how an afternoon of waking
-# devices on the second fleet left no trace.
+# What the Z-Wave library announces about a node as it happens,
+# recorded with the moment, because a device awake for seconds is
+# asleep again by the next minute's reading and would leave no trace.
 ZWAVE_NODE_EVENTS = ("wake up", "sleep", "dead", "alive")
 
-# Border routers, from their own announcements on the local network
-# (0.23.11). The service type is the one Home Assistant's Thread code
-# listens for, and the key is where Home Assistant keeps its shared
-# zeroconf instance.
+# Border routers, from their own announcements on the local network.
+# The service type is the one Home Assistant's Thread code listens for,
+# and the key is where Home Assistant keeps its shared zeroconf
+# instance.
 THREAD_STACK = "thread"
 MESHCOP_TYPE = "_meshcop._udp.local."
 ZEROCONF_KEY = "zeroconf"
@@ -154,17 +150,17 @@ class _BorderRouterListener:
     def remove_service(self, _zc: Any, _service_type: str, name: str) -> None:
         self._owner._meshcop_gone(name)
 
-# Every stack the probe reads (0.23.9 added the last four).
+# Every stack the probe reads.
 PROBED_DOMAINS = {
     ZWAVE_DOMAIN, MATTER_DOMAIN, HUE_DOMAIN, SMARTTHINGS_DOMAIN, TUYA_DOMAIN, LUTRON_DOMAIN,
 }
 
-# The stacks whose bridge or cloud line carries notes (0.26.4).
+# The stacks whose bridge or cloud line carries notes.
 NOTED_STACKS = {HUE_DOMAIN, SMARTTHINGS_DOMAIN}
 
 ROUTER = "router"
-# A bridge's or cloud's state changes kept for the last hour's count
-# (0.26.4); a stream flapping once a minute fills it.
+# A bridge's or cloud's state changes kept for the last hour's count;
+# a stream flapping once a minute fills it.
 PROBE_CHANGES_KEPT = 60
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
 
@@ -187,8 +183,8 @@ def _values(attributes: Any) -> dict[str, Any]:
 
     Recorded by value because these are the answer to the question a
     study exists for. Everything else about a tracker is recorded as
-    a key name only: knowing that a field is published is what tells
-    us whether a rule can be built on it.
+    a key name only: knowing that a field is published tells whether
+    a rule can be built on it.
     """
     if not isinstance(attributes, dict):
         return {}
@@ -211,7 +207,8 @@ def _shape(integration: str, was: str | None, now: str,
 
     The attribute key set is in the signature on purpose: a client
     that publishes six keys while home and three while away is two
-    shapes, and that difference is precisely what #389 was about.
+    shapes, and that difference is what tells wired from wireless
+    (rule UP-14).
     """
     keys = sorted(
         k for k in (attributes or {}) if k not in IGNORED_KEYS
@@ -222,22 +219,21 @@ def _shape(integration: str, was: str | None, now: str,
 class StudyMixin:
     """Collect what a volunteered integration does, and only that."""
 
-    # Set in the coordinator's __init__ (0.23.8); declared here so
-    # the type is known where the probe reads it.
+    # Set in the coordinator's __init__; declared here so the type is
+    # known where the probe reads it.
     _probe_wifi_down: bool | None
     _probe_pending: list[str]
     _probe_recent: deque[str]
     _probe_failed: set[str]
-    # 0.26.4: when each node was first seen in its state, each Hue
-    # light's last on or off, and each bridge's or cloud's state
-    # changes, for the last hour's count.
+    # When each node was first seen in its state, each Hue light's last
+    # on or off, and each bridge's or cloud's state changes, for the
+    # last hour's count.
     _probe_since: dict[tuple[str, str], tuple[str, float]]
     _probe_light: dict[tuple[str, str], bool]
     _probe_changes: dict[tuple[str, str], deque[float]]
-    # 0.23.11: node event subscriptions keyed by the node object's id
-    # and, since 0.26.4, its name; each controller's counters at the
-    # last fold, and the border router discovery with what each router
-    # last said.
+    # Node event subscriptions keyed by the node object's id and its
+    # name; each controller's counters at the last fold, and the border
+    # router discovery with what each router last said.
     _zwave_listeners: dict[tuple[int, str], list[Callable[[], None]]]
     _zwave_counters: dict[str, dict[str, int]]
     _thread_discovery: Any
@@ -388,16 +384,16 @@ class StudyMixin:
             watched.append({
                 "name": device.name_by_user or device.name,
                 # The integration Device Sentinel assigned, not the first
-                # identifier's domain: a Bluetooth or address-linked
-                # device carries no identifier, and the fourth fleet's
-                # SwitchBot and ESPHome devices read empty.
+                # identifier's domain, because a Bluetooth or
+                # address-linked device carries no identifier and would
+                # read empty.
                 "integration": integration,
                 "connections": sorted(
                     f"{kind}:{value}"
                     for kind, value in device_field(device, "connections", set())
                 ),
-                # The whole identifier after its domain, at any length
-                # (issue #16: hOn's has three parts).
+                # The whole identifier after its domain, at any length,
+                # because some have three parts.
                 "identifiers": sorted(
                     ":".join(str(part) for part in parts)
                     for _domain, parts in identifier_values(device)
@@ -405,28 +401,25 @@ class StudyMixin:
             })
         return {"trackers": trackers, "watched_devices": watched}
 
-    # -------------------------------------------- the probe, 0.23.8
+    # ---------------------------------------------------- the probe
 
     def _probe_views(self, row: dict[str, Any], now: float) -> dict[str, Any]:
-        """The stack's view of a node beside Device Sentinel's (0.23.8).
+        """The stack's view of a node beside Device Sentinel's (rule STACK-12).
 
         The readers in shadow: each is worked out and written down, and
         neither acts. A Z-Wave node counts as quiet when the stack says
         dead, or when it was last heard longer ago than the device's own
-        freeze window, because a mains node stays "alive" until a
-        command to it fails (research finding 4: Tim Plas's P03 read
-        alive three days after it was last heard). A Matter node counts
-        as quiet when it is away. Device Sentinel counts a device quiet
-        when its page would read anything but reporting, set aside or
-        never reported.
+        freeze window, because a mains node stays "alive" for days until
+        a command to it fails. A Matter node counts as quiet when it is
+        away. Device Sentinel counts a device quiet when its page would
+        read anything but reporting, set aside or never reported.
         """
         device_id = row.get("device_id") or ""
         record = (self.data.get(DATA_DEVICES) or {}).get(device_id) if device_id else None
         sentinel = self._page_status(device_id, record) if record is not None else ""  # type: ignore[attr-defined]
         # A muted device is not judged and one still learning has no
-        # window, so "reporting" would claim a verdict never reached
-        # (0.23.11). The second fleet's S81, dead to Z-Wave for a week
-        # and a half and muted, read as a disagreement.
+        # window, so "reporting" would claim a verdict never reached,
+        # and a muted dead node would read as a disagreement.
         if record is not None and sentinel == STATUS_REPORTING:
             if (
                 device_id in getattr(self, "_muted_devices", set())
@@ -460,7 +453,7 @@ class StudyMixin:
             # Matter, Hue, SmartThings and Tuya say quiet or not on the
             # row, None where the stack's word cannot be taken: a Hue
             # row while its bridge's stream is down, a device with no
-            # link status or no entity state (0.26.4).
+            # link status or no entity state.
             stack_quiet = row.get("quiet")
         agrees = (
             "" if stack_quiet is None or sentinel_quiet is None
@@ -474,7 +467,7 @@ class StudyMixin:
         }
 
     def _probe_failure(self, what: str, err: Exception) -> None:
-        """Say once per start that a stack could not be read (0.23.10).
+        """Say once per start that a stack could not be read (rule STACK-08).
 
         The probe records and never judges, so a library that throws
         costs its own lines and nothing else. Logged as a warning the
@@ -499,12 +492,11 @@ class StudyMixin:
 
     @callback
     def probe_tick(self, now: float) -> None:
-        """The probe's minute, guarded (0.23.10).
+        """The probe's minute, guarded.
 
-        Runs in the minute tick ahead of the freeze judgment. Before
-        0.23.10 a throw anywhere in it stopped that tick, so while a
-        studied library misbehaved nothing was judged, listed or
-        saved.
+        Runs in the minute tick ahead of the freeze judgment, so a
+        throw here must not stop that tick: a misbehaving library
+        would leave nothing judged, listed or saved (rule STACK-08).
         """
         try:
             self._probe_tick(now)
@@ -521,8 +513,7 @@ class StudyMixin:
         memory, so the cost is one attribute per node. A Z-Wave plug
         unplugged stays "alive", so the stack side alone would write
         nothing for it; the line comes from last seen passing the
-        device's window, or from Device Sentinel's verdict changing
-        (0.23.8, research finding 12).
+        device's window, or from Device Sentinel's verdict changing.
         """
         self._probe_migrate()
         self._probe_flush()
@@ -558,8 +549,8 @@ class StudyMixin:
                 views["detail"] = ", ".join(
                     part for part in ("light switched while not connected", views["detail"]) if part
                 )
-            # A Z-Wave node's route is part of what it says (0.23.11):
-            # a repeater dying moves or breaks the routes through it.
+            # A Z-Wave node's route is part of what it says, because a
+            # repeater dying moves or breaks the routes through it.
             route = row.get("route") or ""
             said = (views["now"], views["sentinel"], route)
             before = self._probe_last.get(key)
@@ -591,7 +582,7 @@ class StudyMixin:
                 PROBE_DETAIL: views["detail"],
             })
         # A stack that gave no rows this tick, while its entry reloads or
-        # its reader fails, keeps what was known of it (0.26.4).
+        # its reader fails, keeps what was known of it.
         read = {key[0] for key in since}
         for held_map, fresh in ((self._probe_since, since), (self._probe_light, lights)):
             for key, value in held_map.items():
@@ -627,9 +618,10 @@ class StudyMixin:
                 ),
             })
         self._probe_changes = changes
-        # Matter over Wi-Fi in a Wi-Fi outage (#412's exception): when
-        # Device Sentinel's Wi-Fi outage opens or closes, which Matter
-        # Wi-Fi nodes were away and which were not.
+        # Matter over Wi-Fi in a Wi-Fi outage, which the outage never
+        # claims (rule UP-15): when Device Sentinel's Wi-Fi outage opens
+        # or closes, which Matter Wi-Fi nodes were away and which were
+        # not.
         wifi_down = getattr(self, "_wifi_down_at", None) is not None
         if MATTER_DOMAIN in studied and wifi_down != self._probe_wifi_down:
             if self._probe_wifi_down is not None and wifi_nodes:
@@ -655,7 +647,7 @@ class StudyMixin:
         self, key: tuple[str, str], row: dict[str, Any], lights: dict[tuple[str, str], bool]
     ) -> bool:
         """Whether a Hue light changed on or off while the bridge said
-        its link was not connected (0.26.4).
+        its link was not connected.
 
         Home Assistant's Hue integration logs the same thing once per
         start, as a sign the bridge's judgment of that light is wrong;
@@ -679,11 +671,11 @@ class StudyMixin:
         return newest
 
     def _probe_note(self, row: dict[str, Any], changed: deque[float], now: float) -> str:
-        """What rides with a bridge's or cloud's line without causing one
-        (0.26.4): when Device Sentinel last heard any of its devices,
-        how often its state changed in the last hour, and for Hue when
-        the library last lost the stream and the bridge's clock on its
-        newest event. Each changes every minute, so none is compared.
+        """What rides with a bridge's or cloud's line without causing one:
+        when Device Sentinel last heard any of its devices, how often
+        its state changed in the last hour, and for Hue when the library
+        last lost the stream and the bridge's clock on its newest event.
+        Each changes every minute, so none is compared.
         """
         parts: list[str] = []
         if "members" in row:
@@ -715,7 +707,7 @@ class StudyMixin:
 
         Rendered at once, so the device name is the one it had when
         the line happened. Written to the file on the next tick or at
-        the fold, off the event loop (0.23.9).
+        the fold, off the event loop (rule CODE-06).
         """
         line = self._probe_render(row)  # type: ignore[attr-defined]
         self._probe_pending.append(line)
@@ -731,7 +723,7 @@ class StudyMixin:
 
     @callback
     def _probe_migrate(self) -> None:
-        """Move lines stored before 0.23.9 into the file, once.
+        """Move probe lines an older release kept in storage into the file, once.
 
         They were kept in storage and the file was rebuilt from them;
         now the file is the record. The old file, a copy of those
@@ -750,15 +742,15 @@ class StudyMixin:
         self.hass.async_add_executor_job(self._probe_write_lines, lines, True)  # type: ignore[attr-defined]
 
     async def async_probe_stop(self) -> None:
-        """Write the lines still held, as Device Sentinel stops (0.23.10).
+        """Write the lines still held, as Device Sentinel stops.
 
         Lines wait for the next tick to be written, and a stop has no
-        next tick, so the minute before every restart or settings
-        change was lost. Called on Home Assistant's stop event and on
-        every unload, each time ahead of the save that must follow it,
-        so nothing here may raise: a throw would cost the save and the
-        clean-stop marker, and the next start would read the stop as a
-        power cut.
+        next tick, so without this the minute before every restart or
+        settings change is lost. Called on Home Assistant's stop event
+        and on every unload, each time ahead of the save that must
+        follow it, so nothing here may raise: a throw would cost the
+        save and the clean-stop marker, and the next start would read
+        the stop as a power cut.
         """
         self._zwave_unlisten()
         held, self._thread_discovery = self._thread_discovery, None
@@ -777,7 +769,7 @@ class StudyMixin:
                 err,
             )
 
-    # --------------------------------------- node events and routers, 0.23.11
+    # ------------------------------------- node events and routers
 
     @callback
     def _zwave_listen(self) -> None:
@@ -788,8 +780,8 @@ class StudyMixin:
         object is replaced when the driver reconnects, so subscriptions
         are keyed by the object and a new one is listened to afresh. The
         node's name is in the key too: it gains its network's tag when a
-        second network is added and loses it when one goes (0.26.4), and
-        a listener holding the old name would write lines the minute
+        second network is added and loses it when one goes, and a
+        listener holding the old name would write lines the minute
         check's lines do not match.
         """
         seen: set[tuple[int, str]] = set()
@@ -891,12 +883,12 @@ class StudyMixin:
         A border router announces itself on the local network as a
         `_meshcop._udp` service, and withdraws the announcement when it
         goes; Home Assistant's own Thread panel is drawn from the same
-        announcements (ruled 27 September 2026, recording only). The
-        listener is Home Assistant's shared zeroconf instance, read from
-        its private state as rule 3 of 26 September allows Extended
-        Diagnostics: nothing is added to the manifest and no integration
-        is imported. A house whose zeroconf has not started yet is asked
-        again on the next tick; a house without it records nothing.
+        announcements. Recording only. The listener is Home Assistant's
+        shared zeroconf instance, read from its private state as
+        Extended Diagnostics allows (rule STACK-08): nothing is added to
+        the manifest and no integration is imported. A house whose
+        zeroconf has not started yet is asked again on the next tick; a
+        house without it records nothing.
         """
         if self._thread_discovery is not None or self._thread_starting or self._thread_failed:
             return
@@ -1017,10 +1009,10 @@ class StudyMixin:
 
     @callback
     def probe_fold(self, now: float) -> None:
-        """The probe's part of the midnight fold, guarded (0.23.10).
+        """The probe's part of the midnight fold, guarded.
 
-        Runs before the day is rolled. Before 0.23.10 a throw here
-        aborted the fold for every device in the house.
+        Runs before the day is rolled, so a throw here must not abort
+        the fold for every device in the house.
         """
         try:
             self._probe_fold(now)
@@ -1031,9 +1023,9 @@ class StudyMixin:
     def _probe_fold(self, now: float) -> None:
         """One counting line a day per stack, and the old lines dropped.
 
-        The count carries each state and, since 0.23.8, how many nodes
-        the stack and Device Sentinel agreed on and how many they did
-        not, which is the figure the readers will be built from.
+        The count carries each state and how many nodes the stack and
+        Device Sentinel agreed on and how many they did not, which is
+        the figure the readers will be built from (rule STACK-12).
         """
         studied = self.studied
         if studied & PROBED_DOMAINS:
@@ -1066,14 +1058,15 @@ class StudyMixin:
                 })
         self._probe_flush()
 
-    # ------------------------------------- Hue and SmartThings, 0.26.4
+    # -------------------------------------------- Hue and SmartThings
 
     def stack_diagnostics(self, domain: str) -> dict[str, Any]:
-        """What Hue or SmartThings says now, for the download (0.26.4).
+        """What Hue or SmartThings says now, for the download.
 
         The same readings as the minute check, with when each device
         was first seen in its state this start and each entry's notes.
-        Empty unless the stack is ticked under Extended Diagnostics.
+        Empty unless the stack is ticked under Extended Diagnostics
+        (rule STACK-11).
         """
         if domain not in self.studied:
             return {}
@@ -1114,7 +1107,7 @@ class StudyMixin:
             found["unreadable"] = failures[:5]
         return found
 
-    # --------------------------------------------------- the fold, #393
+    # ------------------------------------------------------ the fold
 
     @callback
     def study_fold(self) -> None:

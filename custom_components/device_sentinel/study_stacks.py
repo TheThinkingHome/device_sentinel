@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.27.8 (2026-10-27)
+# File: study_stacks.py, Version: 0.27.10 (2026-10-27)
 
 """What six stacks say about their devices, gathered so their support
 can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
@@ -21,20 +21,20 @@ node is available, and which network it is on, so a Thread device can
 be told from one on Wi-Fi.
 
 This gathers both, lightly, while Extended Diagnostics is on and the
-stack's own toggle is ticked (0.22.26). It detects nothing and changes
+stack's own toggle is ticked (rule STACK-11). It detects nothing and changes
 no verdict. Anyone running these stacks who sends a diagnostics
 download teaches the next release what the wild actually holds:
 which attributes exist in which versions, what a healthy fleet's
 numbers look like, and what a sick one's look like. That is the
 evidence the detectors will be built on.
 
-The same readings feed the stack probe (0.23.8): `probe_rows`, the
+The same readings feed the stack probe (rule STACK-12): `probe_rows`, the
 node listeners of `zwave_nodes` and the controller counters of
 `zwave_health` let `study.py` write each change to `stack_probe.md`
 beside Device Sentinel's own view of the device, the readers in shadow.
 They too detect nothing.
 
-Hue and SmartThings are read more fully from 0.26.4. For Hue: each
+Hue and SmartThings are read more fully. For Hue: each
 bridge's event stream, firmware and update state, when the library last
 lost the stream and the bridge's clock on its newest event; each
 device's link, marked stale while the stream is down, its place on
@@ -44,7 +44,7 @@ retries and subscription, and whether Home Assistant is asking for it
 to be signed in again; each device's availability and how it reaches
 the cloud. Two of these readings are private to the libraries and two
 to Home Assistant, allowed because this records and never judges
-(#515). Each is taken from memory once a minute.
+(rule STACK-08). Each is taken from memory once a minute.
 
 Everything is read defensively. A library that renames an attribute,
 or a version that never had it, is recorded as absent rather than
@@ -91,16 +91,15 @@ def _read(holder: Any, name: str, default: Any = None) -> Any:
 def _plain(value: Any) -> Any:
     """Return something a JSON file can hold, or its type's name.
 
-    A moment is written as the moment it is: the second fleet's first
-    capture wrote the word "datetime" for every Z-Wave node's last
-    seen (0.23.3).
+    A moment is written as the moment it is, not as the word
+    "datetime".
     """
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, datetime):
         return value.isoformat()
     # An enum's value; read through _read, since an object whose
-    # attributes raise would otherwise escape here (0.26.4).
+    # attributes raise would otherwise escape here.
     name = _read(value, "value")
     if isinstance(name, (str, int, float)):
         return name
@@ -120,9 +119,8 @@ def _statistics(holder: Any, names: tuple[str, ...]) -> dict[str, Any]:
     return found
 
 
-# What Z-Wave JS numbers a node's state with, in words (0.23.3). The
-# second fleet's first capture wrote 1, 3 and 4 where the file promised
-# asleep, dead and alive.
+# What Z-Wave JS numbers a node's state with, in words, so the file
+# says asleep, dead and alive rather than 1, 3 and 4 (rule STACK-05).
 ZWAVE_STATUS_WORDS = {0: "unknown", 1: "asleep", 2: "awake", 3: "dead", 4: "alive"}
 
 
@@ -149,11 +147,11 @@ def _zwave_status(node: Any) -> str | None:
 # Ethernet. Where the map is absent, the diagnostics cluster the node
 # carries says the same: Thread (0x0035), Wi-Fi (0x0036), Ethernet
 # (0x0037). Read from the node's attribute table, so a node Home
-# Assistant shows as Thread or Wi-Fi reads the same here (0.23.3).
+# Assistant shows as Thread or Wi-Fi reads the same here (rule STACK-06).
 _MATTER_FEATURES = ((2, "thread"), (1, "wifi"), (4, "ethernet"))
 _MATTER_DIAGNOSTICS = ((53, "thread"), (54, "wifi"), (55, "ethernet"))
 # Where a version might keep the moment a node was last heard. Read
-# defensively, and the name that answered is recorded (0.23.3).
+# defensively, and the name that answered is recorded.
 _MATTER_SEEN = ("last_seen", "lastSeen", "last_interview")
 
 
@@ -299,7 +297,7 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
                 # since this is the attribute most likely to move.
                 "network": _matter_network(node) or None,
                 # When the node was last heard, under the name the
-                # version keeps it by, recorded beside it (0.23.3).
+                # version keeps it by, recorded beside it.
                 "seen_as": _matter_seen(node)[0] or None,
                 "seen": _matter_seen(node)[1],
             })
@@ -325,7 +323,7 @@ def _thread_network(hass: HomeAssistant) -> dict[str, Any]:
     break it when that stack changes. Thread is observed too, so it is
     read the same way: which integrations are loaded, and whether a
     border router has a config entry of its own. The network's own
-    credentials are never touched (0.22.26).
+    credentials are never touched (rule STACK-13).
     """
     return {
         "integration_loaded": "thread" in hass.config.components,
@@ -359,17 +357,14 @@ def _node_state(node: Any) -> tuple[str, str]:
     return status, detail
 
 
-# ------------------------------------------ names and coordinators, 0.23.8
+# ------------------------------------------------- names and coordinators
 #
-# Researched on 25 September 2026 in the code Home Assistant 2026.9.2
-# ships and the libraries it pins (zwave-js-server-python 0.73.1,
-# matter-python-client 1.4.0); the findings are in
-# Project__Stack_Readers.md. Home Assistant registers a Z-Wave node as
+# Home Assistant registers a Z-Wave node as
 # ("zwave_js", "<home id>-<node id>") and a Matter node as ("matter",
 # "deviceid_<fabric hex>-<node hex>-MatterNodeDevice"), with an
 # endpoint number in place of the last part for a bridged device. So a
 # node is named from the device registry, and neither integration is
-# imported (#478).
+# imported (rule STACK-12).
 
 _ZWAVE_IDENT = re.compile(r"^\d+-(\d+)$")
 _MATTER_IDENT = re.compile(r"^deviceid_[0-9A-F]{16}-([0-9A-F]{16})-(.+)$")
@@ -382,16 +377,11 @@ _THREAD_ROLES = {
 }
 
 
-# The four stacks added in 0.23.9. Researched on 26 September 2026 in
-# Home Assistant 2026.9.2 and the libraries it pins (aiohue 4.9.0,
-# pysmartthings 4.0.1, tuya-device-sharing-sdk 0.2.15, and the Lutron
-# probe's reading of pylutron-caseta); the findings are in
-# Project__Stack_Readers.md. Read as Z-Wave and Matter are: from what
-# Home Assistant already holds in memory, by attribute, with no import
-# and nothing in the manifest. The Lutron session is a private
-# attribute; the owner ruled on 26 September that Extended
-# Diagnostics, and only Extended Diagnostics, may read one, since it
-# records and never judges.
+# Hue, SmartThings, Tuya and Lutron are read as Z-Wave and Matter are:
+# from what Home Assistant already holds in memory, by attribute, with
+# no import and nothing in the manifest. The Lutron session is a
+# private attribute, which only Extended Diagnostics may read, since it
+# records and never judges (rule STACK-08).
 HUE_DOMAIN = "hue"
 SMARTTHINGS_DOMAIN = "smartthings"
 TUYA_DOMAIN = "tuya"
@@ -408,8 +398,8 @@ def node_devices(hass: HomeAssistant, entry: Any, domain: str) -> dict[str, str]
     registry = dr.async_get(hass)
     found: dict[str, str] = {}
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
-        # Any length (issue #16); the stack's own id is the first part
-        # after the domain.
+        # Any length; the stack's own id is the first part after the
+        # domain.
         for ident_domain, parts in identifier_values(device):
             if ident_domain != domain or not parts:
                 continue
@@ -455,7 +445,7 @@ def _zwave_status_sensor(hass: HomeAssistant, home_id: Any, node_id: Any) -> str
 
 
 def zwave_route(node: Any) -> str:
-    """The route a Z-Wave node's messages last travelled (0.23.11).
+    """The route a Z-Wave node's messages last traveled.
 
     From the node's last working route: the repeaters between it and
     the controller, or the two nodes a route failed between. Z-Wave's
@@ -479,7 +469,7 @@ def zwave_route(node: Any) -> str:
 
 
 def zwave_health(hass: HomeAssistant) -> list[tuple[str, str, dict[str, int], str]]:
-    """Each Z-Wave controller's counters and background noise (0.23.11).
+    """Each Z-Wave controller's counters and background noise.
 
     The counters only ever rise, so the caller writes the day's change.
     Background noise is the controller's own reading of each channel,
@@ -557,14 +547,14 @@ def _matter_radio(node: Any) -> str:
 
 
 def thread_network_id(value: Any) -> str:
-    """A Thread network's Extended PAN ID as sixteen hex digits (0.23.11).
+    """A Thread network's Extended PAN ID as sixteen hex digits.
 
     A Thread node reports it in attribute 0/53/4 and a border router
     announces the same number, so the two can be matched: it says which
     border routers a device actually depends on, which matters where an
     Apple or Google router carries the same network or a separate one
-    (ruled 27 September 2026). Written as the border router announces
-    it; anything that is not a whole number is left out.
+    (rule STACK-06). Written as the border router announces it;
+    anything that is not a whole number is left out.
     """
     if isinstance(value, bool):
         return ""
@@ -576,9 +566,8 @@ def thread_network_id(value: Any) -> str:
 
 
 # One reader per stack, each run on its own so a stack whose library
-# throws costs its own lines and nothing else (0.23.10). Before it, a
-# throw here stopped the minute tick ahead of the freeze judgment and
-# aborted the midnight fold for the whole house.
+# throws costs its own lines and nothing else, and never stops the
+# minute tick or the midnight fold for the whole house.
 StackFailure = Callable[[str, Exception], None]
 
 
@@ -676,8 +665,8 @@ def probe_rows(
 
     Each row carries the node's device, when there is one, so the
     recorder can set Device Sentinel's own view beside the stack's
-    (0.23.8). A stack that throws is handed to on_failure and the
-    others are read as usual (0.23.10).
+    (rule STACK-12). A stack that throws is handed to on_failure and
+    the others are read as usual.
     """
     rows: list[dict[str, Any]] = []
     for domain, reader in (
@@ -707,7 +696,7 @@ def _listed(container: Any) -> list[Any]:
 
 
 def _called(function: Any, *args: Any) -> Any:
-    """A library call's answer, or None where it throws (0.26.4).
+    """A library call's answer, or None where it throws.
 
     Every Hue and SmartThings reading is taken through `_read` or
     here, so a library that renames, removes or breaks something costs
@@ -789,7 +778,7 @@ def _hue_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     discovery; Home Assistant makes that available or not. While the
     bridge's event stream is down nothing new arrives, Home Assistant
     keeps every entity on its last state, and the bridge's word is
-    stale, so the row says so and gives no opinion (0.26.4). Hue's
+    stale, so the row says so and gives no opinion. Hue's
     ignore list keeps a device's light available whatever the bridge
     says, and does nothing for a device without a light. A Green Power
     switch has no Zigbee link to report and is named. A v1 bridge
@@ -848,9 +837,9 @@ def _hue_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     return rows
 
 
-# SmartThings device types by how the device reaches the cloud
-# (pysmartthings 4.0.3, read 15 October 2026): through a SmartThings
-# hub, or on its own. The hub's own health is never published.
+# SmartThings device types by how the device reaches the cloud: through
+# a SmartThings hub, or on its own. The hub's own health is never
+# published.
 SMARTTHINGS_HUB_TYPES = frozenset({"HUB"})
 SMARTTHINGS_BEHIND_HUB_TYPES = frozenset({"ZIGBEE", "ZWAVE", "MATTER", "LAN", "EDGE_CHILD"})
 SMARTTHINGS_CLOUD_TYPES = frozenset({"VIPER", "OCF", "MOBILE", "ENDPOINT_APP", "BLE_D2D"})
@@ -873,7 +862,8 @@ def _entity_availability(hass: HomeAssistant, device_id: str) -> tuple[str, bool
         return "no device", None
     # Only SmartThings' own entities: another integration's entity on
     # the device, a Battery Notes battery type say, stays available
-    # while the device is offline and is not the device speaking (#404).
+    # while the device is offline and is not the device speaking
+    # (rule WATCH-02).
     states = [
         hass.states.get(entity.entity_id)
         for entity in er.async_entries_for_device(er.async_get(hass), device_id)
@@ -892,17 +882,16 @@ def _smartthings_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
 
     Home Assistant keeps a SmartThings entity available while the
     cloud says its device is online, live, so the stack's word is what
-    the entities show (0.26.4). The online flag Home Assistant stores
-    is set only at start and is not read. The device's type says
-    whether it is a hub, sits behind one, or reaches the cloud on its
-    own; before 0.26.4 a hub was taken for a device behind one.
+    the entities show. The online flag Home Assistant stores is set
+    only at start and is not read. The device's type says whether it
+    is a hub, sits behind one, or reaches the cloud on its own.
     """
     rows: list[dict[str, Any]] = []
     for entry in hass.config_entries.async_entries(SMARTTHINGS_DOMAIN):
         # Home Assistant moves a SmartThings entity's availability only
         # on health events, which arrive over the stream; with it down
         # every entity keeps its last word, so the rows say so and give
-        # no opinion, as Hue's do (0.26.4).
+        # no opinion, as Hue's do.
         stale = _smartthings_stream_down(hass, entry)
         mapped = node_devices(hass, entry, SMARTTHINGS_DOMAIN)
         for full in _listed(_read(_read(entry, "runtime_data"), "devices")):
@@ -1017,13 +1006,13 @@ def _matter_server_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
 
 def live_entries(hass: HomeAssistant, domain: str) -> list[Any]:
     """A stack's entries that are set up to run: an ignored discovery or
-    a disabled entry is not a controller, bridge, hub or cloud (0.26.4)."""
+    a disabled entry is not a controller, bridge, hub or cloud."""
     return hass.config_entries.async_entries(domain, include_ignore=False, include_disabled=False)
 
 
 def entry_tags(entries: list[Any]) -> list[tuple[Any, str]]:
-    """Each entry with the tag its nodes carry (0.26.4): nothing for a
-    lone entry, as before, and the end of the entry's id where there
+    """Each entry with the tag its nodes carry: nothing for a
+    lone entry, and the end of the entry's id where there
     are several. The start of an id is a timestamp, which two entries
     made in one second share. Not the title: Hue titles an entry with
     its bridge's id, which is the bridge's address, and Tuya with the
@@ -1041,12 +1030,11 @@ def tagged(tag: str, name: str) -> str:
 
 
 def entry_nodes(entries: list[Any], base: str) -> list[tuple[Any, str]]:
-    """Each entry with a node name of its own (0.26.4).
+    """Each entry with a node name of its own.
 
-    Two Z-Wave networks, two bridges or two SmartThings locations
-    shared one name, so the probe, which keys a line by stack and node,
-    read them as one node flipping between their two states, a line
-    each minute for good.
+    The probe keys a line by stack and node, so two Z-Wave networks,
+    two bridges or two SmartThings locations sharing one name would
+    read as one node flipping between two states, a line each minute.
     """
     return [(entry, tagged(tag, base)) for entry, tag in entry_tags(entries)]
 
@@ -1067,7 +1055,7 @@ def _hub_rows(
     with it, and may add readings that change every minute; those are
     written with a line but never cause one. With members, the row
     also lists the entry's devices, so the recorder can say when
-    Device Sentinel last heard any of them (0.26.4).
+    Device Sentinel last heard any of them.
     """
     rows: list[dict[str, Any]] = []
     for entry, node in entry_nodes(live_entries(hass, domain), base):
@@ -1101,11 +1089,10 @@ def coordinator_rows(
     Z-Wave JS server is open, whether the driver is there, and the
     controller's own status. Matter: the entry's state and whether the
     server connection is open. A stick pulled or a server restarted
-    shows here, which is what a reader must tell from a real outage
-    (research findings 1, 6 and 10). Hue: the bridge's event stream.
-    SmartThings: the event stream to Samsung's cloud (0.26.4). A stack
-    that throws is handed to on_failure and the others are read as
-    usual (0.23.10).
+    shows here, which is what a reader must tell from a real outage.
+    Hue: the bridge's event stream. SmartThings: the event stream to
+    Samsung's cloud. A stack that throws is handed to on_failure and
+    the others are read as usual.
     """
     rows: list[dict[str, Any]] = []
     readers: tuple[tuple[str, Callable[[], list[dict[str, Any]]]], ...] = (
@@ -1128,7 +1115,7 @@ def coordinator_rows(
     return rows
 
 
-# The event stream's status in words (aiohue 4.9.0). The library sets
+# The event stream's status in words. The library sets
 # CONNECTING at the start of every try to reconnect and holds it
 # through the wait, so an outage samples as CONNECTING; it reads down.
 HUE_STREAM_WORDS = {
@@ -1145,7 +1132,7 @@ def _hue_bridge(_hass: HomeAssistant, entry: Any) -> dict[str, Any]:
     drops; they keep their last state, so the stream is the one sign
     of a bridge gone. The library's private record of when it last
     lost the stream, and the bridge's clock on the newest event it
-    sent, are read too (#515): recorded, never judged. A v1 bridge is
+    sent, are read too: recorded, never judged (rule STACK-08). A v1 bridge is
     polled, and the poll's last result is its sign.
     """
     bridge = _read(entry, "runtime_data")
@@ -1197,7 +1184,7 @@ def _smartthings_task(entry: Any) -> str:
 
     Home Assistant holds an entry's background tasks in a private set
     and drops each one as it ends; the SmartThings stream is the task
-    named "smartthings_socket" (Home Assistant 2026.10.1, #515).
+    named "smartthings_socket" (rule STACK-08).
     """
     tasks = _read(entry, "_background_tasks")
     if tasks is None:
@@ -1216,9 +1203,9 @@ def _smartthings_task(entry: Any) -> str:
 def _smartthings_retries(client: Any) -> str:
     """The stream's retry count and the wait it implies.
 
-    pysmartthings 4.0.3 waits two to the power of the count, in
-    seconds, with no ceiling, and sets the count back to nought when
-    the stream opens. The count is private (#515).
+    pysmartthings waits two to the power of the count, in seconds,
+    with no ceiling, and sets the count back to nought when the stream
+    opens. The count is private (rule STACK-08).
     """
     count = _read(client, "_SmartThings__retry_count")
     if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
@@ -1260,7 +1247,7 @@ def _smartthings_cloud(hass: HomeAssistant, entry: Any) -> dict[str, Any]:
     last word for every device. Home Assistant keeps the stream's
     subscription id in the entry and replaces it when the stream is
     made again; its first eight characters ride with the line, so a
-    change of subscription is a line (0.26.4).
+    change of subscription is a line.
     """
     data = _read(entry, "data")
     subscription = data.get("subscription_id") if isinstance(data, Mapping) else None

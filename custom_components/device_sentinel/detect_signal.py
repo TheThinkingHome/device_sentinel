@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.27.9 (2026-10-27)
+# File: detect_signal.py, Version: 0.27.10 (2026-10-27)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -24,11 +24,9 @@ for three days, is a false reading rather than a weak link, and it
 does notify. Anything written for a reader has to keep those two
 apart; saying signal never alerts is wrong.
 
-One of six subject modules split out of coordinator.py, which
-had reached four thousand lines. The seam is the subject, chosen
-by measuring which methods call which: storage and interventions
-call nothing outside themselves at all, and the three detectors
-reach out fewer than ten times each (ruling #201).
+One of six subject modules split out of coordinator.py. The seam is
+the subject, chosen by measuring which methods call which: the three
+detectors reach out fewer than ten times each (rule CODE-11).
 
 A file split rather than a boundary. These are mixins on the
 coordinator and read its state freely, so `self` is the
@@ -124,13 +122,11 @@ def _spread(values: list[float]) -> float:
     """Return the population standard deviation, in floating point.
 
     `statistics.pstdev` works in exact fractions, and the Signal Trends
-    tab judges every stored day of every device through it: 3,122
-    judgments on the reference fleet and 3,763 on the second, where it
-    took 72 percent of the tab's time (0.22.20). The two-pass sum here
-    is the textbook stable form. Measured against the exact answer on
-    four storage files at every setting the screens allow, 1,292,967
-    judgments, it changed no verdict, no normal and no fall, and no
-    spread by more than one unit in the last binary place. It loses
+    tab judges every stored day of every device through it, where it
+    took most of the tab's time. The two-pass sum here is the textbook
+    stable form. Against the exact answer at every setting the screens
+    allow, it changes no verdict, no normal and no fall, and no spread
+    by more than one unit in the last binary place. It loses
     precision only for values near a billion, which no signal reading
     comes near, and a flat baseline that reads a trace above zero is
     lifted to the spread floor as zero is.
@@ -148,8 +144,7 @@ def _usable(entry: Any) -> float | None:
     inside statistics.median, an infinity flags every day forever,
     and a string raises on comparison, so each would take down the
     fold or the report write rather than the one device. Nothing here
-    assumes those values are unreachable; the outages of 20 August
-    came from exactly that assumption.
+    assumes those values are unreachable.
 
     Booleans are refused although Python counts them as integers,
     because a True in a signal series is corruption rather than a
@@ -166,12 +161,11 @@ def _usable(entry: Any) -> float | None:
 
 
 def scale_of(value: float) -> str:
-    """Return which scale a reading is on, from its sign (ruling #284).
+    """Return which scale a reading is on, from its sign (rule SIG-03).
 
     RSSI is power in dBm and is negative at any Zigbee receiver. LQI
-    runs 0 to 255. Across the two fleets that have sent data there is
-    no overlap: 4,209 negative readings and 4,040 non-negative,
-    positives spanning 0 to 255 and negatives -106 to -1.
+    runs 0 to 255. Measured readings show no overlap: positives span 0
+    to 255 and negatives -106 to -1.
 
     Zero goes to LQI. It is a valid link quality, the worst the scale
     can express, and it is not a plausible received power: 0 dBm is a
@@ -205,7 +199,7 @@ def signal_bucket(record: dict[str, Any], scale: str) -> dict[str, Any]:
     The primary scale's fields sit at the top of the record, where
     every report, sensor and chart already reads them. A second scale
     goes in signal_alt under the same names, recorded and not judged
-    (rulings #285, #286).
+    (rule SIG-03).
 
     RSSI takes precedence where a device has both. A device whose LQI
     entity happened to report first therefore has to hand the primary
@@ -233,7 +227,7 @@ def signal_bucket(record: dict[str, Any], scale: str) -> dict[str, Any]:
             record[field] = promoted.get(field)
         record[DEV_SIGNAL_SCALE] = scale
         record[DEV_SIGNAL_ALT] = demoted
-        # The dates go where their series went (0.26.1). A block made
+        # The dates go where their series went. A block made
         # just now has no history, so any second-scale dates left on
         # the record describe nothing and are dropped first.
         if alt is None:
@@ -260,7 +254,7 @@ def _entity_unit(ent: er.RegistryEntry) -> str:
 
 
 def _is_percentage(ent: er.RegistryEntry) -> bool:
-    """Is this entity measured in percent (ruling #283)?"""
+    """Is this entity measured in percent (rule SIG-02)?"""
     return _entity_unit(ent) in SIGNAL_REFUSED_UNITS
 
 
@@ -274,7 +268,7 @@ def _badday_of(
     sensitivity: float,
 ) -> dict[str, float] | None:
     """One device-day's bad-day reading, from the days before it and
-    the settings (ruling #310). Pure: the same inputs always give the
+    the settings (rule SIG-08). Pure: the same inputs always give the
     same reading. See `signal_badday` for the rule itself."""
     today = _usable(today_raw)
     if today is None:
@@ -311,7 +305,7 @@ class SignalMixin:
         """Fold the day's signal statistics.
 
         The name survives its subject: the dwell record is erased
-        (ruling #322) and the fold now writes only the statistics the
+        (rule SIG-13) and the fold writes only the statistics the
         detector reads. Kept as the coordinator's one entry point so
         the midnight roll calls what it always called.
         """
@@ -322,9 +316,9 @@ class SignalMixin:
     ) -> None:
         """Fold the primary, then the second scale if there is one.
 
-        Each scale's row is dated with the day being folded (0.24.4,
-        issue #18): a day with no reading writes no row, and its date
-        is recorded as skipped, so the history keeps its calendar.
+        Each scale's row is dated with the day being folded: a day with
+        no reading writes no row, and its date is recorded as skipped,
+        so the history keeps its calendar (rule STOR-16).
         """
         day = getattr(self, "_folding_day", None)
         for bucket, judged, family in (
@@ -337,7 +331,7 @@ class SignalMixin:
             wrote = self._roll_one_scale(bucket, fold_now, judged=judged)
             after = len(bucket.get(DEV_SIGNAL_DAILY_COUNT) or [])
             added = bool(wrote) or after > before
-            # The roll says whether it wrote the day's row (0.24.6): at
+            # The roll says whether it wrote the day's row: at
             # the History days limit a row added is a row trimmed.
             if day is not None and (added or after != before):
                 day_appended(record, family, before, after, day, added=added)
@@ -348,48 +342,42 @@ class SignalMixin:
         """Close the day's signal distribution into the daily series.
 
         Mean and standard deviation are what the Bayesian successor to
-        the current thresholding needs (ruling #172), so they are recorded
-        ahead of it: the day's Welford accumulators (ruling #254)
+        the current thresholding needs (rule SIG-11), so they are recorded
+        ahead of it: the day's Welford accumulators
         become one mean and one deviation, the day's maximum rides
-        beside them, the P-Square estimators (ruling #253) become the
+        beside them, the P-Square estimators become the
         day's time-weighted 5th percentile and median, and everything
         resets for the new day. The deviation is the
         population form, and a one-reading day records zero deviation
         rather than none, because one reading genuinely varied by
-        nothing.
+        nothing (rule SIG-05).
 
-        Returns whether a row was written (0.24.6), so the fold can date
-        it even when the History days limit trims a row as it adds one.
+        Returns whether a row was written, so the fold can date it even
+        when the History days limit trims a row as it adds one.
 
-        A row is written only for a day the device actually spoke
-        (ruling #305). The Welford count alone cannot decide that:
-        it is time-weighted and the held value keeps accruing
-        minutes through silence (ruling #253), so a device that
-        reported once and went quiet still weighed a full day at
-        every following fold, and the fold wrote a fabricated row,
-        statistics copied from the last real reading, deviation
-        zero, and None in the maximum. Nine such rows on the first
-        external fleet; the reference fleet cannot produce one
-        because every device on it reports daily. So the gate is
-        the reads counter, which only a real reading moves. A day
+        A row is written only for a day the device actually spoke. The
+        Welford count alone cannot decide that: it is time-weighted and
+        the held value keeps accruing minutes through silence, so a
+        device that reported once and went quiet would still weigh a
+        full day at every following fold and write a made-up row. So
+        the gate is the reads counter, which only a real reading moves. A day
         of nothing but rail readings writes the row too, rail count
         real and every statistic null, because three consecutive
         rail days are the confirmation the rail verdict needs
-        (rulings #78, #322) and dropping the day would break the count. A
+        (rule SIG-07) and dropping the day would break the count. A
         day with neither writes nothing, so these series stay
         aligned with each other.
         """
         # The day's tail: the held value has been accruing minutes
         # since its last feed, and they belong to the day being
-        # folded (ruling #253).
+        # folded (rule SIG-05).
         self._feed_percentiles(record, now=fold_now)
         count, mean, m2 = self._welford_state(record)
         if count == 0 and int(record.get(DEV_SIGNAL_READS) or 0) > 0:
             # Readings that never completed a whole held minute, so
-            # the day weighs nothing (ruling #262). Without this the
-            # reads counter survived the fold and was counted into
-            # the next day, which put one device's report count on
-            # the wrong row. The day is dropped, not carried.
+            # the day weighs nothing. Otherwise the reads counter would
+            # survive the fold and land on the next day's row. The day
+            # is dropped, not carried (rule SIG-05).
             record[DEV_SIGNAL_READS] = 0
         reads = int(record.get(DEV_SIGNAL_READS) or 0)
         rails = int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
@@ -464,7 +452,7 @@ class SignalMixin:
             # said was the stuck value the estimators refuse. There
             # is no statistic to record and there is evidence to
             # keep, so the row is written with the rail count real
-            # and every statistic null (ruling #305). The count
+            # and every statistic null (rule SIG-05). The count
             # entry is 0 because zero real readings arrived, which
             # is also what the one-time trim keys on, so the trim
             # skips rows whose rail entry is above zero.
@@ -489,9 +477,9 @@ class SignalMixin:
             ]
             for field in trimmed:
                 del record[field][:-self.retention_days]
-        # The naive accumulators are legacy after #254: the fold
-        # removes them so a migrated record sheds them at its first
-        # midnight rather than carrying zeros forever.
+        # The naive accumulators are legacy: the fold removes them so a
+        # migrated record sheds them at its first midnight rather than
+        # carrying zeros forever (rule SIG-05).
         _reset_signal_day(record)
         record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
@@ -508,7 +496,7 @@ class SignalMixin:
         """
         # Which of the device's scales this reading belongs to. The
         # primary is the record itself; a second scale is its own
-        # block, recorded and never judged (rulings #284, #285).
+        # block, recorded and never judged (rule SIG-03).
         bucket = signal_bucket(record, scale_of(value))
 
         bucket[DEV_SIGNAL_VALUE] = value
@@ -525,14 +513,11 @@ class SignalMixin:
         today_max = bucket.get(DEV_SIGNAL_TODAY_MAX)
         if today_max is None or value > today_max:
             bucket[DEV_SIGNAL_TODAY_MAX] = value
-        # The day's four figures all weigh minutes (ruling #259): the
-        # mean and deviation are fed by _feed_percentiles on the same
-        # clock as P5 and the median, so a device reporting once an
-        # hour is measured the same way as one reporting every
-        # minute, and the four can be read side by side. Counting
-        # readings instead let a busy hour outvote a quiet one, and
-        # on this fleet reporting rates differ by two orders of
-        # magnitude.
+        # The day's four figures all weigh minutes: the mean and
+        # deviation are fed by _feed_percentiles on the same clock as P5
+        # and the median, so a device reporting once an hour is measured
+        # the same way as one reporting every minute, and a busy hour
+        # never outvotes a quiet one (rule SIG-05).
         self._feed_percentiles(bucket, now=now, new_value=value)
 
     def _welford_state(
@@ -541,12 +526,10 @@ class SignalMixin:
         """Return the day's (count, running mean, M2).
 
         The conversion from the retired sum and sum-of-squares pair
-        runs at load and not here (ruling #256): the reconciler
-        deletes the legacy keys before any reading arrives, so a
-        migration in this path read a record that only looked
-        migrated, restarted the mean at zero against a full count,
-        and drove every running mean toward a tenth of its true
-        value. A count carried with no accumulator behind it is a day
+        runs at load and not here, because the reconciler deletes the
+        legacy keys before any reading arrives, and a migration here
+        would restart the mean at zero against a full count
+        (rule STOR-19). A count carried with no accumulator behind it is a day
         with no statistics, and resetting it is what keeps the fold
         from dividing by a ghost.
         """
@@ -570,7 +553,7 @@ class SignalMixin:
         """Weigh the held value by its whole minutes, then hold the
         new one.
 
-        A value counts by duration, not by arrival (ruling #253): a
+        A value counts by duration, not by arrival (rule SIG-05): a
         reading held for three hours is 180 observations, a one-off
         blip inside a busy minute is none. The fractional remainder
         stays on the clock rather than being dropped, so no time is
@@ -595,12 +578,11 @@ class SignalMixin:
                     psquare_feed_many(state, q, float(held), minutes)
                 # Welford for a repeated value has a closed form, so
                 # the day's mean and deviation cost the same whether
-                # the value was held for a minute or a day (ruling
-                # #262). This ran as a loop and a restart after an
-                # outage could hand it a day's worth per device, on
-                # the event loop, at the moment Home Assistant is
-                # busiest. Identical arithmetic, proven against the
-                # loop rather than assumed.
+                # the value was held for a minute or a day. A loop here
+                # could be handed a day's worth per device after an
+                # outage, on the event loop, when Home Assistant is
+                # busiest. The arithmetic is identical to the loop
+                # (rule SIG-05).
                 count, mean, m2 = self._welford_state(record)
                 delta = float(held) - mean
                 count += minutes
@@ -638,8 +620,7 @@ class SignalMixin:
 
         Scale-native rather than a share, because a share of an RSSI
         number is meaningless: a link at -60 dBm losing a real 6 dB
-        reads as ten percent (ruling #310, keeping the lesson of #250,
-        which was rescinded with dwell).
+        reads as ten percent (rule SIG-08).
         """
         if scale == SIGNAL_SCALE_RSSI:
             return self._badday_setting(
@@ -669,13 +650,12 @@ class SignalMixin:
     ) -> dict[str, float] | None:
         """Return the reading behind one device-day, or None.
 
-        The question is not whether the device is near its floor,
-        which is what dwell asked and answered badly, but whether it
-        just got worse than it has been (ruling #310). The judge is
-        P5, because the daily minimum is a one-packet statistic: on
-        the reference fleet it sits a median 1.17 of the device's own
-        deviations below P5, and on 56 percent of device-days more
-        than a full one.
+        The question is not whether the device is near its floor, but
+        whether it just got worse than it has been (rule SIG-08). The
+        judge is P5, because the daily minimum is a one-packet
+        statistic: it sits a median 1.17 of the device's own deviations
+        below P5, and on more than half of device-days more than a full
+        one.
 
         Both gates must hold. The absolute fall stops a trivial move
         on a very steady device from reading as a catastrophe, which
@@ -700,9 +680,8 @@ class SignalMixin:
         window = self._badday_baseline_days()
         # The arithmetic is a pure function of the window and the
         # settings. It is not cached: kept for every day of every
-        # device, the answers held 29.5 MB on the second house to save
-        # Signal Trends a tenth of a second off the loop (measured in
-        # the 0.23.19 adversarial round).
+        # device, the answers can hold tens of megabytes to save Signal
+        # Trends a tenth of a second off the loop.
         found = _badday_of(
             tuple(series[max(0, position - window):position]),
             series[position],
@@ -722,34 +701,26 @@ class SignalMixin:
         confirmed over time, not on a single reading: for
         RAIL_CONFIRM_DAYS consecutive days the device spoke and
         everything it said was the stuck value, read as a zero
-        reading count beside a rail count above zero (rulings #78,
-        #322). The retired daily-minimum test could not fire on data
-        recorded after 0.12.15, because rails stopped reaching the
-        minimum and rail-only days appended nothing to it, so its
-        tail was the last three speaking days rather than the last
-        three days (ruling #324). A railed day writes a row with a zero
-        count and a real rail entry; a silent day writes no row at all
-        (see `_roll_one_scale`), so the rail column is the evidence. The
-        three rows must fall on three consecutive calendar days (0.24.4,
-        issue #18): a rail broken by a silent day is not proven to have
-        held. A rail that comes and goes within a day never confirms,
+        reading count beside a rail count above zero (rule SIG-07). A
+        railed day writes a row with a zero count and a real rail entry;
+        a silent day writes no row at all (see `_roll_one_scale`), so
+        the rail column is the evidence. The three rows must fall on
+        three consecutive calendar days: a rail broken by a silent day
+        is not proven to have held. A rail that comes and goes within a day never confirms,
         while one that holds across days does.
 
         The plausible-value freeze, a real reading that stops moving,
         is not judged here: a device with a strong steady link reports
         the same value for hours and cannot be told from a stuck one.
-        The project document records that rabbit hole and the learned
-        flat-stretch approach that could restore it if it is ever
-        worth building.
         """
         counts = record.get(DEV_SIGNAL_DAILY_COUNT) or []
         rails = record.get(DEV_SIGNAL_DAILY_RAIL) or []
         if len(counts) < RAIL_CONFIRM_DAYS or len(rails) < RAIL_CONFIRM_DAYS:
             return False
-        # Non-strict on purpose (ruling #328): both tails are sliced
-        # to the same length above, and a stored file whose two
-        # series differ by a day must read as no rail rather than
-        # raise inside a verdict.
+        # Non-strict on purpose: both tails are sliced to the same
+        # length above, and a stored file whose two series differ by a
+        # day must read as no rail rather than raise inside a verdict
+        # (rule CODE-07).
         tail = zip(
             counts[-RAIL_CONFIRM_DAYS:],
             rails[-RAIL_CONFIRM_DAYS:],
@@ -770,12 +741,11 @@ class SignalMixin:
         """Recognize a signal-strength entity from registry fields.
 
         By device class first; where there is none, by the words a
-        signal entity's name carries, with the unit deciding (ruling
-        #283). What is never done is refusing an entity by its name
-        (ruling #267, replacing #248's word lists of refused terms): no
-        word tells a phone's bars from a mesh link, and a phone arrives
-        on an integration the exclude list refuses whole, so nothing
-        that reaches here is another device's radio.
+        signal entity's name carries, with the unit deciding. An entity
+        is never refused by its name: no word tells a phone's bars from
+        a mesh link, and a phone arrives on an integration the exclude
+        list refuses whole, so nothing that reaches here is another
+        device's radio (rule SIG-02).
         """
         if str(ent.original_device_class) == "signal_strength" or str(
             getattr(ent, "device_class", None)
@@ -788,7 +758,7 @@ class SignalMixin:
         ).lower()
         if not any(term in hay for term in SIGNAL_NAME_TERMS):
             return False
-        # Matched by name only, so the unit decides (ruling #283). A
+        # Matched by name only, so the unit decides (rule SIG-02). A
         # percentage here is a quality figure wearing the name of a
         # measurement, which is Tasmota's RSSI. Home Assistant allows
         # only dB and dBm for the signal_strength class, so nothing
@@ -799,17 +769,15 @@ class SignalMixin:
         """Return when a device's signal fault was added to the list.
 
         A rail carries no physical start time (it is confirmed from
-        the daily rail column, #322), so its age is measured from the
+        the daily rail column, rule SIG-07), so its age is measured from the
         list item's stamp, the moment the sync first listed it. This
         keeps the section consistent with the list it mirrors.
         """
         for record in self.todo_items:
             if record.get(TODO_DEVICE_ID) == device_id:
-                # By the kind's name since the kinds took one vocabulary
-                # (ruling #299). The lookup kept the old name, "signal",
-                # so every signal fault read "for ?" with its start
-                # stored beside it; found on the reference rig's two
-                # rails (0.23.19).
+                # By the kind's name, because the kinds have one
+                # vocabulary; the old name, "signal", would read "for ?"
+                # (rule LIST-02).
                 return (record.get(TODO_KINDS) or {}).get(TODO_KIND_RAILED_SIGNAL)
         return None
 
@@ -821,7 +789,7 @@ class SignalMixin:
         RSSI: the empty value of a field the device stopped
         populating, which reads as perfect signal and is the
         opposite. Confirmed over three days rather than on a single
-        reading (ruling #78), so what lands here is a fault rather
+        reading (rule SIG-07), so what lands here is a fault rather
         than a bad afternoon.
 
         Rails only, and deliberately. This list feeds the problem
@@ -829,7 +797,7 @@ class SignalMixin:
         so a rail is the one signal condition solid enough to
         interrupt somebody. Weak links are a live reading that moves
         day to day and live on signal_weak_list, which notifies
-        nothing (rulings #59, kept by #310, and #211).
+        nothing (rules SIG-09, SIG-10).
 
         Signal-muted devices, and devices muted for everything, are
         observed but never judged, so they stay off this list until
@@ -853,14 +821,10 @@ class SignalMixin:
         # Rails only, and deliberately. This list feeds the problem
         # list, which feeds the todo entity, the card and the phone,
         # so anything added here becomes a notification. A weak day has
-        # no day-to-day persistence to notify on: measured when dwell
-        # was the judge, on the reference fleet
-        # only three of twelve device-days above twenty percent were
-        # still above it the next morning, so a low arriving here
+        # no day-to-day persistence to notify on, so a low arriving here
         # would push tonight and clear tomorrow. Signal reports and
-        # does not push (ruling #59, kept by #310), and the low kind
-        # lives on signal_weak_list below, which nothing notifies
-        # from (ruling #211).
+        # does not push, and the low kind lives on signal_weak_list
+        # below, which nothing notifies from (rules SIG-09, SIG-10).
         # Rail problems first, then by name: a rail is a fault and a
         # low is a weak link.
         problems.sort(key=lambda row: (row["kind"] != TODO_KIND_RAILED_SIGNAL, row["name"] or ""))
@@ -873,10 +837,8 @@ class SignalMixin:
         The Signal: Weak sensor. A device qualifies when its most
         recent folded day was a bad signal day: its own P5 fell far
         enough below its own recent normal, in its own units and its
-        own spread (ruling #310). Until that ruling this read the
-        dwell against a Red Threshold slider, and both are gone, so
-        this is the same sensor answering a better question with the
-        same one definition serving every surface (ruling #211).
+        own spread (rule SIG-08). One definition serves every surface
+        (rule SIG-09).
 
         Separate from the rails for the same reason Battery: Low and
         Battery: Falling are separate. A rail is a broken
@@ -886,7 +848,7 @@ class SignalMixin:
         Nothing notifies from this. A device drops off the next
         morning its signal holds, with no acknowledgment and no
         record, because it is a reading rather than an incident
-        (ruling #59, kept by #310).
+        (rule SIG-10).
         """
         railed = {row["device_id"] for row in self.signal_problem_list}
         weak = []
@@ -931,9 +893,8 @@ class SignalMixin:
         suppresses judgment, not observation: the device keeps
         recording its readings and daily statistics, so re-inclusion is
         instant and arrives with history; it simply stops being
-        reported. This is the manual removal from tracking the
-        frozen-signal ruling requires, for a device that resists
-        every recovery."""
+        reported. This is the manual removal from tracking for a device
+        that resists every recovery."""
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
             CONF_SIGNAL_MUTED_INTEGRATIONS, []
@@ -945,8 +906,7 @@ class SignalMixin:
             return True
         if device_id in options.get(CONF_SIGNAL_MUTED_DEVICES, []):
             return True
-        # A hub's mute covers the devices it controls (James, 14
-        # October 2026).
+        # A hub's mute covers the devices it controls (rule STACK-09).
         return self.hub_mutes(device_id, self._signal_muted)  # type: ignore[attr-defined]
 
     @property
@@ -977,7 +937,7 @@ class SignalMixin:
                 or record.get(DEV_SIGNAL_DAILY_P5)
             )
             # A removed device's held record names nothing a person
-            # can pick (ruling #622).
+            # can pick (rule WATCH-07).
             and not self.is_held(device_id)  # type: ignore[attr-defined]
         ]
         rows.sort(key=lambda row: row["name"].lower())

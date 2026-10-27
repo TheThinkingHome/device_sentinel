@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: rhythm_rules.py, Version: 0.24.0 (2026-10-02)
+# File: rhythm_rules.py, Version: 0.27.10 (2026-10-27)
 
-"""The Log-Normal Percentile, the second freeze rule (#542, amended).
+"""The Log-Normal Percentile, the second freeze rule (rule FRZ-04).
 
 A device's freeze wait is the shorter of two rhythms plus the grace
 margin. The first, the Trimmed Maximum, reads the last 14 days'
@@ -18,11 +18,10 @@ below the average, repeating until nothing more is set aside, and
 takes the average plus CLIP_TARGET_DEVIATIONS spreads: the 90th
 percentile of the fit. The spread never falls below CLIP_SPREAD_FLOOR.
 
-Setting aside short days as well as long ones is the amendment. The
-shadow version of 0.23.17 set aside long days only, so a device with a
-few very short days had its spread blown up and its target thrown far
-past anything it had done: Tim's desk dragon light, longest gap 43
-hours in 44 days, would have waited 958 hours. Clipping both sides
+Short days are set aside as well as long ones, because with long days
+alone a device with a few very short days has its spread blown up and
+its target thrown far past anything it has done: a light whose longest
+gap in 44 days is 43 hours would wait 958 hours. Clipping both sides
 brings it to about 40, with no cap.
 
 The days it may read start again at a reset (a firmware update, a
@@ -69,7 +68,7 @@ def slowed_down(daily: list[Any], days: int, fit: dict[str, Any] | None = None) 
 
     Each of them longer than the device's usual and set aside by the
     Log-Normal Percentile: a new, slower habit rather than bad days
-    (James, 2 October 2026). Days set aside as too short do not count;
+    (rule FRZ-05). Days set aside as too short do not count;
     a device reporting more often is the Trimmed Maximum's to follow.
     False while the rule has no fit.
     """
@@ -93,9 +92,9 @@ def lognormal_rhythm(daily: list[Any], days: int) -> dict[str, Any] | None:
     Worked out directly each time it is asked. The coordinator keeps
     each device's result until its days change (`_freeze_rhythm`), and
     the device page keeps its chart history the same way, so nothing
-    here needs remembering; a remembered-results cache was tried and
-    removed in 0.24.0, because building chart histories filled it with
-    thousands of one-off spans, 11 to 16 MB on a 243-device house.
+    here needs remembering. A cache of results is not kept, because
+    building chart histories fills it with thousands of one-off spans,
+    11 to 16 MB on a 243-device house.
     Indices returned are into `daily`.
     """
     if days <= 0:

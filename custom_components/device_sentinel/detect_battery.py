@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.27.8 (2026-10-27)
+# File: detect_battery.py, Version: 0.27.10 (2026-10-27)
 
 """Battery: the level threshold and what is tracked.
 
@@ -17,15 +17,13 @@ a month. A projection landing inside the chosen horizon is flagged
 while the number still looks comfortable.
 
 Time left is said in words rather than a count of days on purpose.
-The projection is a range from the cell's own six weeks (#704), not a
+The projection is a range from the cell's own six weeks (rule BAT-13), not a
 date: a failing cell often does not keep the pace it was fitted on,
 so it ranks which cell to replace first.
 
-One of six subject modules split out of coordinator.py, which
-had reached four thousand lines. The seam is the subject, chosen
-by measuring which methods call which: storage and interventions
-call nothing outside themselves at all, and the three detectors
-reach out fewer than ten times each (ruling #201).
+One of six subject modules split out of coordinator.py. The seam is
+the subject, chosen by measuring which methods call which: the three
+detectors reach out fewer than ten times each (rule CODE-11).
 
 A file split rather than a boundary. These are mixins on the
 coordinator and read its state freely, so `self` is the
@@ -95,7 +93,7 @@ from .records import BAD_STATES, SERIES_MEMO_SIZE, series_key
 
 def mark_raw_battery(record: dict[str, Any]) -> bool:
     """Mark a record as on Zigbee's raw battery scale and halve what
-    it already stored (ruling #545). Idempotent: a record already
+    it already stored (rule BAT-02). Idempotent: a record already
     marked is left alone. Returns whether it marked it."""
     if record.get(DEV_BATTERY_RAW_SCALE):
         return False
@@ -118,12 +116,11 @@ def mark_raw_battery(record: dict[str, Any]) -> bool:
 
 
 def clear_raw_battery(record: dict[str, Any], why: str) -> bool:
-    """Clear a raw-scale mark so the device is measured again (ruling
-    #545, amended): at a battery change, and at a firmware update,
-    either of which can change the scale a device reports on. The
-    history already stored stays in percent. Until the scale is proved
-    again, a reading over 100 is ignored, as it was before the first
-    proof. Returns whether a mark was cleared."""
+    """Clear a raw-scale mark so the device is measured again: at a
+    battery change, and at a firmware update, either of which can
+    change the scale a device reports on. The history already stored
+    stays in percent. Until the scale is proved again, a reading over
+    100 is ignored. Returns whether a mark was cleared (rule BAT-02)."""
     if not record.get(DEV_BATTERY_RAW_SCALE):
         return False
     record[DEV_BATTERY_RAW_SCALE] = False
@@ -138,7 +135,7 @@ def clear_raw_battery(record: dict[str, Any], why: str) -> bool:
 
 def raw_battery_history(record: dict[str, Any]) -> bool:
     """Whether a stored record carries a battery level only the raw
-    scale can explain: over 100 and at most 200 (ruling #545)."""
+    scale can explain: over 100 and at most 200 (rule BAT-02)."""
     if record.get(DEV_BATTERY_RAW_SCALE):
         return False
     values: list[Any] = [record.get(DEV_BATTERY_VALUE), record.get(DEV_BATTERY_REPLACED_PENDING)]
@@ -151,7 +148,7 @@ def raw_battery_history(record: dict[str, Any]) -> bool:
         if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
     ]
     # Stored history counts as proof the same way live readings do:
-    # daily levels over 110 on two different days (ruling #545). A
+    # daily levels over 110 on two different days (rule BAT-02). A
     # record whose levels leave the raw scale altogether is not raw; it
     # is the range check's to repair.
     if not all(0.0 <= v <= BATTERY_RAW_HIGHEST for v in numbers):
@@ -174,7 +171,7 @@ _STEPS_MEMO: dict[tuple[Any, ...], str] = {}
 
 
 def _battery_steps_of(series: tuple[float, ...], stored: int) -> str:
-    """How a cell reports, worked out once per series (0.23.19).
+    """How a cell reports, worked out once per series.
 
     Asked for every battery device every minute by the problem list
     and the notification card; its answer changes only when the
@@ -209,17 +206,17 @@ class BatteryMixin:
         can later divide across rather than a false cliff. Only records
         when there is a level to record, so a device without a battery
         keeps an empty series. The trend is judged from this series:
-        falling, accelerating and the time left (0.23.6).
+        falling, accelerating and the time left (rule BAT-05).
         """
         level = record.get(DEV_BATTERY_VALUE)
         if level is None:
             return
         day = getattr(self, "_folding_day", None)
         if day is not None:
-            # A day the device was not heard measured nothing (0.24.4,
-            # issue #18): the level held is yesterday's, and writing it
-            # again invented a flat day and then a cliff. The day is
-            # left out, and its date reads as skipped.
+            # A day the device was not heard measured nothing: the level
+            # held is yesterday's, and writing it again would invent a
+            # flat day and then a cliff. The day is left out, and its
+            # date reads as skipped (rule BAT-05).
             heard = record.get(DEV_LAST_ACTIVITY)
             start = dt_util.start_of_local_day(day).timestamp()
             if not isinstance(heard, (int, float)) or isinstance(heard, bool) or heard < start:
@@ -229,7 +226,7 @@ class BatteryMixin:
         added = False
         try:
             self._roll_battery_level(record, device_id, level)
-            # Every way through the roll adds the day's level (0.24.6);
+            # Every way through the roll adds the day's level;
             # at the History days limit it also trims one, so the length
             # alone cannot say a day was added.
             added = True
@@ -253,15 +250,11 @@ class BatteryMixin:
         rose = previous is not None and self._battery_replaced(previous, level)
         pending = record.get(DEV_BATTERY_REPLACED_PENDING)
         if rose and pending is None:
-            # A rise is a candidate, not a verdict (ruling #405).
-            # Wiping on one sample means any transient reading taken
-            # at the rollover erases a history: a cell that reads 0
-            # during a reconnect and its real value the next night
-            # is indistinguishable from a replacement, and the second
-            # fleet's own brief records exactly that shape, a battery
-            # falling to 100 percent and recovering nought seconds
-            # later. So the rise is remembered and the series keeps
-            # growing; the next sample decides.
+            # A rise is a candidate, not a verdict, because a cell that
+            # reads 0 during a reconnect and its real value the next
+            # night looks like a replacement. So the rise is remembered
+            # and the series keeps growing; the next sample decides
+            # (rule BAT-06).
             record[DEV_BATTERY_REPLACED_PENDING] = previous
             self._note_battery_step(record, previous, level)
             series.append(level)
@@ -270,8 +263,8 @@ class BatteryMixin:
         if pending is not None:
             record[DEV_BATTERY_REPLACED_PENDING] = None
             # An empty history means the person already gave the day
-            # and the history split there (#702): nothing is left to
-            # confirm (found by review).
+            # and the history split there: nothing is left to confirm
+            # (rule BAT-07).
             if not series or not self._battery_replaced(pending, level):
                 # The rise did not hold against the reading before
                 # it, so the day it appeared was a bad sample and the
@@ -284,7 +277,7 @@ class BatteryMixin:
             # not climb: this is a new one. The series it replaces is
             # kept, unread, and the cell in the device now starts at
             # day one so nothing learned about its predecessor is
-            # projected onto it (ruling #397).
+            # projected onto it (rule BAT-06).
             # The day the rise appeared is the new cell's first day,
             # not the old cell's last, so it moves across rather than
             # being kept with the history it does not belong to or
@@ -309,22 +302,22 @@ class BatteryMixin:
                     (dates[0] if dates else day) - timedelta(days=1),
                 )
             record[DEV_BATTERY_DAILY_PREVIOUS] = kept_previous + list(series[:-1])
-            # The dates split as the entries do (0.24.4): the old cell's
+            # The dates split as the entries do: the old cell's
             # go with its history, the new cell's first day stays.
             set_dates(record, FAMILY_BATTERY_PREVIOUS, kept_dates + dates[:-1])
             set_dates(record, FAMILY_BATTERY, dates[-1:])
             replaced_before = record.get(DEV_BATTERY_REPLACED_AT)
             # When the battery that ends went in, read before this
-            # replacement takes its place (#739).
+            # replacement takes its place (rule BAT-08).
             started = self.battery_start(device_id, record)  # type: ignore[attr-defined]
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
             # The replacement waits for a person, keeping what Cancel
-            # puts back (rulings #701, #702); a day the person gave
-            # just before stands (found by review).
+            # puts back; a day the person gave just before stands
+            # (rule BAT-07).
             self._note_detected_replacement(  # type: ignore[attr-defined]
                 record, device_id, dates[-1] if dates else None, replaced_before,
             )
-            # The battery that ended, for the lives log (#739). A rise
+            # The battery that ended, for the lives log (rule BAT-08). A rise
             # that is the replacement the person already dated is the
             # same battery: its row is written again to their day, now
             # with the old cell's days up to the rise, never added twice.
@@ -335,13 +328,13 @@ class BatteryMixin:
             else:
                 self.battery_life_ended(device_id, record, dates[-1] if dates else None, started)  # type: ignore[attr-defined]
             # A fresh cell can change how often a device reports, so the
-            # Log-Normal Percentile counts again from here (#542, amended).
+            # Log-Normal Percentile counts again from here (rule FRZ-04).
             record[DEV_LOGNORMAL_DAYS] = 0
-            # A new battery is measured afresh (ruling #545, amended
-            # 29 September 2026): the raw mark lasts until the next
-            # battery change, and the new cell proves its scale again.
+            # A new battery is measured afresh: the raw mark lasts until
+            # the next battery change, and the new cell proves its scale
+            # again (rule BAT-02).
             clear_raw_battery(record, "a battery change")
-            # A new cell is judged afresh (0.23.1).
+            # A new cell is judged afresh (rule BAT-09).
             record[DEV_BATTERY_COARSE_DROPS] = 0
             record[DEV_BATTERY_LOW] = False
             record[DEV_BATTERY_SINCE] = None
@@ -366,7 +359,7 @@ class BatteryMixin:
         the next is counted; any change smaller than that returns the
         cell to smooth, which is also how a cell whose integration
         starts reporting finer is re-evaluated. A day that did not
-        change says nothing (0.23.1).
+        change says nothing (rule BAT-09).
         """
         if not isinstance(previous, (int, float)):
             return
@@ -384,16 +377,14 @@ class BatteryMixin:
     def battery_steps(record: dict[str, Any]) -> str:
         """Return how a cell reports: smooth, not enough data, or coarse.
 
-        Tim Plas's S02 reports in 10-point steps. It sat at 40 for
-        nine days, dropped once to 30, and the seven-day trend read
-        the single step as a steep fall and listed it as empty in
-        about a month. A cell is coarse after two falls of five points
+        Some cells report in 10-point steps, and a trend reads a
+        single step as a steep fall. A cell is coarse after two falls of five points
         or more with no smaller change in its retained history, which
         is at least 30 days; a battery that accelerates toward empty
         shows smaller changes on its way down, so it never qualifies,
         and neither does one that has never changed. Its forecast is
         withheld from the first such fall, and once coarse it is
-        judged against the low threshold alone (0.23.1).
+        judged against the low threshold alone (rule BAT-09).
 
         The stored count keeps a second step that lands after the
         first has aged out; the history's own count covers a cell
@@ -425,7 +416,7 @@ class BatteryMixin:
         second exists because a cell changed at eighty reads a
         hundred, which the first test misses; its lower bound exists
         because a cell already near full can drift the last few
-        points on its own (ruling #397).
+        points on its own (rule BAT-06).
         """
         if level - previous >= BATTERY_REPLACED_RISE:
             return True
@@ -441,10 +432,10 @@ class BatteryMixin:
         Percentage batteries are sensors with device_class battery;
         binary low flags are binary_sensors with device_class battery.
         Chargers, battery_charging flags, and the like carry other
-        device classes and are correctly ignored. The foreign
-        batteries ruling #248 filtered by name (replaced by #267), a
+        device classes and are correctly ignored. Foreign batteries, a
         phone's car and its paired watch, arrive on an integration the
-        exclude list now refuses whole, so no name test is left here.
+        exclude list refuses whole, so no name test is needed here
+        (rule BAT-01).
         """
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
@@ -465,7 +456,7 @@ class BatteryMixin:
     ) -> None:
         """Judge one device's battery against the threshold.
 
-        The hysteresis, carried from Battery Sentinel 1.2.0: flag at
+        The hysteresis, carried from the Battery Sentinel blueprint: flag at
         or below the threshold; once flagged, stay flagged until the
         value climbs past threshold plus the clear margin, so a cell
         hovering exactly at the line never flaps. The margin is small
@@ -499,13 +490,10 @@ class BatteryMixin:
             except ValueError:
                 return
             if not math.isfinite(level):
-                # Infinity and NaN parse as floats and are not
-                # levels (ruling #347). A cell reporting -inf sits
-                # below every threshold, so it flagged low, reached
-                # the notification card, and the card's int(level)
-                # raised OverflowError, taking the card update down.
-                # Found by the 0.18.3 adversarial round; present
-                # since the card was written.
+                # Infinity and NaN parse as floats and are not levels.
+                # A cell reporting -inf sits below every threshold, and
+                # the card's int(level) would raise OverflowError
+                # (rule BAT-02).
                 LOGGER.debug(
                     "Battery reading refused as not a number: %s is %s",
                     battery_entity_id,
@@ -515,10 +503,10 @@ class BatteryMixin:
             if not record.get(DEV_BATTERY_RAW_SCALE) and (
                 BATTERY_RAW_PROOF < level <= BATTERY_RAW_HIGHEST
             ):
-                # Evidence of Zigbee's raw half-percent scale (ruling
-                # #545): no percentage exceeds 100. Proof takes a
-                # reading over 110 on two different days, so a percent
-                # device that glitches once is never halved.
+                # Evidence of Zigbee's raw half-percent scale: no
+                # percentage exceeds 100. Proof takes a reading over 110
+                # on two different days, so a percent device that
+                # glitches once is never halved (rule BAT-02).
                 today = dt_util.now().date().isoformat()
                 first = record.get(DEV_BATTERY_RAW_FIRST_DAY)
                 if first is None:
@@ -539,7 +527,7 @@ class BatteryMixin:
             if not BATTERY_LEVEL_LOWEST <= level <= BATTERY_LEVEL_HIGHEST:
                 # Finite, and still not a percentage: ignored, never
                 # brought into range, and the last verdict holds
-                # (#540, amended 29 September 2026).
+                # (rule BAT-02).
                 LOGGER.debug(
                     "device_sentinel: %s reported %s, which is outside "
                     "0 to 100%%; ignored",
@@ -562,14 +550,10 @@ class BatteryMixin:
         record[DEV_BATTERY_VALUE] = level
         if is_low and not was_low and self._in_startup_grace():
             # A battery that reads low for the first time inside the
-            # startup window is held, not flagged (ruling #346). At a
-            # restart an entity can restore a stale or transient low
-            # before its first real reading corrects it, and the flag
-            # opened and resolved within seconds, twice per restart,
-            # on Tim Plas's fleet: "battery fell to 100% and recovered
-            # 0s later" led his brief on 26 August. Freeze judgments
-            # already hold through this window (ruling #291); the
-            # battery flag now holds the same way. A cell that is
+            # startup window is held, not flagged, because at a restart
+            # an entity can restore a stale or transient low before its
+            # first real reading corrects it. Freeze judgments hold
+            # through the same window (rules BAT-03, WATCH-10). A cell that is
             # genuinely low still reads low when the window shuts,
             # and the next evaluation flags it then. A flag already
             # standing from before the restart is untouched: this
@@ -581,7 +565,7 @@ class BatteryMixin:
             return
         if is_low and not was_low:
             # The first low since the last replacement starts the time
-            # left running to empty (ruling #735). Before the flag is
+            # left running to empty (rule BAT-13). Before the flag is
             # set, so the latch reads the flag's old state.
             if not battery_latched(record):
                 record[DEV_BATTERY_FIRST_LOW] = dt_util.utcnow().isoformat()
@@ -629,10 +613,9 @@ class BatteryMixin:
         area, level, since (below-threshold-since), last_seen (the
         battery entity's own last report), age.
 
-        The kind field the blueprint's contract carried was written
-        here and read nowhere, so it went with the rename that gave
-        the problem kinds one vocabulary (ruling #299). A name for a
-        value nobody consumes is a name that will be wrong later.
+        The blueprint contract's kind field is left out, because
+        nothing read it and the problem kinds have one vocabulary
+        (rule LIST-02).
         """
         dev_reg = dr.async_get(self.hass)
         area_reg_names: dict[str, str] = {}
@@ -652,7 +635,7 @@ class BatteryMixin:
             if not record or not record.get(DEV_BATTERY_LOW):
                 continue
             device = dev_reg.async_get(device_id)
-            # Named by the ladder (ruling #402), never the raw id.
+            # Named by the ladder, never the raw id (rule DEV-02).
             device_name = self._device_name(device_id)
             area_name = "Unassigned"
             if device and device.area_id:
@@ -696,11 +679,11 @@ class BatteryMixin:
 
         The Battery: Falling sensor. A different set from Battery:
         Low and a different question: low is a level that has been
-        crossed, falling is a level that is going to be (ruling #209).
-        Since 0.27.0 only a cell at or under three times the low
-        threshold is judged falling at all (#725): further up, no
-        history yet says when a battery will reach it. Only a cell
-        speeding up is counted here (#731).
+        crossed, falling is a level that is going to be (rule BAT-14).
+        Only a cell at or under three times the low threshold is judged
+        falling at all, because further up no history yet says when a
+        battery will reach it (rule BAT-10). Only a cell speeding up is
+        counted here (rule BAT-14).
 
         Read from the battery rows Battery Trends shows, so the sensor,
         that page and the daily brief cannot disagree about which cells
@@ -715,7 +698,7 @@ class BatteryMixin:
                 "level": row["level"],
                 "per_day": round(row["slope"], 2),
                 "left": self.battery_time_left_range(row["days"], row.get("days_far")),  # type: ignore[attr-defined]
-                # The clause with its target: "reaches 15% in ..." (#730).
+                # The clause with its target: "reaches 15% in ..." (rule BAT-13).
                 "until": self.battery_until_words(row),  # type: ignore[attr-defined]
             }
             for row in self._battery_brief_rows()
@@ -741,11 +724,12 @@ class BatteryMixin:
 
     def _battery_muted(self, device_id: str) -> bool:
         """Return whether a device is muted from battery judgment
-        only. Device-level by ruling, so a battery-entity re-election
+        only. Device-level, so a battery-entity re-election
         cannot dodge it; the integration test uses the owning domain,
         so one tick covers a whole family of phones. The label test
         reads the device's own labels, which is how a device can be
-        muted from battery judgment without opening this dialog."""
+        muted from battery judgment without opening this dialog
+        (rule BAT-04)."""
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
             CONF_BATTERY_MUTED_INTEGRATIONS, []
@@ -757,8 +741,7 @@ class BatteryMixin:
             return True
         if device_id in options.get(CONF_BATTERY_MUTED_DEVICES, []):
             return True
-        # A hub's mute covers the devices it controls (James, 14
-        # October 2026).
+        # A hub's mute covers the devices it controls (rule STACK-09).
         return self.hub_mutes(device_id, self._battery_muted)  # type: ignore[attr-defined]
 
     @property

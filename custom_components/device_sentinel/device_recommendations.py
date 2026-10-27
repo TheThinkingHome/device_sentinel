@@ -3,34 +3,33 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.4 (2026-10-25)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.10 (2026-10-27)
 
-"""Recommendations about single devices, for the Recommendations tab (0.24.9).
+"""Recommendations about single devices, for the Recommendations tab.
 
-Seven kinds, each one card listing the devices it covers, worst first:
-a device with no power set, one whose Last Seen sensor is switched
-off, one with no area, devices sharing a name, two about types
-(0.25.3): a device with no type, and a model whose devices have more
-than one; and a device slow to judge for freeze (0.26.0, ruling #637),
-offered a freeze mute. Watched devices only. A device leaves its card when its condition is gone,
+Each card lists the devices it covers, worst first (rule REC-04): a
+device with no power set, the switched-off sensor cards, one with no
+area, devices sharing a name, a device slow to judge for freeze,
+offered a freeze mute (rule REC-06), and two about types: a device
+with no type, and a model whose devices have more than one. Watched
+devices only. A device leaves its card when its condition is gone,
 as the other recommendations do.
 
-Since 0.26.7: three more cards, Battery Sensor Switched Off, Signal
-Sensor Switched Off and Z-Wave Status Switched Off (ruling #698), read
-from a device's own entities only; and each row, and each written
-recommendation, is acknowledged on its own with a checkbox that can be
-unchecked again (#699). An acknowledgement is kept in the answers file
-and forgotten when its device leaves the card, or its line goes, so a
-problem that comes back is active again. A sensor a person switched
-off themselves starts acknowledged. Each card and line says whether
-Simple shows it (#695); the dashboard counts what is unchecked in the
-cards its mode shows (#700).
+The switched-off cards are read from a device's own entities only
+(rule REC-05). Each row, and each written recommendation, is
+acknowledged on its own with a checkbox that can be unticked again.
+An acknowledgement is kept in the answers file and forgotten when its
+device leaves the card, or its line goes, so a problem that comes back
+is active again. A sensor a person switched off themselves starts
+acknowledged (rule REC-07). Each card and line says whether Simple
+shows it (rule REC-09); the dashboard counts what is unticked in the
+cards its mode shows (rule REC-08).
 
 The tab lists every device, and each can be put right from the list.
 The emailed brief, and its file, carries one line for each kind, with
-its count of devices not acknowledged, pointing to the tab (James, 6
-October 2026; #699). The two type cards stay out of the brief:
-a missing or mixed type is not a fault (James, 9 October 2026).
+its count of devices not acknowledged, pointing to the tab. The slow
+card and the two type cards stay out of the brief, because a slow
+device or a missing or mixed type is not a fault (rule REC-10).
 """
 
 from __future__ import annotations
@@ -57,12 +56,12 @@ KIND_SLOW = "slow"
 KIND_BATTERY_OFF = "battery_off"
 KIND_SIGNAL_OFF = "signal_off"
 KIND_NODE_STATUS_OFF = "node_status_off"
-# A battery device's own voltage sensor, all switched off (0.27.3),
-# listed only for a device with a battery reading.
+# A battery device's own voltage sensor, all switched off, listed only
+# for a device with a battery reading.
 KIND_VOLTAGE_OFF = "voltage_off"
 
 # The switched-off cards and the kind of sensor each one turns on
-# (ruling #698).
+# (rule REC-05).
 SWITCHED_OFF_CARDS = {
     KIND_LAST_SEEN: "last_seen",
     KIND_BATTERY_OFF: "battery",
@@ -70,11 +69,11 @@ SWITCHED_OFF_CARDS = {
     KIND_NODE_STATUS_OFF: "node_status",
     KIND_VOLTAGE_OFF: "voltage",
 }
-# The cards Simple shows (ruling #695): the ones that stop a missed or
-# false alarm. Confirm Battery Replacement joins them (#701). Signal
-# Sensor Switched Off and Battery Voltage Switched Off join them too:
-# Simple's device page offers no turn-on button, so each sensor a
-# Simple user may need on has its card here (rule REC-09).
+# The cards Simple shows: the ones that stop a missed or false alarm,
+# with Confirm Battery Replacement. Signal Sensor Switched Off and
+# Battery Voltage Switched Off join them too, because Simple's device
+# page offers no turn-on button, so each sensor a Simple user may need
+# on has its card here (rule REC-09).
 KIND_BATTERY_CONFIRM = "battery_confirm"
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
@@ -102,9 +101,9 @@ class DeviceRecommendationsMixin:
         switched each off.
 
         Only a device with a battery reading whose voltage nothing else
-        reports, such as ZHA's battery_voltage on its battery sensor
-        (0.27.3). One place, so the card and the diagnostics download
-        count the same devices (rule REC-09).
+        reports, such as ZHA's battery_voltage on its battery sensor.
+        One place, so the card and the diagnostics download count the
+        same devices (rule REC-09).
         """
         return {
             d: who for d, who in self.switched_off_devices("voltage").items()  # type: ignore[attr-defined]
@@ -135,8 +134,9 @@ class DeviceRecommendationsMixin:
             return sorted(listed, key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
 
         cards: list[dict[str, Any]] = []
-        # A detected battery replacement waits for a person (ruling #701):
-        # first, because it is a question, and in Simple as well.
+        # A detected battery replacement waits for a person, so it comes
+        # first, because it is a question, and in Simple as well
+        # (rule REC-04).
         confirm = [row for row in self.battery_confirm_rows() if row["device_id"] in watched]  # type: ignore[attr-defined]
         if confirm:
             by_id = {row["device_id"]: row for row in confirm}
@@ -181,8 +181,8 @@ class DeviceRecommendationsMixin:
                     "warning names the battery to buy."
                 ),
             })
-        # The switched-off cards (ruling #698): a device is listed when
-        # none of its own entities of the kind is on.
+        # The switched-off cards: a device is listed when none of its
+        # own entities of the kind is on (rule REC-05).
         off = {
             kind: self.switched_off_devices(sensor)  # type: ignore[attr-defined]
             for kind, sensor in SWITCHED_OFF_CARDS.items()
@@ -200,7 +200,7 @@ class DeviceRecommendationsMixin:
             (KIND_SIGNAL_OFF, "Signal Sensor Switched Off", "a signal sensor",
              "With it on, Device Sentinel charts the device's signal and tells you when "
              "a signal reading is stuck."),
-            # James's words, 24 October 2026.
+            # The card's own words (rule REC-05).
             (KIND_VOLTAGE_OFF, "Battery Voltage Switched Off", "a battery voltage sensor",
              lambda n: (
                 "This device has a battery voltage entity" if n == 1
@@ -211,7 +211,7 @@ class DeviceRecommendationsMixin:
             ids = [d for d in watched if d in off[kind]]
             if not ids:
                 continue
-            # A sentence, or one that follows the count (0.27.3).
+            # A sentence, or one that follows the count.
             gain = gain_words(len(ids)) if callable(gain_words) else gain_words
             listed = rows(ids)
             for row in listed:
@@ -271,15 +271,15 @@ class DeviceRecommendationsMixin:
                     "notifications. Rename them from the Recommendations tab."
                 ),
             })
-        # A device slow to judge for freeze (0.26.0, ruling #637): its
-        # wait in use is over SLOW_REPORTER_SECONDS, it reports on a
-        # person's habits rather than a rhythm, and a freeze verdict for
-        # it comes late and is often noise. The card offers a freeze
-        # mute and changes nothing itself; a device already muted for
-        # freeze or for everything, and an awake ESPHome device #636 or an
-        # available Matter button, light, plug or switch #710 and #718 never judge frozen,
-        # are left off. Not in the emailed brief: a slow device is not
-        # a fault (#617's reasoning). The text is James's.
+        # A device slow to judge for freeze: its wait in use is over
+        # SLOW_REPORTER_SECONDS, it reports on a person's habits rather
+        # than a rhythm, and a freeze verdict for it comes late and is
+        # often noise. The card offers a freeze mute and changes nothing
+        # itself. A device already muted for freeze or for everything,
+        # and one the freeze rules never judge frozen, such as an awake
+        # ESPHome device or an available Matter button, light, plug or
+        # switch, are left off (rule REC-06). Not in the emailed brief,
+        # because a slow device is not a fault (rule REC-10).
         slow = [d for d in watched if self._slow_reporter(d)]  # type: ignore[attr-defined]
         if slow:
             cards.append({
@@ -296,8 +296,8 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": rows(slow),
             })
-        # Last: a missing or mixed type (0.25.3). The type decides a Matter
-        # device's freeze rule since 0.27.0 (#718); for any other it changes
+        # Last: a missing or mixed type. The type decides a Matter
+        # device's freeze rule (rule STACK-06); for any other it changes
         # no judgment.
         kinds = {d: self.type_words(d) for d in watched}  # type: ignore[attr-defined]
         untyped = [d for d in watched if not kinds[d]]
@@ -312,8 +312,8 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": rows(untyped),
             })
-        # Models whose devices disagree (0.25.3): a device given its own
-        # type apart from the rest of its model, by an owner or by its
+        # Models whose devices disagree: a device given its own type
+        # apart from the rest of its model, by an owner or by its
         # entities. Devices with no type are the card above's.
         by_model: dict[str, list[str]] = {}
         for device_id in watched:
@@ -344,7 +344,7 @@ class DeviceRecommendationsMixin:
     # ------------------------------------------------- acknowledgement
 
     def _acks(self) -> dict[str, Any]:
-        """The acknowledgements, read from the answers file (#699)."""
+        """The acknowledgements, read from the answers file (rule REC-07)."""
         found = getattr(self, "_recommendation_acks", None)
         if not isinstance(found, dict):
             found = {"devices": {}, "lines": {}}
@@ -353,16 +353,15 @@ class DeviceRecommendationsMixin:
 
     def _acknowledged_cards(self, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Mark each row acknowledged or not, and word each card's brief
-        line for the rows still active (ruling #699).
+        line for the rows still active (rule REC-07).
 
         A row's tick is the person's own. A switched-off sensor the
-        person switched off themselves starts ticked (Frenck's review,
-        19 October 2026): it is shown, so the person sees Device
-        Sentinel would like it on, and left out of the count and the
-        Brief. This only reads: ticks are forgotten at the midnight run
-        alone (`prune_recommendation_acks`), so the report writer, off
-        Home Assistant's own thread, never changes them (found by
-        review).
+        person switched off themselves starts ticked: it is shown, so
+        the person sees Device Sentinel would like it on, and left out
+        of the count and the Brief. This only reads: ticks are
+        forgotten at the midnight run alone
+        (`prune_recommendation_acks`), so the report writer, off Home
+        Assistant's own thread, never changes them.
         """
         kept: dict[str, dict[str, bool]] = self._acks().get("devices") or {}
         for card in cards:
@@ -371,7 +370,7 @@ class DeviceRecommendationsMixin:
             active = 0
             for row in card["devices"]:
                 default = bool(row.get("by_user"))
-                # A battery replacement is answered, not ticked (#701).
+                # A battery replacement is answered, not ticked (rule REC-04).
                 row["acknowledged"] = (
                     False if kind == KIND_BATTERY_CONFIRM
                     else bool(own.get(row["device_id"], default))
@@ -387,7 +386,7 @@ class DeviceRecommendationsMixin:
 
     def recommendation_lines(self) -> list[dict[str, Any]]:
         """The written recommendations, each marked acknowledged or not
-        (ruling #699). Reads only, as `_acknowledged_cards` does."""
+        (rule REC-07). Reads only, as `_acknowledged_cards` does."""
         entries = self._recommendation_entries()  # type: ignore[attr-defined]
         kept: dict[str, bool] = self._acks().get("lines") or {}
         for entry in entries:
@@ -396,13 +395,12 @@ class DeviceRecommendationsMixin:
 
     def prune_recommendation_acks(self) -> None:
         """Forget each tick whose device has left its card or whose
-        line is gone (ruling #699), at the midnight run only.
+        line is gone, at the midnight run only (rule REC-07).
 
         One place, on Home Assistant's own thread, at a time every
         reader has long since been heard: a start is not a midnight, so
         a line missing for a moment while a reader starts never loses
-        its tick (found by review). The new dictionaries are put in
-        place whole.
+        its tick. The new dictionaries are put in place whole.
         """
         acks = self._acks()
         cards = {card["kind"]: {row["device_id"] for row in card["devices"]}
@@ -447,7 +445,7 @@ class DeviceRecommendationsMixin:
 
     def _acks_read(self, payload: Any) -> int:
         """Take the acknowledgements from the answers file; anything not
-        in their shape is dropped and counted (#370's rule)."""
+        in their shape is dropped and counted (rule STOR-09)."""
         dropped = 0
         devices: dict[str, dict[str, bool]] = {}
         lines: dict[str, bool] = {}
@@ -487,11 +485,10 @@ class DeviceRecommendationsMixin:
         }
 
     def _slow_reporter(self, device_id: str) -> bool:
-        """Whether a watched device's wait in use is over the slow line (#637).
+        """Whether a watched device's wait in use is over the slow line (rule REC-06).
 
         A device muted for everything is never judged frozen either, so
-        it is left off as a freeze-muted one is (adversarial round two,
-        12 October 2026).
+        it is left off as a freeze-muted one is.
         """
         if device_id in self._muted_devices:  # type: ignore[attr-defined]
             return False
@@ -500,23 +497,23 @@ class DeviceRecommendationsMixin:
         record = self.data.get(DATA_DEVICES, {}).get(device_id)  # type: ignore[attr-defined]
         if not isinstance(record, dict):
             return False
-        # Left off only where judgment leaves it (#636, #640): an awake
-        # ESPHome device, connected or dropped (a drop is judged
-        # unavailable, never frozen), with no frozen verdict standing. Otherwise the freeze rule can still judge it, so
-        # the card still offers the mute (adversarial round five,
-        # 12 October 2026).
+        # Left off only where judgment leaves it (rule STACK-07): an
+        # awake ESPHome device, connected or dropped (a drop is judged
+        # unavailable, never frozen), with no frozen verdict standing.
+        # Otherwise the freeze rule can still judge it, so the card
+        # still offers the mute.
         if (
             (
                 self._awake_esphome(device_id)  # type: ignore[attr-defined]
                 or self._dropped_esphome(device_id)  # type: ignore[attr-defined]
-                # a Matter device of a type that reports only on use, available (#710, #718).
+                # a Matter device of a type that reports only on use, available (rule STACK-06).
                 or self._matter_available_now(device_id)  # type: ignore[attr-defined]
             )
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
         ):
             return False
-        # Judged by its hub (#664): never judged frozen, so a freeze
-        # mute offers nothing.
+        # Judged by its hub: never judged frozen, so a freeze mute
+        # offers nothing (rule STACK-09).
         if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
             return False
         window = self._freeze_window(record)  # type: ignore[attr-defined]

@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_lutron.py, Version: 0.27.8 (2026-10-27)
+# File: study_lutron.py, Version: 0.27.10 (2026-10-27)
 
-"""What a Lutron house can tell us, for a detector we cannot yet build.
+"""What a Lutron house shows, for a detector Device Sentinel cannot build yet.
 
-The fourth fleet ran a probe on two Caseta hubs for two days, and it
-settled the shape of a Lutron outage. A hub's session drops while
+A probe on two Caseta hubs settled the shape of a Lutron outage. A
+hub's session drops while
 `is_connected()` stays True throughout. No entity moves: the lights
 hold their last state and refuse commands, and nothing reads
 unavailable. A Lutron light reports only when a person uses it, so its
@@ -18,12 +18,11 @@ config entry then sits in setup_retry. Every Pico button entity is
 disabled, so a Pico has no entity at all and its presses arrive only as
 a bus event.
 
-What the probe could not settle is whether any of that is visible from
-a surface an integration may use. It added a TCP check against the
-hub's port 8081 to answer that, and the campaign to prove it was never
-run. Since 0.27.8 nothing is sent to the hub (rules STACK-11, STACK-13):
-its session says whether it is connected. So this gathers the evidence, from any Lutron house that
-turns Extended Diagnostics on (0.22.26):
+The probe could not settle whether any of that is visible from a
+surface an integration may use. Nothing is sent to the hub; its session
+says whether it is connected (rules STACK-11, STACK-13). So this
+gathers the evidence from any Lutron house that turns Extended
+Diagnostics on:
 
 - each hub's config entry, its state, host and port, and how many
   devices sit behind it;
@@ -32,11 +31,10 @@ turns Extended Diagnostics on (0.22.26):
   a session handle exists and is truthy, each read defensively and
   never assumed present;
 - the entity picture per hub: how many entities are enabled, how many
-  disabled, and which devices have none, the Pico case behind issue
-  #14.
+  disabled, and which devices have none, the Pico case.
 
-It detects nothing and changes no verdict. Lutron support is scheduled
-after the deprecation, and this is the evidence it will be built on.
+It detects nothing and changes no verdict. Lutron support will be built
+on this evidence (rule STACK-09).
 """
 
 from __future__ import annotations

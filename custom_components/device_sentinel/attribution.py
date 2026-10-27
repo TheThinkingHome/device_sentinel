@@ -3,52 +3,31 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.23.19 (2026-09-30)
+# File: attribution.py, Version: 0.27.10 (2026-10-27)
 
 """Which recorded event explains an incident, and which do not.
 
-WHY THIS EXISTS. The cause of a recovery used to be borrowed from the
-device's most recent silence episode, whichever one that was. When an
-incident closed with no episode behind it, which is exactly what a
-broker outage produces, the lookup returned a fact from a week
-earlier. On the reference fleet on 2026-08-06 that put four different
-explanations on one event: 74 devices recovered inside 8.5 seconds
-from a single broker outage, and the brief credited 38 to a bridge
-reconnect, 3 to a reboot, and 24 to nothing, with devices resolving in
-the same millisecond disagreeing. The wording was wrong rather than
-merely inconsistent (ruling #228).
+An incident is explained only by a recorded intervention whose window
+overlaps it and whose scope covers the device. Where none covers it,
+the device recovered on its own and the brief says so. A restart or an
+outage is found like any window but credited with no recovery, because
+it says nothing about the devices (rule BRIEF-05).
 
-WHAT REPLACES IT. An incident is explained by a recorded intervention
-whose window overlaps it and whose scope covers the device. Nothing
-else. Where no intervention covers it, the device recovered on its
-own and the brief says so rather than naming a lever. A restart or an
-outage is found like any window but credited with no recovery: it
-says nothing about the devices (#535, amending #228).
+The explanation must have been in effect when the silence began. That
+separates a cause from its own symptom: a broker outage takes devices
+down, and the burst of them returning is recorded as a storm, but only
+the broker window was open when the device went quiet (rule BRIEF-05).
+The same test keeps the burst after a nightly restart from reading as
+an integration reload.
 
-AN EXPLANATION MUST HAVE BEEN IN EFFECT WHEN THE SILENCE BEGAN. That
-is the whole selection rule, and it separates a cause from its own
-symptom without ranking anything. A broker outage at 01:47 takes
-devices at 01:50 and they return at 02:04, and the burst of them
-returning is itself recorded as a storm at 02:04. Both cover the
-device and both overlap the incident, but only the broker window was
-open when the device went quiet, so only the broker can have caused
-it. Ranking by narrowness picked the storm and named a consequence as
-the cause (ruling #229). The same test fixes the nightly reboot,
-where the burst of devices returning inside startup grace is the
-restart rather than an integration reloading.
+Scope matters as much. A Zigbee bridge reconnecting cannot revive a
+HomeKit accessory. So a restart covers every device, a broker covers
+the MQTT domain, a bridge or a pairing window covers its own stack,
+and a storm covers only its own integration.
 
-SCOPE IS THE HALF THAT MATTERS. A Zigbee bridge reconnecting cannot
-revive a HomeKit accessory, and crediting it with one is the fault
-this file exists to prevent. So a restart covers every device, a
-broker covers the MQTT domain, a bridge or a pairing window covers
-the devices of its own stack, and a storm covers only its own
-integration.
-
-WHY AT RENDER TIME. A broker outage is written up to a minute after
-its devices drop, so an opening cannot be attributed when it is
-recorded, only afterwards. Attributing on the way out also means the
-687 incident rows already on disk are read correctly, rather than
-only those recorded from this release onward.
+Attribution runs at render time because a broker outage is written up
+to a minute after its devices drop, and so incident rows already on
+disk are read the same way.
 """
 
 from __future__ import annotations
@@ -90,14 +69,8 @@ _PAIRS = {
     SYS_BROKER_DOWN: SYS_BROKER_UP,
     SYS_PAIRING_OPEN: SYS_PAIRING_CLOSED,
     SYS_STORM_OPEN: SYS_STORM_CLOSED,
-    # Added late, and their absence was a defect in both releases
-    # that introduced them. An integration outage (0.20.1) and a Wi-Fi
-    # outage (0.20.3) were each announced in the brief and unknown to
-    # this file, so every device that failed during one was counted as
-    # a mystery. On the reference fleet a Wi-Fi outage put three
-    # presence sensors on the Repeat Offenders table, correlated with
-    # each other, four lines below the sentence naming the outage that
-    # explained all three.
+    # Without these, every device that failed during an integration or
+    # Wi-Fi outage read as a mystery in the brief.
     SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
     SYS_WIFI_DOWN: SYS_WIFI_UP,
 }
@@ -131,9 +104,8 @@ class Window:
         """Hold what an intervention was, when, and how big.
 
         inferred_end says the closing was never recorded and this end
-        was worked out rather than seen (ruling #287). It changes what
-        may be said about the window: we know the thing ended, and we
-        do not know that it recovered.
+        was worked out, not seen. The thing ended, but Device Sentinel
+        does not know that it recovered (rule STOR-18).
         """
         self.kind = kind
         self.scope = scope
@@ -163,9 +135,9 @@ class Window:
             return stack is not None and stack == self.scope
         if self.kind == SYS_DEVICE_HANDLED:
             # One device, named in `devices`, and no other. ZHA
-            # announces the device rather than a window, and every
-            # message names exactly one, so a handling explains that
-            # device's recovery and nothing else (ruling #362).
+            # announces a device rather than a window, so a handling
+            # explains that device's recovery and nothing else
+            # (rule FRZ-17).
             return False
         if self.kind == SYS_STORM_OPEN:
             return domain is not None and domain == self.scope
@@ -175,11 +147,9 @@ class Window:
             return domain is not None and domain == self.scope
         if self.kind == SYS_WIFI_DOWN:
             # The network reaches every integration, because what
-            # fails is the transport under all of them and not any
-            # one stack. A device tied to a tracker is already held
-            # back from reporting entirely (#266); this covers the
-            # ones no tie could claim, which are exactly the devices
-            # the Repeat Offenders table was blaming.
+            # fails is the transport under all of them. A device tied
+            # to a tracker is already held back from reporting
+            # (rule UP-05); this covers the devices no tie could claim.
             return True
         return False
 
@@ -193,15 +163,11 @@ class Window:
         still the same event.
         """
         if self.kind == SYS_DEVICE_HANDLED:
-            # No allowance for this one (ruling #362). The edge below
-            # exists because a sampler notices an outage up to a tick
-            # after it began, and a handling is not sampled: the
-            # dispatcher delivers it as it happens. Applying the
-            # allowance made a 60 second window reach 150 seconds
-            # forward and 90 seconds backward, which is to say it
-            # explained recoveries before the person touched the
-            # device. Found by the adversarial round; the measured
-            # tail must mean what it says.
+            # No edge allowance here (rule FRZ-17). The edge exists
+            # because a sampler notices an outage up to a tick late,
+            # and a handling is not sampled: it arrives as it happens.
+            # With the allowance, a handling explained recoveries
+            # before the person touched the device.
             return self.start <= moment <= (self.end or moment)
         if moment < self.start - _EDGE_SECONDS:
             return False
@@ -216,37 +182,25 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
     Openings are paired with their closings by kind and scope, so a
     bridge outage becomes one window rather than two moments.
 
-    An opening whose closing was never recorded used to stay open
-    forever, and forever is not a figure of speech: a bridge outage
-    from 2 August was still explaining recoveries on the 17th,
-    because attribute() prefers the earliest window and an unbounded
-    one beats every real candidate. On the reference fleet 23 windows
-    were in that state, and the brief credited a device's 03:23
-    recovery to a bridge that went down fifteen days earlier.
+    A closing is often never written, because the system restarted
+    while the storm or outage lived only in memory. An unclosed window
+    ends at the first restart after it opened, or at the next opening
+    of the same kind and scope, whichever comes first, because each
+    proves it ended (rule STOR-18). Without this, an unbounded window
+    beats every real candidate in attribute() and explains recoveries
+    days later.
 
-    The cause is ordinary and permanent: the opening is written, the
-    system restarts, and the closing is never written because the
-    storm or the outage only existed in memory. So the rule has to
-    work forever rather than clean up once (ruling #287). An unclosed
-    window ends at the first restart after it opened, or at the next
-    opening of the same kind and scope, whichever comes first. Both
-    are proof that it must have ended: a system that restarted lost
-    it, and a bridge cannot go down twice without coming up in
-    between. Against the reference fleet the restart bound closes 3
-    and the next-opening bound closes 20, and neither alone reaches
-    all 23.
-
-    An opening with nothing after it stays open, which is still
-    correct: a bridge that is down right now is in effect.
+    An opening with nothing after it stays open, which is correct: a
+    bridge that is down right now is in effect.
     """
     found: list[Window] = []
     pending: dict[tuple[Any, Any, str | None], Window] = {}
-    # A corrupted event must not take the builder down. A log row
-    # whose kind or timestamp is the wrong type is repaired or removed
-    # at the storage boundary (ruling #370); a row that reaches here
-    # anyway, from a path that never touched a file, is skipped, which
-    # costs one attribution and nothing else. The timestamp test is
-    # the same real-moment test the outage onset uses (ruling #363).
+    # A corrupted event must not take the builder down. A bad row is
+    # repaired or removed at the storage boundary (rule STOR-09); a
+    # row that reaches here anyway, from a path that never touched a
+    # file, is skipped, which costs one attribution and nothing else.
+    # The timestamp test is the same real-moment test the outage
+    # onset uses.
     usable = [
         row
         for row in events or []
@@ -270,11 +224,9 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
                 open_window.end = when
                 open_window.inferred_end = True
             pending.clear()
-            # A duration of the wrong type reads as zero, exactly as
-            # a missing one does: the window then covers the restart
-            # moment itself rather than crashing the arithmetic
-            # (ruling #363, kept as the reader's safety behind #370's
-            # repair at the storage boundary).
+            # A duration of the wrong type reads as zero, as a missing
+            # one does, so the window covers the restart moment itself
+            # rather than crashing the arithmetic.
             span = row.get(SYS_DURATION) or 0.0
             if isinstance(span, bool) or not isinstance(
                 span, (int, float)
@@ -285,12 +237,12 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
             )
             continue
         if kind == SYS_DEVICE_HANDLED:
-            # Bounded rather than open (ruling #362). Nothing ever
-            # writes a closing for a handling, and a person who
-            # touched a device and walked away must not explain that
-            # device's recovery an hour later. The tail is measured:
-            # a reconfigure runs 15 seconds and a re-pair 34, and the
-            # message precedes the recovery by two to eight.
+            # Bounded, not open, because nothing writes a closing for
+            # a handling, and a person who touched a device and walked
+            # away must not explain its recovery an hour later. A
+            # reconfigure runs 15 seconds and a re-pair 34, and the
+            # message precedes the recovery by two to eight
+            # (rule FRZ-17).
             #
             # The device travels in `detail` because the event's own
             # `devices` field is an integer by the storage shape and
@@ -311,7 +263,7 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
             continue
         if kind in _PAIRS:
             # Paired by entry too, so two entries of one integration
-            # are two outages (0.22.23).
+            # are two outages.
             entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
             previous = pending.get((kind, scope, entry))
             if previous is not None:
@@ -348,18 +300,18 @@ def attribute(
 ) -> Window | None:
     """Return the intervention that explains one incident, or None.
 
-    First choice is a window that was already in effect when the
-    device went quiet, because that is the only kind that can have
-    caused the silence. Where several were, the earliest wins: an
-    outage that takes a broker down also produces a burst when its
-    devices return, and the outage is the cause of both.
+    First choice is a window already in effect when the device went
+    quiet, because only that kind can have caused the silence. Where
+    several were, the earliest wins: an outage that takes a broker
+    down also produces a burst when its devices return, and the outage
+    is the cause of both.
 
-    Second choice, only where nothing was in effect at the opening,
-    is a window covering the recovery. Finding it is not crediting
-    it: only a person's own act, a pairing window or a device
-    handled, is credited with a recovery (`credits`, #535), and a
-    recovery inside a restart or an outage is told as happening
-    during it, never as caused by it.
+    Second choice, only where nothing was in effect at the opening, is
+    a window covering the recovery. Finding it is not crediting it:
+    only a person's own act, a pairing window or a device handled, is
+    credited (`credits`), and a recovery inside a restart or an outage
+    is told as happening during it, never as caused by it
+    (rule BRIEF-05).
     """
     reach = [
         window
@@ -367,10 +319,9 @@ def attribute(
         if window.covers(domain, stack)
         or (
             # A device-scoped window reaches the one device it names
-            # and nothing else (ruling #362). Kept here rather than
-            # inside covers() because covers() is answered from the
-            # domain and the stack, which cannot tell two ZHA devices
-            # apart, and this must never widen by accident.
+            # and nothing else (rule FRZ-17). Kept here rather than in
+            # covers() because covers() answers from the domain and
+            # the stack, which cannot tell two ZHA devices apart.
             window.kind == SYS_DEVICE_HANDLED
             and device_id is not None
             and window.devices is not None
@@ -404,11 +355,9 @@ _PHRASE = {
 
 
 # What may be said about a window whose closing was never recorded.
-# The wording above is written for an observed pair, and two of them
-# assert a return: a bridge or a broker "going down and coming back".
-# For an inferred end we know the thing ended and we do not know that
-# it came back, so the claim is dropped rather than repeated on
-# evidence that does not exist (ruling #287).
+# Two of the wordings above assert a return, a bridge or a broker
+# "going down and coming back". For an inferred end the thing ended
+# but may not have come back, so that claim is dropped (rule STOR-18).
 _PHRASE_INFERRED = {
     SYS_BRIDGE_DOWN: "the {scope} bridge going down",
     SYS_BROKER_DOWN: "the MQTT broker going down",
@@ -417,13 +366,13 @@ _PHRASE_INFERRED = {
 
 # The windows that are a person's own act and may be credited with a
 # recovery. The rest are restarts and outages, which say nothing about
-# the devices and revive nothing (#535): a recovery inside one is told
-# as happening during it, never as caused by it.
+# the devices: a recovery inside one is told as happening during it,
+# never as caused by it (rule BRIEF-05).
 CREDITED_WINDOWS = frozenset({SYS_PAIRING_OPEN, SYS_DEVICE_HANDLED})
 
 
 def credits(window: Window) -> bool:
-    """Whether a recovery inside this window is credited to it (#535)."""
+    """Whether a recovery inside this window is credited to it (rule BRIEF-05)."""
     return window.kind in CREDITED_WINDOWS
 
 
@@ -431,7 +380,7 @@ def phrase(window: Window, name: Callable[[str], str] | None = None) -> str:
     """Return the clause naming an intervention, without punctuation.
 
     The scope is named as Home Assistant shows it where the caller can
-    say (#532): Zigbee2MQTT, not z2m.
+    say: Zigbee2MQTT, not z2m (rule GEN-07).
     """
     scope = name(str(window.scope)) if name is not None and window.scope else window.scope
     if getattr(window, "inferred_end", False):

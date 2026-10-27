@@ -3,35 +3,33 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.24.0 (2026-10-02)
+# File: model_groups.py, Version: 0.27.10 (2026-10-27)
 
-"""Devices read as groups of the same maker, model and hardware (0.23.4).
+"""Devices read as groups of the same maker, model and hardware (rule DEV-14).
 
 Device Sentinel learns each device on its own. Devices of the same
 maker, model and hardware behave alike: the same heartbeat, the same
-battery steps, the same signal scale. Twenty cells on the reference
-rig read "Not enough data" under Steps because they had never moved,
-and five of them had siblings on the same firmware that had. The owner
-ruled on 25 September that the first release records and changes no
-behaviour: the data is observed in the diagnostics download before
-anything is built on it.
+battery steps, the same signal scale. A device whose battery has never
+moved can have siblings whose batteries have. The groups change no
+behavior: the data is read in the diagnostics download before anything
+is built on it.
 
 Two things are recorded. Each device's firmware history is stored,
 because Home Assistant keeps only the current version and a change is
-otherwise lost. One behaviour reads it since 0.23.18: a recorded update
-has a device's battery scale measured again (ruling #545). Everything
+otherwise lost (rule DEV-15). One behavior reads it: a recorded update
+has a device's battery scale measured again (rule BAT-06). Everything
 else is worked out when the diagnostics are downloaded, from the device
 registry and the records already kept, and stored nowhere.
 
-What makes a group, as ruled: the maker, the model (Home Assistant's
+What makes a group: the maker, the model (Home Assistant's
 model id where the device gives one, since it is finer than the
 display name; the display name otherwise), and the hardware version.
 A device that gives no hardware version joins its model's only given
 version, since it cannot be told apart from it; where the model gives
 several or none, it stands with the others that give none. Firmware is
-shown inside a group rather than splitting it: on the three houses a
-model splitting across firmware was rare, and 86 of the second fleet's
-243 devices and 63 of the fourth's 112 give no firmware at all.
+shown inside a group rather than splitting it, because a model
+splitting across firmware is rare, and many devices give no firmware
+at all.
 
 Who counts: every watched device, muted ones included, because muting
 stops judgment and not recording. An excluded device is recorded
@@ -110,14 +108,14 @@ def note_firmware(record: dict[str, Any], firmware: str | None, now: float) -> b
     if history:
         # A new version, not the first one seen: the device's reporting
         # habit may have changed with it, so the Log-Normal Percentile
-        # counts again from here (#542, amended in 0.24.0).
+        # counts again from here (rule FRZ-05).
         record[DEV_LOGNORMAL_DAYS] = 0
     history.append([firmware, now])
     return True
 
 
 def unflicker_firmware(record: dict[str, Any]) -> bool:
-    """Remove flickers from a history written before 0.23.9.
+    """Remove flickers from a history written by an older release.
 
     A version replaced within FIRMWARE_FLICKER_SECONDS by the version
     before it was never run: the registry held a stale value for a
@@ -208,9 +206,8 @@ def _signal_reading(
     its rail is confirmed.
 
     A day with a rail reading is common and says little on its own:
-    on the reference rig 8 of 15 identical door sensors had one in
-    the window. The confirmed rail is the integration's own test
-    (rulings #78, #322), three days of nothing else.
+    8 of 15 identical door sensors can have one in the window. The
+    confirmed rail is three days of nothing else (rule SIG-07).
     """
     scale = record.get(DEV_SIGNAL_SCALE)
     daily = _numbers(record.get(DEV_SIGNAL_DAILY_P50))[-MODEL_GROUP_WINDOW_DAYS:]
@@ -419,7 +416,7 @@ class ModelGroupMixin:
     _firmware_candidates: dict[str, tuple[str, float]]
 
     def _note_firmware(self, device_ids: Any) -> None:
-        """Hold each changed firmware version as a candidate (0.23.9).
+        """Hold each changed firmware version as a candidate (rule DEV-15).
 
         Runs with every rebuild of the registry view, each start and
         each registry change. A version different from the one
@@ -451,16 +448,16 @@ class ModelGroupMixin:
                 candidates[device_id] = (firmware, now)
 
     def _confirm_firmware(self, now: float) -> None:
-        """Write the candidates that held, on the minute tick (0.23.10).
+        """Write the candidates that held, on the minute tick (rule DEV-15).
 
         A candidate is written when the registry still reports it and
         it first appeared at least FIRMWARE_HOLD_SECONDS earlier, with
         the time it first appeared. A newer one waits for a later
         tick; one the device has left is dropped. The caller keeps
         this out of the startup grace, when the registry may still
-        hold a stale value. 0.23.9 ran it at the midnight fold with an
-        hour's hold, which a house restarting in the hour before
-        midnight, or rebooting across it, never met.
+        hold a stale value. It runs on the tick rather than at the
+        midnight fold, because a house restarting in the hour before
+        midnight, or rebooting across it, would never be written.
         """
         registry = dr.async_get(self.hass)
         devices = self.data.get(DATA_DEVICES) or {}
@@ -478,16 +475,15 @@ class ModelGroupMixin:
                 changed = True
                 if had:
                     # An update can change the battery scale a device
-                    # reports on; it is measured again (ruling #545,
-                    # amended). A first version on record is not an
-                    # update.
+                    # reports on; it is measured again. A first version on
+                    # record is not an update (rule BAT-06).
                     clear_raw_battery(record, "a firmware update")
             self._firmware_candidates.pop(device_id, None)
         if changed:
             self._mark_cold_dirty()  # type: ignore[attr-defined]
 
     def _unflicker_firmware(self) -> None:
-        """Clean the flickers recorded before 0.23.9, once per start."""
+        """Clean the flickers an older release recorded, once per start."""
         changed = False
         for record in (self.data.get(DATA_DEVICES) or {}).values():
             if isinstance(record, dict):

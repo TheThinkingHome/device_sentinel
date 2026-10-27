@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.27.8 (2026-10-27)
+# File: store.py, Version: 0.27.10 (2026-10-27)
 
 """Storage: the two files, the merge, and the unclean restart.
 
-One of six subject modules split out of coordinator.py, which
-had reached four thousand lines. The seam is the subject, chosen
-by measuring which methods call which: storage and interventions
-call nothing outside themselves at all, and the three detectors
-reach out fewer than ten times each (ruling #201).
+One of six subject modules split out of coordinator.py. The seam is
+the subject, chosen by measuring which methods call which: storage
+calls nothing outside itself at all (rule CODE-11).
 
 A file split rather than a boundary. These are mixins on the
 coordinator and read its state freely, so `self` is the
@@ -132,7 +130,7 @@ class StorageMixin:
     """Storage: the two files, the merge, and the unclean restart.
 
     The four clocks below are declared here rather than inferred from
-    whichever assignment a type checker meets first (ruling #331).
+    whichever assignment a type checker meets first (rule CODE-04).
     They are owned by the coordinator that composes this mixin and
     written by both, which is exactly the case where an inferred type
     and a written one drift apart without anyone noticing.
@@ -144,7 +142,7 @@ class StorageMixin:
     _pending_unclean: int | None
     _clocks_reset_at: float | None
     _clocks_reset_count: int
-    # The history file's bookkeeping (0.26.2), set by the coordinator.
+    # The history file's bookkeeping, set by the coordinator (rule STOR-03).
     _history_digest: str | None
     _history_generation: int | None
     _history_generation_high: int
@@ -167,16 +165,12 @@ class StorageMixin:
         RETIRED_DEVICE_FIELDS, like the frozen fields the rail rework
         dropped, and removed; or written by a newer version, and kept
         untouched, so a house can go back a release and forward again
-        without losing it (#189, amended 28 September 2026).
+        without losing it (rule STOR-19).
 
-        Only the removing half existed until 0.10.22, and the filling
-        half was a hand-maintained list of setdefault calls in the
-        load path. That is the shape of fault this exists to end
-        (ruling #189): the list had already drifted, omitting seven
-        signal fields on the branch that runs when the statistics
-        epoch changes, and its failure mode is invisible to the
-        tests, which build fresh records and so never meet a stored
-        one that is missing anything.
+        Both halves come from the one field set, because a
+        hand-maintained list of setdefault calls drifts, and its
+        failure is invisible to tests, which build fresh records and
+        so never meet a stored one that is missing anything.
 
         A fresh record is built per device rather than once, because
         the schema's defaults include lists and one shared list
@@ -191,10 +185,8 @@ class StorageMixin:
             schema = _new_device_record(now_iso, None)
             # Only a field this code retired is dead. Any other field
             # the schema does not know was written by a newer version
-            # and is carried through untouched (#189, amended 28
-            # September 2026): 0.22.29 dropped firmware, flapping and
-            # coarse battery history this way when a house went back
-            # to it from 0.23.
+            # and is carried through untouched, so a house that goes
+            # back a release keeps it (rule STOR-19).
             for key in [
                 k for k in record if k not in schema and k in RETIRED_DEVICE_FIELDS
             ]:
@@ -212,16 +204,10 @@ class StorageMixin:
     ) -> tuple[int, int]:
         """Convert the day's signal accumulators to Welford's pair.
 
-        Ruling #256. The conversion was written into the reading path
-        in 0.12.19 and never ran: the reconciler below removes any
-        key the schema has dropped and fills any key it has gained,
-        so by the time a reading arrived the legacy sum was already
-        deleted and the running mean already present as zero. The
-        migration read a record that had been made to look migrated.
-        With the legacy count kept and the mean restarted at zero,
-        each later reading moved the mean by only value over count,
-        so a fleet of links averaging 118 carried running means near
-        ten, and the deviation with them.
+        The reconciler below removes any key the schema has dropped
+        and fills any key it has gained, so a conversion in the reading
+        path would meet a record made to look migrated, with the mean
+        restarted at zero against the legacy count.
 
         So the conversion belongs here, at load, before the
         reconciler runs, which is also the only moment the legacy
@@ -235,7 +221,7 @@ class StorageMixin:
         later restart cannot drop another day.
 
         Returns (converted, reset), both zero on an install that
-        never ran the broken versions.
+        never ran the broken versions (rule STOR-19).
         """
         converted = 0
         reset = 0
@@ -266,14 +252,11 @@ class StorageMixin:
         return converted, reset
 
     def _rename_stored_kinds(self, loaded: dict[str, Any]) -> int:
-        """Bring stored history onto the one kind vocabulary (#299).
+        """Bring stored history onto the one kind vocabulary (rule LIST-02).
 
-        Four problem kinds were renamed for 0.15.8, before the event
-        payload could publish them and make them a contract nobody
-        could change again. Stored history keeps whatever spelling was
-        written at the time, so a brief drawing on it would have read
-        one vocabulary out of a file holding two, which is #215
-        arriving by a different road.
+        Stored history keeps whatever spelling was written at the time,
+        so a brief drawing on it would read one vocabulary out of a
+        file holding two.
 
         Three named passes and never a walk over every "kind" in the
         file. The system events list carries fourteen values of its
@@ -297,13 +280,13 @@ class StorageMixin:
         # tables here, and a migration that raised on it would stop
         # setup at the one moment nothing has yet repaired it. The
         # gate that follows repairs what these walks step over
-        # (ruling #370).
+        # (rule STOR-09).
         for entry in loaded.get(DATA_INCIDENTS) or []:
             if not isinstance(entry, dict) or not isinstance(
                 entry.get(INC_KIND), str
             ):
                 # Damage, not a legacy shape; the gate repairs it
-                # after the migrations (ruling #370).
+                # after the migrations (rule STOR-09).
                 continue
             fresh = LEGACY_KIND_RENAMES.get(entry.get(INC_KIND))
             if fresh is not None:
@@ -313,7 +296,7 @@ class StorageMixin:
         # The additions journal, capped at a count rather than an age,
         # so on a quiet fleet an old spelling could sit here for
         # months. It stops being write-only the moment events fire
-        # from this same boundary (ruling #289).
+        # from this same boundary (rule NOTE-12).
         for entry in loaded.get(DATA_TODO_JOURNAL) or []:
             if not isinstance(entry, dict) or not isinstance(
                 entry.get(INC_KIND), str
@@ -361,17 +344,17 @@ class StorageMixin:
         A settings-changed row records which option keys moved, as a
         comma-joined string, and the brief turns each key into the
         label a person read on the screen by looking it up in
-        strings.json (ruling #314). Rename the keys and every row
-        written before the upgrade points at a label that no longer
-        exists, so the brief falls back to the raw key and prints
-        `excluded_devices` at a person for as long as the row is
-        kept. The same reasoning as #299: stored history speaks one
-        vocabulary or the surface reading it speaks two.
+        strings.json. Rename the keys and every row written before the
+        upgrade points at a label that no longer exists, so the brief
+        falls back to the raw key and prints `excluded_devices` at a
+        person for as long as the row is kept. Stored history speaks
+        one vocabulary or the surface reading it speaks two
+        (rule STOR-19).
 
         Each rename is applied only to a file last written before the
         release that made it. That is what keeps `excluded_integrations`
-        straight: it was the muting key before 0.16.18 and is the
-        ignore key after 0.16.19, so read without a date it is two
+        straight: it was once the muting key and is now the ignore key,
+        so read without a date it is two
         settings at once, and a row written today would be rewritten
         tomorrow into something its author never touched.
 
@@ -412,9 +395,10 @@ class StorageMixin:
     def _clear_mixed_signal(self, devices: dict[str, Any]) -> list[str]:
         """Discard a signal history that holds two scales at once.
 
-        Until 0.15.6 every entity matching the signal recognizer fed
-        one series, so a ZHA device's RSSI in dBm and its LQI on 0 to
-        255 both landed in the same numbers (ruling #282). Nothing in
+        An older release fed every entity matching the signal
+        recognizer into one series, so a ZHA device's RSSI in dBm and
+        its LQI on 0 to 255 landed in the same numbers (rule SIG-03).
+        Nothing in
         the stored figures says which reading came from which sensor,
         so the mixture cannot be separated after the fact and the
         history has to go.
@@ -422,12 +406,9 @@ class StorageMixin:
         The test is the data rather than a version marker: a retained
         series that runs from negative to positive is not one
         measurement, whatever wrote it. That finds the Tasmota
-        devices too, whose percentage 0.15.4 stopped accepting but
-        whose recorded days still hold it, and it keeps working for a
-        device that grows a second entity next month. On the fleet
-        that found this, the test picks out 7 of 7 Tasmota devices
-        and 34 of 39 ZHA devices, and none of the 118 on a fleet that
-        publishes one scale per device.
+        devices too, whose percentage is no longer accepted but whose
+        recorded days still hold it, and it keeps working for a device
+        that grows a second entity next month.
         """
         cleared: list[str] = []
         for device_id, record in devices.items():
@@ -456,9 +437,9 @@ class StorageMixin:
                     seen.append(value)
             if not seen or min(seen) >= 0 or max(seen) < 0:
                 continue
-            # Both scales and their dates (0.26.1). The dates stayed
-            # behind before, so the next day's entry was dated as the
-            # newest of the old history's many.
+            # Both scales and their dates, or the next day's entry would
+            # be dated as the newest of the old history's many
+            # (rule STOR-16).
             forget_signal_history(record)
             cleared.append(device_id)
         return cleared
@@ -473,10 +454,8 @@ class StorageMixin:
         in the one place every main-file write passes through.
 
         The clock fields are stripped out of the main file here
-        (ruling #101), unconditionally: they are the hot file's job,
-        written every interval, and the copies the main file once
-        carried existed only as a net during the transition, which is
-        over (ruling #241). The strip is a filtered view built for the
+        unconditionally: they are the hot file's job, written every
+        interval (rule STOR-01). The strip is a filtered view built for the
         write rather than a mutation, because the live records must keep
         their clocks for every reader in this process; only the file
         sheds them.
@@ -499,9 +478,9 @@ class StorageMixin:
         return out
 
     def _trim_backup_storage(self) -> dict[str, Any]:
-        """The whole record for a trim's backup copy (ruling #662).
+        """The whole record for a trim's backup copy (rule STOR-23).
 
-        The main file is a view since 0.26.2, so the copy is built from
+        The main file is a view, so the copy is built from
         memory, older history included, and records no history
         generation: put back as the storage file, it loads whole and
         joins nothing, so no older entry is doubled.
@@ -517,9 +496,7 @@ class StorageMixin:
 
         The hot file is the only place clocks live, so this is not a
         merge of two opinions but the restoration of the one that
-        exists (ruling #101). The main file never carries copies, and the
-        transitional case where it might, along with the branch that
-        preferred them, is gone (ruling #241).
+        exists. The main file never carries copies (rule STOR-01).
 
         The hot file is used whatever its age, because a slightly
         stale clock self-heals on the device's next report while no
@@ -578,15 +555,13 @@ class StorageMixin:
         job: the render tick's scheduler reads it when the storage
         write interval closes and takes the main file along with the
         hot one, main file first so the hot stamp is always the newer
-        of the pair (ruling #165). Nothing here schedules a write of its
-        own. The old arrangement did, on its own debounce with its own cap,
-        and two independent schedules against one pair of files is the
-        race that produced a main file newer than the clocks file, the
-        state the final phase of the storage split cannot survive.
+        of the pair. Nothing here schedules a write of its own, because
+        two independent schedules against one pair of files can leave a
+        main file newer than the clocks file.
 
         The wait this buys is bounded by the interval and is spent on
         forensic rows alone: anything judgment-bearing is critical and
-        writes both files within the tick that detected it (ruling #100).
+        writes both files within the tick that detected it (rule STOR-02).
         """
         self._cold_dirty = True
         self._dirty = True
@@ -622,7 +597,7 @@ class StorageMixin:
     async def _save_main(self, *, final: bool = False) -> None:
         """Every main-file write passes through this one seam.
 
-        The boundary on the way out (ruling #370): the whole
+        The boundary on the way out (rule STOR-06): the whole
         outgoing document is checked, which is what catches a row
         edited in place after it was written. A clean document
         rotates first, the live file renamed to last-good, so
@@ -638,7 +613,7 @@ class StorageMixin:
         copy, not a file this session wrote clean.
 
         Once the session has stopped, only the stop's own final save
-        writes (0.24.7): a minute check already running when the stop
+        writes (rule STOR-18): a minute check already running when the stop
         began finishes afterwards, and its write would put this
         session's older data back over the final save, or over a newer
         session's files after a reload.
@@ -668,8 +643,8 @@ class StorageMixin:
         self._rotation_armed = clean
 
     async def _save_routine_main(self) -> None:
-        """The routine window's main-file write (0.26.2), since 0.27.8
-        the same checked, rotating save as any other (rule STOR-04)."""
+        """The routine window's main-file write, the same checked,
+        rotating save as any other (rule STOR-04)."""
         # Through the one seam, checked and rotating like any other
         # save (rules STOR-04, STOR-06): a row changed in place reached
         # disk unchecked here, and last-good went stale between the
@@ -679,8 +654,8 @@ class StorageMixin:
     async def _write_main_files(self, *, clean: bool) -> None:
         """Write the main file as a view, and the history file if it changed.
 
-        The four steps (ruling #660), run only when the digest of the
-        older part differs from the one last written (#655): the
+        The four steps (rule STOR-03), run only when the digest of the
+        older part differs from the one last written: the
         history file is renamed to last-good, the new history file is
         written and read back, the main file is written recording its
         generation, and the new history file is copied over
@@ -758,7 +733,7 @@ class StorageMixin:
     async def _main_over_last_good(self, clean: bool) -> None:
         """The main file over its own last-good, after a history change.
 
-        James, 13 October: "We do this to every data file." Only when
+        Every data file gets a last-good copy (rule STOR-04). Only when
         this save was a clean one that rotated: all the files then hold
         one generation, so a main file damaged before the next save is
         restored to a copy the history files match, or, when the
@@ -820,11 +795,11 @@ class StorageMixin:
 
         Called once for each document the load settles on, before the
         first load-time step, so every step and both gates see the
-        whole record (ruling #655). A main file with no generation
-        joins nothing: it was written before 0.26.2, or whole, and the
-        first save splits it. With no matching copy that passes the
-        shape check, both files are copied aside as evidence and the
-        start uses the main file's thirty days (ruling #660).
+        whole record. A main file with no generation joins nothing: it
+        was written by an older release, or whole, and the first save
+        splits it. With no matching copy that passes the shape check,
+        both files are copied aside as evidence and the start uses the
+        main file's thirty days (rule STOR-03).
         """
         hass = self.hass  # type: ignore[attr-defined]
         wanted = history_file.main_generation(loaded)
@@ -945,9 +920,9 @@ class StorageMixin:
         never be missed at one of the scattered sites: both tier
         flags clear, and the pending flag clears because the store
         cancels its pending delayed write when a direct save lands.
-        After the stop, only its final save writes (0.24.7).
+        After the stop, only its final save writes (rule STOR-18).
 
-        Saves take turns (0.24.7). A minute check can be part way
+        Saves take turns. A minute check can be part way
         through a save when the stop begins; the stop's final save
         waits for it to finish, and a save that was waiting behind it
         finds the stop and writes nothing, so the final save is always
@@ -975,7 +950,7 @@ class StorageMixin:
     def coalesce_seconds(self) -> float:
         """Return the routine-save interval in seconds.
 
-        Live from options (ruling #117), clamped to the offered band. Only
+        Live from options, clamped to the offered band (rule STOR-02). Only
         routine activity waits: verdicts, battery flips, list changes
         and acknowledgments always write immediately, so this governs
         wear and crash-window, never correctness.
@@ -993,15 +968,10 @@ class StorageMixin:
     def watched_records(self) -> list[tuple[str, dict[str, Any]]]:
         """Return the records of devices currently being watched.
 
-        A record used to imply a watched device, so every surface
-        walked the record store directly. That stopped being true
-        when a set-aside device began keeping what it had learned
-        (ruling #257), and the exclude list made twenty-two of them at
-        once: the battery report went on calling phones watched cells
-        while the classification file three columns over called them
-        excluded, and one of them reached the problem list asking a
-        person to act on a device this integration had been told to
-        stop looking at.
+        A record does not imply a watched device, because a set-aside
+        device keeps what it learned (rule WATCH-03). Read directly,
+        the record store would list an excluded device and ask a person
+        to act on a device Device Sentinel was told to stop looking at.
 
         So the rule is one line and lives in one place: a surface
         that reads the record store filters to the watched set first.
@@ -1010,17 +980,16 @@ class StorageMixin:
 
         A record with a standing shape fault no longer exists to hold
         out: the boundary repairs a faulty record at the moment it is
-        found (ruling #370), so every record behind this line is one
+        found (rule STOR-09), so every record behind this line is one
         the check vouches for.
         """
         devices = self.data.get(DATA_DEVICES) or {}
         # A snapshot, taken in one step the event loop cannot interleave,
         # because the reports are written on a worker thread while the
         # loop adds a record when a device pairs and deletes one when it
-        # goes. Iterating the live map failed 25 of 150 report writes
-        # under that churn, "dictionary changed size during iteration",
-        # and lost that day's reports (0.23.13; found on the 0.22 line's
-        # signal report while proving 0.22.29).
+        # goes. Iterating the live map under that churn raises
+        # "dictionary changed size during iteration" and loses that
+        # day's reports (rule CODE-06).
         return [
             (device_id, record)
             for device_id, record in list(devices.items())
@@ -1048,7 +1017,7 @@ class StorageMixin:
 
         A house first written by a release before 0.27.7 keeps the
         default it had then, so what 0.27.7 adds reaches it as a
-        recommendation (Ruled Change 70, rule MUTE-02); its first
+        recommendation (rule MUTE-02); its first
         sighting writes that list as its own. Any other house, a new
         install above all, takes the whole default.
         """
@@ -1058,7 +1027,7 @@ class StorageMixin:
 
     @property
     def excluded_devices(self) -> frozenset[str]:
-        """Return the single devices a person excluded (ruling #625).
+        """Return the single devices a person excluded (rule MUTE-03).
 
         Only strings can name a device; anything else a hand edit left
         in the list names nothing and is passed over.
@@ -1074,7 +1043,7 @@ class StorageMixin:
 
         The user's, and about memory rather than judgment: every
         verdict is computed from the most recent DAILY_MAX_KEEP days
-        whatever this says (ruling #131). The floor of thirty is what makes
+        whatever this says (rule STOR-14). The floor of thirty is what makes
         that safe, since no setting can starve a fourteen-day window.
         """
         return max(
@@ -1093,19 +1062,18 @@ class StorageMixin:
         """Give every device that has reported a clock at this start.
 
         The clocks file holds each device's last report, and the main
-        file never carries a copy (ruling #101). Losing it, deleted, or
-        discarded whole for damage (ruling #356), used to leave every
+        file never carries a copy (rule STOR-01). Losing it, deleted, or
+        discarded whole for damage (rule STOR-10), would leave every
         clock empty, and an empty clock with no events is what "never
-        reported" means: on the reference rig, 31 healthy devices went
-        on the list together when the grace closed, with a push and a
-        fault event each (0.22.28). So each device with learned
+        reported" means, so every healthy device would go on the list
+        together when the grace closed. So each device with learned
         history restarts its clock here, the way an unclean stop does
-        (ruling #163), and the time before this start counts as
-        unwatched.
+        (rule FRZ-20), and the time before this start counts as
+        unwatched (rule LIST-12).
 
         A restarted clock is not a report. A device already frozen
-        keeps its verdict until it speaks, the principle of ruling #124
-        that a replay cannot erase a standing silence: its clock is set
+        keeps its verdict until it speaks, because a replay cannot
+        erase a standing silence: its clock is set
         to the latest moment it could have reported, one window before
         it was judged frozen, so its silence still reads past its
         window and stays so across further restarts. An unavailable
@@ -1115,10 +1083,7 @@ class StorageMixin:
         A device with no learned history is restarted too when it was
         first seen more than FREEZE_NOT_REPORTED_SECONDS ago and its
         stored verdict is not never reported: that old, it would carry
-        the verdict if it had never spoken, so it has spoken. Two
-        devices on the fourth fleet, 22 and 16 events and no learned
-        day yet, lost their clocks and read never reported in the
-        simulation of 23 September (0.23.0). A device younger than that
+        the verdict if it had never spoken, so it has spoken. A device younger than that
         keeps no clock and still has its whole window to speak, and one
         stored as never reported still reads so. Returns how many
         clocks were restarted.
@@ -1129,7 +1094,7 @@ class StorageMixin:
             if not isinstance(record, dict):
                 continue
             # A clock the main file still carries is a real one, from a
-            # file written before the split (ruling #101), and is kept.
+            # file written before the split (rule STOR-01), and is kept.
             if record.get(DEV_LAST_ACTIVITY) is not None:
                 continue
             if not record.get(DEV_DAILY_MAX) and not self._has_spoken(
@@ -1155,7 +1120,7 @@ class StorageMixin:
         """Return whether a device without history must have reported.
 
         First seen long enough ago to be judged never reported, and not
-        judged so: the verdict it does not carry is the proof (0.23.0).
+        judged so: the verdict it does not carry is the proof (rule LIST-12).
         """
         if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_NEVER_REPORTED:
             return False
@@ -1183,19 +1148,16 @@ class StorageMixin:
         return window if isinstance(window, (int, float)) else 0.0
 
     def _handle_unclean_restart(self, loaded: dict[str, Any]) -> None:
-        """Reset the clocks a power cut made unreadable (ruling #163).
+        """Reset the clocks a power cut made unreadable (rule FRZ-20).
 
-        A clean stop stamps the moment it happened, so ruling #160 can credit
-        every device the silence nobody was listening to and the
-        arithmetic is right. A power cut leaves no such stamp: the
+        A clean stop stamps the moment it happened, so every device is
+        credited the silence nobody was listening to and the arithmetic
+        is right (rule FRZ-10). A power cut leaves no such stamp: the
         newest thing on disk is up to a whole write interval old, and
         any device that reported inside that unsaved window carries a
         clock later than the anchor, fails the test that grants the
         credit, and is judged across an outage it could not have
-        reported through. That is not a hypothetical: on 2026-07-31 a
-        thirty-minute cut on the development fleet produced nine
-        frozen verdicts, one of them a device whose clock read nine
-        minutes past the anchor.
+        reported through.
 
         Crediting every device instead does not fix it either, because
         a device whose single daily report fell inside the blackout
@@ -1215,12 +1177,10 @@ class StorageMixin:
         same sense a hand on the battery is.
 
         The silence a reset device had accumulated before the cut is
-        not learned (#549, replacing the banking of #163 and #399).
-        Nobody was listening between the last save and the stop, so it
-        cannot be trusted, and a gap is learned only if Device Sentinel
-        could have heard the device for all of it: on the reference rig
-        on 1 October the bank took the Zigbee bridge's outage as every
-        Zigbee device's own silence. Only the clock fields move: the
+        not learned. Nobody was listening between the last save and the
+        stop, so it cannot be trusted, and a gap is learned only if
+        Device Sentinel could have heard the device for all of it
+        (rule FRZ-20). Only the clock fields move: the
         event count, the learned series, the first-observed stamp, and
         every battery and signal field are what the device earned and
         are untouched.
@@ -1231,7 +1191,7 @@ class StorageMixin:
             # No stamp on either file, so there is no last known-alive
             # moment. Every part of this rule is measured from that
             # moment: the truncated gap is anchored to it, the episode
-            # closes at it, and the credit it exists to protect (ruling #160)
+            # closes at it, and the credit it exists to protect (rule FRZ-10)
             # is itself inert without it. Resetting here would destroy
             # every device's real last activity and buy nothing, so
             # the safe reading of an unstamped file is to leave it
@@ -1256,13 +1216,10 @@ class StorageMixin:
             last = record.get(DEV_LAST_ACTIVITY)
             if not isinstance(last, (int, float)):
                 continue
-            # Nothing is banked (#549, replacing the banking of #163
-            # and #399): nobody was listening between the last save and
-            # the stop, so the silence before it cannot be trusted, and
-            # a gap is learned only if Device Sentinel could have heard
-            # the device for all of it. On the reference rig on 1
-            # October the power cut banked 190 minutes for every Zigbee
-            # device, the bridge's outage counted as their own silence.
+            # Nothing is banked: nobody was listening between the last
+            # save and the stop, so the silence before it cannot be
+            # trusted, and a gap is learned only if Device Sentinel could
+            # have heard the device for all of it (rule FRZ-20).
             record[DEV_LAST_ACTIVITY] = now
             # A clock that no longer describes a real report cannot
             # go on carrying a taint earned before it, because the
@@ -1298,10 +1255,11 @@ class StorageMixin:
         """Count episodes with no ending, and report nothing else.
 
         Observation only: a non-zero count is a finding to read rather
-        than a fault to act on (ruling #167).
+        than a fault to act on (rule STOR-18).
 
         After a clean stop every open episode has been stamped, and
-        after an unclean one ruling #163 has just stamped them too, so by the
+        after an unclean one the unclean-stop reset has just stamped
+        them too, so by the
         time this runs an episode carrying no ending is an orphan: a
         row whose closing never reached disk. The window in which one
         is visible is narrow, because the next intervention of any
@@ -1313,8 +1271,8 @@ class StorageMixin:
         sits ended-but-awaiting-lag until the device speaks again, and
         counting those would cry wolf every morning.
 
-        It closes nothing. ruling #163 is the only thing that closes an
-        episode at a restart, because two independent mechanisms
+        It closes nothing. The unclean-stop reset is the only thing that
+        closes an episode at a restart, because two independent mechanisms
         against one record is a fault class rather than a safeguard,
         and when a row later reads wrong you want to know which one
         wrote it.
@@ -1391,42 +1349,38 @@ class StorageMixin:
         than completed. Stamping here, before the flush, is what
         makes the distinction survive into the next boot.
 
-        The flush is unconditional, and that is the point of it. It
-        used to run only when something was outstanding, but the
+        The flush is unconditional, and that is the point of it. The
         stamp above reaches _mark_cold_dirty, whose last act is to
-        clear the very flag that condition read. So a stop with any
-        silence running skipped its own flush, left a scheduled write
-        on each store, and let Home Assistant's final-write stage
-        write them afterwards. That stage stamps each file as it goes
-        and in no fixed order, so the small file could come out the
-        older of the two, and the next start then refuses to merge it
-        (ruling #101). Under the current phase that costs nothing, because
-        the main file still carries the clocks; under the phase that
-        removes them it would leave every device with no clock at all.
-        One write on a stop is not worth a condition.
+        clear the dirty flag, so a flush on a condition would skip
+        itself, leave a scheduled write on each store, and let Home
+        Assistant's final-write stage write them afterwards in no fixed
+        order. The small file could then come out the older of the two,
+        and the next start would refuse to merge it, leaving every
+        device with no clock at all (rule STOR-01). One write on a stop
+        is not worth a condition.
 
         Flushing also cancels both scheduled writes, so the stop is
         the last thing to touch either file. That is what makes the
         saved stamp the true moment of stopping, which is the value
-        ruling #160 measures observed silence against.
+        observed silence is measured against (rule FRZ-10).
         """
         self._stamp_intervention(
             EPISODE_ENDED_REBOOT, dt_util.utcnow().timestamp()
         )
-        # The clean-stop marker (ruling #163). Set before the flush, so the
+        # The clean-stop marker (rule FRZ-20). Set before the flush, so the
         # write below carries it. Its absence at the next load is the
         # only evidence that the machine went down without being
         # asked to: a power cut leaves a saved_at stamp that looks
         # exactly like an ordinary interval write, so no comparison
         # of stamps can tell the two apart.
         self.data[DATA_CLEAN_STOP] = True
-        # Extended Diagnostics' held lines (0.23.10). Home Assistant
+        # Extended Diagnostics' held lines (rule STACK-11). Home Assistant
         # does not unload integrations when it stops, so the unload's
         # write never runs at a restart; this one does. It cannot
         # raise, so the save below always follows.
         await self.async_probe_stop()  # type: ignore[attr-defined]
         await self._save_now()
-        # A pencil answer still inside its one-second wait (0.25.1):
+        # A pencil answer still inside its one-second wait (rule STOR-20):
         # only the unload wrote it, and a restart is not an unload.
         await self.async_flush_answers()  # type: ignore[attr-defined]
 
@@ -1448,7 +1402,7 @@ class StorageMixin:
 
     @property
     def orphan_episodes(self) -> dict[str, Any]:
-        """Return what the boot integrity count found (ruling #167)."""
+        """Return what the boot integrity count found (rule STOR-18)."""
         return dict(self._orphan_episodes)
 
     @property
@@ -1470,7 +1424,7 @@ def _watched_seconds(
     Two stamps, tried in that order. A device's own first-observed is
     the tighter answer and is preferred. It is not always usable: a
     record whose stamp was missing has it repaired to the moment of
-    repair (ruling #370), which sits at or after the anchor and says
+    repair (rule STOR-09), which sits at or after the anchor and says
     nothing about the past, and bounding by it would zero a bank the
     device had honestly earned. The install stamp answers the looser
     question, how long this integration could have observed anything
@@ -1478,8 +1432,8 @@ def _watched_seconds(
 
     None where neither stamp predates the anchor, in which case
     nothing is bounded and the caller banks what it had. That is the
-    old behaviour, kept deliberately: a bound we cannot measure must
-    not cost a fleet a lower bound it earned.
+    old behaviour, kept deliberately: a bound that cannot be measured
+    must not cost a house a lower bound it earned.
     """
     for stamp in (record.get(DEV_FIRST_OBSERVED), installed):
         if not isinstance(stamp, str):

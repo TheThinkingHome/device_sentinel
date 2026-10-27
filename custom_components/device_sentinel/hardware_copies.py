@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/hardware_copies.py, Version: 0.25.6 (2026-10-11)
+# File: custom_components/device_sentinel/hardware_copies.py, Version: 0.27.10 (2026-10-27)
 
-"""One piece of hardware shown as several devices (0.25.2).
+"""One piece of hardware shown as several devices (rule WATCH-06).
 
 Since Home Assistant 2026.8 a device belongs to one integration, so a
 box that several integrations know becomes one registry device each.
-Tim Plas's Bluetooth proxies are four each: ESPHome, Bluetooth,
-BlueSight and UniFi. Judged one by one, a dead proxy is several
+A Bluetooth proxy can be four: ESPHome, Bluetooth, BlueSight and
+UniFi. Judged one by one, a dead proxy is several
 problems, and a copy that is quiet by nature reads frozen while the
 box is fine.
 
@@ -26,12 +26,10 @@ recorded, never on a name:
 2. **A Bluetooth adapter registered for a proxy.** Home Assistant's
    Bluetooth integration registers each proxy's adapter as a device of
    its own and points it at the proxy's device (via_device).
-3. **An identifier that is another device's address (0.25.6, ruling
-   #624).** Some integrations record no connection and name the device
+3. **An identifier that is another device's address.** Some integrations record no connection and name the device
    by the box's address instead: BlueSight registers each proxy as
    ("bluesight", "<the proxy's Bluetooth address>"), so its devices
-   never met rule 1 and Tim Plas's proxies showed no clones on
-   0.25.3. An identifier part shaped like a MAC address is pooled with
+   never meet rule 1. An identifier part shaped like a MAC address is pooled with
    every connection and every other identifier holding that address,
    whatever its kind or spelling, and the pool joins on rule 1's terms:
    never two devices of one integration. Such a copy ranks below one
@@ -112,7 +110,7 @@ def find_groups(devices: Iterable[Any], domain_of: Callable[[Any], str | None]) 
     nothing about which box it is, so it joins nothing; and a join that
     would put two devices of one integration together through some
     other path is refused, so a chain of addresses cannot make a hub
-    and its child copies (0.25.2, found by review).
+    and its child copies.
     """
     devices = sorted(devices, key=lambda d: d.id)
     parent: dict[str, str] = {d.id: d.id for d in devices}
@@ -144,10 +142,10 @@ def find_groups(devices: Iterable[Any], domain_of: Callable[[Any], str | None]) 
             continue
         for other in members[1:]:
             join(members[0], other)
-    # Rule 3 (ruling #624): an identifier that is another device's
+    # Rule 3: an identifier that is another device's
     # address. Only an address some device holds in an identifier is
     # pooled here; two connections that read alike with no identifier
-    # holding the address are left to rule 1, as before.
+    # holding the address are left to rule 1.
     by_mac_connection: dict[str, set[str]] = {}
     for device in devices:
         for _kind, value in _connections(device):
@@ -221,20 +219,19 @@ def rank_of(
     First, whether it has entities of its own at all. Then whether it is
     more than a network tracker: a device with a tracker of its own is a
     router's view of the box, which describes the network, not the box.
-    Then whether it records an address of its own (0.25.6, ruling #624,
-    found by review): a device joined only because its identifier names
+    Then whether it records an address of its own: a device joined only because its identifier names
     another device's address, as BlueSight's are, is a view of the box
     from outside, and it carries more entities than a plain ESPHome
-    proxy, so on entity count alone it would have been the copy kept.
+    proxy, so on entity count alone it would be the copy kept.
     Then whether it carries the box's battery reading: a copy set aside
     has its readings dropped with it, so keeping the one without the
-    battery would stop the battery being watched (found by review). Then how
+    battery would stop the battery being watched. Then how
     directly its integration reaches the box. Then how many entities it
     has.
     """
     has_own = 1 if own_count else 0
     # Any tracker of its own marks a router's view of the box, whatever
-    # else that integration adds (found by review).
+    # else that integration adds.
     not_tracker = 0 if "device_tracker" in own_domains else 1
     return (
         has_own,

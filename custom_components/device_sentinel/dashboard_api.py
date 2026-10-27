@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.7 (2026-10-27)
+# File: dashboard_api.py, Version: 0.27.10 (2026-10-27)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -15,8 +15,8 @@ colour without the dashboard asking on a timer. Each tab's own data
 command is added with its tab.
 
 The status reply and every change marker also carry `panel`, the hash
-of the dashboard file Home Assistant serves this run (0.25.4), so a tab
-left open across an update knows it is out of date.
+of the dashboard file Home Assistant serves this run, so a tab
+left open across an update knows it is out of date (rule DASH-14).
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def mutes_for_kinds(kinds: Any) -> list[str]:
     """The mutes offered beside a Problem List item, one per kind it has.
 
     A silence is the freeze mute's; a device gone, or dropping out, the
-    unavailable mute's (James, 17 October 2026); then battery and signal.
+    unavailable mute's; then battery and signal (rule MUTE-06).
     """
     silence = (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED)
     wanted = (
@@ -105,7 +105,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
-    # The device page's actions (0.24.5).
+    # The device page's actions (rule DASH-09).
     websocket_api.async_register_command(hass, ws_device_choices)
     websocket_api.async_register_command(hass, ws_device_rename)
     websocket_api.async_register_command(hass, ws_device_area)
@@ -197,7 +197,7 @@ def ws_subscribe_changes(
     msg: dict[str, Any],
 ) -> None:
     """Push the change marker now and whenever it moves, with the
-    dashboard file served (0.25.4). Home Assistant's frontend subscribes
+    dashboard file served (rule DASH-14). Home Assistant's frontend subscribes
     again when it reconnects after a restart, so the first marker after
     an update reaches an open tab without anyone pressing Refresh."""
     coordinator = _coordinator(hass)
@@ -283,7 +283,7 @@ def ws_problem_list(
             "name": name,
             "integration": coordinator._watched.get(item[TODO_DEVICE_ID], ""),
             # Its name as shown, Zigbee2MQTT for a Zigbee2MQTT device
-            # (0.24.11); the domain above still opens its page.
+            # (rule GEN-07); the domain above still opens its page.
             "integration_name": coordinator._integration_name_of(item[TODO_DEVICE_ID]),
             "problem": problem,
             "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
@@ -291,12 +291,11 @@ def ws_problem_list(
             # So the tab can say "discovered" with the time, in the
             # brief's word for a device that never reported (rule LIST-10).
             "never_reported": TODO_KIND_NEVER_REPORTED in kinds,
-            # The mute beside each problem (0.24.5): the one that
-            # matches it. A silence is the freeze mute's, a device gone
-            # or dropping out the unavailable mute's (James, 17 October
-            # 2026).
+            # The mute beside each problem: the one that matches it. A
+            # silence is the freeze mute's, a device gone or dropping out
+            # the unavailable mute's (rule MUTE-09).
             "mutes": mutes_for_kinds(kinds),
-            # What powers it, beside a battery problem (0.24.7).
+            # What powers it, beside a battery problem.
             "power": (
                 coordinator.power_text(item[TODO_DEVICE_ID])
                 if any(TODO_KIND_FAMILIES.get(kind) == "battery" for kind in kinds)
@@ -361,14 +360,14 @@ async def ws_recommendations(
         msg["id"],
         {
             # Each written line with its key, whether Simple shows it,
-            # and whether it is acknowledged (rulings #695, #699).
+            # and whether it is acknowledged (rules REC-09, REC-07).
             "lines": coordinator.recommendation_lines(),
             "closing": RECOMMENDATIONS_CLOSING,
             # Recommendations about single devices, each with its list,
-            # and the Power choices to set them from the list (0.24.9).
+            # and the Power choices to set them from the list.
             "devices": coordinator.device_recommendations(),
             "power": power_choices(),
-            # The Type choices, to set a type from the list (0.25.3).
+            # The Type choices, to set a type from the list.
             "types": {"choices": list(TYPE_CHOICES), "other": TYPE_OTHER},
         },
     )
@@ -421,7 +420,7 @@ def ws_devices(
     msg: dict[str, Any],
 ) -> None:
     """Return the Devices tab: every watched device, and the devices on
-    the exclusion lists for its Excluded list (ruling #658)."""
+    the exclusion lists for its Excluded list (rule DASH-12)."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
@@ -468,7 +467,7 @@ def ws_use_trimmed_maximum(
     msg: dict[str, Any],
 ) -> None:
     """The device page's button: start a device's Log-Normal Percentile
-    count again, as a firmware update does (0.24.0). Admin only, as
+    count again, as a firmware update does (rule FRZ-05). Admin only, as
     every act on the dashboard is."""
     coordinator = _coordinator(hass)
     if coordinator is None:
@@ -486,7 +485,7 @@ def _page_act(
     msg: dict[str, Any],
     act: Callable[[Any], Any],
 ) -> None:
-    """Run one device-page act and answer the page (0.24.5).
+    """Run one device-page act and answer the page (rule DASH-10).
 
     An unknown device answers not_found; a name another device shows
     answers name_in_use with the sentence the page shows; anything Home
@@ -559,7 +558,7 @@ def ws_device_rename(
 def ws_device_power(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Set what powers a device, or clear the owner's entry (0.24.7),
+    """Set what powers a device, or clear the owner's entry,
     recorded with where it was pressed (rule BRIEF-07)."""
     def act(c: Any) -> dict[str, Any]:
         c.page_from(msg["source"], lambda: c.page_set_power(
@@ -586,7 +585,7 @@ def ws_device_power(
 def ws_device_type(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Set what a device is, or go back to what its entities say (0.25.1),
+    """Set what a device is, or go back to what its entities say,
     recorded with where it was pressed (rule BRIEF-07)."""
     _page_act(
         hass, connection, msg,
@@ -647,7 +646,7 @@ def ws_device_label(
 def ws_device_label_mute(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Mute by label from the device page (ruling #706)."""
+    """Mute by label from the device page (rule MUTE-09)."""
     if "label_id" not in msg and "name" not in msg:
         connection.send_error(msg["id"], "invalid_format", "A label or a new label's name is needed")
         return
@@ -671,7 +670,7 @@ def ws_device_label_mute(
 def ws_device_new_area(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Make an area and move a device into it (0.25.0)."""
+    """Make an area and move a device into it."""
     _page_act(hass, connection, msg, lambda c: c.page_new_area(msg["device_id"], msg["name"]))
 
 
@@ -687,7 +686,7 @@ def ws_device_new_area(
 def ws_device_new_label(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Make a label and put it on a device (0.25.0)."""
+    """Make a label and put it on a device."""
     _page_act(hass, connection, msg, lambda c: c.page_new_label(msg["device_id"], msg["name"]))
 
 
@@ -704,7 +703,7 @@ def ws_device_new_label(
 def ws_device_battery(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Confirm, cancel, or set the day of a battery replacement (#701, #702)."""
+    """Confirm, cancel, or set the day of a battery replacement (rule BAT-07)."""
     _page_act(
         hass, connection, msg,
         lambda c: c.battery_answer(msg["device_id"], msg["action"], msg.get("day")),
@@ -725,7 +724,7 @@ def ws_device_battery(
 def ws_recommendation_ack(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Tick or untick one device on one card, or one written line (#699)."""
+    """Tick or untick one device on one card, or one written line (rule REC-07)."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
@@ -753,7 +752,7 @@ def ws_recommendation_ack(
 def ws_device_turn_on(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Switch on one device's own entities of one kind (ruling #696).
+    """Switch on one device's own entities of one kind (rule REC-05).
 
     Admin only, one device and one kind: the only way left to switch on
     another integration's entity since the Enable buttons went. Recorded
@@ -776,7 +775,7 @@ def ws_device_turn_on(
         vol.Required("device_id"): str,
         vol.Required("kind"): vol.In(["everything", "freeze", "unavailable", "battery", "signal"]),
         vol.Required("on"): bool,
-        # Where the press was made, for the brief's line (ruling #643).
+        # Where the press was made, for the brief's line (rule BRIEF-07).
         vol.Optional("source", default="device_page"): vol.In(list(MUTE_SOURCES_SAID)),
     }
 )
@@ -797,7 +796,7 @@ def ws_device_mute(
         vol.Required("type"): "device_sentinel/device_exclude",
         vol.Required("device_id"): str,
         vol.Required("on"): bool,
-        # Where it was pressed, for the brief's row (ruling #658).
+        # Where it was pressed, for the brief's row (rule BRIEF-07).
         vol.Optional("source", default="device_page"): vol.In(["device_page", "devices_tab"]),
     }
 )
@@ -805,7 +804,7 @@ def ws_device_mute(
 def ws_device_exclude(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Exclude one device, or take it back, as Settings does (ruling #625)."""
+    """Exclude one device, or take it back, as Settings does (rule MUTE-03)."""
     _page_act(
         hass, connection, msg,
         lambda c: c.page_set_excluded(msg["device_id"], msg["on"], msg["source"]),
@@ -824,7 +823,7 @@ def ws_device_exclude(
 def ws_integration_exclude(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Exclude an integration, or take it back, from its page (ruling #659).
+    """Exclude an integration, or take it back, from its page (rule MUTE-03).
 
     Only an integration that owns a device has a page that offers it."""
     coordinator = _coordinator(hass)
@@ -899,9 +898,9 @@ async def ws_signal_trends(
 ) -> None:
     """Return the Signal Trends tab.
 
-    Built in the executor, as the reports are (0.22.20). The tab judges
-    every stored day of every device, about 100 ms on the fleets held,
-    and on the event loop all of Home Assistant waited while it did.
+    Built in the executor, as the reports are, because the tab judges
+    every stored day of every device, about 100 ms, and on the event
+    loop all of Home Assistant would wait while it did (rule CODE-06).
     It reads the same records the report writer reads from the
     executor, and its list of watched records is a copy taken when it
     starts.

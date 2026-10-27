@@ -3,22 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.27.9 (2026-10-27)
+# File: report_maintainer.py, Version: 0.27.10 (2026-10-27)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
 probe.
 
-One of the four report modules split out of reports.py, which
-had grown past two thousand lines and held every report the
-integration writes. The seam is the report rather than the
-audience: a split by reader was considered and does not survive
-contact with the code, because one writer produces both kinds
-and the shared helpers serve both (ruling #199).
+One of the report modules, split by report rather than by reader,
+because one writer produces both kinds and the shared helpers serve
+both (rule CODE-11).
 
-Still a file split rather than a boundary. These methods are
-mixed into the coordinator and read its state freely, so `self`
-is the coordinator throughout and nothing here stands alone.
+Still a file split rather than a boundary. These methods are mixed
+into the coordinator and read its state freely, so `self` is the
+coordinator throughout and nothing here stands alone.
 """
 
 from __future__ import annotations
@@ -103,13 +100,13 @@ class MaintainerReportMixin:
     """The Markdown files written for whoever maintains the system."""
 
     # Set in the coordinator; whether stack_probe.md has refused a
-    # write this start (0.23.10).
+    # write this start.
     _probe_write_failed: bool
 
     @staticmethod
     def _episode_duration(seconds: float | None) -> str:
         """Return a duration: the compact form below two days, words
-        beyond (0.23.19)."""
+        beyond."""
         if seconds is None:
             return ""
         seconds = max(0.0, seconds)
@@ -129,29 +126,24 @@ class MaintainerReportMixin:
         """Write the silence-episode report.
 
         The forensic file, which explains freeze verdicts and decides
-        nothing (ruling #103). One row per episode, newest first,
-        recording what no other report can: whether a long
-        silence ended because the device chose to speak or because
-        something made it speak. That distinction is the difference
-        between a rhythm the statistics should learn and a hang no
-        amount of patience would have fixed, and it is invisible in
-        any per-device summary because a device produces one episode
-        per occurrence, not one number.
+        nothing (rule BRIEF-16). One row per episode, newest first,
+        recording whether a long silence ended because the device chose
+        to speak or because something made it speak. That is the
+        difference between a rhythm worth learning and a hang no
+        patience would fix, and no per-device summary can show it.
         """
         episodes = list(self.episode_rows())
         episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
         now = dt_util.utcnow().timestamp()
-        # Still silent (0.22.24): fully open, or truncated by an
-        # intervention and waiting on the device's first word since.
-        # Counting only the first read "0 still open" while a device
-        # had been quiet seventeen hours.
+        # Still silent: fully open, or truncated by an intervention and
+        # waiting on the device's first word since. Counting only the
+        # first would read "0 still open" while a device had been quiet
+        # for hours.
         open_count = sum(1 for row in episodes if self._still_silent(row))
         # When the newest row was opened, because an empty stretch and
         # a stopped recorder look identical from the file alone
-        # (ruling #203). A quiet fleet can go days without a single
-        # device passing its own threshold, and the last thing written
-        # here was a mesh-wide event that produced most of the file in
-        # one hour, so the file reads as though it stalled.
+        # (rule BRIEF-16). A quiet house can go days without a device
+        # passing its own threshold.
         newest = (
             f", newest {self._episode_stamp(episodes[0][EP_SINCE])}"
             if episodes
@@ -198,11 +190,11 @@ class MaintainerReportMixin:
             ]
             for row in episodes:
                 end_epoch = row[EP_AT]
-                # The whole silence (0.22.25): a device that has not
-                # spoken since the intervention is still silent, and
-                # the lower bound the intervention truncated it at
-                # said nothing a person could use. The intervention's
-                # own moment is in the AT column.
+                # The whole silence: a device that has not spoken since
+                # the intervention is still silent, and the lower bound
+                # the intervention truncated it at says nothing a person
+                # can use. The intervention's own moment is in the AT
+                # column.
                 silence = (
                     (end_epoch - row[EP_SINCE])
                     if end_epoch is not None and not self._still_silent(row)
@@ -233,7 +225,7 @@ class MaintainerReportMixin:
         )
 
     def _probe_device(self, row: dict[str, Any]) -> str:
-        """A probe line's device, by name, or nothing (0.23.8)."""
+        """A probe line's device, by name, or nothing (rule STACK-12)."""
         device_id = row.get(PROBE_DEVICE_ID)
         if not device_id:
             return ""
@@ -287,7 +279,7 @@ class MaintainerReportMixin:
         """Append probe lines to stack_probe.md, rolling it at the cap.
 
         Runs in the executor. replace starts a fresh file, used once
-        when lines stored before 0.23.9 move into it.
+        when probe lines an older release kept in storage move into it.
         """
         directory = self.hass.config.path(REPORT_DIR)
         path = os.path.join(directory, REPORT_STACK_PROBE)
@@ -297,8 +289,7 @@ class MaintainerReportMixin:
             # A full disk, a path that cannot be written, or text that
             # cannot be encoded (a lone surrogate in a name is not an
             # OSError). The lines are lost; one warning per start says
-            # so, where before 0.23.10 Home Assistant logged an
-            # anonymous traceback every minute.
+            # so, rather than a traceback every minute.
             if self._probe_write_failed:
                 LOGGER.debug("device_sentinel: %s not written (%s)", path, err)
                 return
@@ -320,9 +311,8 @@ class MaintainerReportMixin:
             if replace:
                 # The stored lines moving in are older than anything
                 # already written, so lines already here are kept after
-                # them (0.23.12). Replacing the file lost the catch-up
-                # fold's lines on the first start after an upgrade from
-                # 0.23.8, found replaying the second fleet on 0.23.11.
+                # them; replacing the file would lose the catch-up
+                # fold's lines on the first start after an upgrade.
                 header = set(self._probe_header())
                 kept: list[str] = []
                 with contextlib.suppress(OSError):
@@ -352,12 +342,11 @@ class MaintainerReportMixin:
 
     def _episode_lag(self, row: dict[str, Any], now: float) -> str:
         """The lag, or how long the device has been silent since the
-        intervention that truncated its episode (0.22.24).
+        intervention that truncated its episode.
 
-        A blank cell read as nothing to say. The reference rig's
-        watering sensor was truncated by the nightly reboot and had
-        then been silent seventeen hours, which is the whole story of
-        that row.
+        A blank cell reads as nothing to say, while a device truncated
+        by a nightly restart and silent for hours since is the whole
+        story of that row.
         """
         since_what = str(row[EP_ENDED] or "").replace(
             "intervention (", "the "
@@ -377,8 +366,7 @@ class MaintainerReportMixin:
 
     def _rhythm_cells(self, record: dict[str, Any], device_id: str) -> list[str]:
         """Six cells: both rules' rhythms, the rule in use and its
-        window, and the Log-Normal Percentile's working (#542, amended
-        in 0.24.0)."""
+        window, and the Log-Normal Percentile's working (rule BRIEF-15)."""
         found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
         window = self._freeze_window(record)  # type: ignore[attr-defined]
         gap = self._fmt_gap  # type: ignore[attr-defined]
@@ -531,10 +519,8 @@ class MaintainerReportMixin:
             )
 
         # A device that keeps dropping out is listed for that on the
-        # problem list (0.23.2), and none of the three lists above holds
-        # it, so until 0.25.1 this section left it out: the second
-        # fleet's report of 8 October counted 2 devices while S73 stood
-        # on the list after 404 drops.
+        # problem list, and none of the three lists above holds it, so
+        # it needs its own lines here (rule BRIEF-15).
         dropping = sorted(self.flapping_list, key=lambda r: (r["name"] or "").lower())
         dropping_lines = [
             f"- **{self._report_cell(row['name'] or row['device_id'])}** "
@@ -544,7 +530,7 @@ class MaintainerReportMixin:
         ]
 
         # The devices this section lists: a falling forecast alone has
-        # no line here, so it is not counted (found by review).
+        # no line here, so it is not counted.
         faults = {row["device_id"] for row in self.frozen_devices_list}
         faults |= {row["device_id"] for row in self.battery_low_list}
         faults |= {row["device_id"] for row in self.signal_problem_list}
@@ -678,17 +664,13 @@ class MaintainerReportMixin:
             f"ITS NORMAL | BAD-DAY LINE | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
             # One cell per column, matching the header and every data
-            # row: fifteen since the rhythm shadow's six (0.23.17). A
-            # separator one cell too long makes every renderer print
-            # the table as plain text, which is what happened when the
-            # Dwell column left the header and the rows but not this
-            # line (reported against 0.19.14 on 15 September); a test
-            # counts the pipes now.
+            # row. A separator one cell too long makes every renderer
+            # print the table as plain text; a test counts the pipes.
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.watched_records():
-            # Named by the ladder every surface asks (ruling #402); the
+            # Named by the ladder every surface asks (rule DEV-01); the
             # registry name alone left a nameless device as its id.
             device_name = self._device_name(device_id)
             integration = self._watched.get(device_id, "?")
@@ -709,9 +691,7 @@ class MaintainerReportMixin:
                     # rows are collected, sorted, and only then
                     # written: a call in the second loop reads
                     # whatever record the first loop left behind and
-                    # prints one device's figure on every row. Today's
-                    # normal and bad-day line replaced the floor's
-                    # weekly drift and the mean in 0.22.16.
+                    # prints one device's figure on every row.
                     *self._signal_today_cells(record),
                     self._format_battery_cell(record),
                     self.signal_railed(record),
@@ -790,8 +770,7 @@ class MaintainerReportMixin:
             return f"label: {', '.join(names)}"
         if device_id in devices:
             return "device"
-        # A hub's mute covers the devices it controls (James, 14
-        # October 2026).
+        # A hub's mute covers the devices it controls (rule STACK-09).
         hub = self.watched_hub_of(device_id)  # type: ignore[attr-defined]
         if hub is not None and self._mute_source(hub, integrations, labels, devices) is not None:
             return "hub"
@@ -823,10 +802,9 @@ class MaintainerReportMixin:
     def _family_mute_texts(self, device_id: str) -> list[str]:
         """Freeze, battery, signal and unavailable mutes, each with its source.
 
-        Invisible on Classification until 0.22.13, so a device muted
-        for battery alone read as if nothing were muted (from the
-        second fleet's review, ruled 21 September 2026). In the order
-        the owner set for 0.22.16: freeze, battery, signal.
+        Shown on Classification so a device muted for battery alone
+        does not read as if nothing were muted. In the order freeze,
+        battery, signal (rule MUTE-10).
         """
         options = self.entry.options
         found = []
@@ -837,7 +815,7 @@ class MaintainerReportMixin:
              CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
             ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS,
              CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
-            # By label or device (James, 18 October 2026).
+            # By label or device, never by integration (rule MUTE-06).
             ("unavailable", "", CONF_UNAVAILABLE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_DEVICES),
         ):
             source = self._mute_source(
@@ -855,8 +833,8 @@ class MaintainerReportMixin:
 
         The one wording behind Classification, classification.md, a
         device's page, the Devices tab and an integration's device
-        list (0.22.16), so a device reads the same wherever it is
-        named. Empty when nothing is muted.
+        list, so a device reads the same wherever it is named. Empty
+        when nothing is muted (rule MUTE-10).
         """
         global_mute = self._global_mute_text(device_id)
         mutes = ([global_mute] if global_mute else []) + (
@@ -873,12 +851,11 @@ class MaintainerReportMixin:
         global one first and then freeze, battery and signal, each
         naming its source; a set-aside device carries why it was set
         aside, and an exclusion names the integration excluded
-        (ruling #257; the sources from the second fleet's review,
-        0.22.13). `muted_global` keeps the global mute alone, for the
-        Integrations tab's count, which counts a device as muted only
-        when it is muted from everything.
+        (rule WATCH-03). `muted_global` keeps the global mute alone,
+        for the Integrations tab's count, which counts a device as
+        muted only when it is muted from everything.
         COPIES counts watched devices sharing a name, by the naming
-        ladder (ruling #402). Sorted by name, case-insensitively.
+        ladder (rule DEV-01). Sorted by name, case-insensitively.
         """
         name_copy_counts: dict[str, int] = {}
         for device_id in self._watched:
@@ -892,16 +869,16 @@ class MaintainerReportMixin:
                 "name": name,
                 "integration": integration_domain,
                 # The name the Devices tab shows, for the tab's column;
-                # the id still opens the integration's page (0.27.3).
+                # the id still opens the integration's page.
                 "integration_name": self._integration_name_of(device_id, integration_domain),  # type: ignore[attr-defined]
                 "watched": True,
                 "muted": self.mute_text(device_id),
                 "muted_global": self._global_mute_text(device_id),
                 "set_aside": "",
                 "copies": name_copy_counts.get(name, 1),
-                # What the device is (0.25.3), for the tab's TYPE column.
+                # What the device is, for the tab's TYPE column.
                 "type": self.type_words(device_id),  # type: ignore[attr-defined]
-                # Judged by its hub (#665), beside the tick.
+                # Judged by its hub, beside the tick (rule STACK-10).
                 "judged": (
                     "hub" if self.is_hub(device_id)  # type: ignore[attr-defined]
                     else "judged by its hub" if self.judged_by_hub(device_id)  # type: ignore[attr-defined]
@@ -917,8 +894,8 @@ class MaintainerReportMixin:
                 "watched": False,
                 "muted": "",
                 "muted_global": "",
-                # Which exclusion (ruling #625): the device's own, or
-                # its integration's.
+                # Which exclusion: the device's own, or its
+                # integration's (rule MUTE-03).
                 "set_aside": (
                     f"{reason} (device)"
                     if reason == SET_ASIDE_EXCLUDED and device_id in self.excluded_devices  # type: ignore[attr-defined]
@@ -948,10 +925,10 @@ class MaintainerReportMixin:
         Watched check, with the reason alongside it. COPIES flags a
         name shared by more than one registry device. The MUTED cell
         holds every mute on a device, global first and then freeze,
-        battery and signal, each with its source (0.22.13), in the
-        same words `classification_rows` gives the dashboard. The
-        INTEGRATION column names the integration as the tab and the
-        Daily Brief do, not by its id (rule GEN-07).
+        battery and signal, each with its source, in the same words
+        `classification_rows` gives the dashboard. The INTEGRATION
+        column names the integration as the tab and the Daily Brief
+        do, not by its id (rule GEN-07).
         """
 
         rows = [
@@ -975,10 +952,9 @@ class MaintainerReportMixin:
             f"How to read this file: [The Diagnostic Reports]"
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
-            # The count of entities with no device left this line in
-            # 0.22.13: Device Sentinel never watches them, and "visible
-            # only at entity level" said it did. The count stays in the
-            # diagnostics.
+            # No count of entities with no device here, because Device
+            # Sentinel never watches them and the line would say it did.
+            # The count stays in the diagnostics.
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (integrations "
             f"and devices you asked to exclude, service devices, disabled devices, "
@@ -1012,15 +988,15 @@ class MaintainerReportMixin:
                 f"{self._report_cell(set_aside_mark)} | {copies_cell} |"
             )
 
-        # The key to SET ASIDE, the same words as the tab's (0.22.13).
+        # The key to SET ASIDE, the same words as the tab's.
         lines += ["", "Set aside, by reason:", ""]
         lines += [
             f"- {reason}: {meaning}" for reason, meaning in SET_ASIDE_MEANINGS
         ]
 
-        # Integrations with no hardware of their own own no row above,
+        # Integrations with no hardware of their own have no row above,
         # so they are named here, with the same meaning the
-        # Integrations tab gives (0.22.21).
+        # Integrations tab gives.
         riders = sorted(self._no_hardware_integrations)
         if riders:
             meanings = dict(STANDING_MEANINGS)

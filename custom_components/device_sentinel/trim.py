@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: trim.py, Version: 0.20.11 (2026-09-08)
+# File: trim.py, Version: 0.27.10 (2026-10-27)
 
 """Erasing one device's or one integration's learned history.
 
 The only place in the integration that destroys a person's data on
-purpose (ruling #307). It exists for support: a fault found by
-reading somebody's diagnostics used to need a bespoke repair written
-into a release, which is what the 0.16.2 one-time trim was, and that
-does not scale past the first few people. The measure of this module
+purpose (rule CFG-10). It exists for support, because a fault found
+in somebody's diagnostics would otherwise need a repair written into a
+release, and that does not scale. The measure of this module
 is whether a support message can read "go to the Advanced tab, pick
 that device, save."
 
@@ -32,7 +31,7 @@ what the fold left.
 It erases history and nothing else. Muting and exclude entries
 survive, because a trimmed device is rediscovered within seconds and
 trimming data is not a statement about wanting the device gone
-(ruling #307). Every kind of plumbing state survives, bridge, broker,
+(rule CFG-10). Every kind of plumbing state survives, bridge, broker,
 Wi-Fi and integration outages alongside pairing and storm state,
 because they describe the house rather than a device's learned
 history, and clearing them would fabricate gaps in the attribution
@@ -208,10 +207,9 @@ def log_result(
 
     The one destructive act the integration performs, so it says so
     plainly, says what actually went, and names the file that holds
-    the way back. The counts were accepted and dropped on the floor
-    until ruling #329: a person reading this line after a trim that
+    the way back. A person reading this line after a trim that
     matched a device with no record needs to see the zero rather
-    than infer it from a name with nothing beside it.
+    than infer it from a name with nothing beside it (rule CODE-08).
     """
     went = (
         ", ".join(

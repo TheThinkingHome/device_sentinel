@@ -3,26 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.8 (2026-10-27)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.10 (2026-10-27)
 
-"""Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
+"""Acting from the device page (rule DASH-09).
 
 A person looking at a device in trouble can rename it, place it, label
-it, give it a better clock, mute it or exclude it (0.25.6) without
-leaving the page. Names,
-areas and labels are written to Home Assistant's device registry, so
-they stay Home Assistant's and are read back as every other registry
-change is. A mute is written to Device Sentinel's own options, the
-same ones Settings writes, through the same update listener, so
-everything that reacts to a mute reacts the same way.
+it, give it a better clock, mute it or exclude it without leaving the
+page. Names, areas and labels are written to Home Assistant's device
+registry, so they stay Home Assistant's and are read back as every
+other registry change is. A mute is written to Device Sentinel's own
+options, the same ones Settings writes, through the same update
+listener, so everything that reacts to a mute reacts the same way.
 
 Every act rebuilds Device Sentinel's view at once, so the page shows
-what was done even inside the registry debouncer's two seconds
-(0.24.2), and records one row in the brief, on the device's own line,
-with where it was pressed: "from its device page", or "from the
-Recommendations tab" for an act pressed on a card there. The options a page mute writes are left out of
-the "Settings changed" row, so one act makes one row (ruling #307's
-rule for the trim).
+what was done even inside the registry debouncer's two seconds, and
+records one row in the brief, on the device's own line, with where it
+was pressed: "from its device page", or "from the Recommendations
+tab" for an act pressed on a card there. The options a page mute
+writes are left out of the "Settings changed" row, so one act makes
+one row (rule BRIEF-07).
 """
 
 from __future__ import annotations
@@ -61,8 +60,9 @@ from .const import (
     SYS_INTEGRATION_PAGE,
 )
 
-# What a "Turn it on" switches on, as the brief's row names it (ruling
-# #696). Last Seen and the Z-Wave status are apart since #698.
+# What a "Turn it on" switches on, as the brief's row names it
+# (rule DASH-09). Last Seen and the Z-Wave status are apart, each with
+# its own card (rule REC-05).
 TURN_ON_WORDS = {
     "last_seen": "Last Seen",
     "node_status": "Z-Wave status",
@@ -73,15 +73,14 @@ TURN_ON_WORDS = {
 
 # Each mute kind's three settings lists, in the order every mute is
 # read: the integration, the device's labels, the device itself.
-# Where a mute was pressed, in the words the brief prints (ruling
-# #643): the Slow Reporting Devices card and the Problem List call the
-# same action as the device page, and all three once read "from its
-# device page".
+# Where a mute was pressed, in the words the brief prints, because the
+# Slow Reporting Devices card and the Problem List call the same action
+# as the device page (rule BRIEF-07).
 MUTE_SOURCES_SAID: dict[str, str] = {
     "device_page": "from its device page",
     "recommendations": "from the Recommendations tab",
     "problem_list": "from the Problem List",
-    # The Devices tab's Excluded list (ruling #658).
+    # The Devices tab's Excluded list (rule DASH-12).
     "devices_tab": "from the Devices tab",
 }
 
@@ -90,9 +89,9 @@ MUTE_KINDS: dict[str, tuple[str, str, str]] = {
     "freeze": (CONF_FREEZE_MUTED_INTEGRATIONS, CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
     "battery": (CONF_BATTERY_MUTED_INTEGRATIONS, CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
     "signal": (CONF_SIGNAL_MUTED_INTEGRATIONS, CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
-    # A device only: no integration or label list (James, 17 October
-    # 2026), so those two keys are never set.
-    # By label or device, never integration (James, 18 October 2026).
+    # A device only: no integration or label list, so those two keys
+    # are never set.
+    # By label or device, never integration (rule MUTE-06).
     "unavailable": ("", CONF_UNAVAILABLE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_DEVICES),
 }
 
@@ -108,7 +107,7 @@ class NameInUse(Exception):
 
 def _is_voltage(ent: Any) -> bool:
     """A voltage sensor of the device's own: on a battery device, its
-    battery voltage (0.27.3)."""
+    battery voltage."""
     return (
         str(ent.device_class or ent.original_device_class) == "voltage"
         and ent.entity_id.startswith("sensor.")
@@ -190,8 +189,8 @@ class DeviceActionsMixin:
             "integration_name": device.name,
             "labels": shown,
             "last_seen_off": self._switched_off_last_seen(device_id) is not None,
-            # The Battery and Signal sensor rows' "Turn it on" (0.26.7,
-            # point 1 of the repair-card rulings of 18 October).
+            # The Battery and Signal sensor rows' "Turn it on"
+            # (rule DASH-09).
             "battery_off": self.switched_off(device_id, "battery") is not None,
             "signal_off": self.switched_off(device_id, "signal") is not None,
             "mutes": self.page_mutes(device_id),
@@ -200,7 +199,7 @@ class DeviceActionsMixin:
 
     def page_excluded(self, device_id: str) -> dict[str, bool]:
         """Whether the device is excluded on its own, and whether its
-        integration is (ruling #625). Only its own can be lifted here."""
+        integration is (rule MUTE-03). Only its own can be lifted here."""
         own = device_id in self.excluded_devices  # type: ignore[attr-defined]
         domain = None
         device = dr.async_get(self.hass).async_get(device_id)
@@ -222,7 +221,7 @@ class DeviceActionsMixin:
         ]
         devices = dr.async_get(self.hass)
         # How many devices carry each label, so the Mute by label picker
-        # can say what a label mute reaches before it saves (#706).
+        # can say what a label mute reaches before it saves (rule MUTE-09).
         labels = [
             {
                 "id": label.label_id,
@@ -237,11 +236,11 @@ class DeviceActionsMixin:
         return {"areas": areas, "labels": labels}
 
     def _own_entities_of(self, device_id: str, kind: str) -> list[Any]:
-        """The device's own registry entries of one kind (ruling #698).
+        """The device's own registry entries of one kind (rule REC-05).
 
-        Own means the integration that owns the device wrote them
-        (#404, #463): a battery sensor Battery Notes adds, or any other
-        integration's entity on the device, never counts.
+        Own means the integration that owns the device wrote them: a
+        battery sensor Battery Notes adds, or any other integration's
+        entity on the device, never counts (rule WATCH-02).
         """
         from homeassistant.helpers import entity_registry as er
 
@@ -264,7 +263,7 @@ class DeviceActionsMixin:
         ]
 
     def switched_off(self, device_id: str, kind: str) -> str | None:
-        """Whether a watched device's kind is switched off (ruling #698).
+        """Whether a watched device's kind is switched off (rule REC-05).
 
         "user" when a person switched off every one of its own entities
         of that kind, "other" when Home Assistant or the integration did,
@@ -293,14 +292,14 @@ class DeviceActionsMixin:
 
     def _switched_off_last_seen(self, device_id: str) -> str | None:
         """The device's switched-off Last Seen entity, if its Last Seen
-        is switched off (ruling #698)."""
+        is switched off (rule REC-05)."""
         if self.switched_off(device_id, "last_seen") is None:
             return None
         own = self._own_entities_of(device_id, "last_seen")
         return str(own[0].entity_id) if own else None
 
     def _switched_off_node_status(self, device_id: str) -> bool:
-        """Whether the device's node status sensor is switched off (#671)."""
+        """Whether the device's node status sensor is switched off (rule DASH-09)."""
         from homeassistant.helpers import entity_registry as er
 
         entity_id = self._node_status_entity.get(device_id)  # type: ignore[attr-defined]
@@ -374,9 +373,9 @@ class DeviceActionsMixin:
         if wanted is not None and any(
             unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn") for ch in wanted
         ):
-            # A NUL or a direction-flipping mark reached the registry,
-            # and from there the brief and notifications (0.24.9). The
-            # same refusal as the Power row's own words.
+            # A NUL or a direction-flipping mark would reach the
+            # registry, and from there the brief and notifications. The
+            # same refusal as the Power row's own words (rule DEV-05).
             raise ValueError("That text holds characters that cannot be shown.")
         shown = wanted or device.name or ""
         if not confirm and shown:
@@ -401,9 +400,9 @@ class DeviceActionsMixin:
     def _new_registry_name(name: str | None) -> str:
         """A name for a new area or label, or a refusal saying why.
 
-        Held to the rename's rule (0.24.9): accents and emoji are
-        welcome, hidden and control characters are not, since the name
-        goes on to the brief, the Problem List and notifications.
+        Held to the rename's rule: accents and emoji are welcome,
+        hidden and control characters are not, since the name goes on
+        to the brief, the Problem List and notifications (rule DEV-05).
         """
         wanted = (name or "").strip()
         if not wanted:
@@ -413,7 +412,7 @@ class DeviceActionsMixin:
         return wanted
 
     def page_new_area(self, device_id: str, name: str | None) -> None:
-        """Make an area and move the device into it (0.25.0, Tim Plas).
+        """Make an area and move the device into it (rule DASH-09).
 
         A name Home Assistant already holds is the area it names, not a
         second area of the same name, which Home Assistant would refuse.
@@ -427,7 +426,7 @@ class DeviceActionsMixin:
         self._page_done(device_id, f"moved to {area.name}{'' if held else ', a new area'}")
 
     def page_new_label(self, device_id: str, name: str | None) -> None:
-        """Make a label and put it on the device (0.25.0, Tim Plas).
+        """Make a label and put it on the device (rule DASH-09).
 
         As with an area, a name Home Assistant already holds is that
         label.
@@ -445,7 +444,7 @@ class DeviceActionsMixin:
     def page_label_mute(
         self, device_id: str, kind: str, label_id: str | None = None, name: str | None = None
     ) -> dict[str, Any]:
-        """Mute by label, from the device page (ruling #706, Advanced).
+        """Mute by label, from the device page, in Advanced (rule MUTE-09).
 
         One of the person's labels, or a new one by name, goes on the
         device and onto the kind's label list, the list Settings writes,
@@ -502,14 +501,13 @@ class DeviceActionsMixin:
         self._page_done(device_id, f"label {label.name} {'added' if add else 'removed'}")
 
     def page_turn_on(self, device_id: str, kind: str) -> int:
-        """Switch on one device's own entities of one kind (ruling #696).
+        """Switch on one device's own entities of one kind (rule REC-05).
 
         The one way Device Sentinel switches on another integration's
-        entity since the three Enable buttons were retired: one device,
-        one kind, pressed by an administrator on the device's page or
-        its Recommendations card. Last Seen and the Z-Wave status are
-        separate kinds since #698 gave the status its own card. Returns
-        how many entities were switched on.
+        entity: one device, one kind, pressed by an administrator on the
+        device's page or its Recommendations card. Last Seen and the
+        Z-Wave status are separate kinds, each with its own card.
+        Returns how many entities were switched on.
         """
         from homeassistant.helpers import entity_registry as er
 
@@ -534,7 +532,7 @@ class DeviceActionsMixin:
     def page_set_excluded(
         self, device_id: str, on: bool, source: str = "device_page"
     ) -> None:
-        """Exclude the device, or take it back (ruling #625), in the list
+        """Exclude the device, or take it back (rule MUTE-03), in the list
         Settings writes beside the integrations, through the same update
         listener. Its record goes at the next midnight's fold, as an
         excluded integration's does, so taking it back before then
@@ -561,9 +559,9 @@ class DeviceActionsMixin:
 
     def page_set_integration_excluded(self, domain: str, on: bool) -> None:
         """Exclude an integration, or take it back, from its page on the
-        dashboard (ruling #659), in the list Settings writes, through the
+        dashboard (rule MUTE-03), in the list Settings writes, through the
         same update listener. The ladder is settled as a Settings save
-        settles it (ruling #336), so its mutes go with an exclusion. Its
+        settles it, so its mutes go with an exclusion (rule MUTE-04). Its
         devices' records go at the next midnight's fold, so taking it
         back before then loses nothing. One act, one row in the brief."""
         from .config_flow import settle_options  # the flow imports this module's package
@@ -593,7 +591,7 @@ class DeviceActionsMixin:
         self.hass.config_entries.async_update_entry(self.entry, options=merged)
         offers = self.exclusion_offers()  # type: ignore[attr-defined]
         if on and offers.get(domain) == OFFER_OPEN:
-            # Its card is answered for good (Ruled Change 70).
+            # Its card is answered for good.
             self.data[DATA_EXCLUSION_OFFERS] = {**offers, domain: OFFER_CLOSED}  # type: ignore[attr-defined]
             self._dirty = True  # type: ignore[attr-defined]
         self._record_system_event(  # type: ignore[attr-defined]
@@ -605,7 +603,7 @@ class DeviceActionsMixin:
 
     def _mute_words(self, device_id: str, kind: str, on: bool) -> str:
         """What a mute set or lifted on the device page covers, for its
-        system event: each mute its own kind (James, 18 October 2026)."""
+        system event: each mute its own kind."""
         return kind
 
     def page_set_mute(
@@ -613,7 +611,7 @@ class DeviceActionsMixin:
     ) -> None:
         """Set or lift one kind's mute on the device, in the options
         Settings writes, through the same update listener. The brief's
-        line says where it was pressed (ruling #643)."""
+        line says where it was pressed (rule BRIEF-07)."""
         self._device(device_id)
         if kind not in MUTE_KINDS:
             raise ValueError(f"no mute kind {kind}")
@@ -626,7 +624,7 @@ class DeviceActionsMixin:
         else:
             return
         # One act, one row: the listener leaves this key out of its
-        # "Settings changed" row (ruling #307's rule for the trim).
+        # "Settings changed" row (rule BRIEF-07).
         self._page_option_keys.add(key)
         self.hass.config_entries.async_update_entry(
             self.entry, options={**self.entry.options, key: current}

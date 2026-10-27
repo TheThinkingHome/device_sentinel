@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.27.1 (2026-10-23)
+# File: history_file.py, Version: 0.27.10 (2026-10-27)
 
 """The history file: the older part of the learned history, kept apart.
 
-Why (rulings #620, #633, #655, #660). The main file is rewritten about
+Why: the main file is rewritten about
 a hundred times a day, and each write carried every day of history kept
 to add one row. The part older than the newest thirty entries of each
 daily series, and the long-kept rows older than the line, never change
 between folds, so they live in a file of their own and the main file is
 written as a view without them. Memory keeps one whole record: every
-reader sees the joined record, as before.
+reader sees the joined record (rule STOR-03).
 
 The rules this module serves:
 
@@ -24,9 +24,9 @@ The rules this module serves:
   midnight less thirty days, set at each fold. Only the leading rows
   older than the line move, so the join puts them back in their order.
 - The history file is written only when its part changes, which a
-  digest of that part decides at each save (#655). The write runs four
-  steps (#660): rename the history file to last-good, write the new one,
-  write the main file, copy the new one over last-good.
+  digest of that part decides at each save (rule STOR-02). The write runs four
+  steps: rename the history file to last-good, write the new one,
+  write the main file, copy the new one over last-good (rule STOR-04).
 - At load, the history copy whose generation matches the main file is
   joined. A copy that does not match, or does not pass the shape check,
   is not joined; with no copy to join, the start uses the main file's
@@ -94,7 +94,7 @@ SERIES_FIELDS = (
     DEV_DAILY_MAX,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
-    # Self-dated daily rows (#737), cut as the series are.
+    # Self-dated daily rows, cut as the series are (rule BAT-16).
     DEV_BATTERY_EVIDENCE,
     *SIGNAL_SERIES_FIELDS,
 )

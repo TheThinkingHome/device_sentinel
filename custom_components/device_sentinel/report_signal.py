@@ -3,25 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.27.9 (2026-10-27)
+# File: report_signal.py, Version: 0.27.10 (2026-10-27)
 
 """The signal cells of the telemetry, and the bad-day judgment.
 
-The signal report page this module drew retired with the www folder
-in 0.23.5 (#470): Home Assistant served it to anyone who asked. The
-dashboard's Signal Trends tab carries what it showed, and reads the
-judgment kept here.
+The dashboard's Signal Trends tab shows the signal history and reads
+the judgment kept here (rule SIG-12).
 
-This replaces the dwell chart (ruling #310). Dwell asked whether a
-device was sitting near its own floor, and the floor descends to
-meet a degraded device, so a link that broke on 18 August read 68,
-then 96, then 30 percent while its P5 sat flat at its new lower
-level. Give that arrangement a week and a permanently broken link
-reads its way back to healthy. The judgment asks the question a
-person can act on instead: did this device just get worse than it has
-been.
+The judgment replaces the dwell line. Dwell asked whether a device sat
+near its own floor, and the floor descends to meet a degraded device,
+so a broken link reads its way back to healthy within a week. The
+judgment asks the question a person can act on instead: did this
+device just get worse than it has been (rules SIG-08, SIG-13).
 
-Still a file split rather than a boundary (ruling #199). These
+Still a file split rather than a boundary (rule CODE-11). These
 methods are mixed into the coordinator and read its state freely,
 so `self` is the coordinator throughout and nothing here stands
 alone.
@@ -64,7 +59,7 @@ class SignalReportMixin:
     ) -> dict[str, Any] | None:
         """Return one day's judgment: its normal, its line, and whether
         it was a bad day. Worked out from the daily history, once per
-        window of days and settings (0.23.19), so a past day always
+        window of days and settings, so a past day always
         reads with today's settings and nothing new is stored.
         """
         reading = self.signal_badday(record, index)
@@ -83,9 +78,8 @@ class SignalReportMixin:
     def _signal_today_cells(self, record: dict[str, Any]) -> tuple[str, str]:
         """Return today's normal and bad-day line, as the dashboard shows them.
 
-        device_telemetry.md printed the floor's weekly drift here, a
-        figure from the floor-based line, which judges nothing: weak
-        links are raised by the bad-day model (0.22.16). Both figures
+        Weak links are raised by the bad-day model, not by the floor's
+        weekly drift (rule SIG-08). Both figures
         come from the same judgment the device page reads, for the
         newest day, so the file and the page cannot disagree.
         """
@@ -99,9 +93,9 @@ class SignalReportMixin:
         """Render the daily P5 series newest-first, bad days struck.
 
         Each value is the day's time-weighted 5th percentile, over the
-        thirty days the report shows (rulings #126, #322). A day the
+        thirty days the report shows (rule SIG-05). A day the
         bad-day model judged bad is ~~struck~~, the same days the
-        device page marks red (0.22.16); the lowest day is bold at its
+        device page marks red; the lowest day is bold at its
         earliest occurrence, the dashboard's "lowest day"; a rail-only
         day's null shows as a dash.
         """
@@ -136,8 +130,8 @@ class SignalReportMixin:
         for index in reversed(range(len(stored))):
             value = stored[index]
             if value not in real:
-                # A null from a rail-only day (ruling #305), or a
-                # poisoned entry the hostile suite plants: the page
+                # A null from a rail-only day (rule SIG-05), or a
+                # damaged entry: the page
                 # is written whatever a series holds.
                 parts.append("-")
                 continue

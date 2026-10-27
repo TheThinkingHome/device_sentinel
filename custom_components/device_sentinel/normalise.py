@@ -3,34 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.6 (2026-10-26)
+# File: normalise.py, Version: 0.27.10 (2026-10-27)
 
 """Check every stored record against its expected shape, and name
-what is wrong so the storage boundary can repair it (ruling #370).
+what is wrong so the storage boundary can repair it (rule STOR-09).
 
-Why this exists (ruling #278). An adversarial pass on 0.15.1 planted a
-storage file whose devices key was a string, and setup raised rather
-than starting: the whole integration was offline until somebody edited
-.storage by hand. It then planted one record whose daily_max was None,
-and the midnight fold raised on that record and skipped every device
-after it, silently, so one bad field cost the fleet a night of
-statistics. Both are the same fault: the code trusts the shape of what
-it loads from disk one level deeper than it should.
-
-Why it first only reported. The obvious fix is to repair on load, and
-that was rejected for the first release. If a check is wrong, a repairing
-normaliser silently damages a good record and leaves a warning nobody
-reads for days. A reporting one costs nothing when it is wrong: the
-worst outcome of a false positive is that the last-good backup is not
-written that boot. So the checks first only watched, on the reference
-fleet and on a volunteer's, and were given the power to change
-anything only after a week of loads and folds reported nothing on good
-data (#370). The order was deliberate: observe first, act on what was
-observed.
+Why this exists. A storage file whose devices key is a string would
+stop setup, and one record whose daily_max is None would stop the
+midnight fold for every device after it. Both are the same fault: code
+that trusts the shape of what it loads from disk one level deeper than
+it should (rule STOR-05).
 
 Why the checks are of type and possibility, and nothing else. A check
-here is a type test, a NaN test, or since 0.23.18 a test of what is
-possible at all (ruling #544): a moment between 2020 and 2100, a span
+here is a type test, a NaN test, or a test of what is
+possible at all (rule STOR-07): a moment between 2020 and 2100, a span
 of at most 360 days, a battery level from 0 to 100. None depends on
 what a field means for the device. A record holding a plausible but
 wrong number passes, on purpose: the one thing this must never do is
@@ -42,19 +28,15 @@ template in records.py says signal_p5_state is None, and on every
 device that has learned a floor it is a list, because the P-square
 estimator stores its markers there. Its daily count and rail series
 hold integers where every sibling holds floats. A checker written from
-the template alone would have fired on every device on the first boot.
-The shapes below were read off a live file of 118 records before a
-line was written.
+the template alone would fire on every device on the first boot.
 
-And why a file is not enough either. That file was a snapshot, and a
-snapshot cannot show a field whose type depends on what the fleet was
-doing at the time. Every one of its 118 records held tainted as False,
-because nothing was tainted that minute, so the field was recorded as
-a boolean when #164 had already made it False or one of four reason
-strings. It fired on the first live taint, on 17 August, and cost that
-boot its last-good copy. A field is checked against what the code can
-write into it, not against what one file happened to hold; the test
-beside this walks the TAINT_REASONS tuple for exactly that reason.
+And why a file is not enough either. A snapshot cannot show a field
+whose type depends on what the house was doing at the time: tainted
+reads False in a file where nothing was tainted that minute, yet it
+can hold one of four reason strings. A field is checked against what
+the code can write into it, not against what one file happened to
+hold; the test beside this walks the TAINT_REASONS tuple for exactly
+that reason.
 """
 
 from __future__ import annotations
@@ -178,24 +160,19 @@ from .const import (
 
 # The kinds a field may hold. Each is a plain predicate over one value.
 #
-# Every kind also holds its values to what is possible (ruling #544).
-# A type check alone let a finite value no device and no clock can
-# produce into memory, where it failed later wherever it was turned
-# into a date or raised to a power: a moment 292 billion years away,
-# a day's longest gap of 10^308 seconds. Found by the adversarial round
-# of 29 September 2026, which planted such values in every stored
-# field of the reference fleet: five fields stopped Device Sentinel
-# starting, and more broke the brief, the reports and the dashboard.
-# Signal (#540), battery (#540) and the clipped rhythm had each been
-# patched where the fault showed; this is the one place every stored
+# Every kind also holds its values to what is possible (rule STOR-07).
+# A type check alone lets a finite value no device and no clock can
+# produce into memory, where it fails later wherever it is turned into
+# a date or raised to a power: a moment 292 billion years away, a day's
+# longest gap of 10^308 seconds. This is the one place every stored
 # value passes through, at load and at save.
 #
 # The ranges, all wider than anything real and narrower than anything
 # that can fail:
-#   a moment: 1 January 2020 to 1 January 2100
+#   a moment: from the start of 2020 to the start of 2100
 #   a span, a gap or a duration: zero to the longest retention, 360 days
 #   a battery level: 0 to 100
-#   a signal reading: the #540 scales, -130 to 255
+#   a signal reading: both scales, -130 to 255
 #   a spread of signal readings: zero to 400
 #   a count: zero to a trillion
 #   any other number: within a trillion either way
@@ -222,8 +199,8 @@ MOMENT_SERIES = "list of moments"
 KIND_MOMENTS = "a mapping of kinds to moments"
 NONNEGATIVE = "a non-negative number or None"
 # A gap on its own: the seconds a device has been silent today, which
-# cannot be negative any more than a series of them can (0.22.26). A
-# negative one folded into the day's series at midnight and refused
+# cannot be negative any more than a series of them can, because a
+# negative one folded into the day's series at midnight would refuse
 # the whole record on the next load.
 GAP = "gap or None"
 INTEGER = "integer"
@@ -231,20 +208,17 @@ STRING = "string or None"
 BOOLEAN = "boolean"
 # A flag a row written before the field existed does not carry. The
 # load fills a missing nullable field with None, so a plain boolean
-# here would fill the old row and then refuse what it filled: every
-# incident written before 0.22.26 dropped at the first load of 0.22.27,
-# caught by the migration tests before it shipped.
+# here would fill the old row and then refuse what it filled
+# (rule STOR-19).
 NULLABLE_BOOLEAN = "boolean or None"
 FLOAT_SERIES = "list of numbers"
 GAP_SERIES = "gap series"
 # A daily statistic that a rail-only day legitimately cannot supply:
 # the row is written to keep the eight series aligned, and the value
-# is null because no reading existed to compute one (ruling #305).
-# Three of these (P5, P50, line) could already be written null by the
-# estimators before rail days existed, so the stricter kind was a
-# latent copy of the fold fault, waiting for a fleet whose estimator
-# state was empty at a fold (#279: a field is checked against what
-# the code can write, not what it usually writes).
+# is null because no reading existed to compute one (rule SIG-05).
+# The estimators can also write P5, P50 and line null, and a field is
+# checked against what the code can write, not what it usually writes
+# (rule STOR-05).
 NULLABLE_FLOAT_SERIES = "list of numbers or None"
 INT_SERIES = "list of integers"
 STATE = "None or list of numbers"
@@ -253,22 +227,22 @@ ALT = "None or a second-scale block"
 # The tables under the device records need three shapes the records
 # never use: a string that must be present, a plain mapping whose
 # inside is nobody's business here, and a field that may be absent
-# altogether rather than present and null (ruling #332).
+# altogether rather than present and null (rule STOR-05).
 TEXT = "string"
 # A number the row cannot mean anything without. NUMBER admits None,
 # which is right for a duration that has not finished and wrong for
 # the stamp that says when a row happened: a null there sorts
 # nowhere, formats as nothing, and reads as a row that never
-# occurred (ruling #333).
+# occurred (rule STOR-05).
 REAL_NUMBER = "number, not None"
 TEXT_LIST = "list of strings"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
-# Each entity's outage start and the state it read (ruling #647).
+# Each entity's outage start and the state it read (rule UNAV-04).
 DOWN_SINCE = "None or [moment, state]"
 # The values a device held when its verdict started (rule WATCH-12).
 HELD_VALUES = "None or a mapping of entity registry ids to held values"
-# A device's firmware history (0.23.4): [version, first seen] pairs,
+# A device's firmware history (rule DEV-15): [version, first seen] pairs,
 # the version a non-empty string and the moment a number.
 VERSION_HISTORY = "list of [version, first seen] pairs"
 FORECAST_LOG = "list of battery forecast rows"
@@ -384,7 +358,7 @@ def drop_damaged_held_values(devices: Any) -> int:
 
 def _forecast_row_ok(row: Any) -> bool:
     """One forecast row: a dated level, a target and a range, and an
-    outcome only from the known four (ruling #732)."""
+    outcome only from the known four (rule BAT-15)."""
     if not isinstance(row, list) or len(row) != 8:
         return False
     day, level, accelerating, target, near, far, outcome, arrived = row
@@ -401,7 +375,7 @@ def _forecast_row_ok(row: Any) -> bool:
 
 
 def _evidence_row_ok(row: Any) -> bool:
-    """One day's evidence (#737): a day, then volts, degrees and the
+    """One day's evidence (rule BAT-16): a day, then volts, degrees and the
     event count, each None where the device gave none."""
     if not isinstance(row, list) or len(row) != 4:
         return False
@@ -415,7 +389,7 @@ def _evidence_row_ok(row: Any) -> bool:
 
 
 def _life_row_ok(row: Any) -> bool:
-    """One finished battery (#739)."""
+    """One finished battery (rule BAT-08)."""
     if not isinstance(row, list) or len(row) != 13:
         return False
     (device, maker, model, battery_type, quantity, start, start_seen, end,
@@ -502,7 +476,7 @@ def _is_number(value: Any) -> bool:
     """A finite int or float within a trillion either way. A bool is
     not a number here: True is an int to Python and a mistake to a
     series. Nothing Device Sentinel stores comes near a trillion, and
-    past it squares and powers start to fail (ruling #544)."""
+    past it squares and powers start to fail (rule STOR-07)."""
     if isinstance(value, bool):
         return False
     if isinstance(value, (int, float)):
@@ -590,7 +564,7 @@ def _fault(kind: str, value: Any) -> str | None:
         return None if value is None or _is_number(value) else _describe(value)
     if kind == INTEGER:
         # A count: nothing Device Sentinel counts is negative or past
-        # a trillion (ruling #544).
+        # a trillion (rule STOR-07).
         ok = (
             isinstance(value, int)
             and not isinstance(value, bool)
@@ -621,7 +595,7 @@ def _fault(kind: str, value: Any) -> str | None:
     if kind == GAP_SERIES:
         # A learned gap series: every element is a number of seconds a
         # device stayed silent, so a negative element is a writer
-        # fault, not a reading (ruling #403). A series that reached
+        # fault, not a reading (rule FRZ-13). A series that reached
         # disk carrying one is reset with the rest of the shape
         # faults; the magnitude ceiling needs the record's own
         # first-observed stamp and is applied by the repair pass.
@@ -634,8 +608,8 @@ def _fault(kind: str, value: Any) -> str | None:
         if negative:
             return f"{len(negative)} negative element(s), first {_describe(negative[0])}"
         # Longer than the longest retention cannot have been watched
-        # (ruling #544); the house's own retention caps it lower at
-        # load (ruling #543).
+        # (rule STOR-07); the house's own retention caps it lower at
+        # load (rule STOR-14).
         long = [x for x in value if x > SPAN_HIGHEST]
         if long:
             return f"{len(long)} element(s) past 360 days, first {_describe(long[0])}"
@@ -661,7 +635,7 @@ def _fault(kind: str, value: Any) -> str | None:
         ]
         return None if not bad else f"{len(bad)} bad pair(s), first {_describe(bad[0])}"
     if kind == EVIDENCE_LOG:
-        # [day, volts, temperature, events so far] (#737).
+        # [day, volts, temperature, events so far] (rule BAT-16).
         if not isinstance(value, list):
             return _describe(value)
         bad = [row for row in value if not _evidence_row_ok(row)]
@@ -669,14 +643,14 @@ def _fault(kind: str, value: Any) -> str | None:
     if kind == WIFI_OUTAGE:
         return None if wifi_outage_ok(value) else _describe(value)
     if kind == LIVES_LOG:
-        # One row per battery replaced (#739).
+        # One row per battery replaced (rule BAT-08).
         if not isinstance(value, list):
             return _describe(value)
         bad = [row for row in value if not _life_row_ok(row)]
         return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
     if kind == FORECAST_LOG:
         # [day, level, accelerating, target, near, far, outcome, arrived]
-        # (ruling #732): each row checked whole, as the firmware pairs are.
+        # Each row checked whole, as the firmware pairs are (rule BAT-15).
         if not isinstance(value, list):
             return _describe(value)
         bad = [row for row in value if not _forecast_row_ok(row)]
@@ -692,7 +666,7 @@ def _fault(kind: str, value: Any) -> str | None:
     if kind == ALT:
         # None, or a block holding exactly the recording fields under
         # the record's own names, each checked by the same table that
-        # checks the primary (ruling #286). A whole key rather than a
+        # checks the primary (rule SIG-03). A whole key rather than a
         # scattering of optional fields, so every record still holds
         # the same field count and the check above stays as strict as
         # it was: nothing here is allowed to be absent-or-present.
@@ -716,9 +690,8 @@ def _fault(kind: str, value: Any) -> str | None:
         return None
     if kind == TAINT:
         # False or one of the four reasons, tested by identity for the
-        # False so that 0 and 1 are both faults: the field was a flag
-        # before #164 and an integer in it is a record written by
-        # something that still thinks it is one.
+        # False so that 0 and 1 are both faults: an integer here is a
+        # record written by something that thinks the field is a flag.
         if value is False or value in TAINT_REASONS:
             return None
         return _describe(value)
@@ -773,7 +746,7 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
     An empty list means every record holds every expected field in its
     expected shape and nothing it should not. Nothing is changed here.
     The callers act on the list: at load and at save the storage
-    boundary repairs each record it names (ruling #370), and a save
+    boundary repairs each record it names (rule STOR-09), and a save
     whose repair did not prove out does not rotate into last-good.
     """
     faults: list[tuple[str, str, str]] = []
@@ -792,7 +765,7 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
                 faults.append((device_id, field, f"expected {kind}, found {why}"))
         # Only a retired field is damage. Any other field the schema
         # does not know was written by a newer version and is not this
-        # version's to judge (#189, amended 28 September 2026).
+        # version's to judge (rule STOR-19).
         for field in record:
             if field not in EXPECTED and field in RETIRED_DEVICE_FIELDS:
                 faults.append((device_id, field, "retired field"))
@@ -802,11 +775,9 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
 # ------------------------------------------------- beyond the records
 
 # Everything in the storage file that is not a device record, which is
-# half the file by size and was never checked (ruling #332). The
-# device records are 171 KB of the reference fleet's 355 KB; the
-# tables below are the other 184 KB, and a fault in any of them used
-# to pass the check, report clean, and let the last-good copy refresh
-# over the damage.
+# about half the file by size. Unchecked, a fault in any of them would
+# pass, report clean, and let the last-good copy refresh over the
+# damage (rule STOR-05).
 #
 # Optional keys are named rather than assumed. A row may omit a key
 # only where it appears here, because the record check's strictness
@@ -829,12 +800,11 @@ INCIDENT_SHAPE: dict[str, str] = {
     "when": REAL_MOMENT,
     "cause": STRING,
     "duration": SPAN,
-    # Whether a worse problem replaced this one. Written from 0.22.26
-    # and read from 0.22.27, so it is checked as a type now that a
-    # reader depends on it; a row written before 0.22.26 omits it and
-    # the load fills None, which reads as not replaced.
+    # Whether a worse problem replaced this one, checked as a type
+    # because a reader depends on it; an older row omits it and the
+    # load fills None, which reads as not replaced (rule LIST-07).
     "superseded": NULLABLE_BOOLEAN,
-    # The signal when a device went unavailable (0.24.0), on opening
+    # The signal when a device went unavailable, on opening
     # rows only; absent from every other row and every older one.
     "signal": NULLABLE_MAPPING,
 }
@@ -850,7 +820,7 @@ EPISODE_SHAPE: dict[str, str] = {
     # a row that is still running carries None in both of these by
     # design. Requiring them called healthy in-flight data damage:
     # any device silent across a load or a fold raised two faults and
-    # a repair card that named nothing wrong (ruling #364). They are
+    # a repair card that named nothing wrong (rule STOR-05). They are
     # checked as types the moment they hold a value, and a closed row
     # is still fully checked, because the closer writes both.
     "at": MOMENT,
@@ -877,9 +847,9 @@ SYSTEM_EVENT_SHAPE: dict[str, str] = {
     "detail": STRING,
     "duration": SPAN,
     "devices": INTEGER,
-    # The most devices an ended outage had down at once (ruling #442).
+    # The most devices an ended outage had down at once (rule UP-11).
     "worst": INTEGER,
-    # The device an act from its page names (0.24.5).
+    # The device an act from its page names.
     "device_id": TEXT,
 }
 
@@ -934,13 +904,13 @@ PROBE_SHAPE: dict[str, str] = {
 
 # table key -> (row shape, keys a row may leave out)
 TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
-    # The replaced-by-worse mark (0.22.27): absent from every row
-    # written before 0.22.26, which is not damage.
+    # The replaced-by-worse mark: absent from every older row, which
+    # is not damage.
     DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded", "signal"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
-    # The shadow readers' two keys (0.23.8): absent from every line
-    # written before, which is not damage.
+    # The shadow readers' two keys: absent from every older line,
+    # which is not damage.
     DATA_STACK_PROBE: (PROBE_SHAPE, frozenset({PROBE_SENTINEL, PROBE_AGREES})),
     # A row carries a device count only where the event has one to
     # carry, so this key is absent far more often than present, and a
@@ -977,32 +947,31 @@ SCALARS: dict[str, str] = {
     # What the bus and the phone have heard of each integration entry
     # outage; each value is checked as it is read (rules UP-10, STOR-07).
     "integration_seen": MAPPING,
-    # The migration markers (ruling #334). Both hold a version-like
-    # string that the load compares against an expected mark, and a
-    # marker that does not match runs a one-time conversion over data
-    # that has already been converted. A marker corrupted to a number
-    # or a list fails that comparison, so the conversion re-runs and
-    # the check that exists to catch this said the file was clean.
+    # The migration markers. Both hold a version-like string that the
+    # load compares against an expected mark, and a marker that does
+    # not match runs a one-time conversion over data that has already
+    # been converted. So a marker corrupted to a number or a list is a
+    # fault (rule STOR-05).
     DATA_SIGNAL_DAY_REPAIR: TEXT,
     DATA_SIGNAL_WEIGHTING: TEXT,
     # Written at every clean stop and read once at the next load, and
     # the value decides whether the restart was clean. A non-boolean
     # here reads as false and every device's clock resets.
     DATA_CLEAN_STOP: BOOLEAN,
-    # The suffixes of the one-time backups already taken (#204). A
+    # The suffixes of the one-time backups already taken (rule STOR-19). A
     # damaged list means a backup is taken twice or not at all.
     BACKUP_TAKEN_KEY: TEXT_LIST,
-    # A damaged list dates no return (ruling #648).
+    # A damaged list dates no return (rule WATCH-08).
     DATA_ASIDE_SEEN: TEXT_LIST,
-    # The history file's pairing and the rows' line (0.26.2, #660). A
+    # The history file's pairing and the rows' line (rule STOR-03). A
     # damaged one joins no history, so it is restored or dropped.
     DATA_HISTORY_GENERATION: INTEGER,
     DATA_HISTORY_LINE: MOMENT,
-    # The house's tally of scored battery forecasts (ruling #732).
+    # The house's tally of scored battery forecasts (rule BAT-15).
     DATA_BATTERY_FORECAST_TALLY: MAPPING,
-    # And of forecasts to empty, kept apart (#735).
+    # And of forecasts to empty, kept apart (rule BAT-15).
     DATA_BATTERY_EMPTY_TALLY: MAPPING,
-    # Each battery replaced, kept for good (#739).
+    # Each battery replaced, kept for good (rule BAT-08).
     DATA_BATTERY_LIVES: LIVES_LOG,
 }
 
@@ -1017,7 +986,7 @@ def check_storage(data: Any) -> list[tuple[str, str, str]]:
 
     Same three-part tuples as the record check, with the table name
     and row number where a device id would be, because a bad incident
-    row has no device to name (ruling #332). Reports and changes
+    row has no device to name (rule STOR-05). Reports and changes
     nothing.
 
     A key this table does not know is skipped rather than reported.
@@ -1079,9 +1048,9 @@ def check_storage(data: Any) -> list[tuple[str, str, str]]:
 def check_clocks(clocks: Any) -> list[tuple[str, str, str]]:
     """Return every shape fault in the activity clocks file.
 
-    The companion file was never checked (ruling #332), and the merge
-    takes it whatever its age, so a damaged one reached every record
-    on the load path with nothing to stop it.
+    The merge takes the companion file whatever its age, so unchecked,
+    a damaged one would reach every record on the load path
+    (rule STOR-10).
 
     A field the current schema does not know is skipped. A fleet
     upgrading across a release that retired a clock field carries it
@@ -1114,7 +1083,7 @@ def check_clocks(clocks: Any) -> list[tuple[str, str, str]]:
 
 
 def fault_id(fault: tuple[str, str, str]) -> str:
-    """Return the stable identity of one fault (ruling #338).
+    """Return the stable identity of one fault (rule STOR-09).
 
     `file:holder:field`, where the holder is a device id for a record
     fault, a table position like `incidents[3]` for a table fault,
@@ -1126,7 +1095,7 @@ def fault_id(fault: tuple[str, str, str]) -> str:
     The file column is derived rather than stored: a clocks-record
     field belongs to the clocks file, everything else to the main
     file. That stays true because the main save strips every clock
-    field (#101), so no field name lives in both.
+    field (rule STOR-01), so no field name lives in both.
     """
     holder, field, _why = fault
     file = "clocks" if field in CLOCK_FIELDS else "main"
@@ -1137,7 +1106,8 @@ def fault_id(fault: tuple[str, str, str]) -> str:
 # device, its kind, its timestamp, or its text has no place in the
 # table at all. A nullable field that is merely absent reads as None,
 # which is the shape's own allowed value, and is left to the card
-# rather than held (the same boundary #356 drew for clock fields).
+# rather than held, the same boundary as for clock fields
+# (rule STOR-10).
 _KEY_KINDS = frozenset({TEXT, REAL_NUMBER, INTEGER, MAPPING, FLOAT_SERIES,
                         INT_SERIES, TEXT_LIST})
 
@@ -1145,7 +1115,7 @@ _KEY_KINDS = frozenset({TEXT, REAL_NUMBER, INTEGER, MAPPING, FLOAT_SERIES,
 def damaged_rows(data: Any) -> dict[str, list[int]]:
     """Return, per table, the index of every row a reader cannot use.
 
-    The boundary rule (ruling #370): a row that is not a dict, a row
+    The boundary rule (rule STOR-09): a row that is not a dict, a row
     with a field of the wrong type, or a row missing a field whose
     kind allows no None, is repaired out of the table at load and at
     save, so no reader ever meets it. Unlike check_storage
@@ -1191,7 +1161,7 @@ def fill_missing_row_fields(data: Any) -> int:
     the row said before: nothing. A field whose kind allows no None
     is not filled, because inventing a device or a timestamp would
     be a lie; a row missing one of those is dropped instead
-    (ruling #370). Returns how many fields were filled.
+    (rule STOR-09). Returns how many fields were filled.
     """
     filled = 0
     if not isinstance(data, dict):
@@ -1214,7 +1184,7 @@ def row_damage(table: str, row: Any) -> str | None:
     """Say what is wrong with one row for one table, or None.
 
     The same rule damaged_rows applies to a file, applied to a single
-    row at the moment a writer makes it (ruling #370), so a writer
+    row at the moment a writer makes it (rule STOR-06), so a writer
     fault is caught when it happens rather than at the next save.
     """
     shape_and_optional = TABLES.get(table)
@@ -1237,7 +1207,7 @@ def row_damage(table: str, row: Any) -> str | None:
 def repair_tables(data: Any) -> dict[str, int]:
     """Drop every damaged table row, in place, and say what went.
 
-    The repair half of the boundary (ruling #370): a row a reader
+    The repair half of the boundary (rule STOR-09): a row a reader
     cannot use is removed from the table at the moment it is found,
     at load or at save, after the evidence copy has preserved the
     original. Nothing is invented: a dropped row is a row the shape
@@ -1262,8 +1232,7 @@ def repair_tables(data: Any) -> dict[str, int]:
 
 # The container fields of a device record: those whose template
 # default is a list. Derived from the template rather than listed, so
-# a series added later is covered without an edit here (ruling #207's
-# principle, applied to the containers).
+# a series added later is covered without an edit here.
 RECORD_LIST_FIELDS: frozenset[str] = frozenset(
     field
     for field, value in _new_device_record(
@@ -1276,15 +1245,14 @@ RECORD_LIST_FIELDS: frozenset[str] = frozenset(
 def check_containers(data: Any) -> list[tuple[str, str, str]]:
     """Name everything gate 1 can check before the clocks merge.
 
-    Gate 1 (ruling #371). The load-time steps run before the full
+    Gate 1 (rule STOR-05). The load-time steps run before the full
     check, because one of them fills the seventeen clock fields the
     main file does not carry and a full check ahead of it would fault
-    every record on a healthy fleet. Those steps walk the data raw,
-    so a value of the wrong container kind stops setup: forty crashes
-    were measured across five steps, every one of them an `.items()`
-    on something that is not a map, an iteration over something that
-    is not a list, or an assignment into something that is not a
-    record.
+    every record on a healthy house. Those steps walk the data raw,
+    so a value of the wrong container kind would stop setup: an
+    `.items()` on something that is not a map, an iteration over
+    something that is not a list, or an assignment into something that
+    is not a record.
 
     The seam is the clocks merge, not a list of shapes. Seventeen
     record fields arrive from the hot file, so the record check
@@ -1292,17 +1260,13 @@ def check_containers(data: Any) -> list[tuple[str, str, str]]:
     healthy fleet. Everything else can, and does: the containers and
     the top-level scalars.
 
-    Containers alone were the first attempt and were too narrow. A
-    scalar of the wrong kind crashes a step too, whenever a step
-    compares it: `saved_at` holding a map stops `_merge_clocks` at
-    `hot_at < cold_at`, found by the boundary campaign on the second
-    reference fleet.
+    Containers alone are too narrow. A scalar of the wrong kind
+    crashes a step too, whenever a step compares it: `saved_at`
+    holding a map stops `_merge_clocks` at `hot_at < cold_at`.
 
     The main document only. The clocks file is guarded by
     `check_clocks` before the merge reads it, which discards a
-    damaged one whole (ruling #356) and was measured to catch all
-    eight damage shapes, so nothing here would add. Measured silent
-    on both reference fleets, live and last-good, all four files.
+    damaged one whole (rule STOR-10), so nothing here would add.
 
     Returns (holder, field, why) triples in the shape the full check
     uses, so one repair path serves both gates.
@@ -1349,16 +1313,16 @@ def check_containers(data: Any) -> list[tuple[str, str, str]]:
 
 
 def repair_containers(data: Any) -> dict[str, int]:
-    """Make every container a container, in place (ruling #371).
+    """Make every container a container, in place (rule STOR-09).
 
-    The repair half of gate 1, by the #370 rules: a map that is not a
+    The repair half of gate 1: a map that is not a
     map is emptied, a record that is not a record is dropped, a
     series that is not a list is reset to its default, and a table
     that is not a list is emptied. A damaged scalar is dropped rather
     than reset: the load path calls `setdefault` for every one of
     them a few lines later, so dropping restores the real default and
     cannot invent a wrong one. The clocks file is not touched here;
-    it has its own guard (ruling #356).
+    it has its own guard (rule STOR-10).
 
     Returns a count per kind, for the notice.
     """
@@ -1407,7 +1371,7 @@ def repair_containers(data: Any) -> dict[str, int]:
 def series_fault(field: str, value: Any) -> str | None:
     """Return why a daily series does not fit its field's kind, or None.
 
-    For the history file (0.26.2): its older entries are checked with
+    For the history file (rule STOR-03): its older entries are checked with
     the same kinds as the record's own fields before they are joined,
     so a damaged history copy is refused whole rather than joined and
     then repaired out of a record the main file holds clean.

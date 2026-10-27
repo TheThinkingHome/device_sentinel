@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.27.8 (2026-10-27)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.27.10 (2026-10-27)
 
-"""The one file that holds what the owner set with a pencil (0.25.1).
+"""The one file that holds what the owner set with a pencil (rule STOR-20).
 
 Every answer a person types on a device page lives here: what powers
 the device and what the device is. Nothing else in Device Sentinel's
 storage is typed by hand, so this file keeps a last-good copy taken
-before each save (ruling #370's rule, given to the power file in 0.25.0)
-and is restored from it at start when it cannot be read.
+before each save and is restored from it at start when it cannot be
+read (rule STOR-04).
 
 The file:
     {"power": {"models": {...}, "devices": {...}},
@@ -20,21 +20,20 @@ The file:
                       "lines": {key: bool}},
      "battery": {device: {"day": "YYYY-MM-DD", "how": "confirmed"}}}
 
-The acknowledgements of the Recommendations tab joined in 0.26.7
-(ruling #699): a person's own tick is an answer too; so did a battery
-replacement's day a person confirmed or entered (#701). A release before
-0.26.7 that saves this file writes the power and type answers alone,
+The acknowledgments of the Recommendations tab live here too, because
+a person's own tick is an answer (rule REC-07); so does a battery
+replacement's day a person confirmed or entered (rule BAT-07). An older
+release that saves this file writes the power and type answers alone,
 so going back loses the ticks and the battery days; that is said in
 the release note.
 
 "models" holds an answer per model, keyed by model_key; "devices" holds
 the answer of a device with no manufacturer or no model.
 
-Until 0.25.1 the power answers lived in device_sentinel.power. The
-first start of 0.25.1 moves them here, reads the new file back, and
-only then deletes the old file and its last-good copy (James, 8 October
-2026). A rollback to an older release finds no power answers; that is
-said in the release note. The move is removed at 1.0.0.
+Older releases kept the power answers in device_sentinel.power. The
+first start moves them here, reads the new file back, and only then
+deletes the old file and its last-good copy. A rollback to an older
+release finds no power answers; that is said in the release note.
 """
 
 from __future__ import annotations
@@ -61,7 +60,7 @@ from .power_source import power_words
 
 ANSWERS_STORE_KEY = "device_sentinel.answers"
 ANSWERS_STORE_VERSION = 1
-# Read once, by the move, then deleted. Remove at 1.0.0.
+# Read once, by the move, then deleted.
 LEGACY_POWER_KEY = "device_sentinel.power"
 
 # Why an answer is held rather than shown on a watched device.
@@ -99,8 +98,8 @@ def _remove_legacy_last_good(hass: Any) -> None:
 
 def _copy_answers_evidence(hass: Any) -> list[str]:
     """Copy the answers file, its backup and any old power file aside,
-    raw, before a repair writes over them (0.25.2, #340's rule given to
-    the answers file). Returns the names written."""
+    raw, before a repair writes over them (rule STOR-11). Returns the
+    names written."""
     directory = hass.config.path(TRIM_BACKUP_DIR)
     stamp = dt_util.now().strftime("%Y-%m-%d_%H%M%S")
     written: list[str] = []
@@ -114,8 +113,8 @@ def _copy_answers_evidence(hass: Any) -> list[str]:
         name = f"device_sentinel_{stamp}.{os.path.basename(source)[len('device_sentinel.'):]}.evidence"
         # Contents only, with today's time: the trim_backups pruning
         # judges age by the file's time, and the answers file can be
-        # months old, so a copy that kept it was pruned the same night
-        # (0.25.2, found by review).
+        # months old, so a copy that kept it would be pruned the same
+        # night.
         shutil.copyfile(source, os.path.join(directory, name))
         written.append(name)
     return written
@@ -125,9 +124,9 @@ def _bad_tables(payload: dict[str, Any], sections: tuple[str, ...]) -> list[str]
     """The tables in a payload that are there but are not tables.
 
     A section or its models or devices that a hand edit or a damaged
-    write turned into a list, a string or null held every answer in it,
-    and reading it as empty lost them all without a word (0.25.2, found
-    by testing). An absent table is not damage: a file from before it
+    write turned into a list, a string or null holds every answer in it,
+    and reading it as empty would lose them all without a word (rule
+    STOR-12). An absent table is not damage: a file from before it
     existed simply has none.
     """
     bad = []
@@ -162,7 +161,7 @@ async def _load(store: Store[dict[str, Any]], key: str) -> dict[str, Any] | None
     Home Assistant raises more than its own error for a file that is
     valid text in the wrong shape: a missing version or data field, a
     list or null at the top. A hand edit or a half-restored backup can
-    leave one, and none may stop a start (0.25.1, found by testing).
+    leave one, and none may stop a start.
     """
     try:
         payload = await store.async_load()
@@ -170,7 +169,7 @@ async def _load(store: Store[dict[str, Any]], key: str) -> dict[str, Any] | None
         HomeAssistantError, ValueError, OSError, KeyError, TypeError, AttributeError, NotImplementedError
     ) as err:
         # NotImplementedError: a version below 1 asks for a migration
-        # this file has never had (found by review).
+        # this file has never had.
         LOGGER.warning("Device Sentinel cannot read %s (%s: %s)", key, type(err).__name__, err)
         return None
     return payload if isinstance(payload, dict) else None
@@ -200,16 +199,15 @@ class AnswersMixin:
         self._recommendation_acks: dict[str, Any] = {"devices": {}, "lines": {}}
         self._battery_replacement_answers: dict[str, dict[str, Any]] = {}
         # Sentences for the events log, recorded once the session has
-        # loaded (0.25.2, #342's rule: a repair nobody can see did not
-        # happen as far as the person is concerned).
+        # loaded, because a repair nobody can see did not happen as far
+        # as the person is concerned (rule STOR-12).
         self._answers_notes: list[str] = []
         self._answers_evidence_kept = False
         self._merge_dropped = 0
 
         # Asked before the read: Home Assistant renames a file it cannot
         # parse to .corrupt.<time> inside the read, so afterwards it
-        # looks missing and an empty start went unreported (0.25.2,
-        # found by testing).
+        # looks missing and an empty start would go unreported.
         on_disk = await hass.async_add_executor_job(_live_on_disk, hass)
         payload = await _load(self._answers_store, ANSWERS_STORE_KEY)
         restored = False
@@ -218,7 +216,7 @@ class AnswersMixin:
             # Missing or unreadable: Home Assistant moves a file it
             # cannot parse aside and answers nothing. The last clean
             # file is the person's own typing, which nothing else can
-            # rebuild (0.25.0).
+            # rebuild (rule STOR-04).
             payload = await hass.async_add_executor_job(_read_last_good, hass, ANSWERS_STORE_KEY)
             restored = payload is not None
             if restored:
@@ -241,7 +239,7 @@ class AnswersMixin:
             # A damaged file is kept and reported before anything is
             # taken from the old power file, which would otherwise
             # write over it with power answers alone and lose the type
-            # answers without a word (0.25.2, found by review).
+            # answers without a word.
             legacy = await self._legacy_power()
             if damaged:
                 await self._keep_answers_evidence()
@@ -274,9 +272,9 @@ class AnswersMixin:
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
         # A file read whole becomes last-good at the next save; a
-        # restored or damaged one never does (ruling #370's rule).
+        # restored or damaged one never does (rule STOR-04).
         # A damaged file with no backup is not rotated either: the next
-        # save would make it last-good (found by review).
+        # save would make it last-good.
         self._answers_rotation_armed = not restored and not dropped and not bad and not damaged
         if not from_answers or not await self._legacy_left():
             return
@@ -286,7 +284,7 @@ class AnswersMixin:
         # there, and then came forward. Each answer in the old file is
         # taken when it was set later than the answer here, or when there
         # is none here; nothing here is removed. File times are not used:
-        # a backup copied back by hand gets a new one (found by review).
+        # a backup copied back by hand gets a new one.
         # Only the file itself is read: its last-good copy can be from
         # before the move, so a damaged file leaves this one in charge.
         legacy = await _load(Store(hass, 1, LEGACY_POWER_KEY), LEGACY_POWER_KEY)
@@ -341,7 +339,7 @@ class AnswersMixin:
 
     async def _note_dropped(self, dropped: int) -> None:
         """Answers left out at load: the log, a copy of the files as they
-        were, and a line in the events log the brief shows (0.25.2)."""
+        were, and a line in the events log the brief shows (rule STOR-12)."""
         if not dropped:
             return
         self._warn_dropped(dropped)
@@ -385,7 +383,7 @@ class AnswersMixin:
         self._answers_notes = []
         return notes
 
-    # ------------------------------------------------- the move from 0.25.0
+    # ------------------------------------------------- the move from the old power file
 
     async def _legacy_power(self) -> dict[str, Any] | None:
         """The old power file's data, from its last-good copy if the file
@@ -456,12 +454,12 @@ class AnswersMixin:
             "types": self._type_payload(),  # type: ignore[attr-defined]
         }
         # Written only once something is ticked, so a house that never
-        # ticks keeps the file an older release wrote (#699).
+        # ticks keeps the file an older release wrote.
         acks = self._acks_payload()  # type: ignore[attr-defined]
         if acks["devices"] or acks["lines"]:
             payload["acknowledged"] = acks
         # The day a person gave for a battery replacement, or confirmed
-        # (#701), likewise only once there is one.
+        # (rule BAT-07), likewise only once there is one.
         battery = self._battery_answers_payload()  # type: ignore[attr-defined]
         if battery:
             payload["battery"] = battery
@@ -510,11 +508,10 @@ class AnswersMixin:
     async def async_flush_answers(self) -> None:
         """Write an answer still inside its one-second wait.
 
-        The unload and Home Assistant's stop both call this (0.25.1: the
-        stop did not, so a restart inside the second lost the answer).
-        A write the timer already started is waited for, so a reload
-        never reads the file while it is between its rotation and its
-        save (0.25.1, found by testing).
+        The unload and Home Assistant's stop both call this, so a restart
+        inside the second does not lose the answer. A write the timer
+        already started is waited for, so a reload never reads the file
+        while it is between its rotation and its save.
         """
         cancel = getattr(self, "_answers_timer", None)
         if cancel is not None:
@@ -530,7 +527,7 @@ class AnswersMixin:
 
     def answers_diagnostics(self) -> dict[str, Any]:
         """How many answers the file holds, the ones held for devices
-        Device Sentinel does not watch (0.25.1), and the ticks and battery
+        Device Sentinel does not watch, and the ticks and battery
         replacement days the file keeps (rule STOR-21).
 
         An answer stays when its device is excluded or set aside, so it
@@ -575,7 +572,7 @@ class AnswersMixin:
                 name = aside[0]
             else:
                 # A removed device whose record is held keeps its
-                # name (ruling #622).
+                # name (rule WATCH-07).
                 name = self._device_name(device_id) if self.is_held(device_id) else None  # type: ignore[attr-defined]
             if aside:
                 why = aside[2]

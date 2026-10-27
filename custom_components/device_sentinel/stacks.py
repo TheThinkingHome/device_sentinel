@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.27.0 (2026-10-22)
+# File: stacks.py, Version: 0.27.10 (2026-10-27)
 
 """The one place a coordinator stack is registered.
 
-Ruling #218 asks that adding a stack touch one new file and one line
-of registration. This is that line: STACK_MODULES below. Everything
+Adding a stack touches one new file and one line of registration
+(rule STACK-01). This is that line: STACK_MODULES below. Everything
 else in the package asks its questions here and never names a stack,
 so a fifth stack changes no detector, no sensor and no registry walk.
 
@@ -34,7 +34,7 @@ from homeassistant.helpers import device_registry as dr
 
 from . import stack_matter, stack_z2m, stack_zha, stack_zwave
 
-# The one line of registration (ruling #218).
+# The one line of registration (rule STACK-01).
 STACK_MODULES = (stack_zha, stack_zwave, stack_matter, stack_z2m)
 
 
@@ -43,9 +43,9 @@ def detect(domain: str, device: dr.DeviceEntry) -> str | None:
 
     Called once per device during the registry rebuild that already
     happens, which is what makes stack detection a reduction over an
-    existing walk rather than a new traversal (ruling #143). The
-    result is derived and recomputed each rebuild, never persisted,
-    so a stack added or removed needs no migration.
+    existing walk rather than a new traversal. The result is derived
+    and recomputed each rebuild, never persisted, so a stack added or
+    removed needs no migration (rule STACK-01).
     """
     for module in STACK_MODULES:
         if module.detects(domain, device):
@@ -58,9 +58,9 @@ def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
 
     Asked once per device on the registry rebuild that already
     happens, beside detection, which is what keeps this a reduction
-    over an existing walk rather than a new traversal (ruling #143).
-    A stack that owns no such device answers no, so adding one later
-    touches that stack's file and nothing else (ruling #218).
+    over an existing walk rather than a new traversal. A stack that
+    owns no such device answers no, so adding one later touches that
+    stack's file and nothing else (rule STACK-01).
     """
     return any(module.is_plumbing(domain, device) for module in STACK_MODULES)
 
@@ -84,19 +84,20 @@ def device_key(domain: str, device: dr.DeviceEntry) -> tuple[str, str] | None:
 
 
 def radio_owner(domain: str, device: dr.DeviceEntry) -> str | None:
-    """Return the radio stack owning this device, if any (ruling #412).
+    """Return the radio stack owning this device, if any.
 
-    A Wi-Fi outage does not explain a Zigbee, Z-Wave or Matter device:
-    that hardware has its own bridge rung and its own medium. Owning
+    A Wi-Fi outage does not explain a Zigbee, Z-Wave or Matter device,
+    because that hardware has its own bridge rung and its own medium
+    (rule UP-15). Owning
     the domain is the test for the three stacks that own theirs
     outright. Z2M shares the mqtt domain with anything else publishing
     its own discovery, so it is asked to name the device as well, and
     an MQTT device it cannot name is not Zigbee's.
 
     Deliberately not `device_key`, which ZHA, Z-Wave and Matter all
-    answer with None because their identifiers are unverified
-    (rulings #218 and #219). A device they own is owned whether or not
-    they can name it.
+    answer with None because their identifiers are unverified. A
+    device they own is owned whether or not they can name it (rule
+    STACK-02).
     """
     for module in STACK_MODULES:
         if not module.owns_domain(domain):
@@ -126,10 +127,10 @@ def make_join_observer(
 ) -> Any | None:
     """Return a stack's join observer, or None if it has none.
 
-    Asked the same way a reader is (ruling #218): the caller names no
-    stack, and a stack with nothing to observe returns None and costs
+    Asked the same way a reader is: the caller names no stack, and a
+    stack with nothing to observe returns None and costs
     nothing. Only ZHA answers today, because only ZHA has a pairing
-    window that cannot be seen any other way.
+    window that cannot be seen any other way (rule STACK-01).
     """
     for module in STACK_MODULES:
         if module.STACK != stack:
@@ -149,7 +150,7 @@ def reader_for_domain(
     stack that owns the device. A domain no stack claims, a stack
     with no reader, and a device the registry view has never seen all
     return None, which every caller reads as "cannot tell" and
-    handles by falling back to the debounce (ruling #147).
+    handles by falling back to the debounce (rule FRZ-15).
     """
     if domain is None:
         return None
@@ -164,8 +165,8 @@ def last_heard(
 ) -> tuple[str, float] | None:
     """When the device's own stack last heard it, if the stack keeps that.
 
-    The stack's own Last Seen clock (ruling #652), as ZHA keeps for
-    every device. A stack that keeps none answers nothing, and so does
+    The stack's own Last Seen clock, as ZHA keeps for every device
+    (rule STACK-04). A stack that keeps none answers nothing, and so does
     one whose clock cannot be read; the device is then judged as one
     without a Last Seen clock. Returns the stack's name with the time.
     """
@@ -184,7 +185,7 @@ def last_heard(
 
 
 def is_node_status(domain: str | None, ent: Any) -> bool:
-    """Whether this entity is the stack's own status for its node (#670).
+    """Whether this entity is the stack's own status for its node (rule STACK-05).
 
     A stack that keeps a per-node status sensor, as Z-Wave JS does,
     answers through its module's `is_node_status`; every other stack
@@ -202,8 +203,8 @@ def is_node_status(domain: str | None, ent: Any) -> bool:
 
 def available_speaks(domain: str | None) -> bool:
     """Whether a device of this domain, of a type that reports only on
-    use and not behind a bridge, is judged by being available (rulings
-    #710 and #718)."""
+    use and not behind a bridge, is judged by being available (rule
+    STACK-06)."""
     if not domain:
         return False
     for module in STACK_MODULES:
@@ -213,7 +214,7 @@ def available_speaks(domain: str | None) -> bool:
 
 
 def node_dead(domain: str | None, state: str | None) -> bool:
-    """Whether a node status reading says the node is dead (#670)."""
+    """Whether a node status reading says the node is dead (rule STACK-05)."""
     if not domain or state is None:
         return False
     for module in STACK_MODULES:
@@ -225,7 +226,7 @@ def node_dead(domain: str | None, state: str | None) -> bool:
 
 
 def node_heard(domain: str | None, state: str | None) -> bool:
-    """Whether a node status reading says the stack has heard the node (#670)."""
+    """Whether a node status reading says the stack has heard the node (rule STACK-05)."""
     if not domain or state is None:
         return False
     for module in STACK_MODULES:
@@ -237,7 +238,7 @@ def node_heard(domain: str | None, state: str | None) -> bool:
 
 
 def node_up(domain: str | None, state: str | None) -> bool:
-    """Whether a node status reading says the node is not dead (#670)."""
+    """Whether a node status reading says the node is not dead (rule STACK-05)."""
     if not domain or state is None:
         return False
     for module in STACK_MODULES:

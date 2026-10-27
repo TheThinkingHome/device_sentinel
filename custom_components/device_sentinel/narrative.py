@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.7 (2026-10-27)
+# File: narrative.py, Version: 0.27.10 (2026-10-27)
 
 """How to say what happened: the composer.
 
@@ -11,10 +11,8 @@ A mixin, so `self` is the coordinator and nothing here can be
 instantiated alone; the split is for legibility rather than a
 boundary.
 
-This file used to hold the recording as well as the wording, and the
-two were separated when a count of which method calls which found
-they never called each other once, in either direction (ruling #202).
-What records now lives in journal.py: the silence episodes, the
+The recording half lives in journal.py, apart because the two halves
+never call each other (rule CODE-11): the silence episodes, the
 incident log, and the system events. This half only reads those rows
 back and turns them into sentences.
 
@@ -113,12 +111,12 @@ class NarrativeMixin:
         """Return the name a device has now, never the stored one.
 
         An incident row stores the name a device had when the row was
-        written, and a device renamed since then made the brief name
-        hardware the reader does not own (ruling #373). Every place
-        that shows a stored name to a person resolves it against the
-        device as it is at the moment of writing. The stored name is
-        the fallback, kept for a device the registry and the maps no
-        longer know, because what was true then still beats a hex id.
+        written, and a device renamed since would name hardware the
+        reader does not own (rule DEV-02). Every place that shows a
+        stored name to a person resolves it against the device as it
+        is at the moment of writing. The stored name is the fallback,
+        kept for a device the registry and the maps no longer know,
+        because what was true then still beats a hex id.
         """
         device_id = row.get(INC_DEVICE_ID)
         stored = row.get(INC_NAME)
@@ -130,7 +128,7 @@ class NarrativeMixin:
         if stored:
             return stored
         # Nothing knows it and nothing recorded it, so the ladder
-        # answers rather than the raw id (ruling #402).
+        # answers rather than the raw id (rule DEV-01).
         return self._device_name(device_id)
 
     # How bad a problem is, worst first. A device with several
@@ -147,7 +145,7 @@ class NarrativeMixin:
         TODO_KIND_LOW_BATTERY,
         # A forecast ranks below the level it forecasts: a cell that
         # has crossed the threshold is more urgent than one heading
-        # for it (ruling #215).
+        # for it (rule LIST-02).
         TODO_KIND_FALLING_BATTERY,
         TODO_KIND_RAILED_SIGNAL,
     )
@@ -167,13 +165,13 @@ class NarrativeMixin:
     _EVENT_WORDING = {
         TODO_KIND_FLAPPING: "started dropping out again and again",
         TODO_KIND_FROZEN: "stopped reporting",
-        # "became unavailable" (James, 17 October 2026).
+        # The brief's own word for the kind (rule UNAV-08).
         TODO_KIND_UNAVAILABLE: "became unavailable",
         TODO_KIND_UNKNOWN: "went unknown",
         TODO_KIND_RAILED_SIGNAL: "signal railed",
         # Present tense, because nothing happened to the device: what
         # changed is what the readings now say about where it is
-        # heading (ruling #215).
+        # heading (rule LIST-02).
         TODO_KIND_FALLING_BATTERY: "battery is running down",
     }
 
@@ -225,11 +223,11 @@ class NarrativeMixin:
         The level here is the record's level at composition time, not
         at the alarm's moment, because an incident row carries no
         reading. So the falling wording is only used while the level
-        still reads low (ruling #346): a row composed after the cell
-        recovered said "battery fell to 100%" on Tim Plas's fleet,
-        a rise described as a fall. When the level has recovered, the
-        sentence says what is actually known: it read low then, and
-        what it reads now.
+        still reads low; otherwise a row composed after the cell
+        recovered would say "battery fell to 100%", a rise described
+        as a fall. When the level has recovered, the sentence says what
+        is actually known: it read low then, and what it reads now
+        (rule BAT-03).
         """
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
@@ -238,13 +236,12 @@ class NarrativeMixin:
             if state:
                 return f"battery is at {shown}"
             if level <= self.low_threshold + BATTERY_CLEAR_MARGIN:
-                # When it crossed, and where it stands (rule BAT-03,
-                # Ruled Change 42): "fell" read as a fall at a level it
-                # may have risen to since.
-                # A row of history is told by its own moment: `at`, its
-                # clock time, where the sentence carries no other, or
-                # `crossed_at` for its day; the device's own crossing
-                # is the latest one (first adversarial round of 0.27.7).
+                # When it crossed, and where it stands, because "fell"
+                # reads as a fall at a level it may have risen to since
+                # (rule BAT-03). A row of history is told by its own
+                # moment: `at`, its clock time, where the sentence
+                # carries no other, or `crossed_at` for its day; the
+                # device's own crossing is the latest one.
                 if at is not None:
                     on = f" at {at}"
                 else:
@@ -254,8 +251,8 @@ class NarrativeMixin:
             # Back above the line. The level it fell to is not stored,
             # so no number is given: "now 55%" read as if 55 were the
             # low reading. A cell back at the level the replacement
-            # rule calls full (ruling #397) may be new or recharged,
-            # and the brief does not claim which (ruling #455).
+            # rule calls full may be new or recharged, and the brief
+            # does not claim which (rule BAT-06).
             if level >= BATTERY_REPLACED_LANDS:
                 return "battery read low, since replaced or recharged"
             return "battery read low, since recovered"
@@ -280,16 +277,16 @@ class NarrativeMixin:
     ) -> str | None:
         """Return how a worse problem replaced a lesser one, else None.
 
-        The owner's words (0.22.27): "Soil Irrigation (Monstera) was
-        marked unavailable from frozen at 3:43 AM", and "Door 2nd
-        Bedroom's battery was marked low (18%) from running down". The
-        form follows where the clause lands: after the name in a
+        In these words: "Soil Irrigation (Monstera) was marked
+        unavailable from frozen at 3:43 AM", and "Door 2nd Bedroom's
+        battery was marked low (18%) from running down" (rule LIST-07).
+        The form follows where the clause lands: after the name in a
         sentence, alone in a table cell whose row already names the
         device, or after "N devices" in a flood.
 
-        The level follows the low battery rule (ruling #346): shown
-        only while the cell still reads low, because a row carries no
-        reading of its own.
+        The level follows the low battery rule: shown only while the
+        cell still reads low, because a row carries no reading of its
+        own (rule BAT-03).
         """
         lesser = row.get(ESCALATED_FROM)
         if lesser is None:
@@ -326,22 +323,22 @@ class NarrativeMixin:
         unobserved wording stands alone because it is a statement
         about what was not seen rather than a named lever. The brief
         is a report for a person rather than a diagnostic dump, so it
-        says plainly that nobody saw the recovery (ruling #116).
+        says plainly that nobody saw the recovery (rule BRIEF-01).
         """
         cause = row.get(INC_CAUSE)
         if cause == RECOVERY_CAUSE_UNOBSERVED:
             return f", {cause}"
         if cause in RECOVERY_CAUSES_RESTART:
-            # Stored before #535: a restart or an outage revived
-            # nothing, so the recovery is told plainly.
+            # Stored by an older release: a restart or an outage
+            # revived nothing, so the recovery is told plainly
+            # (rule BRIEF-05).
             return ""
         if cause == RECOVERY_CAUSE_PAIRING:
             return f", revived by a {cause}"
         if cause in RECOVERY_CAUSES_INTERVENTION:
             # A person's own act, already a phrase: "handled at the
-            # device". Glued to "revived by a" it read "revived by a
-            # handled at the device" (found in 0.23.12, present since
-            # #362).
+            # device". Glued to "revived by a" it would read "revived
+            # by a handled at the device".
             return f", {cause}"
         if cause:
             return f", revived by a {cause}"
@@ -352,10 +349,10 @@ class NarrativeMixin:
         """When a problem began, as the table and the sentence say it.
 
         An unavailable or unknown opening is written when the device is
-        listed, minutes after it went; the row keeps when it went
-        (0.27.3), which its recovery counts from (#644), so "became
-        unavailable" and "recovered after" agree. Any other row, and
-        one written before 0.27.3, is dated when it was written.
+        listed, minutes after it went; the row keeps when it went,
+        which its recovery counts from, so "became unavailable" and
+        "recovered after" agree (rule UNAV-07). Any other row, and one
+        written by an older release, is dated when it was written.
         """
         since = row.get(INC_SINCE)
         if (
@@ -380,14 +377,14 @@ class NarrativeMixin:
         name = self._told_name(row)
         kind = row[INC_KIND]
         # A worse problem replacing a lesser one is one change, told
-        # as that change (0.22.27).
+        # as that change (rule LIST-07).
         change = self._change_clause(row)
         if change is not None:
             return f"{name}{change} at {self._clock(row[INC_WHEN])}"
         when = self._clock(self._began_at(row))
         if kind == TODO_KIND_LOW_BATTERY:
             # Its time inside the first sentence, not after the level
-            # (rule BAT-03; first adversarial round of 0.27.7).
+            # (rule BAT-03).
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False, at=when)
             if " at " in phrase:
                 return f"{name} {phrase}"
@@ -395,8 +392,8 @@ class NarrativeMixin:
         wording = self._EVENT_WORDING.get(kind, kind)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         if kind == TODO_KIND_UNAVAILABLE and hub:
-            # A hub went down (James, 14 October 2026); a Z-Wave device
-            # became unavailable (#670).
+            # A hub went down (rule STACK-10); a Z-Wave device became
+            # unavailable (rule UNAV-08).
             wording = hub[0]
         return f"{name} {wording} at {when}"
 
@@ -447,16 +444,16 @@ class NarrativeMixin:
         if cause == ACTION_ACKNOWLEDGED:
             return f"{name} acknowledged at {when}."
         if cause == ACTION_MUTED:
-            # A person's mute, not a recovery (ruling #537).
+            # A person's mute, not a recovery (rule LIST-09).
             return f"{name} was muted at {when}."
         if cause == ACTION_REMOVED:
-            # Removed from Home Assistant, its record held (ruling #622).
+            # Removed from Home Assistant, its record held (rule WATCH-07).
             return f"{name} was removed from Home Assistant at {when}."
         if cause == ACTION_SET_ASIDE:
             # Not a recovery and not an acknowledgment. The device
             # left the watched set with its problem standing, which
             # the reader deserves to hear in those words rather than
-            # as an action nobody took (ruling #369).
+            # as an action nobody took (rule LIST-09).
             return f"{name} was set aside at {when} and is no longer watched."
         # A cause this renderer has not learned yet. The check is by
         # far the common case, so it is the safest thing to say, and
@@ -473,25 +470,23 @@ class NarrativeMixin:
 
         A stop and its recovery are one thing that happened, so the
         prose tells them together and leaves strict chronology to the
-        table, where a reader is looking a time up (ruling #134):
-        told in strict time order, they had two unrelated sentences
-        between them in a live brief. The recovery's clock time is
-        dropped because the opening
-        time plus the span already gives it, and the table below
-        carries exact times for anyone looking one up.
+        table, where a reader is looking a time up; in strict time
+        order, two unrelated sentences can fall between them
+        (rule BRIEF-02). The recovery's clock time is dropped because
+        the opening time plus the span already gives it.
 
         clause overrides the cause the row carries. The stored cause
         is written when the incident closes, before the intervention
         that explains it has necessarily been recorded, and older
-        rows carry a cause that was borrowed from an unrelated
-        episode. The reader works it out afresh and passes it here,
-        so the sentence says the true thing and one composer still
-        writes every wording (ruling #228).
+        rows carry a cause borrowed from an unrelated episode. The
+        reader works it out afresh and passes it here, so the sentence
+        says the true thing and one composer still writes every
+        wording (rule BRIEF-05).
         """
         if opened[INC_EVENT] == INCIDENT_ACTION:
             # A deletion and the re-add that undid it are one thing
             # that happened, told the way an opening and its
-            # recovery are (ruling #134).
+            # recovery are (rule BRIEF-02).
             when = self._clock(opened[INC_WHEN])
             return (
                 f"{self._told_name(opened)} deleted from the list at {when}, "
@@ -515,17 +510,15 @@ class NarrativeMixin:
     def _frozen_span_sentence(
         self, opened: dict[str, Any], resolved: dict[str, Any], tail: str
     ) -> str | None:
-        """A frozen device's silence, told from when it went quiet (0.26.5).
+        """A frozen device's silence, told from when it went quiet.
 
         A freeze is called once a device has been silent past its wait,
         so the verdict's time is hours after the device went quiet, and
         the recovery's duration is the whole silence. Added to the
-        verdict's time, it put the recovery hours after it really came:
-        Presence Master, called frozen at 2:20 AM and back at 2:21 AM
-        after 3.7 hours of silence, read "recovered 3.7h later". The
-        sentence says when it went quiet and when it recovered.
-        None for any other kind, a change of kind, or a duration that
-        does not fit.
+        verdict's time, it would put the recovery hours after it really
+        came. So the sentence says when it went quiet and when it
+        recovered. None for any other kind, a change of kind, or a
+        duration that does not fit.
         """
         if opened.get(INC_KIND) != TODO_KIND_FROZEN or self._change_clause(opened) is not None:
             return None
@@ -551,15 +544,15 @@ class NarrativeMixin:
         back = self._clock(end)
         if local_start.utcoffset() != local_end.utcoffset():
             # The clock changed inside the silence: the zone names keep
-            # the two times true (adversarial rounds of 16 October 2026).
+            # the two times true.
             quiet = f"{quiet} {local_start.strftime('%Z')}"
             back = f"{back} {local_end.strftime('%Z')}"
         if local_start.date() != local_end.date():
             quiet = local_start.strftime("%b %-d, ") + quiet
         name = self._told_name(opened)
         # "Recovered", not "reported again": a freeze can also clear
-        # because its wait grew, with no report (adversarial round of
-        # 16 October 2026), and the row cannot tell the two apart.
+        # because its wait grew, with no report, and the row cannot
+        # tell the two apart.
         return f"{name} stopped reporting at {quiet} and recovered at {back}{tail}."
 
     def _pair_incidents(
@@ -568,7 +561,7 @@ class NarrativeMixin:
         """Group a window's incidents into episodes, in order.
 
         One episode is one sentence in the prose, so the pairing has
-        to happen before the wording does (ruling #134).
+        to happen before the wording does (rule BRIEF-02).
 
         Each resolution is matched to the most recent unmatched
         opening for the same device and kind, so a device that
@@ -614,10 +607,10 @@ class NarrativeMixin:
         The shape a phone holds: one line per device, replaced in
         place as things change, tagged by device id so its line
         always says where that device is now rather than piling up a
-        history (ruling #108), so it describes a state rather
-        than an event and carries no timestamp. Several problems at
-        once are named by the worst with the rest counted, because
-        the line has room for one fact.
+        history (rule NOTE-03). So it describes a state rather than an
+        event and carries no timestamp. Several problems at once are
+        named by the worst with the rest counted, because the line has
+        room for one fact.
         """
         record = next(
             (
@@ -661,12 +654,12 @@ class NarrativeMixin:
                 worst, ("{ago}", worst)
             )
             if worst == TODO_KIND_UNAVAILABLE and self.is_hub(device_id):  # type: ignore[attr-defined]
-                # A hub is down, not unavailable (James, 14 October 2026).
+                # A hub is down, not unavailable (rule STACK-10).
                 with_age, without_age = "has been down for {ago}", "is down"
             clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
         # The same device, so say so: "and 1 more problem" read as a
-        # second device (0.22.24).
+        # second device.
         tail = (
             f", and {extra} more problem{'s' if extra != 1 else ''} "
             "on the same device"

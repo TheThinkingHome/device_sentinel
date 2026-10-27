@@ -3,47 +3,43 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.1 (2026-10-23)
+# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.10 (2026-10-27)
 
-"""Battery Last Replaced, and a person's answer to a detected one (0.26.7).
+"""Battery Last Replaced, and a person's answer to a detected one (rule BAT-07).
 
-Device Sentinel has detected a new cell since 0.20.20 (#397, #405): a
-rise held over two readings starts the battery history again, so the
-trend, the days left and the charts describe the cell in the device.
-A wrong date makes all three wrong, and nothing let a person say so.
-
-What James ruled (#701, #702, 18 and 19 October 2026):
+Device Sentinel detects a new cell: a rise held over two readings
+starts the battery history again, so the trend, the days left and the
+charts describe the cell in the device (rule BAT-06). A wrong date
+makes all three wrong, so a person can say so:
 
 - A battery device's page shows "Battery Last Replaced", or "No
   battery replacement yet", with a pencil. A device on mains has no
   row.
-- Unanswered, a detected replacement is used at once, as before, and a
-  Confirm Battery Replacement card and a Brief line wait for a person.
+- Unanswered, a detected replacement is used at once, and a Confirm
+  Battery Replacement card and a Brief line wait for a person.
 - Confirm saves the detected day in the answers file. A day the person
   enters or corrects is saved there instead, and the detected day is
   no longer shown; the history splits at the person's day. Cancel joins
   the history back to the replacement before. Cancel leaves the
-  Log-Normal day count as it stands (#709, amending #702): it regrows
-  over 42 days, as after any detection since 0.24.0.
+  Log-Normal day count as it stands: it regrows over 42 days, as after
+  any detection.
 - A day in the future is refused; a day older than the oldest kept day
   makes the whole kept history the new cell's.
-- A replacement detected before 0.26.7 counts as confirmed.
+- A replacement detected by an older release counts as confirmed.
 - A device whose power answer is Rechargeable reads "charged".
 
 The day shown for a detection is the day the new level first appeared,
-the new cell's first dated entry, not the midnight that confirmed it
-(#405). Every daily entry carries its date since 0.24.4.
+the new cell's first dated entry, not the midnight that confirmed it.
 
-One entry per device in the answers file holds what the row says (the
-design James approved on 19 October 2026, after four review rounds on
-a day worked out again at every reading): the day, how it came
-(detected, confirmed or entered), the stamp of the detection it
-belongs to, whether it waits for a person, and the replacements before
-it, the newest last, which Cancel goes back through.
-The latest event writes it and the row shows it as stored. A stamp no
-entry carries, a replacement detected before 0.26.7 or by 0.26.6 after
-a downgrade, is dated once from the new cell's first kept day, stored
-as confirmed, and never worked out again.
+One entry per device in the answers file holds what the row says
+(rule STOR-20), so the day is not worked out again at every reading:
+the day, how it came (detected, confirmed or entered), the stamp of
+the detection it belongs to, whether it waits for a person, and the
+replacements before it, the newest last, which Cancel goes back
+through. The latest event writes it and the row shows it as stored.
+A stamp no entry carries, a replacement detected by an older release
+or after a downgrade, is dated once from the new cell's first kept
+day, stored as confirmed, and never worked out again.
 """
 
 from __future__ import annotations
@@ -72,15 +68,15 @@ from .daily_dates import (
 )
 
 # How the day came: detected and not yet answered, confirmed by a
-# person (or detected before 0.26.7, which counts as confirmed), or
-# entered by a person.
+# person (or detected by an older release, which counts as confirmed),
+# or entered by a person.
 HOW_DETECTED = "detected"
 HOW_CONFIRMED = "confirmed"
 HOW_ENTERED = "entered"
 HOWS = (HOW_DETECTED, HOW_CONFIRMED, HOW_ENTERED)
 # Days after a day the person entered within which a detection is that
-# same replacement: the day was given before the device reported its
-# new level (found by review).
+# same replacement, because the day can be given before the device
+# reports its new level.
 SAME_REPLACEMENT_DAYS = 7
 # Earlier replacements an entry keeps for Cancel to go back to.
 HISTORY_KEPT = 5
@@ -99,7 +95,7 @@ def _iso_day(value: Any) -> date | None:
 
 
 def resplit_battery(record: dict[str, Any], split_day: date | None, keep: int) -> None:
-    """Join the battery history and split it again at a day (#702).
+    """Join the battery history and split it again at a day (rule BAT-07).
 
     The two kept parts, the cell before and the cell in the device, are
     read as one dated history and cut where the day falls: entries on
@@ -144,7 +140,7 @@ class BatteryReplacementMixin:
 
     @staticmethod
     def _entry_ok(entry: Any) -> dict[str, Any] | None:
-        """An entry in its shape, or None (#370's rule)."""
+        """An entry in its shape, or None (rule STOR-09)."""
         if not isinstance(entry, dict) or _iso_day(entry.get("day")) is None:
             return None
         if entry.get("how") not in HOWS:
@@ -159,7 +155,7 @@ class BatteryReplacementMixin:
 
     def _battery_answers_read(self, payload: Any) -> int:
         """Take the entries from the answers file; a malformed one is
-        dropped and counted (#370's rule), and so is a malformed earlier
+        dropped and counted (rule STOR-09), and so is a malformed earlier
         replacement in an entry's history."""
         kept: dict[str, dict[str, Any]] = {}
         dropped = 0
@@ -193,7 +189,7 @@ class BatteryReplacementMixin:
 
     def _battery_powered(self, device_id: str) -> bool:
         """A device with a battery reading, or one answered as running on
-        a battery (#701: a device on mains has no row)."""
+        a battery; a device on mains has no row (rule BAT-07)."""
         record = self.data.get(DATA_DEVICES, {}).get(device_id)  # type: ignore[attr-defined]
         power = self.power_of(device_id)  # type: ignore[attr-defined]
         if power is not None:
@@ -206,7 +202,7 @@ class BatteryReplacementMixin:
 
     def battery_words(self, device_id: str) -> dict[str, str]:
         """The row's and the card's words, "charged" for a rechargeable
-        cell (#701)."""
+        cell (rule BAT-07)."""
         if self._rechargeable(device_id):
             return {
                 "row": "Battery Last Charged",
@@ -223,10 +219,10 @@ class BatteryReplacementMixin:
 
     def _first_kept_day(self, record: dict[str, Any], stamp: str) -> date | None:
         """The day a replacement no entry carries began, from the dates
-        every daily entry carries (0.24.4): the new cell's first dated
-        entry while its history is whole, else the day after the old
-        cell's last dated entry. The confirming stamp, minus a day, only
-        where neither has a date. Worked out once, then stored."""
+        every daily entry carries: the new cell's first dated entry
+        while its history is whole, else the day after the old cell's
+        last dated entry. The confirming stamp, minus a day, only where
+        neither has a date. Worked out once, then stored."""
         yesterday = dt_util.now().date() - timedelta(days=1)
         keep = int(getattr(self, "retention_days", 0) or 0)
         series = record.get(DEV_BATTERY_DAILY)
@@ -255,8 +251,7 @@ class BatteryReplacementMixin:
         if stamp is None:
             # The record knows no replacement the entry speaks of, as
             # after the main file was restored from an older copy: the
-            # replacement before stands, and nothing waits (found by
-            # review).
+            # replacement before stands, and nothing waits.
             earlier = list(entry.get("history") or []) if entry else []
             return {**earlier[-1], "waiting": False, "history": earlier[:-1]} if earlier else None
         day = self._first_kept_day(record, stamp)
@@ -271,7 +266,7 @@ class BatteryReplacementMixin:
         devices = self.data.get(DATA_DEVICES, {})  # type: ignore[attr-defined]
         answers = self._battery_answers()
         # An entry goes with its device's record, as power and type
-        # answers do (found by review).
+        # answers do.
         changed = False
         for device_id in [d for d in answers if d not in devices]:
             del answers[device_id]
@@ -299,7 +294,7 @@ class BatteryReplacementMixin:
         return {
             "words": self.battery_words(device_id),
             # With no replacement on record, when the device was first
-            # seen (James, 23 October 2026).
+            # seen (rule BAT-07).
             "first_seen": first.isoformat() if first is not None and entry is None else None,
             "day": entry["day"] if entry else None,
             "how": entry["how"] if entry else None,
@@ -308,8 +303,9 @@ class BatteryReplacementMixin:
 
     def battery_confirm_rows(self) -> list[dict[str, Any]]:
         """Each watched battery device with a detected replacement nobody
-        has answered, for the Confirm Battery Replacement card (#701). A
-        device not on a battery has no row to answer from."""
+        has answered, for the Confirm Battery Replacement card
+        (rule REC-04). A device not on a battery has no row to answer
+        from."""
         devices = self.data.get(DATA_DEVICES, {})  # type: ignore[attr-defined]
         rows = []
         for device_id in self._watched:  # type: ignore[attr-defined]
@@ -327,7 +323,7 @@ class BatteryReplacementMixin:
     def _note_detected_replacement(
         self, record: dict[str, Any], device_id: str, rise_day: date | None, replaced_before: Any,
     ) -> None:
-        """A replacement the midnight roll just confirmed (#701).
+        """A replacement the midnight roll just confirmed (rule BAT-07).
 
         It waits for a person, dated by the rise day the split just
         wrote, with the entry before it kept for Cancel. A detection
@@ -363,11 +359,11 @@ class BatteryReplacementMixin:
         """Confirm, cancel, or set the day of a device's replacement.
 
         Confirm keeps the detected day as the person's. Cancel joins the
-        history back to the replacement before (#709: the Log-Normal
-        count is left as it stands). A day the person gives splits the
-        history there and stands (#701, #702). Each is saved at once,
-        the history with it; nothing is taken once Device Sentinel is
-        stopping (found by review).
+        history back to the replacement before, leaving the Log-Normal
+        count as it stands. A day the person gives splits the history
+        there and stands (rule BAT-07). Each is saved at once, the
+        history with it; nothing is taken once Device Sentinel is
+        stopping.
         """
         if getattr(self, "_stopped", False):
             raise ValueError("Device Sentinel is stopping")
@@ -389,7 +385,7 @@ class BatteryReplacementMixin:
                 raise ValueError("No detected replacement is waiting")
             earlier = list(entry.get("history") or [])
             before = earlier[-1] if earlier else None
-            # The replacement taken back takes its life row with it (#739).
+            # The replacement taken back takes its life row with it (rule BAT-08).
             self.battery_life_withdrawn(device_id, record.get(DEV_BATTERY_REPLACED_AT))  # type: ignore[attr-defined]
             resplit_battery(record, _iso_day(before["day"]) if before else None, keep)
             record[DEV_BATTERY_REPLACED_AT] = before["stamp"] if before else None
@@ -406,7 +402,7 @@ class BatteryReplacementMixin:
                 raise ValueError("That day has not come yet")
             # When the battery that ends went in, read before the answer
             # changes it; a day given over a detection still waiting
-            # corrects that replacement (#739).
+            # corrects that replacement (rule BAT-08).
             started = self.battery_start(device_id, record)  # type: ignore[attr-defined]
             resplit_battery(record, given, keep)
             stamp = record.get(DEV_BATTERY_REPLACED_AT)
@@ -417,8 +413,8 @@ class BatteryReplacementMixin:
                 "history": _history(entry if entry and not entry["waiting"] else None,
                                     entry.get("history") if entry else None),
             }
-            # A rise still waiting for its second night is answered too:
-            # the next midnight confirms nothing over it (found by review).
+            # A rise still waiting for its second night is answered too,
+            # so the next midnight confirms nothing over it.
             record[DEV_BATTERY_REPLACED_PENDING] = None
             said = f"battery {words} on {given.isoformat()}, set by hand"
         else:
@@ -429,12 +425,12 @@ class BatteryReplacementMixin:
         )
         self._mark_changed()  # type: ignore[attr-defined]
         # The answer and the split history are saved together, now, not
-        # at the next routine save (found by review).
+        # at the next routine save.
         self.hass.async_create_task(self._save_now())  # type: ignore[attr-defined]
 
 def _dated(record: dict[str, Any], family: str, length: int, end: date) -> list[date]:
-    """A history's dates where it carries them (0.24.4), else none: a
-    day counted back from today is not a date (found by review)."""
+    """A history's dates where it carries them, else none: a day
+    counted back from today is not a date (rule STOR-16)."""
     return dates_for(record, family, length, end) if _block(record, family) is not None else []
 
 
@@ -446,7 +442,7 @@ def _history(entry: dict[str, Any] | None, earlier: list[Any] | None = None) -> 
     else:
         kept = [*(entry.get("history") or []), {k: v for k, v in entry.items() if k != "history"}]
     # Each keeps its own waiting: a Cancel that goes back to a detection
-    # nobody answered asks about it again (found by review).
+    # nobody answered asks about it again.
     return [dict(item) for item in kept][-HISTORY_KEPT:]
 
 

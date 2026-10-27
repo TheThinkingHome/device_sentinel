@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.9 (2026-10-27)
+# File: dashboard.py, Version: 0.27.10 (2026-10-27)
 
 """What the dashboard reads from the coordinator.
 
@@ -174,8 +174,8 @@ class DashboardMixin:
 
     def same_hardware(self, device_id: str) -> dict[str, Any] | None:
         """The device's copies, if it is one piece of hardware shown as
-        several devices (0.25.2): which copy is watched, and the rest,
-        each with its integration. None for a device with no copies."""
+        several devices: which copy is watched, and the rest, each with
+        its integration. None for a device with no copies (rule WATCH-06)."""
         groups = getattr(self, "_hardware_groups", None) or []
         members = next((g for g in groups if device_id in g), None)
         if not members:
@@ -186,8 +186,8 @@ class DashboardMixin:
         # The device the hardware is watched through: the one kept when
         # copies are set aside, or the only watched member. With two
         # watched (restart grace, or one whose entities are all
-        # disabled) or none, there is no single answer, and the page
-        # words its line from each row instead (found by review).
+        # disabled) or none, there is no single answer, so the page
+        # words its line from each row instead.
         watched_through = copy_of.get(device_id) or (kept[0] if kept else None) or (
             watching[0] if len(watching) == 1 else None
         )
@@ -201,15 +201,15 @@ class DashboardMixin:
                 "device_id": other,
                 "name": self._device_name(other),  # type: ignore[attr-defined]
                 # The name shown elsewhere on the page, "UniFi Network",
-                # not the domain "unifi" (0.25.3, seen on James's house).
+                # not the domain "unifi".
                 "integration": self._integration_name_of(other, domain) if domain else None,
                 "domain": domain,
                 "watched": other in self._watched,  # type: ignore[attr-defined]
                 # Why a clone is not watched: "clone", or the reason it
                 # would be set aside anyway, such as an exclusion.
                 "set_aside": (self._set_aside.get(other) or (None, None, None))[2],  # type: ignore[attr-defined]
-                # A device never watched has no page; the panel shows
-                # its name without a link (found by review).
+                # A device never watched has no page, so the panel shows
+                # its name without a link.
                 "has_page": other in records,
             }
 
@@ -221,7 +221,7 @@ class DashboardMixin:
     def iot_class_of(self, domain: str | None) -> str | None:
         """How an integration talks to its devices: its manifest's
         iot_class, read through Home Assistant's public loader, with
-        nothing added to Device Sentinel's own manifest (0.23.9)."""
+        nothing added to Device Sentinel's own manifest."""
         if not domain:
             return None
         try:
@@ -274,8 +274,8 @@ class DashboardMixin:
                 "state": state if state is not None else BRIDGE_UNKNOWN,
             })
         # The broker watch runs in every house and reads unknown where
-        # there is no MQTT (ruling #224), so the header shows it only
-        # where an MQTT integration is configured.
+        # there is no MQTT, so the header shows it only where an MQTT
+        # integration is configured (rule UP-02).
         if self._broker_reader is not None and self.hass.config_entries.async_entries(
             BROKER_SCOPE
         ):
@@ -287,8 +287,8 @@ class DashboardMixin:
         if self.wifi_capable:
             parts.append({
                 "key": WIFI_KEY,
-                # "Wi-Fi" in the band (0.27.3): the sensor keeps its
-                # entity name, so no automation reading it breaks.
+                # "Wi-Fi" in the band; the sensor keeps its entity name,
+                # so no automation reading it breaks (rule DASH-16).
                 "name": WIFI_BAND_NAME,
                 "state": BRIDGE_DOWN if self.wifi_down_at is not None else BRIDGE_RUNNING,
             })
@@ -303,9 +303,9 @@ class DashboardMixin:
                 "default_minutes": self.maintenance_minutes,
             },
             "marker": self._change_marker,
-            # The dashboard a window opens in (ruling #693).
+            # The view the dashboard opens in (rule DASH-03).
             "dashboard": self.dashboard_mode,
-            # The release running, for the dashboard's foot (ruling #723).
+            # The release running, for the dashboard's foot (rule DASH-15).
             "release": self.dashboard_release(),
         }
 
@@ -358,8 +358,8 @@ class IntegrationViewMixin:
             return BRIDGE_SENSOR_NAMES.get(scope, f"{scope} Bridge")
         if kind in (SYS_BROKER_DOWN, SYS_BROKER_UP):
             return BROKER_SENSOR_NAME
-        # One device's own entry (0.22.23): named by the device, whose
-        # connection it is, rather than as the whole integration.
+        # One device's own entry: named by the device, whose connection
+        # it is, rather than as the whole integration.
         device = self.outage_device_name(detail)
         if device is not None:
             return f"{device} ({self._integration_title(str(scope))} connection)"
@@ -369,9 +369,8 @@ class IntegrationViewMixin:
         """Every outage of the last fourteen days, by owning integration.
 
         Each down is paired with its own return by kind and scope. The
-        return carries the length and, since ruling #442, how many
-        devices the outage took; an outage with no return yet is open.
-        Newest first.
+        return carries the length and how many devices the outage took;
+        an outage with no return yet is open. Newest first (rule UP-11).
         """
         now = dt_util.utcnow().timestamp()
         since = now - OUTAGE_WINDOW_DAYS * 86400.0
@@ -386,7 +385,7 @@ class IntegrationViewMixin:
             if not isinstance(when, (int, float)):
                 continue
             # Paired by entry too, so two entries of one integration
-            # are two outages (0.22.23).
+            # are two outages.
             entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
             if kind in _OPENERS:
                 open_rows[(kind, scope, entry)] = row
@@ -413,13 +412,11 @@ class IntegrationViewMixin:
             owner = self._outage_owner(kind, scope)
             if owner is None or row[SYS_WHEN] < since:
                 continue
-            # An integration outage written before 0.22.23 names no
-            # entry, and a run recorded one afresh after each restart,
-            # so it never meets its return: the second fleet's page
-            # read "SwitchBot Bluetooth integration, still down" for
-            # days while 12 of its 14 devices reported. Closed at the
-            # upgrade without a word (0.23.1): its outages are told
-            # by the entry-named rows since.
+            # An older integration outage names no entry, and a run
+            # recorded one afresh after each restart, so it never meets
+            # its return and read "still down" for days while its
+            # devices reported. Closed at the upgrade without a word,
+            # because the entry-named rows tell its outages since.
             if kind == SYS_INTEGRATION_DOWN and entry is None:
                 continue
             found.append((owner, {
@@ -447,7 +444,7 @@ class IntegrationViewMixin:
 
     def _rider_devices(self, domain: str) -> list[dict[str, Any]]:
         """The watched devices an integration with no hardware adds
-        entities to, each with its area and those entities (0.22.22)."""
+        entities to, each with its area and those entities."""
         areas = ar.async_get(self.hass)
         devices = dr.async_get(self.hass)
         listed = []
@@ -478,8 +475,8 @@ class IntegrationViewMixin:
         if not watched and domain in self._no_hardware_integrations:
             return STANDING_HELPER if self._is_helper(domain) else STANDING_NO_HARDWARE
         if not watched:
-            # Every one of its devices excluded on its own (ruling
-            # #625) reads excluded, not service only (found by review).
+            # Every one of its devices excluded on its own reads
+            # excluded, not service only (rule MUTE-03).
             reasons = {
                 reason for _name, owner, reason in self._set_aside.values()  # type: ignore[attr-defined]
                 if owner == domain
@@ -487,15 +484,14 @@ class IntegrationViewMixin:
             if reasons == {SET_ASIDE_EXCLUDED}:
                 return "excluded"
             # Every device set aside for having nothing but firmware
-            # notices or command buttons switched on (James, 17 October
-            # 2026), which "service only" would misdescribe.
+            # notices or command buttons switched on, which "service
+            # only" would misdescribe (rule WATCH-04).
             if reasons and reasons <= {SET_ASIDE_NOTICES_ONLY, SET_ASIDE_NO_ENTITIES}:
-                # Either reason, alone or together (James, 17 October
-                # 2026; fifteenth adversarial round of 0.26.6).
+                # Either reason, alone or together.
                 return STANDING_NOTICES_ONLY
         return "watched" if watched else "service"
 
-    # Which kind a phrase in a problem summary came from (0.22.24).
+    # Which kind a phrase in a problem summary came from.
     # The summary words each kind through `_kind_word`, so a phrase is
     # matched back by the word that kind always carries. A phrase that
     # matches nothing, or matches a kind the item does not hold, is
@@ -522,12 +518,11 @@ class IntegrationViewMixin:
         return None
 
     def _problem_text(self, item: dict[str, Any]) -> str:
-        """One device's problems, each with its own age (0.22.24).
+        """One device's problems, each with its own age.
 
-        A device with two problems had one row dated from the older,
-        so the reference rig's watering sensor read "frozen, battery
-        0%, since Jul 22, for 61.9d" and its seventeen-hour freeze
-        appeared nowhere.
+        One row dated from the older problem hid the newer one, so a
+        short freeze on a device with an old battery fault appeared
+        nowhere.
         """
         name = item.get(TODO_SORT_NAME) or ""
         summary = item[TODO_SUMMARY]
@@ -573,7 +568,7 @@ class IntegrationViewMixin:
         problems = self._problems_by_device()
         outages = self.integration_outages()
         # Excluded by Device Sentinel when first seen, not by the person
-        # from a card (Ruled Change 70).
+        # from a card.
         seen_routers = set(self.data.get(DATA_ROUTERS_SEEN) or []) - set(self.exclusion_offers())
         domains: dict[str, dict[str, int]] = {}
         for row in rows:
@@ -585,8 +580,8 @@ class IntegrationViewMixin:
             else:
                 count["set_aside"] += 1
             # The global mute alone: the MUTED cell also carries the
-            # battery, signal and freeze mutes since 0.22.13, and a
-            # phone muted for battery only is not a muted device.
+            # battery, signal and freeze mutes, and a phone muted for
+            # battery only is not a muted device.
             if row["muted_global"]:
                 count["muted"] += 1
             problem = problems.get(row["device_id"])
@@ -605,8 +600,8 @@ class IntegrationViewMixin:
             })
         # An integration with no hardware owns no row above; it is
         # listed so a person can see it and why its entities are not
-        # counted (0.22.21). "adds_to" is how many watched devices
-        # carry its entities.
+        # counted. "adds_to" is how many watched devices carry its
+        # entities.
         for domain in sorted(self._no_hardware_integrations - set(domains)):
             adds_to = len([
                 device_id
@@ -630,7 +625,7 @@ class IntegrationViewMixin:
 
         An integration with no hardware of its own owns no device, so
         its page is the devices it adds entities to, and those entities
-        by id, for a person to open (0.22.22).
+        by id, for a person to open.
         """
         devices = [row for row in self.classification_rows() if row["integration"] == domain]
         if not devices and domain in self._no_hardware_integrations:
@@ -653,7 +648,7 @@ class IntegrationViewMixin:
                 "watched": row["watched"],
                 "muted": row["muted"],
                 # The global mute alone, which the Integrations tab
-                # counts (0.27.3).
+                # counts (rule DASH-16).
                 "muted_global": row["muted_global"],
                 "set_aside": row["set_aside"],
                 "problem": problem["problem"] if problem else "",
@@ -667,7 +662,7 @@ class IntegrationViewMixin:
         watched = sum(1 for row in devices if row["watched"])
         # The devices another integration owns that reach Home
         # Assistant through the broker, listed on MQTT's page beneath
-        # its own (0.23.0).
+        # its own.
         behind_broker: list[dict[str, Any]] = []
         if domain == BROKER_SCOPE:
             for row in self.classification_rows():
@@ -694,7 +689,7 @@ class IntegrationViewMixin:
             and domain in self.excluded_integrations,
             "devices": listed,
             # On the exclusion list, so the page offers to take it back;
-            # otherwise it offers to exclude it (ruling #659).
+            # otherwise it offers to exclude it (rule MUTE-03).
             "excluded": domain in self.excluded_integrations,
             "behind_broker": behind_broker,
             "outages": self.integration_outages().get(domain, []),
@@ -733,15 +728,13 @@ def _iso(stamp: Any) -> str | None:
 def _firmware(device: Any, record: dict[str, Any]) -> dict[str, Any] | None:
     """The device's firmware for its page: the version now, and its history.
 
-    Recorded all along but shown only in the diagnostics download, so
-    the page could not say what a device runs or when it changed (rule
-    DEV-15). The version now is the registry's; a version not yet held
-    ten minutes is not in the history (0.23.10), and the page should
-    still show what the device runs. A device that stops giving one
-    keeps its last recorded, as the record does. The history is oldest
-    first, each version with the moment it was first seen. None when
-    there is neither, so the page leaves the row out. The panel draws
-    it in Advanced only (rule DEV-15).
+    The version now is the registry's; a version not yet held ten
+    minutes is not in the history, and the page should still show what
+    the device runs. A device that stops giving one keeps its last
+    recorded, as the record does. The history is oldest first, each
+    version with the moment it was first seen. None when there is
+    neither, so the page leaves the row out. The panel draws it in
+    Advanced only (rule DEV-15).
     """
     history = [
         {"version": str(pair[0]), "since": _iso(pair[1])}
@@ -763,13 +756,11 @@ class DeviceViewMixin:
         return rhythm, sorted(set_aside)
 
     def _rhythm_in_use(self, record: dict[str, Any]) -> float | None:
-        """The rhythm of the rule the wait is built from (0.24.10).
+        """The rhythm of the rule the wait is built from.
 
-        The status bar and the Devices tab showed the 14-Day Trimmed
-        Maximum's rhythm beside a window built from the Log-Normal
-        Percentile whenever that rule was the shorter: a plug read
-        "rhythm 3.2h" beside "window 34m", its rhythm in use being 8
-        minutes. Young devices, with only the Trimmed Maximum, read
+        Showing the Trimmed Maximum's rhythm beside a window built from
+        the Log-Normal Percentile made a plug read "rhythm 3.2h" beside
+        "window 34m". Young devices, with only the Trimmed Maximum, read
         as before.
         """
         found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
@@ -779,15 +770,13 @@ class DeviceViewMixin:
         return rhythm
 
     def _integration_name_of(self, device_id: str, domain: str | None = None) -> str:
-        """The name shown for a device's integration (0.24.11).
+        """The name shown for a device's integration.
 
         A Zigbee2MQTT device reaches Home Assistant through the MQTT
-        integration, so the Problem List named it "mqtt", where its
-        faults are Zigbee's (Tim Plas, 6 October). It is named for the
+        integration, but its faults are Zigbee's. So it is named for the
         stack that owns it, the same on the Problem List, the Devices
-        tab and its page (James, 7 October: one name for one thing,
-        #472); every other device for its integration. The domain still
-        opens the integration's page.
+        tab and its page; every other device for its integration. The
+        domain still opens the integration's page (rule GEN-07).
         """
         domain = domain or self._watched.get(device_id)  # type: ignore[attr-defined]
         if not domain:
@@ -800,7 +789,7 @@ class DeviceViewMixin:
         return str(self._integration_title(domain))  # type: ignore[attr-defined]
 
     def _both_rules(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Both freeze rules as the device page draws them (0.24.9)."""
+        """Both freeze rules as the device page draws them."""
         daily = record.get(DEV_DAILY_MAX) or []
         found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
         out: dict[str, Any] = {
@@ -808,7 +797,7 @@ class DeviceViewMixin:
             "lognormal_days": None, "lognormal_gaps": [], "lognormal_set_aside": [],
             "in_use": None, "counting_again": None,
         }
-        # The Log-Normal Percentile counting again after a reset (0.27.3):
+        # The Log-Normal Percentile counting again after a reset:
         # where its chart stood, the page says since when and how many
         # days are left, rather than leaving the space empty.
         since_reset = record.get(DEV_LOGNORMAL_DAYS)
@@ -847,13 +836,13 @@ class DeviceViewMixin:
         return out
 
     def _rhythm_on_days(self, record: dict[str, Any]) -> dict[str, list[Any]]:
-        """The rhythm chart's history laid out one slot a day (0.24.4).
+        """The rhythm chart's history laid out one slot a day.
 
-        Issue #18: the gap history writes nothing on a day with no
-        learned gap, so the chart, which reads by position, drew those
-        days away. Each entry moves to its day's slot, with an empty
-        slot for a skipped day, and the deciding and set-aside marks,
-        which are positions in the history, move with their entries.
+        The gap history writes nothing on a day with no learned gap, so
+        the chart, which reads by position, drew those days away. Each
+        entry moves to its day's slot, with an empty slot for a skipped
+        day, and the deciding and set-aside marks, which are positions
+        in the history, move with their entries.
         """
         out = dict(self._rhythm_history(record))
         out["daily"] = list(record.get(DEV_DAILY_MAX) or [])
@@ -885,7 +874,7 @@ class DeviceViewMixin:
 
     def _rhythm_history(self, record: dict[str, Any]) -> dict[str, list[Any]]:
         """Each day's two waits, the rule in use, and the Trimmed
-        Maximum's deciding and set-aside days (0.24.0).
+        Maximum's deciding and set-aside days.
 
         Worked out from the days before each day, as the detector
         worked them out then. The count since a reset is worked back
@@ -893,11 +882,11 @@ class DeviceViewMixin:
         count, so days before it are drawn as if none happened, which
         changes only how old days are drawn, never today's wait.
         """
-        # Worked out on each request and kept nowhere (James, 2 October
-        # 2026): a device page asks only while it is open, once a minute,
-        # and everyday running matters more than browsing. A year of
-        # history costs about 71 ms per request; with no page open it
-        # costs nothing, and no history sits in memory.
+        # Worked out on each request and kept nowhere, because a device
+        # page asks only while it is open, once a minute, and everyday
+        # running matters more than browsing. A year of history costs
+        # about 71 ms per request; with no page open it costs nothing,
+        # and no history sits in memory.
         source = record.get(DEV_DAILY_MAX)
         since = record.get(DEV_LOGNORMAL_DAYS)
         daily = list(source or [])
@@ -948,9 +937,9 @@ class DeviceViewMixin:
         ]
         if not daily:
             return None
-        # The days the two rules read, less the days each sets aside
-        # (0.27.3): a long day older than both, such as the SLZB-06's
-        # 238.6 hours in August, set the scale of every chart after it.
+        # The days the two rules read, less the days each sets aside,
+        # so one very long old day does not set the scale of every
+        # chart after it.
         _rhythm, aside = self._trimmed_maximum(daily[-DAILY_MAX_KEEP:])
         recent = daily[-DAILY_MAX_KEEP:]
         kept = [value for index, value in enumerate(recent) if index not in aside]
@@ -966,19 +955,16 @@ class DeviceViewMixin:
 
     def _page_status(self, device_id: str, record: dict[str, Any]) -> str:
         """The stored verdict the Problem List reads, or what else is
-        true of the device (0.22.24).
+        true of the device.
 
-        Before, anything without a freeze verdict read as reporting,
-        so a device set aside for having no entities of its own, a
-        coordinator set aside as a duplicate and 11 days silent, and a
-        device that had never spoken all showed the green word. A
-        device nobody watches has no verdict to give, and one that has
-        never reported has not reported.
+        Not everything without a freeze verdict is reporting: a device
+        nobody watches has no verdict to give, and one that has never
+        reported has not reported.
         """
         # A device in a flap reads as the flap, the same word the list
-        # gives it, whether or not it is down this minute (0.23.2). A
-        # device muted for unavailable, or for everything, is off the
-        # list and reads no flap either (James, 17 October 2026).
+        # gives it, whether or not it is down this minute. A device
+        # muted for unavailable, or for everything, is off the list and
+        # reads no flap either (rule MUTE-06).
         if (
             device_id in self._watched
             and device_id not in self._muted_devices
@@ -988,8 +974,7 @@ class DeviceViewMixin:
             return TODO_KIND_FLAPPING
         verdict = record.get(DEV_FROZEN_CATEGORY)
         # A verdict held behind a down upstream is kept while the device
-        # is not judged, but one its mutes cover is not shown (seventh
-        # adversarial round of 0.26.6).
+        # is not judged, but one its mutes cover is not shown.
         if verdict and device_id not in self._muted_devices and self._muted_away(  # type: ignore[attr-defined]
             verdict,
             self._freeze_muted(device_id),  # type: ignore[attr-defined]
@@ -999,20 +984,18 @@ class DeviceViewMixin:
         if device_id not in self._watched:
             return STATUS_SET_ASIDE
         if self._connection_only(device_id) or self.judged_by_hub(device_id):  # type: ignore[attr-defined]
-            # Its connection is its report, and it is not down (James,
-            # 17 October 2026; fifteenth adversarial round of 0.26.6).
-            # A device its hub judges is never called never reported:
-            # a Pico nobody has pressed is fine (rule FRZ-01, the
-            # device-page plan of 27 October 2026).
+            # Its connection is its report, and it is not down.
+            # A device its hub judges is never called never reported,
+            # because a Pico nobody has pressed is fine (rule FRZ-01).
             return STATUS_REPORTING
         if record.get(DEV_LAST_ACTIVITY) is None:
             return STATUS_NEVER_REPORTED
         return STATUS_REPORTING
 
     def _judged_available(self, device_id: str, record: dict[str, Any]) -> bool:
-        """Whether the device is judged by being available rather than by a
-        window (#710, #718): a Matter device of a type that reports only on use, with no frozen
-        verdict standing."""
+        """Whether the device is judged by being available rather than by
+        a window: a Matter device of a type that reports only on use,
+        with no frozen verdict standing (rule STACK-06)."""
         return bool(
             self._matter_available_now(device_id)  # type: ignore[attr-defined]
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
@@ -1020,14 +1003,14 @@ class DeviceViewMixin:
 
     def _judged_by(self, device_id: str) -> dict[str, Any] | None:
         """How a device never judged for freezing is judged, for its page
-        and its Devices row (James, 27 October 2026): by its hub, named,
-        or by its connection. None for a device judged by a window, or
-        by being available (#710), which keeps its own words.
+        and its Devices row: by its hub, named, or by its connection.
+        None for a device judged by a window, or by being available
+        (rule STACK-06), which keeps its own words.
 
         A device a hub controls is never frozen whether or not the hub
         is watched (judged_by_hub); "hub_page" says whether the hub has
         a Device Sentinel page, else the link opens Home Assistant's.
-        A hub itself is judged by its connection.
+        A hub itself is judged by its connection (rule STACK-10).
         """
         hub = self.hub_of(device_id)  # type: ignore[attr-defined]
         if hub is not None:
@@ -1050,15 +1033,15 @@ class DeviceViewMixin:
             record = records.get(device_id) or {}
             rhythm = self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else None
             problem = problems.get(device_id)
-            # No window for a device judged by being available (#710), or
-            # by its connection alone, as its page has it (0.27.3).
-            # Nor a hub, or a device a hub controls, watched or not
-            # (#664, #665; James, 27 October 2026): neither is judged
-            # by a window, and the row says how it is judged.
+            # No window for a device judged by being available, or by
+            # its connection alone, as its page has it. Nor a hub, or a
+            # device a hub controls, watched or not: neither is judged
+            # by a window, and the row says how it is judged (rules
+            # STACK-06, STACK-10).
             judged_by = self._judged_by(device_id)
             judged_by_window = not self._judged_available(device_id, record) and judged_by is None
             # A device with no learned day yet is learning too, as its
-            # page says (adversarial round of 0.27.3).
+            # page says.
             window = (
                 self._freeze_window(record)
                 if judged_by_window and record.get(DEV_DAILY_MAX) else None
@@ -1075,13 +1058,13 @@ class DeviceViewMixin:
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
                 "window": window,
-                # Still learning its window: days held, not yet enough
-                # (0.27.3). The cell reads "learning", not blank.
+                # Still learning its window: days held, not yet enough.
+                # The cell reads "learning", not blank (rule DASH-16).
                 "window_learning": judged_by_window and window is None,
                 # By its hub or by its connection, in place of a window.
                 "judged_by": judged_by,
                 "type": self.type_words(device_id),
-                # For the tab's Area and Label filters (ruling #658).
+                # For the tab's Area and Label filters (rule DASH-12).
                 **self._area_and_labels(device_id),
             })
         rows.sort(key=lambda row: row["name"].lower())
@@ -1089,7 +1072,7 @@ class DeviceViewMixin:
 
     def _area_and_labels(self, device_id: str) -> dict[str, Any]:
         """The device's area name and label names, read live from Home
-        Assistant's registries (ruling #658); nothing of it is stored."""
+        Assistant's registries; nothing of it is stored (rule DASH-12)."""
         device = dr.async_get(self.hass).async_get(device_id)
         if device is None:
             return {"area": None, "labels": []}
@@ -1110,15 +1093,16 @@ class DeviceViewMixin:
 
     def dashboard_excluded_devices(self) -> list[dict[str, Any]]:
         """The devices on the exclusion lists, for the Devices tab's
-        Excluded list (ruling #658).
+        Excluded list (rule DASH-12).
 
         Read live from the registry and the options: an excluded device
         is never recorded, so what is shown is what Home Assistant has
         now. A device excluded on its own can be taken back from the
         list; one excluded with its integration is taken back with the
-        integration, because the broader exclusion covers it (#336).
-        Its Device Sentinel page exists until the midnight that deletes
-        its history; after that its name opens Home Assistant's own.
+        integration, because the broader exclusion covers it (rule
+        MUTE-04). Its Device Sentinel page exists until the midnight
+        that deletes its history; after that its name opens Home
+        Assistant's own.
         """
         own = self.excluded_devices
         integrations = self.excluded_integrations
@@ -1150,7 +1134,7 @@ class DeviceViewMixin:
         (name, manufacturer, model, model id, hardware version, area,
         connections), because nothing of it is stored. The model id and
         hardware version are the fields the battery library matches on
-        beside manufacturer and model (0.24.7, power_source.py).
+        beside manufacturer and model (power_source.py).
         """
         records = self.data.get(DATA_DEVICES) or {}
         record = records.get(device_id)
@@ -1159,7 +1143,7 @@ class DeviceViewMixin:
         device = dr.async_get(self.hass).async_get(device_id)
         if self.is_held(device_id):  # type: ignore[attr-defined]
             # Removed from Home Assistant, its record held in case it
-            # comes back (ruling #622): there is no device to show.
+            # comes back: there is no device to show (rule WATCH-07).
             return None
         area_name = None
         if device is not None and device.area_id:
@@ -1181,10 +1165,10 @@ class DeviceViewMixin:
                     reading: dict[str, Any] = {"kind": kind, "entity_id": entity.entity_id}
                     if kind == "battery" and record.get(DEV_BATTERY_RAW_SCALE):
                         # The sensor's own state is on Zigbee's raw 0 to
-                        # 200 scale (ruling #545), so the page shows it
-                        # as raw beside the halved percentage Device
-                        # Sentinel uses everywhere else (0.25.0); a
-                        # bare 182% read as a broken cell.
+                        # 200 scale, so the page shows it as raw beside
+                        # the halved percentage Device Sentinel uses
+                        # everywhere else; a bare 182% read as a broken
+                        # cell (rule BAT-02).
                         reading["raw_scale"] = True
                     readings.append(reading)
         rhythm, set_aside = self._device_rhythm(record)
@@ -1205,9 +1189,9 @@ class DeviceViewMixin:
                 "at": _iso(row.get(EP_AT)),
                 "learned": row.get(EP_LEARNED),
                 # Truncated by an intervention and waiting on the
-                # device's first word since (0.22.24).
-                # The whole silence while it is still running
-                # (0.22.25), as the file shows it.
+                # device's first word since.
+                # The whole silence while it is still running, as the
+                # file shows it.
                 "silence_total": (
                     dt_util.utcnow().timestamp() - row[EP_SINCE]
                     if isinstance(row.get(EP_SINCE), (int, float))
@@ -1230,12 +1214,12 @@ class DeviceViewMixin:
             "identity": {
                 "name": self._device_name(device_id),
                 "device_id": device_id,
-                # A child device entry (2026.9) carries none of these.
+                # A child device entry carries none of these.
                 # getattr alone does not spare it: the child answers the
                 # attribute with a deprecation line, so device_field
                 # asks what the entry is first.
                 # Each as the page shows it: nothing, or only zeros,
-                # is None, and the page leaves the row out (0.25.5).
+                # is None, and the page leaves the row out.
                 "manufacturer": shown(device_field(device, "manufacturer")),
                 "model": shown(device_field(device, "model")),
                 "model_id": shown(device_field(device, "model_id")),
@@ -1247,19 +1231,18 @@ class DeviceViewMixin:
                 "integration_name": self._integration_name_of(device_id, domain) if domain else None,
                 # The integration itself, for what is set on it: an
                 # integration mute on MQTT names MQTT, though the device
-                # is shown as Zigbee2MQTT's (0.24.11).
+                # is shown as Zigbee2MQTT's.
                 "integration_title": self._integration_title(domain) if domain else None,
-                # How it connects, from its integration's declaration
-                # (0.23.9). Not for a device that reports changes on
-                # the local network as they happen, the way nearly all
-                # do: a row the same on every page says nothing
-                # (0.25.5).
+                # How it connects, from its integration's declaration.
+                # Not for a device that reports changes on the local
+                # network as they happen, the way nearly all do, because
+                # a row the same on every page says nothing.
                 "connects": (
                     None
                     if (iot_class := self.iot_class_of(domain)) == "local_push"
                     else CONNECTS_WORDS.get(iot_class or "")
                 ),
-                # Its addresses, each row named by its kind (0.25.5).
+                # Its addresses, each row named by its kind (rule DEV-13).
                 "addresses": addresses(device),
                 "connections": sorted(
                     [kind, value]
@@ -1269,39 +1252,39 @@ class DeviceViewMixin:
                 "event_count": record.get(DEV_EVENT_COUNT),
                 # The Last Seen clock it is judged by: a Last Seen
                 # entity, its stack's own, named by the stack, as ZHA
-                # keeps (ruling #652), or none.
+                # keeps, or none (rule STACK-04).
                 "clock": (
                     "last_seen" if device_id in self._last_seen_entity
                     else heard[0] if (heard := stacks.last_heard(
                         self.hass, self._watched.get(device_id), device_id))
                     else "recorded"
                 ),
-                # Z-Wave's own status for the node (ruling #671): what
-                # the sensor reads, "off" when it is switched off, or
-                # None for a device without one.
+                # Z-Wave's own status for the node: what the sensor
+                # reads, "off" when it is switched off, or None for a
+                # device without one (rule STACK-05).
                 "node_status": self._node_status_view(device_id),
-                # Battery Last Replaced (ruling #701): None on mains.
+                # Battery Last Replaced: None on mains (rule BAT-07).
                 "battery_replaced": self.battery_replacement_view(device_id),  # type: ignore[attr-defined]
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),
-                # What the page's actions need (0.24.5): the area's id,
-                # the person's name and the integration's, the labels
-                # with their meanings, a switched-off Last Seen, and
-                # each kind of mute with its source.
+                # What the page's actions need: the area's id, the
+                # person's name and the integration's, the labels with
+                # their meanings, a switched-off Last Seen, and each kind
+                # of mute with its source (rule DASH-09).
                 "actions": self.page_actions(device_id),
-                # What powers it (0.24.7): the owner's entry, else the
-                # shipped Battery Notes library, else "Not known".
+                # What powers it: the owner's entry, else the shipped
+                # Battery Notes library, else "Not known".
                 "power": self.power_view(device_id),
-                # What it is (0.25.1): the owner's answer, else what
-                # its entities say, else nothing and the pencil.
+                # What it is: the owner's answer, else what its entities
+                # say, else nothing and the pencil.
                 "type": self.type_view(device_id),
                 # The other devices Home Assistant shows for the same
                 # hardware, and which one Device Sentinel watches it
-                # through (0.25.2).
+                # through (rule WATCH-06).
                 "same_hardware": self.same_hardware(device_id),
                 # How the cell reports, in the words Battery Trends
-                # uses (0.23.1); empty for a device with no battery.
+                # uses; empty for a device with no battery.
                 "battery_steps": (
                     BATTERY_STEPS_WORDS[self.battery_steps(record)]
                     if record.get(DEV_BATTERY_VALUE) is not None
@@ -1311,10 +1294,9 @@ class DeviceViewMixin:
             "readings": readings,
             "status": {
                 "category": self._page_status(device_id, record),
-                # How big the flap is, beside the word (0.23.2).
+                # How big the flap is, beside the word.
                 # Not for a device muted for unavailable or for
-                # everything, which reads no flap (James, 17 October
-                # 2026; sixteenth adversarial round of 0.26.6).
+                # everything, which reads no flap (rule MUTE-06).
                 "flap": (
                     self.flap_words(device_id).removeprefix("flapping, ")
                     if self.is_flapping(device_id)
@@ -1324,9 +1306,9 @@ class DeviceViewMixin:
                 ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 # A device judged by its connection alone: "connected" or
-                # "dropped", else None (James, 17 October 2026).
+                # "dropped", else None.
                 # "not known" when it cannot be read, or the device
-                # sleeps (eighteenth adversarial round of 0.26.6).
+                # sleeps.
                 "connection": (
                     (
                         "dropped" if self._dropped_esphome(device_id)  # type: ignore[attr-defined]
@@ -1336,39 +1318,38 @@ class DeviceViewMixin:
                     if self._connection_only(device_id)  # type: ignore[attr-defined]
                     else None
                 ),
-                # The rule in use, as the window is (0.24.10).
+                # The rule in use, as the window is.
                 "rhythm": self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else rhythm,
                 # No freeze window for a device judged by its connection
-                # alone (eighteenth adversarial round of 0.26.6).
+                # alone.
                 "window": None if self._connection_only(device_id) else self._freeze_window(record),  # type: ignore[attr-defined]
-                # A Matter device of a type that reports only on use, never newly
-                # called frozen while available (#710, #718): the page says so in
-                # place of its window (adversarial round of 0.26.8).
+                # A Matter device of a type that reports only on use, never
+                # newly called frozen while available: the page says so in
+                # place of its window (rule STACK-06).
                 "available_rule": self._judged_available(device_id, record),
-                # Never judged for freezing (James, 27 October 2026): by
-                # its hub or by its connection. The page shows this in
-                # place of the window, the wait rule and the learning line.
+                # Never judged for freezing, by its hub or by its
+                # connection. The page shows this in place of the window,
+                # the wait rule and the learning line.
                 "judged_by": self._judged_by(device_id),
                 # The rule in use, as people read it: "37-Day
-                # Log-Normal Percentile" (0.24.0).
+                # Log-Normal Percentile".
                 "rule": self.rule_label(self._freeze_rhythm(record)),
             },
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
                 "set_aside": set_aside,
-                # Both rules side by side (0.24.9): each one's figure and
-                # days, which one is in use, and the Log-Normal
-                # Percentile's own days with those it set aside, for its
-                # chart beneath the Trimmed Maximum's. A block of their
-                # own: the History chart's day-by-day series already use
-                # the names "trimmed" and "lognormal" in this one, and
-                # overwrote the figures, blanking both charts.
+                # Both rules side by side: each one's figure and days,
+                # which one is in use, and the Log-Normal Percentile's
+                # own days with those it set aside, for its chart beneath
+                # the Trimmed Maximum's. A block of their own, because
+                # the History chart's day-by-day series already use the
+                # names "trimmed" and "lognormal" in this one, and would
+                # overwrite the figures.
                 "rules": self._both_rules(record),
-                # What the chart can be read against (0.22.25): the
-                # larger of the device's window and its largest day
-                # the trim did not set aside. A vibration sensor away
-                # from the house for six weeks gave its chart an axis
-                # of 1032 hours and flattened every ordinary day.
+                # What the chart can be read against: the larger of the
+                # device's window and its largest day the trim did not
+                # set aside. A sensor away from the house for six weeks
+                # would otherwise flatten every ordinary day.
                 "scale": self._rhythm_scale(record),
                 # The whole history, and the window each day had,
                 # worked out from the days before it as the detector
@@ -1377,14 +1358,14 @@ class DeviceViewMixin:
                 # Each day's window in use ("windows"), both rules'
                 # waits each day, the rule in use, and the
                 # days that set and were set aside by the Trimmed
-                # Maximum, for the chart's marks (0.24.0), laid out one
-                # slot a day (0.24.4).
+                # Maximum, for the chart's marks, laid out one slot a
+                # day.
                 **self._rhythm_on_days(record),
             },
             "silences": silences,
-            # Judged by its hub (rulings #664 and #665): for a device a
-            # hub controls, its hub; for a hub, its state, the devices it
-            # controls and its outages. None for every other device.
+            # Judged by its hub: for a device a hub controls, its hub;
+            # for a hub, its state, the devices it controls and its
+            # outages. None for every other device (rule STACK-10).
             "hub": self.hub_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
             "hub_self": self.hub_self_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
             "battery": self._page_battery(record, device_id),
@@ -1404,14 +1385,12 @@ class DeviceViewMixin:
         two pages say the same thing about the same cell.
         """
         level = record.get(DEV_BATTERY_VALUE)
-        # Laid out one slot a day (0.24.4, issue #18), for the fit and
-        # the chart alike.
+        # Laid out one slot a day, for the fit and the chart alike.
         series = battery_calendar(record)
         # A percentage runs from nothing to full: a reading outside
-        # that is a raw sensor value, whichever end it is outside at
-        # (0.22.26). LUX Outdoors reported 186 until #545 read it on
-        # Zigbee's raw scale and halved it; a cell reporting below zero
-        # would have been drawn against your threshold.
+        # that is a raw sensor value, whichever end it is outside at,
+        # and would otherwise be drawn against the threshold (rule
+        # BAT-02).
         readable = (
             isinstance(level, (int, float))
             and 0.0 <= float(level) <= BATTERY_READABLE_MAX
@@ -1420,31 +1399,31 @@ class DeviceViewMixin:
             "daily": battery_calendar(record),
             "now": level,
             "threshold": self.low_threshold,
-            # The level a cell is judged falling at or under (#725).
+            # The level a cell is judged falling at or under (rule BAT-10).
             "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
             # Under four weeks of readings in the last six: not judged,
-            # and the page says nothing about it (#733).
+            # and the page says nothing about it (rule BAT-10).
             "short": battery_heard_days(series) < BATTERY_FIT_MIN_DAYS,
             "readable": readable,
             # A coarse cell is judged by the low threshold alone and
             # never read as steady or falling (rule BAT-10).
             "coarse": self.battery_steps(record) == BATTERY_STEPS_COARSE,
             # Earlier Forecasts, newest first, each with what happened
-            # (ruling #732).
+            # (rule BAT-15).
             "forecasts": self.battery_forecast_view(record),  # type: ignore[attr-defined]
-            # A lithium cell holds near full until its end (#736), and
-            # the others of its model fall at this pace (#738).
+            # A lithium cell holds near full until its end, and the
+            # others of its model fall at this pace (rule BAT-16).
             "lithium": self.battery_lithium(device_id) if device_id else None,  # type: ignore[attr-defined]
             "model_pace": self.battery_model_paces().get(device_id) if device_id else None,
             # The newest day's voltage, messages and temperature, kept
-            # for a later forecast (#737).
+            # for a later forecast (rule BAT-16).
             "evidence": self.battery_evidence_view(record),  # type: ignore[attr-defined]
         }
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
         current = float(level)
-        # The same trend the rows and the rules read (0.23.6): weekly
-        # averages, and the fitted line when the cell falls.
+        # The same trend the rows and the rules read: weekly averages,
+        # and the fitted line when the cell falls.
         trend = battery_trend(
             series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH,
             self.battery_ceiling,  # type: ignore[attr-defined]
@@ -1453,9 +1432,9 @@ class DeviceViewMixin:
         falling = bool(trend["reading"] and trend["pace"]) and not page["coarse"]
         target = self.battery_target(current, record)  # type: ignore[attr-defined]
         days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
-        # The range a falling cell reaches the low threshold in (rulings
-        # #704, #730); the near end decides Days Till Low, as on the
-        # Problem List.
+        # The range a falling cell reaches the low threshold in; the
+        # near end decides Days Till Low, as on the Problem List (rule
+        # BAT-13).
         projection = battery_projection(series, current, target) if falling else None
         far = days
         if projection is not None:
@@ -1464,27 +1443,27 @@ class DeviceViewMixin:
             "weeks": trend["weeks"],
             "reading": trend["reading"],
             # The straight line, for a falling cell only: an accelerating
-            # one has none (ruling #725), its curve is the time left's.
+            # one has none, its curve is the time left's (rule BAT-12).
             "fit": trend["fit"] if falling else None,
             "sentence": battery_sentence(trend, projection),
             "falling": falling,
             "left": self.battery_time_left_range(days, far) if days is not None else None,
             "left_soon": days is not None and days <= self._battery_days(),
-            # Where the time left ends (#730): the low threshold, or 0.
+            # Where the time left ends: the low threshold, or 0 (rule BAT-13).
             "target": target if falling else None,
-            # What the chart with its future draws (rulings #703, #705).
+            # What the chart with its future draws (rule BAT-17).
             "projection": projection,
             "days_setting": self._battery_days(),
         })
         return page
 
     def _signal_on_days(self, record: dict[str, Any], values: list[Any]) -> list[Any]:
-        """A signal list laid out one slot a day, ending yesterday (0.24.4)."""
+        """A signal list laid out one slot a day, ending yesterday."""
         end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
         return on_calendar(record, FAMILY_SIGNAL, values, end)
 
     def _node_status_view(self, device_id: str) -> str | None:
-        """The device's node status as its page shows it (ruling #671)."""
+        """The device's node status as its page shows it (rule STACK-05)."""
         entity_id = self._node_status_entity.get(device_id)
         if entity_id is None:
             return None
@@ -1615,11 +1594,9 @@ class BriefViewMixin:
         """Return a day's start, its end, and whether it is today.
 
         A finished day ends at the next local midnight rather than 24
-        hours after it began (0.22.19). The day the clocks go back runs
-        25 hours, and 24 lost its last hour to both pages; the day they
-        go forward runs 23, and 24 showed the next day's first hour on
-        both. The end belongs to the next day, so an event at the
-        stroke of midnight is told once.
+        hours after it began, because the day the clocks go back runs
+        25 hours and the day they go forward runs 23. The end belongs to
+        the next day, so an event at the stroke of midnight is told once.
         """
         start = dt_util.as_utc(dt_util.start_of_local_day(day)).timestamp()
         now = dt_util.utcnow().timestamp()
@@ -1660,7 +1637,7 @@ class BriefViewMixin:
         rows = []
         for (device_id, kind), row in opened.items():
             if self._brief_muted(device_id, kind):  # type: ignore[attr-defined]
-                # The kinds its mutes cover, as the written brief (#715).
+                # The kinds its mutes cover, as the written brief (rule BRIEF-08).
                 continue
             rows.append({
                 "device_id": device_id,
@@ -1674,7 +1651,7 @@ class BriefViewMixin:
                 # The words the brief used when it opened: a past day
                 # has no record of the level it read that night.
                 "problem": self._brief_phrase(row),
-                # From when it went, as the events beside it (0.27.3).
+                # From when it went, as the events beside it.
                 "since": _iso(self._began_at(row)),  # type: ignore[attr-defined]
                 "seconds": moment - self._began_at(row),  # type: ignore[attr-defined]
                 "acknowledged": False,
@@ -1686,7 +1663,7 @@ class BriefViewMixin:
     def _standing_now(self) -> list[dict[str, Any]]:
         """Today's standing problems, from the list itself, acknowledged
         ones included: the tab can tick them, which the written brief
-        cannot (ruling #123 keeps them out of the file)."""
+        cannot, since the file leaves them out (rule NOTE-08)."""
         now = dt_util.utcnow().timestamp()
         rows = []
         for item in self.todo_items:
@@ -1717,7 +1694,7 @@ class BriefViewMixin:
         start, end, is_today = self._brief_day_bounds(day)
         silenced = self._acknowledged_devices()
         # The written brief's fold, so the tab never calls an
-        # escalation a recovery the file does not (0.22.27).
+        # escalation a recovery the file does not.
         incidents = [
             row
             for row in withdrawals_once(fold(self.incident_rows()))
@@ -1735,7 +1712,7 @@ class BriefViewMixin:
         events = [
             {
                 # An unavailable opening at when the device went, as
-                # the written brief has it (0.27.3).
+                # the written brief has it.
                 "when": _iso(self._began_at(row)),  # type: ignore[attr-defined]
                 "who": self._told_name(row),
                 "device_id": row.get(INC_DEVICE_ID),
@@ -1765,9 +1742,8 @@ class BriefViewMixin:
         if covered:
             # The rows the brief's section is built from, so the tab
             # and the file say the same thing about the same devices.
-            # The tab once took the section's Markdown and printed each
-            # table row as a paragraph of pipes (0.23.0, from Tim
-            # Plas's review): it draws the table itself from the rows.
+            # The tab draws the table itself from the rows, because
+            # printing the section's Markdown gave a paragraph of pipes.
             rows = self._repeat_offender_rows(end)
             repeat["rows"] = [
                 {
@@ -1847,11 +1823,11 @@ class TrendsViewMixin:
         counted as losing nothing, which pulled the pace toward zero.
         The pace is a range, the slowest and the fastest of the others'
         falls over the last four weeks, points a week. Shown beside a
-        battery as context and never used as its time left: measured on
-        both houses on 23 October 2026, a battery given its sisters' pace
-        missed its own by about as much as the pace itself, since a door
-        opened forty times a day and one opened twice share a model, not
-        a drain. At least two others with a fall, or nothing is said.
+        battery as context and never used as its time left: a battery
+        given its sisters' pace missed its own by about as much as the
+        pace itself, since a door opened forty times a day and one
+        opened twice share a model, not a drain. At least two others
+        with a fall, or nothing is said.
         """
         registry = dr.async_get(self.hass)
         groups: dict[tuple[str, str], list[tuple[str, float | None]]] = {}
@@ -1890,7 +1866,7 @@ class TrendsViewMixin:
         registry = dr.async_get(self.hass)
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
         bank = [0] * 10
-        # Each device's type (0.25.3), read once: the tab narrows to one
+        # Each device's type, read once: the tab narrows to one
         # type, and By Model lists the types a model's cells have.
         types: dict[str, str | None] = {}
 
@@ -1914,9 +1890,9 @@ class TrendsViewMixin:
                 "device_id": device_id,
                 "name": self._device_name(device_id),
                 "level": level,
-                # Points a week over the last four weeks (0.23.6),
-                # negative for a fall, as the models table has always
-                # sorted: the hungriest model first.
+                # Points a week over the last four weeks, negative for a
+                # fall, as the models table has always sorted: the
+                # hungriest model first.
                 "rate": -(battery_month_drop(series) or 0.0) / 3,
                 "type": type_of(device_id),
             }
@@ -1938,7 +1914,7 @@ class TrendsViewMixin:
                 "lowest_name": lowest["name"],
                 "lowest_id": lowest["device_id"],
                 # Each type its cells have and how many, most first;
-                # "" for cells with no type (0.25.3).
+                # "" for cells with no type.
                 "types": sorted(kinds.items(), key=lambda item: (-item[1], item[0])),
             })
         models.sort(key=lambda row: (row["rate"], -row["cells"]))
@@ -1960,11 +1936,11 @@ class TrendsViewMixin:
                     "since": row.get("since"),
                     "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
                     # The battery it takes, as its Power row says it, or
-                    # None when nobody has said (James, 23 October 2026);
-                    # a lithium cell holds near full until its end (#736).
+                    # None when nobody has said; a lithium cell holds
+                    # near full until its end (rule BAT-16).
                     "cell": cell,
                     "lithium": lithium,
-                    # The others of its model, as context (#738).
+                    # The others of its model, as context (rule BAT-16).
                     "model_pace": paces.get(row["device_id"]) if isinstance(row.get("device_id"), str) else None,
                 }
                 if falling:
@@ -1976,15 +1952,15 @@ class TrendsViewMixin:
                         "until": self.battery_until_words(row),
                         "left_soon": row["days"] <= self._battery_days(),
                         # Falling at a steady pace inside Days Till Low:
-                        # Batteries to Watch, with no warning (#731).
+                        # Batteries to Watch, with no warning (rule BAT-14).
                         "watch": row["days"] <= self._battery_days() and not row.get("low")
                         and row.get("reading") != READING_ACCELERATING,
                     })
                 else:
                     item["days"] = len(row.get("series") or [])
                     # Points lost over the last four weeks, from the
-                    # first week's average to the last's (0.23.6), in
-                    # place of a rate per day that described a wobble.
+                    # first week's average to the last's, in place of a
+                    # rate per day that described a wobble.
                     item["month_drop"] = battery_month_drop(row.get("series") or [])
                 out.append(item)
             return out
@@ -2002,11 +1978,11 @@ class TrendsViewMixin:
                 for row in report["unreadable"]
             ],
             "no_battery": len(report["absent"]),
-            # The same, by type, for the tab narrowed to one (0.25.3).
+            # The same, by type, for the tab narrowed to one.
             "no_battery_types": _count_types(type_of(row.get("device_id")) for row in report["absent"]),
             "cell_rows": cell_rows,
             "threshold": self.low_threshold,
-            # The level a cell is judged falling at or under (#725).
+            # The level a cell is judged falling at or under (rule BAT-10).
             "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
         }
 
@@ -2038,9 +2014,9 @@ class TrendsViewMixin:
                 for index in range(len(record.get(DEV_SIGNAL_DAILY_P5) or []))
             ]
             bad = 0
-            # Each bad day on its own date (0.24.4, issue #18): a day
-            # with no reading writes no row, so counting back from
-            # today put every bad day before it on the wrong date.
+            # Each bad day on its own date: a day with no reading writes
+            # no row, so counting back from today would put every bad
+            # day before it on the wrong date.
             dated = dates_for(record, FAMILY_SIGNAL, len(judged), today - timedelta(days=1))
             for index, day in enumerate(judged):
                 if not day or not day["bad"]:
@@ -2074,7 +2050,7 @@ class TrendsViewMixin:
                 "line": last["line"] if last else None,
                 # The two middles the change is taken between, so the
                 # row adds up: the last seven days' and the days before
-                # them (James's dashboard review, 24 October 2026).
+                # them.
                 "week": now,
                 "usual": normal,
                 "change": now - normal,
@@ -2098,7 +2074,7 @@ class TrendsViewMixin:
             "counts": {"unsteady": unsteady, "steady": len(devices) - unsteady},
             # The devices in a flap, beside their signal, because a
             # link that keeps dropping is where a person looking at
-            # network health looks first (0.23.2).
+            # network health looks first.
             "dropping_out": [
                 {
                     "device_id": row["device_id"],

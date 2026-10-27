@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.27.8 (2026-10-27)
+# File: __init__.py, Version: 0.27.10 (2026-10-27)
 
 """The Device Sentinel integration.
 
@@ -74,13 +74,9 @@ from .answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
 from .coordinator import DeviceSentinelCoordinator
 from .repairs import async_clear_all
 
-# No NUMBER platform since 0.11.10. It carried one entity, the
-# battery threshold as a dashboard slider, put there because the
-# options dialog was buried and the author could not find it.
-# The dialog is documented now and the threshold has a second
-# setting beside it that never got a knob, so the device page
-# held one control out of two and no others at all. One door
-# rather than one and a half (ruling #209).
+# No NUMBER platform. The battery threshold is set in the options
+# dialog with the setting beside it, so there is one place for both
+# rather than a slider for one of them.
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.SENSOR,
@@ -104,9 +100,8 @@ async def async_migrate_entry(
     nothing to explain it.
 
     The steps are numbered rather than applied as a set, because the
-    two audiences arrive differently (ruling #316): this fleet and
-    the beta fleet take one step at a time, while a person on the
-    public release jumps several at once. Numbering makes those the
+    two audiences arrive differently: a test house takes one step at
+    a time, while a person on the public release jumps several at once. Numbering makes those the
     same code path, applied in order from wherever the entry sits.
     """
     if entry.minor_version >= OPTIONS_MINOR_VERSION:
@@ -133,12 +128,12 @@ async def async_migrate_entry(
 def _migrate_unavailable_mutes(options: dict[str, Any]) -> dict[str, Any]:
     """Step 6: a label or device muted for freeze is muted for unavailable.
 
-    Before 0.26.6 a freeze mute also silenced unavailable. From 0.26.6
-    the two are separate, and so nothing changes on an upgraded house,
-    each label and device muted for freeze is given the unavailable mute
-    as well, once. An integration muted for freeze stays freeze only, the
-    one change of behaviour (James, 18 October 2026). Lists already set
-    are kept, with the freeze picks added to them.
+    A freeze mute once also silenced unavailable. The two are separate
+    now, so for nothing to change on an upgraded house, each label and
+    device muted for freeze is given the unavailable mute as well, once.
+    An integration muted for freeze stays freeze only, the one change of
+    behavior. Lists already set are kept, with the freeze picks added to
+    them (rule MUTE-06).
     """
     migrated = dict(options)
     for freeze_key, unavailable_key in (
@@ -174,9 +169,10 @@ def _string_list(value: Any) -> list[str]:
 def _migrate_dashboard_mode(options: dict[str, Any]) -> dict[str, Any]:
     """Step 7: an install that upgrades keeps the dashboard it knows.
 
-    0.26.7 adds a Simple dashboard and makes it the default for a new
-    install (ruling #693). An install that upgrades opens in Advanced,
-    the dashboard as it was, until someone changes the setting.
+    Simple is the default dashboard for a new install. An install that
+    upgrades opens in Advanced,
+    the dashboard as it was, until someone changes the setting
+    (rule DASH-03).
     """
     migrated = dict(options)
     migrated.setdefault(CONF_DASHBOARD_MODE, DASHBOARD_ADVANCED)
@@ -186,10 +182,10 @@ def _migrate_dashboard_mode(options: dict[str, Any]) -> dict[str, Any]:
 def _migrate_persistent_default(options: dict[str, Any]) -> dict[str, Any]:
     """Step 5: keep the persistent card for an install that never chose.
 
-    Until 0.22.5 the card defaulted to on, and an install that never
-    saved its Notifications screen was running with it on. The default
-    is now off for new installs (ruling #462), so this writes the old
-    default down where nothing was saved. A saved choice, either way,
+    The card once defaulted to on, and an install that never saved its
+    Notifications screen was running with it on. The default is now off
+    for new installs (rule NOTE-11), so this writes the old default down
+    where nothing was saved. A saved choice, either way,
     is left exactly as it is.
     """
     migrated = dict(options)
@@ -229,8 +225,7 @@ def _migrate_retired_sliders(options: dict[str, Any]) -> dict[str, Any]:
     threshold keeps its old value for anybody who never set one.
 
     The five were only ever sliders because their numbers were
-    guesses, and neither fleet moved one off its default in the
-    months since (ruling #394). The stored keys go, so an entry
+    guesses, and nobody moved one off its default. The stored keys go, so an entry
     carrying a hand-edited value cannot quietly keep behaving
     differently from the constant the code now states.
 
@@ -239,7 +234,7 @@ def _migrate_retired_sliders(options: dict[str, Any]) -> dict[str, Any]:
     stored one would silently start judging batteries differently
     on upgrade. It is pinned at twenty here instead: the new default
     is for new installs, and an existing house changes only when its
-    owner asks.
+    owner asks (rule BAT-03).
     """
     dropped = [key for key in RETIRED_SLIDER_KEYS if key in options]
     for key in dropped:
@@ -338,17 +333,14 @@ def _drop_dead_entities(
 def _retire_www_folder(hass: HomeAssistant) -> str | None:
     """Delete www/device_sentinel after moving the current brief out.
 
-    Ruled 23 and 25 September 2026 (#470), built as 0.23.5. Home
-    Assistant serves config/www at /local to anyone who asks, signed in
-    or not, and the files there named devices, battery levels and
-    outage times: all six returned 200 to a client that had not signed
-    in. The battery and signal reports and the brief's dated copies are
-    retired with the folder, and the brief lives on beside the other
-    reports in config/device_sentinel, which Home Assistant does not
-    serve.
+    Home Assistant serves config/www at /local to anyone who asks,
+    signed in or not, and the files there name devices, battery levels
+    and outage times. The brief lives beside the other reports in
+    config/device_sentinel, which Home Assistant does not serve
+    (rule BRIEF-14).
 
-    The whole folder goes, whatever else is in it: the owner ruled it
-    so, and the release note tells a person to copy it first. The
+    The whole folder goes, whatever else is in it, and the release note
+    tells a person to copy it first. The
     current brief is carried across unless one is already there, so
     the first read after the upgrade finds a brief. Runs in the
     executor, once per start, and does nothing once the folder is
@@ -407,7 +399,7 @@ async def async_setup_entry(
     _drop_dead_options(hass, entry)
     _drop_dead_entities(hass, entry)
     # Before the first report write, so the brief the folder held is
-    # in its new home when the writer looks for it (0.23.5).
+    # in its new home when the writer looks for it.
     await _async_retire_www_folder(hass)
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
@@ -441,7 +433,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     to Home Assistant's panel table and needs nothing else loaded, which
     is why `frontend` is an after-dependency rather than a requirement.
 
-    The hash is kept for the dashboard (0.25.4). A tab left open across
+    The hash is kept for the dashboard (rule DASH-14). A tab left open across
     an update runs the file it loaded, and Home Assistant hands it the
     new one, which cannot register the same element a second time; the
     tab compares the hash it was loaded with against the one served and
@@ -465,7 +457,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         LOGGER.warning("Device Sentinel could not serve its dashboard: %s", err)
         return
     hass.data[DATA_PANEL_FILE] = digest
-    # Registered the way a custom panel is meant to be (#721), through
+    # Registered the way a custom panel is meant to be (rule DASH-01), through
     # panel_custom, which builds the same "custom" panel underneath.
     # panel_custom offers no update flag and refuses a path already
     # registered, so a panel left from an earlier setup is taken down
@@ -497,8 +489,8 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a Device Sentinel config entry."""
     LOGGER.debug("Device Sentinel unloading")
-    # Nothing this integration raised may outlive it (rulings #240 and
-    # #294). The issues are not persistent, so a restart clears them
+    # Nothing this integration raised may outlive it (rules STOR-24,
+    # REP-04). The issues are not persistent, so a restart clears them
     # on its own; this covers the reload and the uninstall, where
     # there is no restart to do it and a badge would otherwise stay
     # lit over an integration that is no longer running.
@@ -509,7 +501,7 @@ async def async_unload_entry(
 
 
 def _own_report_files() -> list[str]:
-    """Every file name Device Sentinel writes in its reports folder (#720):
+    """Every file name Device Sentinel writes in its reports folder (rule STOR-24):
     the three maintainer reports, the brief, the stack probe file and its
     rolled copies, and the names older releases wrote."""
     probe = [REPORT_STACK_PROBE] + [
@@ -528,7 +520,7 @@ def _own_report_files() -> list[str]:
 async def async_remove_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Remove everything the integration ever wrote (ruling #240).
+    """Remove everything the integration ever wrote (rule STOR-24).
 
     Runs when a person deletes the integration, after the unload. A
     tool whose pitch is that it costs almost nothing must also cost
@@ -537,7 +529,7 @@ async def async_remove_entry(
     folder all go, so an uninstall leaves no trace for the person to
     find later and wonder about. Only its own: the reports folder goes
     once it is empty, so a file another tool or a person keeps there
-    stays (#720). Deliberately not part of unload, which also runs on every
+    stays. Deliberately not part of unload, which also runs on every
     restart and reconfiguration; only deletion reaches here.
 
     Each target is removed on its own and a failure is logged rather
@@ -552,11 +544,10 @@ async def async_remove_entry(
     def _remove_all() -> list[str]:
         removed: list[str] = []
         # The two live files and every suffixed backup beside them
-        # (the pre-strip pair of ruling #130, the epoch copies of
-        # ruling #204): the glob catches whatever suffixes exist
-        # rather than a list somebody must remember to extend.
-        # The answers file (0.25.1), and the power file it replaced,
-        # which 0.24.7 to 0.25.0 left behind on uninstall.
+        # (older pre-strip and epoch copies among them): the glob catches
+        # whatever suffixes exist rather than a list somebody must
+        # remember to extend. The answers file, and the older power
+        # file it replaced, which older releases left behind on uninstall.
         for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY, STORAGE_HISTORY_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
             for path in storage.glob(f"{key}*"):
                 try:
@@ -567,8 +558,8 @@ async def async_remove_entry(
                         "Uninstall could not remove %s: %s", path, err
                     )
         # The reports folder holds only what Device Sentinel names, so
-        # only that goes (#720): other tools may keep files beside it,
-        # as Mesh Probe did on Tim Plas's house, and a person may too.
+        # only that goes: other tools may keep files beside it, and a
+        # person may too.
         # The folder itself goes only once it is empty. The www folder
         # is Device Sentinel's alone and goes whole.
         for name in _own_report_files():

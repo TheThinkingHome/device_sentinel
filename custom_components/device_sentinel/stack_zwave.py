@@ -3,40 +3,39 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.26.5 (2026-10-16)
+# File: stack_zwave.py, Version: 0.27.10 (2026-10-27)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
-One file per coordinator stack (ruling #218), answering the same
+One file per coordinator stack (rule STACK-01), answering the same
 three questions every stack module answers: does this device prove
 the stack is present, does this stack own a device on that
 integration domain, and give me a reader.
 
 WHAT IS BUILT. Detection: a device whose integration domain is
-`zwave_js` means Z-Wave JS is running. And, from 0.26.5, the dead-node
-check (ruling #670): Home Assistant keeps a dead Z-Wave node's entities
+`zwave_js` means Z-Wave JS is running. And the dead-node check
+(rule STACK-05): Home Assistant keeps a dead Z-Wave node's entities
 available, so the node status sensor Z-Wave makes for each node is the
 only place a dead node shows, and a device whose sensor reads "dead" is
 unavailable until it reads anything else. `is_node_status` recognises
 the sensor and `node_dead` reads it; the stack-neutral files ask through
-`stacks.py` and name no stack. Measured on a tester's house, Tim
-Plas's, on 29 September and 15 October 2026: P03, a plug with no meter,
-unplugged, marked dead within two minutes of a failed command and alive
-within a minute of being plugged back, with no other entity changing.
+`stacks.py` and name no stack. A plug with no meter, unplugged, is
+marked dead within two minutes of a failed command and alive within a
+minute of being plugged back, with no other entity changing.
 Z-Wave learns a node is dead only when a command to it fails, so a
 device nobody tries to reach stays "alive" and is left to the freeze
-rule. Over five days, 106 asleep and awake changes on battery devices
-were the sensor's whole other traffic, and say nothing.
+rule. Asleep and awake changes on battery devices are the sensor's
+only other traffic, and say nothing.
 
 WHAT IS NOT BUILT, AND WHY. `make_reader` returns None, so no
 controller state and no inclusion window is read on Z-Wave. There is no
 Z-Wave hardware on the reference fleet, so every claim about its
 inclusion model would be documentation repeated rather than
 measurement, and nothing ships for a stack the author cannot test
-(ruling #218). A house on Z-Wave falls to the per-device debounce for
-interventions (ruling #138).
+(rule STACK-02). A house on Z-Wave falls to the per-device debounce for
+interventions (rule FRZ-15).
 
-WHAT IS KNOWN AND UNVERIFIED. The design was ruled from documentation
+WHAT IS KNOWN AND UNVERIFIED. The design comes from documentation
 and has never been measured. Inclusion is expected to be observable
 as a subscribable event rather than a retained state, which is a
 different shape from Z2M's topic: a reader would have to hold the
@@ -44,32 +43,31 @@ window itself rather than read it back after a restart. The rule that
 matters is already settled and waits only on a way to read it: an
 operator-driven inclusion is a person's hand on the network and its
 gap is discarded, while a SmartStart auto-rejoin is the network
-healing itself and its gap is a real measurement to learn (ruling
-#141). Whether the two can be told apart from what is published, and
+healing itself and its gap is a real measurement to learn (rule
+FRZ-15). Whether the two can be told apart from what is published, and
 what Z-Wave JS names a device's availability, are both unknown here.
 
 WHAT A Z-WAVE HOUSE STILL GETS. Nothing above means a failed Z-Wave
 stack goes unreported. The integration outage watcher is domain
 agnostic and covers `zwave_js` like any other: a config entry that
 fails and stays failed is one row naming the integration with the
-devices behind it counted and cleared of blame. Measured on a
-tester's fleet on 7 September 2026, a coordinator pull to
-replug and clear, with no false device faults in the window and the
-folded statistics of all seventeen Z-Wave devices unchanged. What is
+devices behind it counted and cleared of blame. A coordinator pulled
+and replugged clears with no false device faults in the window and
+the folded statistics of the Z-Wave devices unchanged (rule UP-03). What is
 missing is the running controller, not the outage.
 
 WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
 on, the study in `study_stacks.py` gathers what Z-Wave JS says about
 its nodes: alive, asleep, dead or unknown, and whether each listens,
-sleeps or wakes briefly (0.22.26), and the stack probe writes each
+sleeps or wakes briefly, and the stack probe writes each
 change to `stack_probe.md` beside Device Sentinel's own view of the
-same device, the readers in shadow (0.23.9). Neither changes a
+same device, the readers in shadow (rule STACK-12). Neither changes a
 verdict; both are the evidence a reader would be built on.
 
 THE ASK. This file stays as it is until somebody with Z-Wave hardware
 runs the named commands and attaches the output. The wiki page for
 this stack carries what is known, what is unverified, the exact
-commands, and where to send each kind of answer (ruling #219).
+commands, and where to send each kind of answer (rule STACK-02).
 """
 
 from __future__ import annotations
@@ -80,7 +78,7 @@ from .const import STACK_ZWAVE
 
 STACK = STACK_ZWAVE
 
-# Nothing but Z-Wave publishes on the zwave_js domain (ruling #412).
+# Nothing but Z-Wave publishes on the zwave_js domain.
 SHARED_DOMAIN = False
 
 
@@ -97,7 +95,7 @@ def owns_domain(domain: str) -> bool:
 def detects(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device proves Z-Wave JS is running.
 
-    The domain is the tell (rulings #139 and #143), so the device
+    The domain is the tell (rule STACK-01), so the device
     entry itself is not consulted. It stays in the signature because
     every stack module answers this question the same way and Z2M
     needs the device to find its bridge.
@@ -108,13 +106,13 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for Z-Wave JS (ruling #400). A Z-Wave controller reports through its
-    own entities like any other device: the reference tester's Aeotec
-    Z-Stick speaks every 204 seconds and carries a real signal series, so
+    No for Z-Wave JS (rule WATCH-05). A Z-Wave controller reports through its
+    own entities like any other device: an Aeotec Z-Stick speaks every
+    204 seconds and carries a real signal series, so
     watching it is right.
 
     Every stack module answers this question so the walk can ask it
-    without knowing which stacks exist (ruling #218). The signature
+    without knowing which stacks exist (rule STACK-01). The signature
     matches the others; neither argument is consulted.
     """
     return False
@@ -127,7 +125,7 @@ def device_key(device: dr.DeviceEntry) -> None:
     Z-Wave JS very likely carries something equivalent. Very likely is
     not measured, and a join key guessed wrong joins a verdict to the
     wrong device, so nothing is claimed here until somebody with the
-    hardware sends a real identifier (rulings #218 and #219).
+    hardware sends a real identifier (rule STACK-02).
     """
     return None
 
@@ -144,12 +142,12 @@ def make_reader(hass: object) -> None:
 
 
 # The node status sensor's reading for a node the controller could not
-# reach (ruling #670).
+# reach (rule STACK-05).
 NODE_STATUS_DEAD = "dead"
 
 
 def is_node_status(ent: object) -> bool:
-    """Recognize Z-Wave's node status sensor (ruling #670).
+    """Recognize Z-Wave's node status sensor (rule STACK-05).
 
     Home Assistant's Z-Wave integration makes one per node, enabled by
     default, with the unique id `<home id>.<node id>.node_status`. It
@@ -165,7 +163,7 @@ def is_node_status(ent: object) -> bool:
 
 
 def node_dead(state: str) -> bool:
-    """Whether the node status sensor says the node is dead (#670).
+    """Whether the node status sensor says the node is dead (rule STACK-05).
 
     Z-Wave JS marks a node dead when a command to it fails, and alive
     when it is heard again. Asleep and awake are a battery device's

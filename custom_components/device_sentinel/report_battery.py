@@ -3,25 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.27.1 (2026-10-23)
+# File: report_battery.py, Version: 0.27.10 (2026-10-27)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
-The battery report page this module drew retired with the www folder
-in 0.23.5 (#470): Home Assistant served it to anyone who asked. The
-dashboard's Battery Trends tab, the Battery: Falling sensor, the
-Problem List and the brief read the rows kept here.
+The dashboard's Battery Trends tab, the Battery: Falling sensor, the
+Problem List and the brief read the rows kept here (rule BAT-18).
 
-One of the four report modules split out of reports.py, which
-had grown past two thousand lines and held every report the
-integration writes. The seam is the report rather than the
-audience: a split by reader was considered and does not survive
-contact with the code, because one writer produces both kinds
-and the shared helpers serve both (ruling #199).
+One of the report modules, split by report rather than by reader,
+because one writer produces both kinds and the shared helpers serve
+both (rule CODE-11).
 
-Still a file split rather than a boundary. These methods are
-mixed into the coordinator and read its state freely, so `self`
-is the coordinator throughout and nothing here stands alone.
+Still a file split rather than a boundary. These methods are mixed
+into the coordinator and read its state freely, so `self` is the
+coordinator throughout and nothing here stands alone.
 """
 
 from __future__ import annotations
@@ -63,7 +58,7 @@ from .const import (
 
 def battery_weeks(series: list[float | None], count: int = BATTERY_WEEKS_SHOWN) -> list[float | None]:
     """Return the average level of each of the last whole weeks,
-    oldest first, at most count of them (0.23.6).
+    oldest first, at most count of them.
 
     The weeks are counted back from the newest day, so the last is
     always the seven days just folded. A week not yet whole is left
@@ -73,9 +68,9 @@ def battery_weeks(series: list[float | None], count: int = BATTERY_WEEKS_SHOWN) 
     end = len(series)
     while end >= BATTERY_WEEK_DAYS and len(weeks) < count:
         week = series[end - BATTERY_WEEK_DAYS:end]
-        # The series is laid out one slot a day (0.24.4, issue #18): a
-        # day the device was not heard is None, and a week averages the
-        # days it measured, or has no average at all.
+        # The series is laid out one slot a day: a day the device was
+        # not heard is None, and a week averages the days it measured,
+        # or has no average at all (rule BAT-05).
         measured = [v for v in week if isinstance(v, (int, float)) and not isinstance(v, bool)]
         weeks.append(sum(measured) / len(measured) if measured else None)
         end -= BATTERY_WEEK_DAYS
@@ -118,12 +113,11 @@ def battery_line(series: list[float]) -> dict[str, Any] | None:
     series.
 
     A cell's daily series changes only at the midnight fold or a
-    replacement, but its line was asked for every minute: twice by the
+    replacement, but its line is asked for every minute: twice by the
     problem list, again by the notification card, and by every report
-    and screen. On the second house with a year of history per device
-    that was most of the minute check (0.23.19). Kept by the series'
-    values, so any change to them is a new entry; the caller gets its
-    own copy.
+    and screen, which on a house with a year of history per device is
+    most of the minute check. Kept by the series' values, so any change
+    to them is a new entry; the caller gets its own copy.
     """
     key = series_key(series)
     found = _LINE_MEMO.get(key)
@@ -145,14 +139,13 @@ def _battery_line_of(series: tuple[float, ...]) -> dict[str, Any] | None:
     The pace is in points a week, positive for a fall. Returns None
     for fewer than BATTERY_FIT_MIN_DAYS heard days. The result carries
     the drawn line as two [days ago, level] points, so the page draws
-    what was fitted rather than fitting again. Until 0.27.0 two lines
-    joined at a knee were fitted too, for the accelerating test; the
-    curve decides that now (ruling #725).
+    what was fitted rather than fitting again. The curve, not this
+    line, decides accelerating (rule BAT-12).
     """
     window = series[-BATTERY_FIT_WINDOW_DAYS:]
-    # Only the days the device was heard are fitted, each at its own day
-    # (0.24.4, issue #18): a fall from 84 to 81 across three silent days
-    # is a fall over four days, not one.
+    # Only the days the device was heard are fitted, each at its own day,
+    # because a fall from 84 to 81 across three silent days is a fall
+    # over four days, not one (rule BAT-05).
     span = len(window)
     pairs = [
         (float(i), float(v)) for i, v in enumerate(window)
@@ -175,8 +168,8 @@ def _battery_line_of(series: tuple[float, ...]) -> dict[str, Any] | None:
 
 def battery_calendar(record: dict[str, Any]) -> list[Any]:
     """A device's battery history laid out one slot a day, ending
-    yesterday (0.24.4, issue #18): a day the device was not heard is an
-    empty slot, so a fall is measured over the days it really took.
+    yesterday: a day the device was not heard is an empty slot, so a
+    fall is measured over the days it really took (rule STOR-16).
     The one way every reader gets a battery series."""
     end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
     return on_calendar(record, FAMILY_BATTERY, list(record.get(DEV_BATTERY_DAILY) or []), end)
@@ -194,8 +187,8 @@ def _moment(value: Any) -> datetime | None:
 
 def battery_latched(record: dict[str, Any]) -> bool:
     """Whether the cell has been judged low since its last replacement
-    (ruling #735). A cell low now counts even before its first-low time
-    is written, as one already low when 0.27.1 was installed is."""
+    (rule BAT-13). A cell low now counts even before its first-low time
+    is written, as one already low before that time was kept is."""
     if record.get(DEV_BATTERY_LOW):
         return True
     first = _moment(record.get(DEV_BATTERY_FIRST_LOW))
@@ -206,7 +199,7 @@ def battery_latched(record: dict[str, Any]) -> bool:
 
 
 def battery_heard_days(series: list[Any]) -> int:
-    """How many of the last 42 days hold a reading (ruling #733)."""
+    """How many of the last 42 days hold a reading (rule BAT-10)."""
     return sum(
         1 for value in series[-BATTERY_FIT_WINDOW_DAYS:]
         if isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -219,19 +212,19 @@ def battery_trend(
     """Everything the screens and the rules say about a cell's trend.
 
     Nothing is judged until the cell has been heard on at least 28 of
-    the last 42 days (ruling #733): a shorter history gave a new
-    battery a time left from two weeks of readings.
+    the last 42 days, because a shorter history gives a new battery a
+    time left from two weeks of readings (rule BAT-10).
 
     Falling: the last week averages at least a point below the week
     before, and the six-week fitted line is going down at least half a
-    point a week. Accelerating: the six-week
-    curve the time left reads passes its guarded test (ruling #725,
-    `accelerating_pace`), so the reading, the sentence and the range
-    agree. Either needs a cell that reports in small steps (a coarse
-    cell is judged against the low threshold alone, 0.23.1) with charge
-    left, and at or under the ceiling, three times the low threshold (#725):
-    above it the weeks are kept and nothing is judged. The pace is the
-    curve's fall today for an accelerating cell, the line's for a
+    point a week (rule BAT-11). Accelerating: the six-week curve the
+    time left reads passes its guarded test (`accelerating_pace`), so
+    the reading, the sentence and the range agree (rule BAT-12).
+    Either needs a cell that reports in small steps (a coarse cell is
+    judged against the low threshold alone) with charge left, and at
+    or under the ceiling, three times the low threshold: above it the
+    weeks are kept and nothing is judged (rule BAT-10). The pace is
+    the curve's fall today for an accelerating cell, the line's for a
     falling one.
     """
     weeks = battery_weeks(series)
@@ -243,7 +236,7 @@ def battery_trend(
         "fit": None,
     }
     # A week the device was never heard has no average; the comparison
-    # steps over it to the nearest weeks that have one (0.24.4).
+    # steps over it to the nearest weeks that have one.
     averaged = [w for w in weeks if w is not None]
     if not smooth or level <= 0 or len(averaged) < 2:
         return trend
@@ -280,13 +273,13 @@ def battery_sentence(
     projection: dict[str, Any] | None = None,
 ) -> str:
     """One sentence under the device page's table, saying what the
-    weeks show (0.23.6); empty for a cell that is not falling.
+    weeks show; empty for a cell that is not falling.
 
     A fall that is speeding up is said at the curve's pace today, so
-    the sentence agrees with the range beside it (ruling #713): Door
-    2nd Bedroom read "at a steady pace" beside a curved range of about
-    4 to 5 weeks. An accelerating cell is always said so (ruling #725),
-    and a falling one whose time left follows a curve.
+    the sentence agrees with the range beside it and never reads "at
+    a steady pace" beside a curved range (rule BAT-17). An
+    accelerating cell is always said so, and so is a falling one whose
+    time left follows a curve (rule BAT-12).
     """
     if trend.get("reading") == READING_ACCELERATING and trend.get("pace"):
         return f"Falling faster each week, about {trend['pace']:.1f} points a week today."
@@ -334,14 +327,12 @@ class BatteryReportMixin:
         Five groups, because five different things are true and one
         table cannot hold them: falling with a projection, low
         against the threshold, flat, unreadable, and devices with no
-        battery at all.
+        battery at all (rule BAT-18).
 
-        Muted devices are absent entirely. Every rechargeable on
-        the reference fleet is muted by integration already, which
-        is why nothing here tries to detect one: a rule watching for
-        a jump back up was tried against the fleet and flagged a coin
-        cell that reported one high reading, while catching nothing
-        the muting had not caught first (ruling #194).
+        Muted devices are absent entirely. Nothing here tries to
+        detect a rechargeable, because a rule watching for a jump back
+        up flags a coin cell that reports one high reading while
+        catching nothing muting has not caught first.
         """
         falling: list[dict[str, Any]] = []
         low: list[dict[str, Any]] = []
@@ -361,7 +352,7 @@ class BatteryReportMixin:
             row = {
                 # Carried so the Battery: Falling sensor can name the
                 # device in an automation rather than only in prose
-                # (ruling #209).
+                # (rule BAT-14).
                 "device_id": device_id,
                 "name": name,
                 "level": float(level),
@@ -376,7 +367,7 @@ class BatteryReportMixin:
             # A cell that reports in coarse steps, or has fallen by one
             # such step and not yet shown which it is, is not
             # forecast: it is judged against the low threshold alone
-            # (0.23.1).
+            # (rule BAT-09).
             row["steps"] = self.battery_steps(record)
             trend = battery_trend(
                 series, row["level"], row["steps"] == BATTERY_STEPS_SMOOTH,
@@ -388,10 +379,10 @@ class BatteryReportMixin:
             if trend["reading"] and trend["pace"]:
                 # The Problem List's forecast item and the Battery:
                 # Falling sensor read a rate per day and days left. The
-                # days are a range since 0.26.7 (ruling #704), curved
-                # where the fall is speeding up; the near end decides
-                # Days Till Low. A cell with too few heard days for
-                # the fit keeps its straight pace, one figure.
+                # days are a range, curved where the fall is speeding
+                # up; the near end decides Days Till Low (rule BAT-13).
+                # A cell with too few heard days for the fit keeps its
+                # straight pace, one figure.
                 row["slope"] = -trend["pace"] / BATTERY_WEEK_DAYS
                 target = self.battery_target(row["level"], record)
                 row["target"] = target
@@ -420,9 +411,8 @@ class BatteryReportMixin:
 
     def battery_trend_summary(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """A cell's weekly averages and trend, for the diagnostics
-        download (0.23.6), so a capture shows the rule working without
-        opening the dashboard. None for a device with no readable
-        battery."""
+        download, so a capture shows the rule working without opening
+        the dashboard. None for a device with no readable battery."""
         level = record.get(DEV_BATTERY_VALUE)
         if not isinstance(level, (int, float)) or not 0 <= level <= BATTERY_READABLE_MAX:
             return None
@@ -432,8 +422,8 @@ class BatteryReportMixin:
             self.battery_ceiling,
         )
         return {
-            # A week the device was never heard has no average (0.24.4);
-            # rounding it failed the whole download (0.24.6).
+            # A week the device was never heard has no average, and
+            # rounding it would fail the whole download.
             "weeks": [round(week, 2) if week is not None else None for week in trend["weeks"]],
             "reading": trend["reading"],
             "pace_per_week": round(trend["pace"], 2) if trend["pace"] else None,
@@ -441,9 +431,9 @@ class BatteryReportMixin:
 
     def battery_target(self, level: float, record: dict[str, Any] | None = None) -> float:
         """Where a cell's time left ends: the low threshold, the level a
-        person acts on and can see arrive (#730); 0 for a cell at or
-        under it, and for one judged low since its last replacement,
-        even if it reads above the threshold again (#735)."""
+        person acts on and can see arrive; 0 for a cell at or under it,
+        and for one judged low since its last replacement, even if it
+        reads above the threshold again (rule BAT-13)."""
         threshold = float(self.low_threshold)  # type: ignore[attr-defined]
         if level <= threshold or (record is not None and battery_latched(record)):
             return 0.0
@@ -452,7 +442,7 @@ class BatteryReportMixin:
     @property
     def battery_ceiling(self) -> float:
         """The level at or under which a cell is judged falling and given
-        a time left: three times the low threshold (#725)."""
+        a time left: three times the low threshold (rule BAT-10)."""
         return BATTERY_REPORT_CEILING_FACTOR * self.low_threshold  # type: ignore[attr-defined]
 
     def _battery_days(self) -> float:
@@ -465,13 +455,13 @@ class BatteryReportMixin:
 
     @staticmethod
     def battery_time_left_range(near: float, far: float | None) -> str:
-        """The time left as a range, in #197's words (ruling #704)."""
+        """The time left as a range, in the bands' words (rule BAT-13)."""
         return time_left_range(near, far)
 
     def battery_until_words(self, row: dict[str, Any]) -> str:
         """What a falling cell's time left reaches, with the range: "reaches
         15% in about 3 to 5 weeks", or "empty in ..." for a cell already
-        under the threshold (#730)."""
+        under the threshold (rule BAT-13)."""
         left = self.battery_time_left_range(row["days"], row.get("days_far"))
         target = row.get("target")
         if isinstance(target, (int, float)) and target > 0:
@@ -483,12 +473,11 @@ class BatteryReportMixin:
     def battery_time_left(days: float) -> str:
         """Return how long is left, in words rather than a number.
 
-        The projection moved from twelve days to seven in a single
-        afternoon on the cell that proved it, about forty percent. The
-        same relative error on a device reading 1122 days puts the
-        truth between 670 and 1570, so the number claims a precision
-        it does not have while the words do not (ruling #197). Bands
-        widen with distance, which is how the error behaves.
+        A projection can move by about forty percent in an afternoon.
+        The same relative error on a device reading 1122 days puts the
+        truth between 670 and 1570, so a number claims a precision it
+        does not have while words do not (rule BAT-13). Bands widen
+        with distance, which is how the error behaves.
         """
         for limit, words in BATTERY_LEFT_BANDS:
             if days <= limit:
@@ -500,12 +489,12 @@ class BatteryReportMixin:
 
         The full warning, the Problem List, the phone, the brief and the
         Battery: Falling sensor, goes only to a cell speeding up whose
-        near end is inside Days Till Low (#731): measured on both houses
-        on 22 October 2026, a warning on a cell falling at a steady pace
-        came true about half the time, since most rest between steps,
-        and one on an accelerating cell 85 percent. The report's own
-        table is unfiltered on purpose (ruling #195), and a cell already
-        under the threshold is left out, since it has its own row.
+        near end is inside Days Till Low (rule BAT-14). A warning on a
+        cell falling at a steady pace comes true about half the time,
+        since most rest between steps, and one on an accelerating cell
+        85 percent. The report's own table is unfiltered on purpose, and
+        a cell already under the threshold is left out, since it has its
+        own row.
         """
         return [
             row
@@ -517,7 +506,7 @@ class BatteryReportMixin:
     def battery_watch_rows(self) -> list[dict[str, Any]]:
         """The cells falling at a steady pace whose near end is inside
         Days Till Low: listed as Batteries to Watch in the brief and on
-        Battery Trends, with no push and no Problem List item (#731)."""
+        Battery Trends, with no push and no Problem List item (rule BAT-14)."""
         return [
             row
             for row in self._battery_rows()["falling"]
@@ -529,22 +518,19 @@ class BatteryReportMixin:
         """Render the battery as a level and its recent trend.
 
         Ninety daily levels will not fit in a table cell and would not
-        be read if they did. What this column is for is
-        whether a cell is falling and how fast, which is the level
-        plus two changes: over the last week and over the last month.
+        be read if they did. What this column is for is whether a cell
+        is falling and how fast, which is the level plus two changes:
+        over the last week and over the last month.
 
         Each figure appears only once there is history to support it,
         so a fresh install shows a bare level, gains the weekly change
-        after a week and the monthly one after a month. An empty
-        placeholder for a month would be punctuation rather than
-        information.
+        after a week and the monthly one after a month.
 
         A reading outside nought to a hundred is shown as what it is
-        rather than dressed as a percentage. It is still recorded
-        (ruling #128): every value is recorded as reported, however
-        implausible, and classified when it is read. A value discarded
-        at the recorder is unrecoverable without waiting out the whole
-        retention window again.
+        rather than dressed as a percentage. It is still recorded as
+        reported and classified when it is read, because a value
+        discarded at the recorder cannot be recovered without waiting
+        out the whole retention window again (rule STOR-15).
         """
         levels = list(record.get(DEV_BATTERY_DAILY) or [])
         level = record.get(DEV_BATTERY_VALUE)

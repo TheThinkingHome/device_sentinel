@@ -3,11 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.27.0 (2026-10-22)
+# File: stack_matter.py, Version: 0.27.10 (2026-10-27)
 
 """Matter: everything Device Sentinel knows about this stack.
 
-One file per coordinator stack (ruling #218), answering the same
+One file per coordinator stack (rule STACK-01), answering the same
 three questions every stack module answers: does this device prove
 the stack is present, does this stack own a device on that
 integration domain, and give me a reader.
@@ -20,11 +20,10 @@ is what the registry walk did before this file existed.
 WHAT IS NOT BUILT, AND WHY. `make_reader` returns None. Matter is
 further back than the other two: it is detected as present and
 nothing more, and its commissioning observability has not been
-researched at all, so there is not even a design ruled from
-documentation to record here. Recorded as banked rather than as
-work in progress. A house on Matter gets every other family of
-judgment and falls to the per-device debounce for interventions
-(ruling #138). As on Z-Wave, a Matter integration that fails setup
+researched at all, so there is no design from documentation to
+record here. A house on Matter gets every other family of judgment
+and falls to the per-device debounce for interventions (rule FRZ-15).
+As on Z-Wave, a Matter integration that fails setup
 and stays failed is still caught by the domain-agnostic integration
 outage watcher, one row naming the integration with its devices
 counted; what is missing here is the commissioning window and any
@@ -39,15 +38,15 @@ than unverified answers.
 WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
 on, the study in `study_stacks.py` gathers what Matter says about its
 server and nodes: whether a node is available and which network it is
-on (0.22.26), and the stack probe writes each change to
+on, and the stack probe writes each change to
 `stack_probe.md` beside Device Sentinel's own view of the same device,
-the readers in shadow (0.23.9). Neither changes a verdict; both are
+the readers in shadow (rule STACK-12). Neither changes a verdict; both are
 the evidence a reader would be built on.
 
 THE ASK. This file stays as it is until somebody with Matter hardware
 runs the named commands and attaches the output. Its first question
 is narrower than the other two stacks': whether anything is published
-at all (ruling #219).
+at all (rule STACK-02).
 """
 
 from __future__ import annotations
@@ -58,14 +57,13 @@ from .const import STACK_MATTER
 
 STACK = STACK_MATTER
 
-# Nothing but Matter publishes on the matter domain (ruling #412).
+# Nothing but Matter publishes on the matter domain.
 SHARED_DOMAIN = False
 
 # A Matter device of a type that reports only on use, not behind a bridge, is
-# judged by being available rather than by its rhythm (rulings #710 and
-# #718): Tim Plas's unplugged lamp and plug read unavailable within
-# about five minutes, and button B13 without its battery within about
-# fourteen.
+# judged by being available rather than by its rhythm, because an
+# unplugged lamp or plug reads unavailable within about five minutes, and
+# a button without its battery within about fourteen (rule STACK-06).
 AVAILABLE_SPEAKS = True
 
 
@@ -82,7 +80,7 @@ def owns_domain(domain: str) -> bool:
 def detects(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device proves Matter is running.
 
-    The domain is the tell (rulings #139 and #143), so the device
+    The domain is the tell (rule STACK-01), so the device
     entry itself is not consulted. It stays in the signature because
     every stack module answers this question the same way and Z2M
     needs the device to find its bridge.
@@ -93,12 +91,12 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for Matter (ruling #400). Matter has no reader yet, and nothing here
+    No for Matter (rule WATCH-05). Matter has no reader yet, and nothing here
     is known to be plumbing rather than hardware. Answering no is the honest
     default: a stack that cannot say costs nothing.
 
     Every stack module answers this question so the walk can ask it
-    without knowing which stacks exist (ruling #218). The signature
+    without knowing which stacks exist (rule STACK-01). The signature
     matches the others; neither argument is consulted.
     """
     return False
@@ -111,7 +109,7 @@ def device_key(device: dr.DeviceEntry) -> None:
     Matter very likely carries something equivalent. Very likely is
     not measured, and a join key guessed wrong joins a verdict to the
     wrong device, so nothing is claimed here until somebody with the
-    hardware sends a real identifier (rulings #218 and #219).
+    hardware sends a real identifier (rule STACK-02).
     """
     return None
 

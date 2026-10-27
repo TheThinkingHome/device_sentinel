@@ -3,31 +3,28 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.27.9 (2026-10-27)
+# File: button.py, Version: 0.27.10 (2026-10-27)
 
 """Button platform for the Device Sentinel integration.
 
 Two buttons, each touching only Device Sentinel's own state, so any
-user, automation or script may press them (ruling #696).
+user, automation or script may press them.
 
 Regenerate Reports rewrites every report on demand, for a person
 mid-investigation who wants them to reflect a fix now rather than at
 the next tick, or an automation that sends a fresh Daily Brief.
 
-Maintenance Mode opens and closes the maintenance window (rulings #225
-and #238): pressed once it declares that a person is working on the
+Maintenance Mode opens and closes the maintenance window: pressed once it declares that a person is working on the
 hardware, pressed again it ends the declaration early. While the
 window is open, any device that recovers is attributed to the person's
-hands and its silence is not learned.
+hands and its silence is not learned (rule FRZ-18).
 
-The three Enable buttons (signals, last seen, battery) are retired by
-ruling #696, from Frenck's review of the HACS default-list submission.
-A button entity can be pressed by any user, automation or script, and
-those turned on other integrations' entities on every watched device,
-including ones a person had switched off on purpose. A sensor is now
-switched on one device at a time, by an administrator, from the
-device's page or its Recommendations card; the retired-entity sweep
-removes the three registry entries.
+No button turns on other integrations' entities, because any user,
+automation or script can press a button, and it would turn on entities
+a person had switched off on purpose. A sensor is switched on one
+device at a time, by an administrator, from the device's page or its
+Recommendations card; the retired-entity sweep removes the three old
+Enable buttons from the registry (rule REC-05).
 """
 
 from __future__ import annotations
@@ -75,7 +72,7 @@ class DeviceSentinelActionButton(ButtonEntity):
 
     Each button is a thin wrapper around the async action it is given;
     the action carries the behavior, and touches only Device Sentinel's
-    own state (ruling #696).
+    own state.
     """
 
     _attr_has_entity_name = True

@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.27.6 (2026-10-26)
+# File: notifier.py, Version: 0.27.10 (2026-10-27)
 
 """The event notification engine: per-family pushes and the card.
 
 Three self-overwriting surfaces, each keyed by a fixed id so it
 replaces its own last message rather than stacking, always showing
-the most recent picture rather than a pile of stale ones
-(ruling #147):
+the most recent picture rather than a pile of stale ones:
 
 The persistent card. One card, always the current trouble state of the
 home, re-sent on every change. It is silent by nature and so is never
@@ -102,10 +101,8 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # rail is not a low; a not_reported device reads as never reported.
 # Keyed by the kind a row carries. The signal rows tag a railed link
 # and leave a merely low one untagged, so SIGNAL_ROW_LOW is the
-# default rather than a kind anything writes. Until 0.15.8 the railed
-# rows said "rail" here while the problem list called the same thing
-# "signal", which is why the family map had to list both; the rows
-# carry TODO_KIND_RAILED_SIGNAL now (ruling #299). The device problems
+# default rather than a kind anything writes. The railed rows carry
+# TODO_KIND_RAILED_SIGNAL, the problem list's own kind. The device problems
 # read the Daily Brief's words, as its Right Now table says them:
 # "stopped reporting", "signal railed" (rules NOTE-01, LIST-02).
 _SUMMARY_WORD = {
@@ -139,11 +136,11 @@ _CARD_MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+!|<>~])")
 
 
 def _card_text(text: str) -> str:
-    """Text as the card shows it, never as Markdown (0.24.9).
+    """Text as the card shows it, never as Markdown (rule CODE-10).
 
-    A name holding "![x](https://...)" made Home Assistant load an
-    outside picture into the card, and "[x](https://...)" made a link
-    beside the card's own. Each Markdown character is escaped with a
+    A name holding "![x](https://...)" would make Home Assistant load an
+    outside picture into the card, and "[x](https://...)" a link beside
+    the card's own. Each Markdown character is escaped with a
     backslash, which Home Assistant's renderer takes back off, and a line
     break inside a name becomes a space.
     """
@@ -198,11 +195,11 @@ class NotifierMixin:
     def _capped(
         entries: list[tuple[int, float, str]], always: list[str]
     ) -> str:
-        """Name the worst few and count the rest (0.22.26).
+        """Name the worst few and count the rest (rule NOTE-05).
 
-        Fifty devices down made a push of 2,160 characters, which a
-        phone truncates and a fleet of a hundred could push past the
-        4 kB a push may carry. Worst first, then most recent, so the
+        Fifty devices down make a push of 2,160 characters, which a
+        phone truncates, and a hundred could pass the 4 kB a push may
+        carry. Worst first, then most recent, so the
         first name is the one the headline belongs to and a line read
         aloud leads with what matters. The list, the card and the
         brief's tables keep every name.
@@ -224,9 +221,8 @@ class NotifierMixin:
         is invisible to humans everywhere, the card and pushes
         included, exactly as the brief already hides it, because the
         phone is a live status board rather than a log and shows what
-        is wrong and unacknowledged right now (ruling #109). Each
-        remaining
-        entry is worded the way the briefs and the list word it: a
+        is wrong and unacknowledged right now (rule NOTE-08). Each
+        remaining entry is worded the way the briefs and the list word it: a
         battery's level, a signal marked railed, a device that is
         unavailable or never reported.
         """
@@ -246,7 +242,7 @@ class NotifierMixin:
 
         if family == NOTIFY_FAMILY_FREEZE:
             # The card is a human surface and follows the same rule as
-            # the list and the pushes (ruling #266): while an upstream
+            # the list and the pushes (rule UP-05): while an upstream
             # is down its casualties are counted, not named. The
             # sensors and the telemetry audit keep the full list,
             # because they say what is true rather than what is worth
@@ -254,23 +250,23 @@ class NotifierMixin:
             for name, count in self.suppressed_down_counts.items():
                 display = STACK_DISPLAY_NAMES.get(name, name)
                 behind = max(self.upstream_membership(name), count)
-                # Casualties against membership (ruling #401): the
-                # count drains as devices return, and printed alone
-                # it read as one figure that would not hold still.
+                # Casualties against membership, because the count drains
+                # as devices return, and printed alone it reads as one
+                # figure that will not hold still (rule UP-11).
                 always.append(
                     f"{display} down, {count} of {behind} devices "
                     "unavailable"
                 )
         if family == NOTIFY_FAMILY_BATTERY:
             # Two sources, because low and falling are two questions
-            # and the card was reading only the first: a cell heading
-            # for empty never reached it at all, so a card could read
-            # "All devices reporting" while an unacknowledged forecast
-            # stood on the list and in the brief (ruling #220). A cell
+            # and reading only the first, a cell heading for empty
+            # would never reach the card, which could read "All devices
+            # reporting" while an unacknowledged forecast stood on the
+            # list and in the brief (rule NOTE-10). A cell
             # already low is absent from the falling source, so the
             # two rarely name one device, but where they do the level
             # leads and the direction follows in one clause rather
-            # than two entries (ruling #216).
+            # than two entries.
             rows: dict[str, tuple[int, float, str]] = {}
 
             def _key(row: dict[str, Any], count: int) -> str:
@@ -289,8 +285,8 @@ class NotifierMixin:
                 if level is not None:
                     rows[_key(row, len(rows))] = (
                         _rank(TODO_KIND_LOW_BATTERY), _since(row),
-                        # As reported, the same on every surface (0.27.1): this
-                        # cut 15.5 to "15%", a level the threshold did not call low.
+                        # As reported, the same on every surface, so 15.5 never
+                        # reads "15%", a level the threshold did not call low.
                         f"{name} {level_text(level)}",
                     )
                 else:
@@ -318,7 +314,7 @@ class NotifierMixin:
             # a rail is not a low: a railed device shows a stale
             # perfect reading held at the protocol's fill value, which
             # is a dead reading rather than a strong link, so the card
-            # must say railed, not low (ruling #78).
+            # must say railed, not low (rule SIG-07).
             for row in self.signal_problem_list:
                 if row.get("device_id") in acknowledged:
                     continue
@@ -330,13 +326,13 @@ class NotifierMixin:
                 ))
         elif family == NOTIFY_FAMILY_FREEZE:
             # A device in a flap is named for the flap, down this
-            # minute or not, and its drop is not named again (0.23.2).
+            # minute or not, and its drop is not named again (rule UNAV-06).
             flapping = set()
             down_rows = self.reportable_down_rows
             down_ids = {row.get("device_id") for row in down_rows}
             for row in self.flapping_list:
                 # A hub that is down is named for that, as on the
-                # Problem List (#665): its drops stay on its page. Only
+                # Problem List (rule STACK-10): its drops stay on its page. Only
                 # once its down row is here to name it.
                 if row.get("device_id") in down_ids and self.hub_problem_words(row.get("device_id")):  # type: ignore[attr-defined]
                     continue
@@ -356,8 +352,8 @@ class NotifierMixin:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"
-                # A hub says what the Problem List says (James, 14
-                # October 2026): "hub down, 2 devices that it controls".
+                # A hub says what the Problem List says: "hub down, 2
+                # devices that it controls" (rule STACK-10).
                 hub_words = (
                     self.hub_problem_words(row.get("device_id"))  # type: ignore[attr-defined]
                     if kind == TODO_KIND_UNAVAILABLE
@@ -424,8 +420,7 @@ class NotifierMixin:
         else:
             # An integration's own outage, which can span several of its
             # entries, told from its stored records rather than the log.
-            # Only a file whose records keep no start, written before
-            # 0.27.6, falls through to its latest return below (rules
+            # Only an older file whose records keep no start falls through to its latest return below (rules
             # UP-09, UP-11).
             ended = self._integration_over_row(name)  # type: ignore[attr-defined]
             if ended is not None:
@@ -443,9 +438,9 @@ class NotifierMixin:
 
         Once when it is down, in its Problem List row's words, and
         once when it is over, in the Daily Brief's words for its
-        return; the recovering phase sends nothing (#435). The first
-        message about an upstream sounds and the return is silent, as
-        every recovery is (#265). Sent to the targets `_push_targets`
+        return; the recovering phase sends nothing. The first message about an
+        upstream sounds and the return is silent, as every recovery is
+        (rule NOTE-04). Sent to the targets `_push_targets`
         names (rules UP-09, NOTE-02).
         """
         heard = name in self._upstream_announced
@@ -525,11 +520,9 @@ class NotifierMixin:
             return
         if self._in_startup_grace():
             # Nothing is pushed inside the startup grace, for any
-            # reason (ruling #291). A change to a device already on
-            # the list pushed straight through it: the reference rig's
-            # phone read "At 3:50 pm" one minute into a start
-            # (0.22.28). The list and the card carry what is true when
-            # the window shuts.
+            # reason, a change to a device already on the list included
+            # (rule NOTE-03). The list and the card carry what is true
+            # when the window shuts.
             LOGGER.debug(
                 "Device Sentinel: %d event(s) fell inside the startup "
                 "grace and were not pushed",
@@ -550,7 +543,7 @@ class NotifierMixin:
         """Raise or replace the state card, under its one fixed id.
 
         Through Home Assistant's own helpers for an integration's own
-        card (0.23.19), rather than a call through the service layer,
+        card, rather than a call through the service layer,
         which fails with "Action not found" wherever the service has
         not been registered. A card chosen as a push target still goes
         through the service, as every target does.
@@ -581,12 +574,12 @@ class NotifierMixin:
 
         Written only when its message changes. Home Assistant shows
         every write as a fresh notification, so repeating the same
-        words every thirty seconds was noise two testers reported. The
+        words every thirty seconds is noise. The
         last message written is held in memory and nowhere else: it
         starts empty at every setup, so the first call after a restart
         always writes, and it is forgotten by a dismiss or a failed
-        write, since neither leaves those words on screen (ruling
-        #454).
+        write, since neither leaves those words on screen (rule
+        NOTE-11).
         """
         if not self.entry.options.get(
             CONF_PERSISTENT_ENABLED, DEFAULT_PERSISTENT_ENABLED
@@ -606,12 +599,12 @@ class NotifierMixin:
             if summary != "All clear.":
                 title = NOTIFY_FAMILY_TITLES[family]
                 # The card is drawn as Markdown and the summary names
-                # devices, whose names may come from the device itself
-                # (0.24.9): escaped here, and only here, since the same
+                # devices, whose names may come from the device itself:
+                # escaped here, and only here, since the same
                 # summary goes to phones as plain text.
                 lines.append(f"{title}: {_card_text(summary)}")
         # A card that lists anything ends with a link to the Problem
-        # List, which names every device the card counts (0.23.10).
+        # List, which names every device the card counts (rule NOTE-11).
         # Home Assistant draws the card as Markdown and leaves a link
         # inside Home Assistant as a plain link, so it opens in place.
         message = (

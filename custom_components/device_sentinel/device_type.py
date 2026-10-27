@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.27.0 (2026-10-22)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.27.10 (2026-10-27)
 
-"""What each device is, in plain words (0.25.1, Project__Device_Type.md).
+"""What each device is, in plain words (rule DEV-10).
 
 Home Assistant keeps no type for a device, so Device Sentinel reads one
 from the device's own entities: the kind of entity Home Assistant made
-for it, and the device class the integration gave it. First match wins,
-in the order James approved on 8 October 2026 after the rules were run
-on the reference rig's 103 devices. Settings and diagnostic entities
-are left out, since a radio's configuration switch says nothing about
-what the device is. A device nothing matches has no type: the page
-says so and offers the pencil, and nothing is guessed.
+for it, and the device class the integration gave it. First match wins.
+Settings and diagnostic entities are left out, since a radio's
+configuration switch says nothing about what the device is. A device
+nothing matches has no type: the page says so and offers the pencil,
+and nothing is guessed.
 
 The owner's answer wins, and like the Power row's it covers every
 device of the same model. Owner answers live in the answers file with
@@ -40,8 +39,8 @@ from .stacks import is_plumbing
 TYPE_OTHER = "Other"
 SOURCE_ENTITIES = "entities"
 SOURCE_OWNER = "owner"
-# Device Sentinel's own answer from somewhere other than the entities
-# (0.25.2): a model it knows, or what the device is to its network.
+# Device Sentinel's own answer from somewhere other than the entities:
+# a model it knows, or what the device is to its network.
 SOURCE_KNOWN = "known model"
 SOURCE_ROLE = "role"
 
@@ -60,8 +59,8 @@ PLUG = "Plug"
 SOIL_SENSOR = "Soil Sensor"
 TEMPERATURE_SENSOR = "Temperature Sensor"
 BUTTON = "Button"
-# Added in 0.25.2 (James, 9 October 2026), in each network's own words:
-# Zigbee has a coordinator, Z-Wave a controller, Thread a border router.
+# In each network's own words: Zigbee has a coordinator, Z-Wave a
+# controller, Thread a border router.
 ZIGBEE_COORDINATOR_Z2M = "Zigbee Coordinator (Zigbee2MQTT)"
 ZIGBEE_COORDINATOR_ZHA = "Zigbee Coordinator (ZHA)"
 ZWAVE_CONTROLLER = "Z-Wave Controller"
@@ -83,36 +82,31 @@ FAN = "Fan"
 LIGHT = "Light"
 BLUETOOTH_PROXY = "Bluetooth Proxy"
 ESPHOME_DEVICE = "ESPHome Device"
-# From Tim Plas's own answers under Other (James, 11 October 2026, #627):
-# one word for every household appliance, so the list does not grow a
-# type per machine, and four kinds of box.
+# One word for every household appliance, so the list does not grow a
+# type per machine, and four kinds of device (rule DEV-11).
 APPLIANCE = "Appliance"
 IR_REMOTE = "IR Remote"
 ROUTER = "Router"
 NAS = "NAS"
 UPS = "UPS"
-# From Tim Plas's robot vacuum, D80, typed through Other (James, 20
-# October 2026, #712).
+# A robot vacuum (rule DEV-11).
 VACUUM = "Vacuum"
 
 # The kinds of entity that settle a type on their own, checked first.
 # A camera with a switch for its spotlight is still a camera, and a
 # voice satellite with an LED light is still a voice assistant. A lock
 # with a door contact is a lock, a thermostat that reports temperature
-# is a thermostat, and a valve with a leak probe is a valve (0.25.2).
+# is a thermostat, and a valve with a leak probe is a valve.
 DOMAIN_TYPES: tuple[tuple[str, str], ...] = (
-    # A robot vacuum reports a vacuum entity (#712), and some add a
-    # camera for their map, so it is read first (adversarial round of
-    # 0.26.8).
+    # A robot vacuum reports a vacuum entity, and some add a camera for
+    # their map, so the vacuum is read first (rule DEV-11).
     ("vacuum", VACUUM),
     ("camera", CAMERA),
     ("assist_satellite", VOICE_ASSISTANT),
-    # A blind and a shade are both a cover (James, 8 October 2026):
-    # Motionblinds gives all six of the reference rig's the class
-    # "shade", so a split by class called two blinds shades. Ahead of
-    # the lock (#627): a garage door opener such as Tim Plas's ratgdo
-    # boards has a cover and a lock for its remote lockout, and read
-    # Lock.
+    # A blind and a shade are both a cover, because some integrations
+    # give every blind the class "shade". Ahead of the lock, because a
+    # garage door opener has a cover and a lock for its remote lockout
+    # and would read Lock (rule DEV-11).
     ("cover", COVER),
     ("lock", LOCK),
     ("climate", THERMOSTAT),
@@ -137,16 +131,14 @@ BINARY_CLASSES: tuple[tuple[str, str], ...] = (
 )
 MOTION_CLASSES = frozenset({"motion", "occupancy", "presence"})
 # A motion sensor that also reports all three of these is a multi
-# sensor, a 4-in-1; with two of them it is still a motion sensor
-# (James, 9 October 2026).
+# sensor, a 4-in-1; with two of them it is still a motion sensor.
 MULTI_READINGS = frozenset({"temperature", "humidity", "illuminance"})
 PRINTER_DOMAINS = frozenset({"brother", "ipp"})
 
 # Models whose type their entities cannot show, each answered by an
-# owner and checked by James before it is listed (0.25.2, from the
-# reference house's answers of 9 October 2026). Keyed exactly as an
-# owner's answer is: manufacturer, model and model ID as Home
-# Assistant reports them.
+# owner and checked before it is listed. Keyed exactly as an owner's
+# answer is: manufacturer, model and model ID as Home Assistant
+# reports them.
 KNOWN_MODEL_TYPES: dict[tuple[str, str, str], str] = {
     ("Third Reality", "Zigbee / BLE smart plug", "3RSP019BZ"): PLUG,
     ("Aqara", "PS-S02E", ""): PRESENCE_SENSOR,
@@ -155,13 +147,12 @@ KNOWN_MODEL_TYPES: dict[tuple[str, str, str], str] = {
     ("Third Reality", "Smart watering kit", "3RWK0148Z"): PLANT_WATERER,
     ("Aeotec", "Range extender Zi", "WG001"): ZIGBEE_ROUTER,
     ("Zooz", "ZST39 LR", ""): ZWAVE_CONTROLLER,
-    # Tim Plas's water shutoff (#627): Z-Wave shows it as a switch.
+    # A water shutoff that Z-Wave shows as a switch (rule DEV-11).
     ("EcoNet Controls", "EVC200", ""): VALVE,
 }
-# Integrations that make only household appliances (#627): Tim Plas's
-# GE washer, dryer and stove named nothing, and his dishwasher read
-# Switch. Checked ahead of the entities, since an appliance's switches
-# and sensors say little about what it is.
+# Integrations that make only household appliances (rule DEV-11).
+# Checked ahead of the entities, since an appliance's switches and
+# sensors say little about what it is.
 APPLIANCE_DOMAINS = frozenset({"ge_home", "geappliances", "home_connect", "miele"})
 
 TYPE_CHOICES: tuple[str, ...] = (
@@ -179,9 +170,8 @@ TYPE_CHOICES: tuple[str, ...] = (
 )
 
 # Earlier names for a type now on the list, typed through Other before
-# the list named it (#717): the reference rig's two SLZB coordinators,
-# typed on 9 October 2026 before 0.25.2 named them, its Z-Wave stick,
-# and Tim Plas's Broadlink. Keys are folded as _folded folds them.
+# the list named it (rule DEV-11). Keys are folded as _folded folds
+# them.
 EARLIER_TYPE_NAMES: dict[str, str] = {
     "zhacoordinator": ZIGBEE_COORDINATOR_ZHA,
     "zigbee2mqttcoordinator": ZIGBEE_COORDINATOR_Z2M,
@@ -200,21 +190,17 @@ _LIST_BY_FOLD = {_folded(name): name for name in TYPE_CHOICES if name != TYPE_OT
 
 # The types that report only when someone uses them, so a quiet spell
 # says nothing about whether they work. A Matter device of one of these
-# types is judged by being available rather than by a rhythm (#718).
-# Button, Light, Plug and Switch from Tim Plas's house; the rest added
-# by the adversarial round of 0.27.0, since a cover, fan, valve, lock,
-# siren, appliance or vacuum also reports when used, and a Matter
-# Bridge has nothing of its own to report: 0.26.8 spared them all when
-# on mains, and 0.27.0 would otherwise have called them frozen.
+# types is judged by being available rather than by a rhythm
+# (rule STACK-06). A Matter Bridge has nothing of its own to report.
 TYPES_THAT_REPORT_ON_USE = frozenset({
     APPLIANCE, BUTTON, COVER, FAN, LIGHT, LOCK, MATTER_BRIDGE, PLUG, SIREN,
     SWITCH, VACUUM, VALVE,
 })
 # What a sensor measures, read from a device's own entities. A device
 # whose type was read from its entities, not set by its owner, and that
-# measures any of these is a sensor whatever else it has: a Matter
-# temperature sensor with a switch entity reads Switch, and would be
-# spared the freeze rule S87 needed (adversarial round of 0.27.0).
+# measures any of these is a sensor whatever else it has, because a
+# Matter temperature sensor with a switch entity reads Switch and would
+# otherwise be spared the freeze rule (rule STACK-06).
 MEASURING_SENSOR_CLASSES = frozenset({
     "temperature", "humidity", "moisture", "illuminance", "pressure",
     "carbon_dioxide", "carbon_monoxide", "pm1", "pm25", "pm10",
@@ -244,8 +230,8 @@ def measures(entities: list[Any]) -> bool:
 
 def list_name(words: str) -> str:
     """An owner's own words, or the list's name when they name a type on
-    the list (#717): the same words in another case or spacing, or an
-    earlier name for it. Anything else is kept as the owner wrote it."""
+    the list: the same words in another case or spacing, or an earlier
+    name for it. Anything else is kept as the owner wrote it (rule DEV-11)."""
     folded = _folded(words)
     return _LIST_BY_FOLD.get(folded) or EARLIER_TYPE_NAMES.get(folded) or words
 
@@ -279,10 +265,10 @@ def type_from_entities(entities: list[Any]) -> str | None:
     for domain, words in DOMAIN_TYPES:
         if domain in domains:
             return words
-    # An infrared or radio blaster (#627): Home Assistant gives it a
-    # remote entity, and Tim Plas's Broadlink RM4 mini read Temperature
-    # Sensor from the probe on its cable. A television has a remote
-    # entity too, beside its media player, and is not a blaster.
+    # An infrared or radio blaster: Home Assistant gives it a remote
+    # entity, and without this the probe on its cable reads Temperature
+    # Sensor. A television has a remote entity too, beside its media
+    # player, and is not a blaster (rule DEV-11).
     if "remote" in domains and "media_player" not in domains:
         return IR_REMOTE
     binary = classes("binary_sensor")
@@ -299,7 +285,7 @@ def type_from_entities(entities: list[Any]) -> str | None:
         return SIREN
     if "switch" in domains:
         return PLUG if "power" in sensors else SWITCH
-    # Bulbs and light strips are lights (James, 9 October 2026).
+    # Bulbs and light strips are lights.
     if "light" in domains:
         return LIGHT
     if "moisture" in sensors:
@@ -321,14 +307,15 @@ def type_for_device(
     bluetooth_proxy: bool = False,
     hub: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Device Sentinel's own answer and where it came from (0.25.2).
+    """Device Sentinel's own answer and where it came from (rule DEV-10).
 
     In order: a model it knows; what the device is to its network when
     that is all it is for (a coordinator, a controller, a border
-    router); an appliance, by its integration; what its entities say; and last, for a device whose
-    entities name nothing, what its integration or network says (a
-    printer, an ESPHome board or Bluetooth proxy, a Zigbee router, a
-    Z-Wave repeater, a hub). A router plug stays a Plug.
+    router); an appliance, by its integration; what its entities say;
+    and last, for a device whose entities name nothing, what its
+    integration or network says (a printer, an ESPHome device or
+    Bluetooth proxy, a Zigbee router, a Z-Wave repeater, a hub). A
+    router plug stays a Plug.
     """
     if model is not None and model in KNOWN_MODEL_TYPES:
         return KNOWN_MODEL_TYPES[model], SOURCE_KNOWN
@@ -342,9 +329,9 @@ def type_for_device(
     if domain in PRINTER_DOMAINS:
         return PRINTER, SOURCE_ROLE
     if domain == "esphome":
-        # An ESPHome board whose entities named nothing: what it is for,
-        # where Home Assistant shows it (a Bluetooth proxy), else the
-        # board itself (James, 9 October 2026).
+        # An ESPHome device whose entities named nothing: what it is
+        # for, where Home Assistant shows it (a Bluetooth proxy), else
+        # the ESPHome device itself.
         return (BLUETOOTH_PROXY if bluetooth_proxy else ESPHOME_DEVICE), SOURCE_ROLE
     if zigbee_router:
         return ZIGBEE_ROUTER, SOURCE_ROLE
@@ -370,8 +357,7 @@ def clean_type(text: str | None) -> str:
         raise
     if words.casefold() == NOT_KNOWN.casefold():
         # The page's own words for no type; as an answer it would read
-        # as no answer, and the Devices tab would count it as one
-        # (0.25.1, found by testing).
+        # as no answer, and the Devices tab would count it as one.
         raise ValueError("Type what the device is.")
     return words
 
@@ -471,7 +457,7 @@ class TypeMixin:
         return self._type_auto(device_id)[0]
 
     def _type_auto(self, device_id: str) -> tuple[str | None, str | None]:
-        """Device Sentinel's own answer and its source (0.25.2)."""
+        """Device Sentinel's own answer and its source (rule DEV-10)."""
         hass = self.hass  # type: ignore[attr-defined]
         entities = er.async_entries_for_device(er.async_get(hass), device_id)
         device = dr.async_get(hass).async_get(device_id)
@@ -492,11 +478,11 @@ class TypeMixin:
 
     def _network_role(self, device: Any, domain: str | None) -> str | None:
         """What the device is to its network: a coordinator, a controller,
-        a border router, or None (0.25.2)."""
+        a border router, or None (rule DEV-10)."""
         try:
             if domain and is_plumbing(domain, device):
                 # Zigbee2MQTT's bridge device is the coordinator as
-                # Zigbee2MQTT shows it (ruling #400 sets it aside).
+                # Zigbee2MQTT shows it, and is set aside (rule WATCH-05).
                 return ZIGBEE_COORDINATOR_Z2M
             if domain == "zwave_js" and _zwave_node(device) == "1":
                 return ZWAVE_CONTROLLER
@@ -529,8 +515,8 @@ class TypeMixin:
             hosts[host] = ZIGBEE_COORDINATOR_Z2M
         # A coordinator served from Home Assistant's own machine (an
         # add-on) shares its address with every other device served
-        # there, such as a camera's add-on; that address names nothing
-        # (found by review).
+        # there, such as a camera's add-on, so that address names
+        # nothing.
         for own in _own_hosts(hass):
             hosts.pop(own, None)
         return hosts
@@ -584,7 +570,7 @@ class TypeMixin:
         return {
             **known,
             # The model's answer, when this device has its own: what
-            # clearing its own puts in place (found by review).
+            # clearing its own puts in place.
             "model_answer": model["type"] if model else None,
             "set_on_name": (
                 self._device_name(set_on)  # type: ignore[attr-defined]
@@ -607,8 +593,9 @@ class TypeMixin:
     def page_set_type(self, device_id: str, choice: str | None, other: str | None = None) -> None:
         """Set the owner's type from the device page; None goes back to the entities' answer.
 
-        Like the Power row's (0.24.8), the answer covers every device of
-        the same model, and clearing it clears it for all of them.
+        Like the Power row's, the answer covers every device of the
+        same model, and clearing it clears it for all of them
+        (rule DEV-10).
         """
         self._device(device_id)  # type: ignore[attr-defined]
         key = self._power_key(device_id)  # type: ignore[attr-defined]
@@ -629,14 +616,14 @@ class TypeMixin:
             elif now["words"] and now["source"] == SOURCE_ENTITIES:
                 used = f", {now['words']} from its entities used"
             elif now["words"]:
-                # A known model or a network role (0.25.2, found by review).
+                # A known model or a network role.
                 used = f", Device Sentinel's {now['words']} used"
             else:
                 used = ""
             self._page_done(device_id, f"type entry removed{used}{many}")  # type: ignore[attr-defined]
             return
         if choice == TYPE_OTHER:
-            # Words that name a type on the list are saved as its name (#717).
+            # Words that name a type on the list are saved as its name (rule DEV-11).
             words = list_name(clean_type(other))
         elif choice in TYPE_CHOICES:
             words = choice
@@ -656,9 +643,9 @@ class TypeMixin:
         """A device gone from Home Assistant takes its own answer with it;
         a model answer it set passes to another device of the model.
 
-        hold: the device's record is held after its removal (ruling
-        #622), so its own answer stays and a model answer with no other
-        device to pass to stays with it until the purge.
+        hold: the device's record is held after its removal, so its own
+        answer stays and a model answer with no other device to pass to
+        stays with it until the purge (rule WATCH-07).
         """
         if not device_id:
             return

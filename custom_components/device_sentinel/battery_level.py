@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_level.py, Version: 0.27.1 (2026-10-23)
+# File: battery_level.py, Version: 0.27.10 (2026-10-27)
 
-"""A battery level in words, the same on every surface (0.27.1).
+"""A battery level in words, the same on every surface.
 
-James, 23 October 2026: Door 2nd Bedroom read 15.5% in the Daily Brief
-and on the Simple dashboard, 16% on the Advanced device page, and 15% in
-a phone push. The low verdict is made on the reading as reported, so a
-level is shown as reported, to one decimal at most and with no ".0":
-"15.5%", "16%", "100%". Rounded either way, 15.4 would read "15%" on a
-cell the threshold of 15 did not call low. The dashboard's `levelText`
+The low verdict is made on the reading as reported, so a level is
+shown as reported, to one decimal at most and with no ".0": "15.5%",
+"16%", "100%". Rounded either way, 15.4 would read "15%" on a cell
+the threshold of 15 did not call low (rule NOTE-10). The dashboard's `levelText`
 in panel.js says the same thing the same way.
 """
 

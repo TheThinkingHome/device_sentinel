@@ -3,21 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_addresses.py, Version: 0.25.5 (2026-10-10)
+# File: custom_components/device_sentinel/device_addresses.py, Version: 0.27.10 (2026-10-27)
 
-"""What the device page shows of a device's identity (0.25.5).
+"""What the device page shows of a device's identity (rule DASH-08).
 
-A row with nothing to show is not drawn (James, 10 October 2026). The
-registry's text fields count as empty when they hold nothing but a
-zero: 32 of the reference house's Zigbee2MQTT devices give "0" as a
-hardware version, which says nothing about the hardware.
+A row with nothing to show is not drawn. The registry's text fields
+count as empty when they hold nothing but a zero, because many
+Zigbee2MQTT devices give "0" as a hardware version, which says nothing
+about the hardware.
 
 Each address is named by its kind, one row per kind: the connections
 Home Assistant records (MAC, Zigbee, Bluetooth, UPnP), the IEEE address
 Zigbee2MQTT gives in its identifier, a Z-Wave device's node number,
 and a Matter device's serial number. Zigbee2MQTT records no connection
-at all, which is why the reference house showed no address for any of
-its 78 Zigbee devices before this.
+at all, so its devices' addresses come from the identifier (rule DEV-13).
 """
 
 from __future__ import annotations
@@ -49,7 +48,7 @@ MATTER_SERIAL_PREFIX = "serial_"
 def shown(value: Any) -> str | None:
     """A registry text field as the page shows it, or None for nothing.
 
-    Empty, blank and all-zero values ("0", "0.0", "0.0.0") are nothing.
+    Empty, blank and all-zero values are nothing.
     For display only: the record, the diagnostics and the battery
     library read the field as Home Assistant holds it."""
     if value is None:

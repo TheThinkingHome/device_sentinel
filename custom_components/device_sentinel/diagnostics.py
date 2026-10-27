@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.27.8 (2026-10-27)
+# File: diagnostics.py, Version: 0.27.10 (2026-10-27)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -21,7 +21,7 @@ machine-readable record for the maintainer. Device names are included
 because a report without them is unreadable. Network addresses are
 not: testers attach this file to public issues, so every MAC address
 keeps only its maker's half and every home-network address becomes a
-stand-in, the same one throughout the file (0.23.19). The config entry
+stand-in, the same one throughout the file (rule STOR-21). The config entry
 is redacted as a matter of course, since it carries the user's
 notification targets.
 """
@@ -98,9 +98,9 @@ from .device_fields import device_field
 
 # The notification targets are the user's own device names; they add
 # nothing to a diagnosis and are redacted by default. The brief's
-# targets joined them in 0.22.19: a notify service is often named after
-# an email address, as notify.someone_gmail_com, and the diagnostics
-# are what testers attach to public issues.
+# targets are redacted too, because a notify service is often named
+# after an email address, as notify.someone_gmail_com, and the
+# diagnostics are what testers attach to public issues.
 TO_REDACT = {
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -130,7 +130,7 @@ def _diagnostic_entities(
     """Return the device's diagnostic entities, enabled or not.
 
     Read live from the registry at download time and stored nowhere,
-    the same matchers the Switched Off cards read (ruling #698), so
+    the same matchers the Switched Off cards read (rule REC-05), so
     what this reports and what a card lists cannot drift apart.
     """
     ent_reg = er.async_get(hass)
@@ -152,11 +152,9 @@ def _diagnostic_entities(
                 "entity_id": ent.entity_id,
                 "kind": kind,
                 # Which integration published it, and whether that is
-                # the device's own (ruling #404). Without this a
+                # the device's own (rule WATCH-02). Without this a
                 # series that changed which sensor it reads cannot be
-                # told from a cell that was changed, which is exactly
-                # the question the second fleet's six flat-100 cells
-                # raised and could not answer from data.
+                # told from a cell that was changed.
                 "platform": ent.platform,
                 "own": ent.platform == coordinator._watched.get(device_id),
                 "elected": ent.entity_id
@@ -177,7 +175,7 @@ def _diagnostic_entities(
 
 
 def _all_entities(hass: HomeAssistant, device_id: str) -> list[dict[str, Any]]:
-    """Return every entity the registry holds for the device (0.25.0).
+    """Return every entity the registry holds for the device.
 
     What a device is can only be read from what it reports, since Home
     Assistant keeps no type for a device, and the rules that will name
@@ -189,7 +187,8 @@ def _all_entities(hass: HomeAssistant, device_id: str) -> list[dict[str, Any]]:
     rules do not need one, and a state can say whether a door is open
     or someone is home.
 
-    Read live from the registry at download time and stored nowhere.
+    Read live from the registry at download time and stored nowhere
+    (rule DEV-10).
     """
     ent_reg = er.async_get(hass)
     rows: list[dict[str, Any]] = []
@@ -229,7 +228,7 @@ def _infrastructure(
     or a router did. None of it says what any of them are, so a
     report describing a stack misbehaving cannot be matched against
     that hardware's own documentation, and the only way to learn the
-    model has been to ask (ruling #398).
+    model has been to ask (rule DEV-16).
 
     Read live from the registry and the config entries, stored
     nowhere. One entry per domain that carries the house: the stacks
@@ -272,10 +271,10 @@ def _infrastructure(
 
 
 async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
-    """One stack's study for the download, or what stopped it (0.23.10).
+    """One stack's study for the download, or what stopped it.
 
-    The study reads a library's live objects, and one that throws
-    failed the whole download, which is how a tester sends what
+    The study reads a library's live objects, and one that throws must
+    not fail the whole download, which is how a tester sends what
     Extended Diagnostics found. The error is recorded in its place.
     """
     try:
@@ -288,9 +287,8 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
 
 
 
-# Network addresses are redacted from the download (ruling #548): testers
-# attach it to public GitHub issues, and the reference rig's carried 23
-# MAC addresses and the router's address. Each distinct address gets a
+# Network addresses are redacted from the download, because testers
+# attach it to public GitHub issues. Each distinct address gets a
 # numbered stand-in, the same wherever it appears, so a device still
 # reads as the same device in every section and a fault can still be
 # traced. A MAC keeps its first half, which names only the maker
@@ -304,17 +302,14 @@ _MAC = re.compile(
     r"(?:\2[0-9A-Fa-f]{2}){3}\b(?![:-][0-9A-Fa-f]{2})"
 )
 # The same address without separators, and in the dotted form, as some
-# integrations register a device: the study snapshot's identifiers
-# carried eight bare MACs on the reference rig and nine on the second
-# house (the 0.23.19 adversarial round). A bare token counts only with
-# a letter A to F in it, so a plain run of digits is never taken for
-# one.
+# integrations register a device. A bare token counts only with a
+# letter A to F in it, so a plain run of digits is never taken for one
+# (rule STOR-21).
 _MAC_BARE = re.compile(r"(?<![0-9A-Za-z])[0-9A-Fa-f]{12}(?![0-9A-Za-z])")
 _MAC_DOTTED = re.compile(r"(?<![0-9A-Za-z.])[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}(?![0-9A-Za-z.])")
 # Only a home network's addresses, or the host of a web address: four
-# dotted numbers are also how some firmware spells a version (six on the
-# second house, 12.4.0.3 and 45.0.7.6 among them), and a version is the
-# first thing a fault report needs.
+# dotted numbers are also how some firmware spells a version, and a
+# version is the first thing a fault report needs.
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
 _IPV4 = re.compile(
     r"(?:(?<=://)" + _OCTET + r"(?:\." + _OCTET + r"){3}"
@@ -378,14 +373,14 @@ def _redact_addresses(payload: Any) -> Any:
     return walk(payload)
 
 def _addresses(device: Any, key: bytes) -> list[str]:
-    """A device's addresses as "kind:fingerprint", sorted (0.25.2).
+    """A device's addresses as "kind:fingerprint", sorted.
 
     Ten hex characters of an HMAC of the address under a key made for
     this download alone: two devices with the same address show the
     same fingerprint inside one file, which is all a reader needs. A
     plain hash could be reversed by trying every address a maker uses,
     and a fresh key means nothing outside the file can be looked up
-    (found by review).
+    (rule STOR-21).
     """
     found = []
     for item in device_field(device, "connections", set()) or ():
@@ -402,7 +397,7 @@ async def async_get_config_entry_diagnostics(
     """Return the integration's learned state as diagnostics."""
     coordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
-    # Fingerprints match inside this download only (0.25.2).
+    # Fingerprints match inside this download only.
     address_key = os.urandom(16)
 
     devices: dict[str, Any] = {}
@@ -418,7 +413,7 @@ async def async_get_config_entry_diagnostics(
         )
         devices[device_id] = {
             # A removed device whose record is held keeps the name it
-            # had (ruling #622).
+            # had (rule WATCH-07).
             "name": (
                 (device.name_by_user or device.name)
                 if device
@@ -428,13 +423,13 @@ async def async_get_config_entry_diagnostics(
             # questions a report cannot answer without it: which
             # coordinator or router somebody runs when their stack
             # misbehaves, and whether a battery library would match
-            # their fleet at all (ruling #398).
-            # A child device (2026.9) carries none of these, and reads
+            # their fleet at all (rule DEV-16).
+            # A child device carries none of these, and reads
             # None through device_field rather than a deprecation line.
             "manufacturer": device_field(device, "manufacturer"),
             "model": device_field(device, "model"),
             # Finer than the display name where a device gives it, and
-            # what a model group is keyed on (0.23.4).
+            # what a model group is keyed on (rule DEV-14).
             "model_id": device_field(device, "model_id"),
             "sw_version": device_field(device, "sw_version"),
             "hw_version": device_field(device, "hw_version"),
@@ -444,8 +439,8 @@ async def async_get_config_entry_diagnostics(
             or (coordinator._set_aside.get(device_id) or (None, None, None))[1],
             # Entities other integrations added to this device, by
             # integration, counted over the whole registry rather than
-            # only the entities read above (0.22.21). None of them
-            # counts as the device reporting.
+            # only the entities read above. None of them counts as the
+            # device reporting (rule WATCH-02).
             "foreign_entities": dict(
                 coordinator._foreign_by_device.get(device_id) or {}
             ),
@@ -459,34 +454,33 @@ async def async_get_config_entry_diagnostics(
             # not, with its live state. This is what separates a
             # device that is switched off from one whose entities are
             # disabled from one the integration is deaf to: all three
-            # read event_count 0 in the record, and 27 devices on the
-            # first external fleet could not be told apart without it
-            # (ruling #305).
+            # read event_count 0 in the record, and cannot be told
+            # apart without it.
             "entities": _diagnostic_entities(
                 hass, coordinator, device_id
             ),
             # Every entity of the device, for working out what it is
-            # (0.25.0).
+            # (rule DEV-10).
             "all_entities": _all_entities(hass, device_id),
             # The record, less the values held while a verdict stands:
             # they are the device's own states, a lock or a presence
-            # among them, and the download carries no states (0.25.0).
+            # among them, and the download carries no states.
             # Only how many it holds (rule WATCH-12).
             "statistics": {k: v for k, v in record.items() if k != DEV_HELD_VALUES},
             "held_value_count": len(record.get(DEV_HELD_VALUES) or {}),
-            # Weekly averages and the trend read from them (0.23.6).
+            # Weekly averages and the trend read from them (rule BAT-18).
             "battery_trend": coordinator.battery_trend_summary(record),
-            # What powers it and where that came from (0.24.7).
+            # What powers it and where that came from (rule DEV-06).
             "power": coordinator.power_diagnostics(device_id),
-            # What it is and where that came from (0.25.1).
+            # What it is and where that came from (rule DEV-10).
             "type": coordinator.type_diagnostics(device_id),
             # Its addresses, each as a short fingerprint so no address
             # leaves the house, and the device it hangs from: what
-            # ties one piece of hardware's copies together (0.25.2).
+            # ties one piece of hardware's copies together (rule WATCH-06).
             "addresses": _addresses(device, address_key),
             "via_device": device_field(device, "via_device_id"),
             "copy_of": (getattr(coordinator, "_copy_of", None) or {}).get(device_id),
-            # Its integration's iot_class (0.23.9).
+            # Its integration's iot_class.
             "connects": coordinator.iot_class_of(
                 coordinator._watched.get(device_id)
                 or (coordinator._set_aside.get(device_id) or (None, None, None))[1]
@@ -499,16 +493,14 @@ async def async_get_config_entry_diagnostics(
             # than a perfect link. It is confirmed only when the
             # device spoke for three consecutive days and said
             # nothing but the fill value: a zero reading count
-            # beside a rail count above zero (rulings #78, #322).
+            # beside a rail count above zero (rule SIG-07).
             "signal_railed": coordinator.signal_railed(record),
             # The discharge soak: the daily battery level series and
             # the deltas derived from it (a positive delta is a drop).
             # A coin cell is flat for most of its life and then falls
             # away, so a level threshold can fire too late; this
-            # series is the ninety-day measurement a rate-of-fall
-            # detector will be built from. Provisional and short until
-            # it has depth; the velocity flag reads it in a later
-            # release (recording since 0.4.2, ruling #62).
+            # series is what the falling and time-left judgments read
+            # (rule BAT-05).
             "battery_daily_value": list(
                 (record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:]
             ),
@@ -538,17 +530,16 @@ async def async_get_config_entry_diagnostics(
             "first_installed": coordinator.first_installed,
             "setup_count": coordinator.setup_count,
             "stats_epoch": coordinator.data.get(DATA_STATS_EPOCH),
-            # How the house's battery forecasts came out (ruling #732);
+            # How the house's battery forecasts came out (rule BAT-15);
             # each device's own rows are in its statistics.
             "battery_forecast_tally": coordinator.data.get(DATA_BATTERY_FORECAST_TALLY),
             "battery_empty_tally": coordinator.data.get(DATA_BATTERY_EMPTY_TALLY),
-            # Each battery replaced, for a later survival model (#739).
+            # Each battery replaced, for a later survival model (rule BAT-08).
             "battery_lives": coordinator.battery_lives_view() if isinstance(coordinator.data.get(DATA_BATTERY_LIVES), list) else [],
             # The version that last wrote this file, so an upgrade
-            # start is verifiable from a download (ruling #303 gave
-            # it a job; this made it visible).
+            # start is verifiable from a download (rule STOR-19).
             "last_version": coordinator.data.get(DATA_LAST_VERSION),
-            # The history file (0.26.2): which copy the load joined, or
+            # The history file (rule STOR-03): which copy the load joined, or
             # why none was, what it holds, and how often it was written
             # this session.
             "history": {
@@ -582,7 +573,7 @@ async def async_get_config_entry_diagnostics(
             "set_aside": len(coordinator._set_aside),
             "deviceless_entities": coordinator.deviceless_count,
             # Integrations that own no device and only add entities to
-            # devices other integrations own (0.22.21), and how many
+            # devices other integrations own, and how many
             # such entities sit on watched devices in all.
             "no_hardware_integrations": sorted(
                 coordinator._no_hardware_integrations
@@ -596,10 +587,10 @@ async def async_get_config_entry_diagnostics(
             # never a stale truth, and it is the whole visible surface
             # of stack auto-detection; every later intervention
             # detector attaches only where its stack appears here
-            # (ruling #143).
+            # (rule STACK-01).
             "stacks": sorted(coordinator._stacks),
             # Each hub whose devices are judged by it, and whether its
-            # connection reads up (rulings #663 to #665).
+            # connection reads up (rules STACK-09, STACK-10).
             "hubs": coordinator.hub_diagnostics(),
             # Devices keeping their last good values while a verdict
             # stands, and their entities on watch for a value handed
@@ -614,7 +605,7 @@ async def async_get_config_entry_diagnostics(
             ),
             "study": coordinator.study_diagnostics,
             # Stacks whose own words could carry a detector, for
-            # detectors that cannot be built yet (0.22.26). Each is
+            # detectors that cannot be built yet. Each is
             # gathered only behind its own Extended Diagnostics switch
             # (rule STACK-11), and each is empty where the stack is not
             # in the house.
@@ -635,7 +626,7 @@ async def async_get_config_entry_diagnostics(
             ),
             # Each Hue bridge's event stream and each device's link, and
             # each SmartThings location's event stream and each device's
-            # availability, as the minute check reads them (0.26.4).
+            # availability, as the minute check reads them (rule STACK-08).
             "hue": await _studied(lambda: coordinator.stack_diagnostics(HUE_DOMAIN)),
             "smartthings": await _studied(
                 lambda: coordinator.stack_diagnostics(SMARTTHINGS_DOMAIN)
@@ -644,7 +635,7 @@ async def async_get_config_entry_diagnostics(
             # Each detected bridge's current state (running, binding,
             # down, unknown), so a gap discarded as a pairing is
             # auditable from a diagnostics download and not only from
-            # the live sensor, which is off by default (ruling #149).
+            # the live sensor (rule STACK-03).
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)
                 for stack in coordinator.bridge_stacks
@@ -662,7 +653,7 @@ async def async_get_config_entry_diagnostics(
             ),
         },
         # How many devices each Switched Off card lists, and how many
-        # of those a person switched off themselves (ruling #698), so a
+        # of those a person switched off themselves (rule REC-05), so a
         # card on a house can be supported from a download. Battery
         # Voltage Switched Off is counted from the card's own list, so
         # the count matches what the card shows (rule REC-09).
@@ -678,20 +669,20 @@ async def async_get_config_entry_diagnostics(
                 else coordinator.switched_off_devices(kind),
             )
         },
-        # The answers owners set on device pages (0.25.1): how many the
+        # The answers owners set on device pages (rule STOR-20): how many the
         # answers file holds, and the ones held for devices Device
         # Sentinel does not watch, in one place, so an excluded
         # device's answers can be seen before it is watched again.
         "answers": coordinator.answers_diagnostics(),
-        # One piece of hardware shown as several devices (0.25.2): each
-        # group of registry devices found to be one box, and each copy
-        # set aside with the device it is watched through.
+        # One piece of hardware shown as several devices: each group of
+        # registry devices found to be one device, and each copy set
+        # aside with the device it is watched through (rule WATCH-06).
         "same_hardware": {
             "groups": [sorted(g) for g in (getattr(coordinator, "_hardware_groups", None) or [])],
             "copies": dict(getattr(coordinator, "_copy_of", None) or {}),
         },
         # Watched devices read as groups of the same maker, model and
-        # hardware version, with each firmware inside (0.23.4). Worked
+        # hardware version, with each firmware inside (rule DEV-14). Worked
         # out now from the registry and the records, stored nowhere,
         # and read by nothing that judges: it is here to be observed
         # before anything is built on it.
@@ -703,7 +694,7 @@ async def async_get_config_entry_diagnostics(
         # What the house's muted gaps are actually made of. A
         # taint carries the reason it was set rather than a bare flag,
         # so a rhythm that skipped a gap can be traced to the cause
-        # (ruling #164).
+        # (rule FRZ-14).
         # Counted from the episode record rather than from the live
         # flags, because a taint is spent the moment the device
         # speaks and the standing count is almost always zero, while
@@ -722,35 +713,32 @@ async def async_get_config_entry_diagnostics(
         # raw timestamps the report renders. An episode is a silence
         # that passed the device's own learned basis, and it records
         # whether it ended because the device spoke or because
-        # something made it speak (ruling #103).
+        # something made it speak (rule FRZ-08).
         "silence_episodes": coordinator.data.get(DATA_EPISODES, []),
         # The incident timeline every renderer reads. It is the
         # single memory: the push, the brief, the email and the card
         # are all renderings over it, and none derives its own truth
-        # (ruling #107).
+        # (rule NOTE-01).
         "incidents": coordinator.data.get(DATA_INCIDENTS, []),
-        # The signal stress table (0.24.0): each silence's signal when
-        # it opened and how it ended (#246). With the signal now taken
-        # when a device goes unavailable, on the incident rows above,
-        # this is the evidence #172 needs, carried in testers' files.
+        # The signal stress table: each silence's signal when it opened
+        # and how it ended, the evidence a later signal alert needs,
+        # carried in testers' files (rule SIG-11).
         "signal_stress": coordinator.data.get(DATA_SIGNAL_STRESS, []),
         # What the engine would have said, composed but never sent
         # while the dry run lasts. One composer serves every channel,
         # so an event cannot be described differently by two of them
-        # (ruling #120).
+        # (rule NOTE-10).
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal. The split keeps the
         # fast-changing clock fields in a small companion file
         # written on every routine save, and everything learned in the
-        # main file written only when it changes (arrived in 0.8.8,
-        # ruling #101).
+        # main file written only when it changes (rule STOR-01).
         "split": {
             "clock_fields": list(CLOCK_FIELDS),
             "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
-            # The phase field is gone with the transition it
-            # described (ruling #241): the main file is written without the
-            # clock fields, always, so a field reporting which of two
-            # shapes is in use would have one answer forever.
+            # No phase field: the main file is always written without
+            # the clock fields, so a field reporting which shape is in
+            # use would have one answer forever.
             #
             # Both stamps, so this file can answer on its own whether
             # the split is healthy: the hot one should be the newer,
@@ -762,7 +750,7 @@ async def async_get_config_entry_diagnostics(
         # How the last stop went and what the record looked like on
         # the way back up: whether the last stop was asked for, and
         # how many silence episodes came back with no ending because
-        # their closing died with the machine (rulings #163 and #167).
+        # their closing died with the machine (rules FRZ-20, STOR-18).
         # Together these answer, from a
         # download alone, whether a fleet whose clocks all start at
         # one moment was reset deliberately, and whether any silence
@@ -775,13 +763,13 @@ async def async_get_config_entry_diagnostics(
             "last_alive": coordinator.last_alive,
             "orphan_episodes": coordinator.orphan_episodes,
             # How long each bridge, broker and integration took to
-            # load after this start (ruling #445).
+            # load after this start (rule UP-04).
             "upstreams_loaded_after": dict(
                 coordinator.upstreams_loaded_after
             ),
         },
         # Records of devices removed from Home Assistant, held 30 days
-        # in case the device comes back (ruling #622).
+        # in case the device comes back (rule WATCH-07).
         "held_records": coordinator.held_records(),
         "devices": devices,
     }

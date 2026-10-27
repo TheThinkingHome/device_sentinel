@@ -3,25 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.9 (2026-10-27)
+# File: journal.py, Version: 0.27.10 (2026-10-27)
 
 """The forensic record: silence episodes, incidents, system events.
 
-The recording half of what was narrative.py, split out because the
-two halves never called each other once (ruling #202). This half
-writes what happened; narrative.py reads it back and turns it into
-sentences. Nothing here composes prose and nothing there records.
+The recording half of the narrative, kept apart because the two
+halves never call each other (rule CODE-11). This half writes what
+happened; narrative.py reads it back and turns it into sentences.
 
-What is written here is the single memory every channel renders
-over: the push, the brief, the email and the card all read these
-rows and none derives its own truth (ruling #107). An episode is a
-silence that passed the device's own learned basis and it records
-whether it ended because the device spoke or because something
-made it speak (ruling #103).
+Every channel renders over these rows: the push, the brief, the email
+and the card all read them, and none derives its own truth
+(rule NOTE-01). An episode is a silence that passed the device's own
+learned basis, and it records whether the device spoke or something
+made it speak (rule FRZ-08).
 
-A file split rather than a boundary. These are mixins on the
-coordinator and read its state freely, so `self` is the coordinator
-throughout.
+These are mixins on the coordinator and read its state freely, so
+`self` is the coordinator throughout.
 """
 
 from __future__ import annotations
@@ -102,13 +99,12 @@ from .const import (
     SYS_DEVICE_ID,
 )
 
-# The taint labels a promotion may replace. A taint carries the
-# reason learning skipped a gap rather than a bare flag, so a row can
-# name the cause instead of always saying unavailable (ruling #164).
-# Built from the
-# reasons rather than written out, so a reason added later is covered
-# without a second place to remember. Pairing is deliberately absent:
-# it is a hand intervention and more specific than any cause above it.
+# The taint labels a promotion may replace. A taint carries the reason
+# learning skipped a gap, so a row can name the cause instead of always
+# saying unavailable (rule FRZ-14). Built from the reasons, so a reason
+# added later is covered without a second place to remember. Pairing
+# is absent because it is a hand intervention and more specific than
+# any cause above it.
 _TAINT_LABELS = frozenset(
     f"no ({reason})" for reason in (TAINT_UNAVAILABLE, TAINT_UNKNOWN)
 )
@@ -119,15 +115,11 @@ def _promoted_learned(ended: str | None, learned: str | None) -> str | None:
 
     Where more than one reason fits, the widest wins, so a device
     felled by its bridge reads as the bridge rather than as its own
-    unavailability (ruling #164).
-
-    A device felled by its bridge showed unavailable, which is true
-    and shallow: the row worth reading names the bridge. The episode
-    already knows what ended it, stamped when the intervention
-    happened, so the promotion is resolved here rather than where the
-    label is built, where the storm behind a reconnect has long since
-    released. Anything that is not a taint label passes through, so
-    "yes" and a pairing discard are returned unchanged.
+    unavailability (rule FRZ-14). Resolved here, from the episode's
+    stamp, because by the time the label is built the storm behind a
+    reconnect has long since released. Anything that is not a taint
+    label passes through, so "yes" and a pairing discard are returned
+    unchanged.
     """
     if learned not in _TAINT_LABELS:
         return learned
@@ -141,13 +133,12 @@ class JournalMixin:
     def _append_row(self, table: str, row: dict[str, Any]) -> bool:
         """Write one table row through the boundary.
 
-        Every writer of a table row comes through here (ruling #370).
-        A row that fits its shape is appended and True is returned. A
-        row that does not is dropped at once, named as a writer
-        fault, and False is returned, so the fault is repaired the
-        instant it is made rather than at the next save, and no
-        reader or file ever carries it. The writer keeps running: a
-        fault in one row is not a reason to stop judging the fleet.
+        Every writer of a table row comes through here. A row that
+        fits its shape is appended and True is returned. A row that
+        does not is dropped at once, named as a writer fault, and
+        False is returned, so no reader or file ever carries it. The
+        writer keeps running, because a fault in one row is no reason
+        to stop judging the house (rule STOR-06).
         """
         why = row_damage(table, row)
         if why is None:
@@ -160,10 +151,10 @@ class JournalMixin:
             table,
             why,
         )
-        # Repair at the point of detection (ruling #370): the row
-        # never reaches the table, so no reader and no file ever
-        # carries it. There is nothing on disk to preserve, so no
-        # evidence copy; the event and the notice say it happened.
+        # Repair at the point of detection, so no reader and no file
+        # ever carries the row. There is nothing on disk to preserve,
+        # so no evidence copy; the event and the notice say it
+        # happened (rule STOR-09).
         if table != DATA_SYSTEM_EVENTS:
             # A refused system event cannot itself be recorded as a
             # system event without risking the same refusal twice.
@@ -173,11 +164,10 @@ class JournalMixin:
     def incident_rows(self) -> list[dict[str, Any]]:
         """Return the incident rows.
 
-        No filter (ruling #370): every row behind this line arrived
-        through the load gate or the write seam, so the check has
-        vouched for all of them and a reader guard would be the
-        pattern the boundary retired. A list copy, so a caller that
-        sorts or slices does not reorder the store.
+        No filter, because every row arrived through the load gate or
+        the write seam and a reader guard would only repeat the check
+        (rule STOR-06). A list copy, so a caller that sorts or slices
+        does not reorder the store.
         """
         return list(self.data.get(DATA_INCIDENTS) or [])
 
@@ -211,25 +201,17 @@ class JournalMixin:
     def _note_silences(self, now: float) -> None:
         """Open an episode for any device well into its own patience.
 
-        The threshold is basis plus a share of that device's grace:
-        the silence has spent that share of the distance from the
-        rhythm to the freeze line (ruling #105; a setting under #117,
-        a constant since #394). Basis alone, which is what the first
-        version shipped, was too sensitive at the fast end, where a
-        rhythm of seconds is exceeded constantly and trivial silences
-        filled the file, while the same rule was properly selective
-        for a device measured in hours. A share of grace scales with
-        the patience each device has earned, so a 36-second device
-        opens at minutes and an hours-long device opens at hours,
-        both a clear distance short of judgment.
+        The threshold is basis plus a fixed share of that device's
+        grace (rule FRZ-08). Basis alone is too sensitive at the fast
+        end, where a rhythm of seconds is exceeded constantly. A share
+        of grace scales with the patience each device has earned, so
+        a 36-second device opens at minutes and an hours-long device
+        at hours, both short of judgment.
 
-        Devices whose freeze judgment is suppressed are skipped
-        (ruling #106). Muting suppresses judgment and reporting while
-        observation continues, and this file exists to explain
-        verdicts: a device that can never be judged frozen has no
-        verdict to explain, so its silences are noise here. A device
-        muted only for battery or signal is still judged for
-        freeze and still belongs.
+        Devices whose freeze judgment is muted are skipped, because a
+        device that can never be judged frozen has no verdict to
+        explain (rule BRIEF-16). A device muted only for battery or
+        signal is still judged for freeze and still belongs.
         """
         if now < self._grace_until:
             # Startup grace: every stored clock is stale by however
@@ -240,16 +222,16 @@ class JournalMixin:
             # are still open in the record from before the restart,
             # and new ones open once grace closes.
             return
-        # Through watched_records, the one line every reading
-        # surface shares (ruling #257). The records behind it are
-        # ones the boundary has vouched for (ruling #370).
+        # Through watched_records, the one line every reading surface
+        # shares (rule WATCH-03). The boundary has vouched for the
+        # records behind it (rule STOR-06).
         for device_id, record in self.watched_records():
             if device_id in self._muted_devices or self._freeze_muted(
                 device_id
             ):
                 continue
-            # A device judged by its hub is never judged frozen (#664),
-            # so its silences have no verdict to explain.
+            # A device judged by its hub is never judged frozen, so its
+            # silences have no verdict to explain (rule STACK-09).
             if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
                 continue
             last = record.get(DEV_LAST_ACTIVITY)
@@ -304,14 +286,12 @@ class JournalMixin:
     ) -> dict[str, Any] | None:
         """Return the device's signal context at this moment, or None.
 
-        Captured when an episode opens (ruling #246): the last reading, and the
-        day's running mean and deviation so far. (The dwell line in effect rode
-        here until its recording retired in 0.23.19, as ruling #310 scheduled.)
-        The anchor #172 waits on is the correlation between signal level and
-        rhythm stress, and the join must be taken when the silence begins,
-        because the statistics have moved on by the time anyone analyzes them.
-        None where the device reports no signal, which the analysis reads as no
-        evidence rather than as a zero.
+        Captured when an episode opens: the last reading, and the day's
+        running mean and deviation so far (rule SIG-11). The join must
+        be taken when the silence begins, because the statistics have
+        moved on by the time anyone analyzes them. None where the
+        device reports no signal, which reads as no evidence rather
+        than as a zero.
         """
         value = record.get(DEV_SIGNAL_VALUE)
         if value is None:
@@ -321,10 +301,9 @@ class JournalMixin:
         if count > 0:
             mean = round(run, 2)
             sd = round(max(0.0, m2 / count) ** 0.5, 2)
-        # The reading and the device's good state (#172): what the
-        # Bayesian anchor needs. The dwell danger line that rode here
-        # was retired from recording in 0.23.19, as ruling #310
-        # scheduled; episodes saved before keep theirs.
+        # The reading and the device's good state, which a later signal
+        # alert needs (rule SIG-11). Episodes saved with a dwell line
+        # keep theirs.
         return {
             EP_SIG_VALUE: value,
             EP_SIG_MEAN: mean,
@@ -374,16 +353,13 @@ class JournalMixin:
     ) -> None:
         """Fold a completed episode into the long-lived anchor series.
 
-        One compact row per episode (ruling #246): who, when the silence
-        began, how long it ran, how it ended, and the signal snapshot
-        from the moment it opened. Episodes themselves are trimmed at
-        fourteen days, which is right for a forensic file and wrong
-        for the anchor: the correlation between signal level and
-        rhythm stress needs seasons of rows, so this series rides the
-        history retention setting instead. Rows without a snapshot
-        are folded too, because a device that reports no signal is
-        evidence about the population even though it cannot anchor a
-        scale.
+        One compact row per episode: who, when the silence began, how
+        long it ran, how it ended, and the signal snapshot from the
+        moment it opened (rule SIG-11). Episodes are trimmed at
+        fourteen days, but this series needs seasons of rows, so it
+        rides the history retention setting instead. Rows without a
+        snapshot are folded too, because a device with no signal is
+        still evidence about the house.
         """
         since = episode.get(EP_SINCE)
         self._append_row(
@@ -404,16 +380,16 @@ class JournalMixin:
     ) -> None:
         """Mark open episodes as ended by an intervention.
 
-        A reboot or a bridge reconnect truncates a silence: we know
-        the device had been quiet at least this long, never how much
-        longer it would have stayed quiet. The row keeps that honesty
-        by recording the cause and waiting for the lag.
+        A restart or a bridge reconnect truncates a silence: the device
+        had been quiet at least this long, but how much longer it would
+        have stayed quiet is unknown. The row keeps that honesty by
+        recording the cause and waiting for the lag (rule FRZ-08).
 
         Scoped by entry_id where the intervention belongs to one
-        integration. A Zigbee bridge reconnecting cannot revive a
-        HomeKit accessory, and crediting it with one puts a false
-        cause in the brief, which is what happened on 2026-07-23.
-        A restart carries no entry_id, because it touches everything.
+        integration, because a Zigbee bridge reconnecting cannot revive
+        a HomeKit accessory, and crediting it with one puts a false
+        cause in the brief. A restart carries no entry_id, because it
+        touches everything.
         """
         stamped = 0
         for episode in self.episode_rows():
@@ -444,8 +420,8 @@ class JournalMixin:
         kept = [
             episode
             for episode in episodes
-            # Walked without guards (ruling #370): every row here
-            # came through the gate or the seam.
+            # Walked without guards, because every row here came
+            # through the gate or the seam (rule STOR-06).
             if episode[EP_SINCE] >= cutoff
             or episode.get(EP_ENDED) is None
             or (
@@ -461,11 +437,8 @@ class JournalMixin:
     def incident_settle_seconds(self) -> float:
         """Return how long a resolved problem stays reopenable.
 
-        A constant since 0.20.11. It was a slider while sixty seconds
-        was a guess; replayed over both fleets it left one untouched
-        and collapsed the other's 3,866 rows to 614, and neither
-        fleet ever moved it, so the guess is settled (rulings #318
-        and #394).
+        A constant, not a setting, because no house ever needed to
+        move it (rule LIST-06).
         """
         return float(INCIDENT_SETTLE_SECONDS)
 
@@ -485,8 +458,8 @@ class JournalMixin:
 
         The whole life of a problem on one timeline: opened when a
         detection first names it, resolved when it clears (with the
-        cause and the duration where we know them), acknowledged when
-        a person checks the box. Renderers read this and nothing
+        cause and the duration where they are known), acknowledged
+        when a person ticks the item. Renderers read this and nothing
         else, so what the phone says, what the brief says, and what
         a future voice answer says can never disagree.
         """
@@ -515,14 +488,14 @@ class JournalMixin:
             # unavailable keeps the freeze's start, hours earlier.
             and (self.data.get(DATA_DEVICES, {}).get(device_id) or {}).get(DEV_DOWN_BEGAN_AS) == kind
         ):
-            # When it went, for the table and the sentence (0.27.3).
+            # When it went, for the table and the sentence.
             entry[INC_SINCE] = float(since)
         if kind == FREEZE_CATEGORY_UNAVAILABLE and event == INCIDENT_OPENED:
-            # The device's signal the moment it dropped out (0.24.0).
-            # Link failures surface as a device going unavailable, not
-            # as a freeze silence, so without this the evidence #172
-            # waits on never reaches the record. Its outcome is the
-            # resolved row that closes it.
+            # The device's signal the moment it dropped out. Link
+            # failures surface as a device going unavailable, not as a
+            # freeze silence, so without this the evidence never
+            # reaches the record. The resolved row that closes it holds
+            # its outcome (rule SIG-11).
             record = self.data.get(DATA_DEVICES, {}).get(device_id)
             entry[INC_SIGNAL] = (
                 self._signal_snapshot(record) if record is not None else None
@@ -536,13 +509,10 @@ class JournalMixin:
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
-        # An opening whose problem is still on the to-do list is not
-        # history, it is current state that happens to be old, and
-        # trimming it leaves its eventual resolve with nothing to
-        # measure against (ruling #438). On 26 August a vibration
-        # sensor went unavailable and came back twenty days later;
-        # the brief said "recovered after ?" because the opening had
-        # aged out on 9 September while the fault was live and listed.
+        # An opening whose problem is still on the list is current
+        # state that happens to be old, and trimming it leaves its
+        # eventual resolve with nothing to measure against, so the
+        # brief says "recovered after ?" (rule LIST-11).
         #
         # The trim runs only when a row is written, so the row that
         # deleted it belonged to some other device: a busy house
@@ -555,8 +525,8 @@ class JournalMixin:
         # and a mute can be lifted, and either would leave a resolve
         # with no opening behind it.
         listed = self._listed_openings()
-        # Walked without guards (ruling #370): the gate and the seam
-        # vouch for every row this pruner dates.
+        # Walked without guards, because the gate and the seam vouch
+        # for every row this pruner dates (rule STOR-06).
         self.data[DATA_INCIDENTS] = [
             row
             for row in incidents
@@ -571,7 +541,8 @@ class JournalMixin:
         Read from the stored rows rather than from `todo_items`,
         because the trim runs inside a write and must not depend on
         the display filter. A kind still named here is a problem a
-        person can still see, so its opening is protected (#438).
+        person can still see, so its opening is protected
+        (rule LIST-11).
         """
         listed: set[tuple[str, str]] = set()
         for item in self.data.get(DATA_TODO_ITEMS) or []:
@@ -589,27 +560,20 @@ class JournalMixin:
         just closed, rather than starting a new one.
 
         A device whose reading crosses a threshold back and forth
-        writes a pair of rows every crossing, and the recorder had
-        nothing to stop it. The first external fleet produced 3,637
-        rows for one device in five days, 94 percent of its whole
-        incident history, from a propane sensor whose battery level
-        swings: the level crossed the low threshold and its clear
-        margin all day, and the days-till-empty projection, which
-        divides that same live level by a daily slope, crossed the
-        horizon on its own schedule. Two kinds, two thresholds, one
-        unstable input.
+        writes a pair of rows every crossing. A battery level that
+        swings across the low threshold all day, or a days-till-empty
+        projection that divides that same live level by a daily slope,
+        can write thousands of rows for one device in days.
 
         So when a kind opens again on the same device within the
         cooling-off window, the close is undone and the original
-        opening stands. The episode ends up spanning the whole
-        unstable stretch, which is what a person means by "that
+        opening stands (rule LIST-06). The episode ends up spanning the
+        whole unstable stretch, which is what a person means by "that
         device has been low since Tuesday" anyway.
 
-        Measured rather than chosen: at sixty seconds the external
-        fleet's 3,866 rows become 614 and the reference fleet's 509
-        are untouched, so the rule bites pathological chatter and
-        nothing else. Past two minutes it starts collapsing real
-        recoveries on a healthy fleet.
+        Sixty seconds collapses that chatter and leaves real recoveries
+        on a healthy house untouched; past two minutes it starts
+        collapsing real recoveries.
         """
         window = self.incident_settle_seconds
         if window <= 0 or entry[INC_EVENT] != INCIDENT_OPENED:
@@ -681,11 +645,11 @@ class JournalMixin:
                 SYS_DURATION: duration,
                 # A storm carries its count, and an outage that has
                 # ended carries its total and its worst moment
-                # (ruling #442).
+                # (rule UP-11).
                 **({SYS_DEVICES: devices} if devices is not None else {}),
                 **({SYS_WORST: worst} if worst is not None else {}),
                 # The one event that names a device: an act from its
-                # page (0.24.5), shown on that device's line.
+                # page, shown on that device's line.
                 **({SYS_DEVICE_ID: device_id} if device_id is not None else {}),
             },
         )
@@ -707,10 +671,9 @@ class JournalMixin:
         daily histories, so a mistake saved by hand can be undone."""
         cutoff = now - self.retention_days * 86400.0
         events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
-        # A damaged row is kept for the repair to drop and count: the
-        # clock repair writes its event before the rows are repaired,
-        # and reading a junk row here raised and failed the save
-        # (0.25.5, found by the convergence fuzz).
+        # A damaged row is kept for the repair to drop and count,
+        # because the clock repair writes its event before the rows
+        # are repaired, and reading a junk row here failed the save.
         kept = [
             row for row in events
             if not isinstance(row, dict)
@@ -756,20 +719,18 @@ class JournalMixin:
         """Return how a device's silence ended, if the record says.
 
         Two sources, in order. A person's pairing window open at the
-        return, found by the same attribution the brief uses (#535).
-        Then the device's own episode, bounded to this incident so an
-        episode days old cannot answer it (#228): one closed by a
-        person's act names that act, one the device closed itself says
-        so, and a restart or an outage earns no credit (#535). Only
-        silences carry a cause; a battery or a rail recovering has no
-        lever to name.
+        return, read from the same attribution the brief uses. Then the
+        device's own episode, bounded to this incident so an episode
+        days old cannot answer it: one closed by a person's act names
+        that act, one the device closed itself says so, and a restart
+        or an outage earns no credit (rule BRIEF-05). Only silences
+        carry a cause; a battery or a rail recovering has no lever to
+        name.
         """
         # A person's pairing window open at the return is credited here
-        # as the brief credits it, from the same attribution (#535), so
-        # the automation event and the stored record say intervention
-        # where the brief says revived. Switch Hall Living on the
-        # reference rig, 28 September: the brief credited the window,
-        # the bus said unknown.
+        # as the brief credits it, from the same attribution, so the
+        # automation event and the stored record agree with the brief
+        # (rule BRIEF-05).
         try:
             spans = attribution.windows(self.data.get(DATA_SYSTEM_EVENTS) or [])
             window = attribution.attribute(
@@ -791,12 +752,9 @@ class JournalMixin:
         for episode in reversed(self.episode_rows()):
             if episode[EP_DEVICE_ID] != device_id:
                 continue
-            # Bounded to the incident. Without this the newest
-            # episode for the device answered whatever the question
-            # was, so an incident that opened no episode of its own
-            # took its cause from one days old, and 74 devices
-            # recovering from one broker outage were given four
-            # different explanations (ruling #228).
+            # Bounded to the incident, so an incident that opened no
+            # episode of its own does not take its cause from one days
+            # old (rule BRIEF-05).
             at = episode.get(EP_AT)
             if at is None or at < opened - CAUSE_EPISODE_SLACK_SECONDS:
                 return None
@@ -806,10 +764,8 @@ class JournalMixin:
             if ended == EPISODE_ENDED_RESUMED:
                 return RECOVERY_CAUSE_UNOBSERVED
             # A restart or an outage is no intervention on a device and
-            # earns no credit (#535, amending #228). The episode still
-            # closed at it, for learning; the recovery is the device's
-            # own. The second fleet's brief credited a reboot with a
-            # plug the tester woke by hand 13.5 hours later.
+            # earns no credit (rule BRIEF-05). The episode still closed
+            # at it, for learning; the recovery is the device's own.
             cause = ended.replace("intervention (", "").rstrip(")")
             if cause in RECOVERY_CAUSES_RESTART:
                 return RECOVERY_CAUSE_UNOBSERVED
@@ -835,23 +791,22 @@ class JournalMixin:
         is still recorded, simply without a duration.
         """
         # The log first, then whatever the caller already worked out
-        # from the to-do row. #367 designed that fallback and it was
-        # written into the caller and never handed over, so a resolve
-        # whose opening had been trimmed carried no duration at all
-        # even where the start time was sitting in a local variable.
+        # from the to-do row, so a resolve whose opening was trimmed
+        # still carries a duration.
         opened = self._incident_opened_at(device_id, kind)
         if opened is None:
             opened = opened_at
-        # Across a clock step it counts from the step (ruling #651).
+        # Across a clock step it counts from the step (rule FRZ-21).
         counted = self._counted_from(opened)  # type: ignore[attr-defined]
         duration = max(0.0, now - counted) if counted is not None else None
         if down_for is not None:
-            # The same figure the recovered event carries (#644), so
-            # the brief and an automation agree on how long it was down.
+            # The same figure the recovered event carries, so the brief
+            # and an automation agree on how long it was down
+            # (rule UNAV-07).
             duration = down_for
         # A kind that ended because a worse one replaced it recovered
-        # nothing, so it is neither timed against a reviving reboot
-        # nor told as good news (0.22.26).
+        # nothing, so it is neither timed against a reviving restart
+        # nor told as good news.
         cause = (
             self._recovery_cause(device_id, opened or now)
             if kind in FREEZE_KINDS_FOR_CAUSE and not superseded
@@ -871,13 +826,11 @@ class JournalMixin:
     def _acknowledged_devices(self) -> set[str]:
         """Return the devices a person has checked off.
 
-        Acknowledgment ends at recovery, because the item is deleted
-        when its last problem clears. Acknowledgment silences every
-        human-facing channel while it lasts (ruling #123), and a
-        recovery is still news because it ends the acknowledgment
-        rather than happening under it (ruling #114). So a device is
-        in this set only while it is both broken and acknowledged,
-        and its eventual recovery is reported as the news it is.
+        Acknowledgment silences every human-facing channel while it
+        lasts, and ends at recovery because the item is deleted when
+        its last problem clears. So a device is in this set only while
+        it is both broken and acknowledged, and its recovery is
+        reported as news (rule NOTE-08).
         """
         return {
             record[TODO_DEVICE_ID]

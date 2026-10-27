@@ -3,24 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_evidence.py, Version: 0.27.3 (2026-10-24)
+# File: battery_evidence.py, Version: 0.27.10 (2026-10-27)
 
-"""What a better battery forecast will need, kept from now (#737, #739).
+"""What a better battery forecast will need, kept from now.
 
-James, 23 October 2026: "anything we can do so that in the future, we
-can build it more accurate." Two records, neither read by any judgment:
+Two records, neither read by any judgment:
 
 Each day, for each watched battery device heard that day, one row: the
 battery voltage, the device's own temperature and its running count of
-events (#737). A lithium cell's percentage holds near full until its end
+events (rule BAT-16). A lithium cell's percentage holds near full until its end
 while its voltage still moves; a busy device may drain faster than a
 quiet sister; cold lowers a loaded cell's voltage. Each value is read
-from the device's own entities only (#463) and is None where it has none.
+from the device's own entities only (rule WATCH-02) and is None where it has none.
 The rows sit with the daily series: the newest thirty in the main file,
 the rest in the history file, kept for the History setting's days.
 
 Each time a battery is replaced, one row for the battery that ended
-(#739): its model and battery type, the days it went in and came out,
+(rule BAT-08): its model and battery type, the days it went in and came out,
 its first kept and last level, the last day the device was heard, and
 whether its start was seen. These are the finished lives a survival
 model learns from, and the house keeps them for good. A replacement
@@ -31,7 +30,7 @@ History setting trims to 90 days by default while a coin cell lasts
 years. It is the replacement on record, detected, confirmed or given by
 the person, and is then seen; with none, the day Device Sentinel first
 saw the device, a start not seen: the battery was in by then, and its
-life was at least that long (James, 23 October 2026).
+life was at least that long.
 """
 
 from __future__ import annotations
@@ -123,7 +122,7 @@ class BatteryEvidenceMixin:
 
     def battery_voltage_now(self, device_id: str) -> float | None:
         """The battery voltage the device reports now, from any source,
-        or None (0.27.3)."""
+        or None."""
         return self._evidence_voltage(device_id, er.async_get(self.hass))  # type: ignore[attr-defined]
 
     def _evidence_voltage(self, device_id: str, registry: Any) -> float | None:
@@ -199,7 +198,7 @@ class BatteryEvidenceMixin:
     def battery_life_ended(
         self, device_id: str, record: dict[str, Any], end_day: date | None, start: tuple[date, bool] | None,
     ) -> None:
-        """Write the row for the battery a replacement just ended (#739)."""
+        """Write the row for the battery a replacement just ended (rule BAT-08)."""
         try:
             row = self._life_row(device_id, record, end_day, start)
         except Exception:  # noqa: BLE001 - a record never stops a replacement

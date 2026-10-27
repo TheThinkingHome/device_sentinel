@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.27.0 (2026-10-22)
+# File: sensor.py, Version: 0.27.10 (2026-10-27)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -11,24 +11,16 @@ Every name here has to stand alone: Home Assistant gives entities no
 helper text on the device page, so a label and its state are the
 whole explanation a user gets. Names are title-cased like book
 titles rather than following Home Assistant's own sentence case,
-which is a deliberate divergence rather than a drift (ruling #48).
+which is a deliberate divergence rather than a drift (rule GEN-06).
 Counts carry a unit so a card reads "125 devices" rather than "125",
-and any sensor whose state a user could not act on was renamed or
-retired in an early release (0.3.12).
-
-Clock source was retired there. It counted watched devices lacking a
-last_seen entity, so a higher number read as better while meaning
-worse, and it existed to answer a soak question that closed on
-2026-07-18. Its registry entry was removed at setup for as long as an
-install could still carry one (ruling #82; the entry dropped in
-0.23.19).
+and no sensor has a state a user could not act on (rule CFG-07).
 
 The names themselves live in strings.json, under each sensor's
-translation key (0.23.19).
+translation key (rule CFG-06).
 
 Identity attributes on all, per blueprint precedent.
 
-Which sensors ship enabled follows one test (ruling #239): a person reads
+Which sensors ship enabled follows one test (rule CFG-08): a person reads
 it daily or acts on it in their first week. Status, the coverage
 pair, the maintenance timestamp, and the detected bridge and broker
 are on; the per-family counts are off, because the problem list
@@ -121,7 +113,7 @@ async def async_setup_entry(
         ]
     )
     # One bridge sensor per detected coordinator stack, enabled by
-    # default (ruling #239). Created from the readers the coordinator started, so a
+    # default (rule CFG-08). Created from the readers the coordinator started, so a
     # house with no capable stack gets none and a house with several
     # gets one each.
     async_add_entities(
@@ -204,10 +196,8 @@ class DeviceSentinelBaseSensor(SensorEntity):
 class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
     """The status sensor: is Device Sentinel alive and fine.
 
-    This once published the setup count, which proved that storage
-    survived a restart and meant nothing to anyone else. A sensor
-    named Status must answer its own name, so the count moved to an
-    attribute, where it still proves persistence (changed in 0.3.12).
+    A sensor named Status must answer its own name, so the setup count,
+    which proves storage survives a restart, is an attribute.
 
     Learning shows only until the first device establishes a rhythm.
     Partial learning is permanent rather than a phase (every new
@@ -227,7 +217,7 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
         """Return the state a person would want to read.
 
         A failed data read is reportable and stays reported
-        (ruling #341): a load that verified faulty latches the state
+        (rule STOR-12): a load that verified faulty latches the state
         at problem for the whole session, a repair does not clear it
         because a repaired file is not a good read, and only a
         restart that loads clean clears it.
@@ -242,11 +232,7 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the identity and storage-proof attributes.
-
-        The three awaiting-enable counts went with the Enable buttons
-        they counted for (ruling #696).
-        """
+        """Return the identity and storage-proof attributes."""
         taken = self._coordinator.last_good_taken
         age_days = None
         if taken is not None:
@@ -266,7 +252,7 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             "wifi_networks_missing": (
                 self._coordinator.wifi_missing_networks or None
             ),
-            # The backup's story (ruling #341, amended by #370):
+            # The backup's story (rules STOR-04, STOR-12):
             # when the last-good copy was made by the rotation, how
             # old it is, and how many repairs the load performed. The
             # age is an attribute rather than an alarm: an age frozen
@@ -289,11 +275,10 @@ class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
     Named for what it counts rather than for the abstraction:
     "Coverage: 125" left a user to guess the unit and the population.
     The rest of the split rides in attributes. The colon form matches
-    every other sensor's Category: State pattern, and the diagnostic
-    category follows the #247 line (ruling #249): how many devices are
-    watched and how many have learned are bookkeeping about the
-    integration, the same species as the tracked counts retired in
-    0.20.11, not news about the house.
+    every other sensor's Category: State pattern. It is diagnostic,
+    because how many devices are watched and how many have learned is
+    bookkeeping about the integration, not news about the house
+    (rule CFG-09).
     """
 
     _attr_translation_key = "devices_watched"
@@ -326,7 +311,7 @@ class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
     """Devices whose rhythm is established, past the arming floor.
 
-    An integer rather than "115 of 125" by ruling: a string state
+    An integer rather than "115 of 125", because a string state
     cannot be compared in an automation and forfeits the state class.
 
     This is not expected to reach Devices: Watched. Devices with no
@@ -361,15 +346,15 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     integration rides in an attribute, kept out of the recorder."""
 
     # Named for what it counts rather than for one of its reasons.
-    # It began as service devices alone and now holds seven: service,
-    # disabled, no entities, a duplicate coordinator (#400), an
-    # integration the person excludes, hardware already watched
-    # through another device (0.25.2), and nothing but firmware notices
-    # or command buttons switched on (0.26.6).
+    # It holds seven: service, disabled, no entities, a duplicate
+    # coordinator (rule WATCH-05), an integration the person excludes,
+    # hardware already watched through another device (rule WATCH-06),
+    # and nothing but firmware notices or command buttons switched on
+    # (rule WATCH-04).
     _attr_translation_key = "devices_set_aside"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"by_integration"})
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -378,7 +363,7 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     # Off by default. It answers why a particular device is not
     # watched, which is a question asked once if ever, so it
     # belongs in the registry rather than on the page
-    # (ruling #239).
+    # (rule CFG-08).
     _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_CLASSIFICATION
 
@@ -402,27 +387,26 @@ class DeviceSentinelSignalRailsSensor(DeviceSentinelBaseSensor):
     A rail is the type's fill value, 255 for LQI or -128 for RSSI:
     the empty value of a field the device stopped populating, which
     reads as perfect signal and is the opposite. Confirmed over three
-    days rather than on one reading (ruling #78), so this counts
+    days rather than on one reading (rule SIG-07), so this counts
     faults rather than bad afternoons, and it is the one signal
     condition that reaches the problem list and the phone.
 
-    Weak links are counted next door. They were counted here until
-    0.11.10, under the name Signal: Problems, and one number meaning
-    two things read zero on a fleet with no rails (ruling #211).
+    Weak links are counted next door, so one number never means two
+    things (rule SIG-09).
     """
 
     _attr_translation_key = "signal_rails"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"devices"})
     _attr_icon = "mdi:access-point-off"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = False
-    # Off by default (ruling #239, which replaced #212's on): the
-    # problem list carries what is wrong, and a count is for a
-    # dashboard builder, who enables exactly what they chart.
+    # Off by default: the problem list carries what is wrong, and a
+    # count is for a dashboard builder, who enables exactly what they
+    # chart (rule CFG-08).
     sentinel_type = SENTINEL_TYPE_SIGNAL_RAILS
 
     @property
@@ -443,22 +427,20 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
     """How many links are weak right now.
 
     A device is here while its last folded day was a bad signal day
-    (ruling #310), read from the same list Signal Trends and the device
-    page use, so they cannot name different devices (ruling #211).
+    (rule SIG-08), read from the same list Signal Trends and the device
+    page use, so they cannot name different devices (rule SIG-09).
 
     Live rather than remembered. A device drops off the next morning
     its signal holds, with no acknowledgment and no record, because it
     is a reading rather than an incident. That also means the count
-    moves: measured when dwell was the judge, on the reference fleet
-    only three of twelve device-days above twenty percent were still
-    above it the next morning, which is why nothing notifies from it
-    (ruling #59, kept by #310).
+    moves from day to day, which is why nothing notifies from it
+    (rule SIG-10).
     """
 
     _attr_translation_key = "signal_weak"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"devices", "drop_lqi", "drop_rssi", "sensitivity"})
     _attr_icon = "mdi:wifi-strength-1-alert"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
@@ -475,9 +457,8 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the weak devices and the gates in force.
 
-        Until ruling #310 this carried the red threshold; the gates
-        that replaced it are named so a dashboard reading the count
-        can also say what earned it.
+        The gates are named so a dashboard reading the count can also
+        say what earned it (rule SIG-08).
         """
         return {
             **self._identity(),
@@ -493,23 +474,23 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
 
     The battery member of the Problems family, merging the former
     Battery Low Count and Battery Low List into one sensor: state is
-    the count, the device rows ride in attributes. Value-only by
-    ruling: an unavailable battery is a freeze matter, not a low one,
+    the count, the device rows ride in attributes. Value-only, because
+    an unavailable battery is a freeze matter, not a low one,
     so this stays clean for dashboards and automations.
     """
 
     _attr_translation_key = "battery_low"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"clear_margin", "devices", "low_threshold"})
     _attr_icon = "mdi:battery-alert"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = False
-    # Off by default (ruling #239, which replaced #212's on): the
-    # problem list carries what is wrong, and a count is for a
-    # dashboard builder, who enables exactly what they chart.
+    # Off by default: the problem list carries what is wrong, and a
+    # count is for a dashboard builder, who enables exactly what they
+    # chart (rule CFG-08).
     sentinel_type = SENTINEL_TYPE_LOW_BATTERIES
 
     @property
@@ -533,8 +514,8 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
 
     A different set from Battery: Low and a different question. Low is
     a level that has been crossed; falling is a level that is going to
-    be (ruling #209). Since 0.27.0 a cell is judged falling only at or
-    under twice the low threshold (#725).
+    be (rule BAT-14). A cell is judged falling only at or under three
+    times the low threshold (rule BAT-10).
 
     The count is read from the battery rows Battery Trends shows, so
     this sensor, that page and the daily brief cannot disagree about which
@@ -542,25 +523,24 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
     are absent, because they are counted by the sensor above and one
     thing should be counted once.
 
-    Time left is a phrase rather than a number, for the reason it is a
-    phrase everywhere else: the projection moved from twelve days to
-    seven in an afternoon on the cell that proved it, so the words say
-    what the arithmetic supports and the number would not
-    (ruling #197).
+    Time left is a phrase rather than a number, because a projection
+    can move from twelve days to seven in an afternoon, so the words
+    say what the arithmetic supports and a number would not
+    (rule BAT-13).
     """
 
     _attr_translation_key = "falling_batteries"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"days_till_empty", "devices"})
     _attr_icon = "mdi:battery-arrow-down"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = False
-    # Off by default (ruling #239, which replaced #212's on): the
-    # problem list carries what is wrong, and a count is for a
-    # dashboard builder, who enables exactly what they chart.
+    # Off by default: the problem list carries what is wrong, and a
+    # count is for a dashboard builder, who enables exactly what they
+    # chart (rule CFG-08).
     sentinel_type = SENTINEL_TYPE_FALLING_BATTERIES
 
     @property
@@ -589,17 +569,17 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     _attr_translation_key = "device_frozen"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
-    # there (0.23.19).
+    # there.
     _unrecorded_attributes = frozenset({"devices"})
     _attr_icon = "mdi:snowflake-alert"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = False
-    # Off by default (ruling #239, which replaced #212's on): the
-    # problem list carries what is wrong, and a count is for a
-    # dashboard builder, who enables exactly what they chart.
+    # Off by default: the problem list carries what is wrong, and a
+    # count is for a dashboard builder, who enables exactly what they
+    # chart (rule CFG-08).
     # A finding about the house rather than bookkeeping about the
-    # integration, so it sits with the primary sensors (ruling #247): the
+    # integration, so it sits with the primary sensors (rule CFG-09): the
     # count a person dashboards is the count of what was found.
     sentinel_type = SENTINEL_TYPE_FROZEN_DEVICES
 
@@ -620,7 +600,7 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelMaintenanceSensor(DeviceSentinelBaseSensor):
     """When the open maintenance window ends, or unknown when closed.
 
-    A timestamp rather than seconds remaining (ruling #238): a dashboard
+    A timestamp rather than seconds remaining (rule FRZ-18): a dashboard
     renders a countdown from a timestamp natively, where a
     seconds-remaining state would need a write every second to stay
     true. The state is the whole surface: a time means a window is
@@ -650,17 +630,17 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     broker and no bridge. Where there is no MQTT at all it reads
     unknown forever and costs one disabled entity.
 
-    A primary sensor rather than a diagnostic one (ruling #243), for the
+    A primary sensor rather than a diagnostic one (rule CFG-09), for the
     same reason as the bridge: a broker that has stopped is the
     single most consequential thing this integration can tell a
     person, since every MQTT device goes quiet behind it. Its
-    default follows detection (ruling #239): enabled where a bridge
+    default follows detection (rule CFG-08): enabled where a bridge
     stack was found, because that house demonstrably runs on this
     broker and the sensor belongs on its first page; disabled
     otherwise, so a house without MQTT never meets a dead sensor. The
     watch itself runs off the subscription either way, so a person who
     never enables it still gets the broker events in the log and the
-    brief (ruling #224).
+    brief (rule UP-02).
     """
 
     _attr_icon = "mdi:transit-connection-variant"
@@ -671,7 +651,7 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
         """Initialize the broker sensor, defaulting on with a bridge.
 
-        Detection rather than the reader decides (ruling #239): a house
+        Detection rather than the reader decides (rule CFG-08): a house
         whose registry shows a bridge stack runs on this broker even
         if the reader could not start, and the default is a statement
         about the house rather than about this session's wiring.
@@ -713,19 +693,17 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     is proven, and the shared detector follows: a device that comes
     back while that window is open came back because of the hand on
     it, so its silence is set aside rather than learned as the
-    device's normal rhythm (ruling #145).
+    device's normal rhythm (rule FRZ-16).
 
-    A primary sensor rather than a diagnostic one (ruling #243): a
+    A primary sensor rather than a diagnostic one (rule CFG-09): a
     coordinator that has stopped is news about the house rather than
     news about this integration's plumbing, and it belongs beside
-    the counts a person reads. Enabled by default (ruling #239): a bridge
+    the counts a person reads. Enabled by default (rule CFG-08): a bridge
     sensor is only created where its stack was detected, so its very existence is the
     condition that used to justify keeping it off, and the house it
     appears in demonstrably runs that coordinator. Intervention
     detection works whether or not it is enabled, because the reader
-    and the detector run off the subscription, not off this entity
-    (the NUT-integration lesson: a disabled diagnostic with no
-    documentation is a feature nobody finds).
+    and the detector run off the subscription, not off this entity.
     """
 
     _attr_icon = "mdi:zigbee"
@@ -769,7 +747,7 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
             # four; ZHA's coordinator reader has no pairing window
             # and no topic, and inventing empty ones would put two
             # blank rows on its sensor claiming knowledge it does not
-            # have (ruling #358).
+            # have (rule UP-03).
             for attr, name in (
                 (ATTR_BRIDGE_PERMIT_JOIN_END, "permit_join_end"),
                 (ATTR_BRIDGE_BASE_TOPIC, "base_topic"),
@@ -778,7 +756,7 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
                 if hasattr(reader, name):
                     attrs[attr] = getattr(reader, name)
             # Whether the stack's availability feature is on, where
-            # the reader knows (ruling #236). Z2M reports it in bridge
+            # the reader knows (rule STACK-03). Z2M reports it in bridge
             # info; a stack that cannot say simply lacks the
             # property and writes nothing. Reported, never written:
             # turning it on is the stack's configuration.

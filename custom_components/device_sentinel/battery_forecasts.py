@@ -3,16 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_forecasts.py, Version: 0.27.1 (2026-10-23)
+# File: battery_forecasts.py, Version: 0.27.10 (2026-10-27)
 
-"""Each battery forecast kept, and scored when the battery gets there (#732).
+"""Each battery forecast kept, and scored when the battery gets there.
 
-No battery on either house had been watched from new to replaced when
-0.27.0 was built, so no forecast method could be checked against a
-real date: a backtest of 1,350 forecasts on 28 batteries could only
-use drops of a few points. James, 22 October 2026: record the
-predictions at the fold, so that a range said in October can be put
-beside the day the battery really got there.
+A forecast can only be checked against the day a battery really runs
+down, so each one is recorded at the fold and scored later (rule BAT-15).
 
 At each midnight, each battery Device Sentinel judges falling or
 accelerating, at or under three times the low threshold, gains one row
@@ -26,16 +22,16 @@ scored as replaced, which says nothing about the forecast. Every
 scored row also counts once in a tally for the house that never
 expires, so months of evidence outlive the History setting.
 
-Since 0.27.1 a cell judged low gets forecasts to empty, from its first
-low until a new battery goes in (ruling #735). Few devices are seen
-reaching 0 percent: most stop reporting first. So a forecast to empty
-closes on the first reading of 0, or, when the device went silent for
-at least FORECAST_SILENT_DAYS before its battery was replaced, on the
-day it was last heard, the day it gave out; otherwise as replaced.
-Forecasts to empty are counted in a tally of their own.
+A cell judged low gets forecasts to empty, from its first low until a
+new battery goes in. Few devices are seen reaching 0 percent, because
+most stop reporting first. So a forecast to empty closes on the first
+reading of 0, or, when the device went silent for at least
+FORECAST_SILENT_DAYS before its battery was replaced, on the day it
+was last heard, the day it gave out; otherwise as replaced. Forecasts
+to empty are counted in a tally of their own (rules BAT-13, BAT-15).
 
-Nothing here changes how a battery is judged. The tallies are what a
-later ruling can use to set the width of the range.
+Nothing here changes how a battery is judged. The tallies are there to
+set the width of the range later.
 """
 
 from __future__ import annotations
@@ -119,18 +115,18 @@ class BatteryForecastMixin:
         """Score the open rows, then write today's forecasts.
 
         day is the day the fold closed, the newest day of each battery
-        history. Scoring first, so a battery that reached its target
-        today closes the rows before it. A forecast to the threshold and
-        one to empty (#735) are written the same way and counted in
-        separate tallies."""
+        history. Scoring comes first, so a battery that reached its
+        target today closes the rows before it. A forecast to the
+        threshold and one to empty are written the same way and counted
+        in separate tallies (rule BAT-15)."""
         tallies = {False: self._forecast_tally(DATA_BATTERY_FORECAST_TALLY), True: self._forecast_tally(DATA_BATTERY_EMPTY_TALLY)}
         devices = self.data[DATA_DEVICES]  # type: ignore[attr-defined]
         for record in devices.values():
             if not isinstance(record, dict):
                 continue
-            # A cell already low when 0.27.1 was installed has no
+            # A cell already low before forecasts to empty existed has no
             # first-low time; written here so the latch outlives its
-            # recovery (#735).
+            # recovery (rule BAT-13).
             if record.get(DEV_BATTERY_LOW) and not _first_low_stands(record):
                 record[DEV_BATTERY_FIRST_LOW] = record.get(DEV_BATTERY_SINCE) or dt_util.utcnow().isoformat()
             rows = record.get(DEV_BATTERY_FORECASTS)
@@ -193,8 +189,8 @@ class BatteryForecastMixin:
                 and last_heard is not None and replaced is not None and last_heard >= made
                 and (replaced - last_heard).days >= FORECAST_SILENT_DAYS
             ):
-                # The device went silent before its battery was replaced:
-                # it gave out on the day it was last heard (#735).
+                # The device went silent before its battery was replaced,
+                # so it gave out on the day it was last heard (rule BAT-15).
                 arrived = last_heard
             outcome = score_row(row, arrived, day, replaced)
             if outcome is None:

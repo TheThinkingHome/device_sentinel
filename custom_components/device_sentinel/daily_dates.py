@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/daily_dates.py, Version: 0.26.1 (2026-10-13)
+# File: custom_components/device_sentinel/daily_dates.py, Version: 0.27.10 (2026-10-27)
 
-"""The date of every entry in a device's daily histories (0.24.4, issue #18).
+"""The date of every entry in a device's daily histories (rule STOR-16).
 
 Each daily history holds one entry for each day it measured something:
-the longest gap, the battery level, the signal figures. Until 0.24.4
-the entries carried no dates, and every reader counted back from
-yesterday, one entry a day. A day with no measurement broke that: the
-gap and signal histories wrote nothing, so every later entry sat one
-day early, and the battery history wrote the last level again, so a
-silent device showed invented flat days and then a cliff.
+the longest gap, the battery level, the signal figures. Counting back
+from yesterday, one entry a day, breaks on a day with no measurement:
+the gap and signal histories write nothing, so every later entry sits
+one day early, and the battery history writes the last level again, so
+a silent device shows invented flat days and then a cliff.
 
 A history's dates are kept beside it, compactly, because nearly every
 day is measured: the date of its newest entry, how many entries the
@@ -24,9 +23,9 @@ days. A history with nothing skipped costs about forty bytes.
 Every writer and reader goes through `dates_for` and `set_dates`: a
 fold, a trim, a removed entry or a battery change reads the dates as
 a list, changes the list, and writes it back, so a block can never
-disagree with its history. A history written before 0.24.4, or after
-a downgrade to one, has no dates for some of its entries; those are
-taken as consecutive days, which is how every reader read them before.
+disagree with its history. An older history, or one written after a
+downgrade, has no dates for some of its entries; those are taken as
+consecutive days.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ FAMILY_BATTERY = "battery"
 FAMILY_BATTERY_PREVIOUS = "battery_previous"
 FAMILY_SIGNAL = "signal"
 # The second signal scale's dates sit on the record too: its block must
-# hold exactly its recording fields (ruling #286).
+# hold exactly its recording fields (rule STOR-05).
 FAMILY_SIGNAL_ALT = "signal_alt"
 
 FAMILIES = (
@@ -163,8 +162,8 @@ def swap_families(holder: dict[str, Any], first: str, second: str) -> None:
     """Trade two histories' dates, for histories that trade places.
 
     The two signal scales swap when RSSI arrives on a device whose
-    primary is LQI (ruling #285): the series change places, so their
-    dates must too (0.26.1). A family with no block leaves the other
+    primary is LQI (rule SIG-03): the series change places, so their
+    dates must too. A family with no block leaves the other
     with none.
     """
     blocks = holder.get(DAILY_DATES)
@@ -190,11 +189,10 @@ def day_appended(
     another: the new entry, if there is one, takes the day's date, and
     any trim from the front drops the oldest dates with it.
 
-    The caller says whether the fold added an entry (0.24.6). A history
+    The caller says whether the fold added an entry, because a history
     at its History days limit adds one and trims one, so its length does
-    not change, and a length read alone took that night for one that
-    added nothing: the newest date stopped moving and every entry slid a
-    day earlier each night."""
+    not change. Read from the length alone, the newest date would stop
+    moving and every entry slide a day earlier each night."""
     dates = dates_for(holder, family, length_before, day - timedelta(days=1))
     if added:
         if dates and dates[-1] >= day:
@@ -234,7 +232,7 @@ def on_calendar(
     A skipped day's slot is None, so every reader that counts by
     position counts days: the charts, the weekly averages, the fits.
     The first slot is the oldest entry's day; a history without dates
-    reads as consecutive days ending at `end`, as before 0.24.4.
+    reads as consecutive days ending at `end`.
     """
     if not values:
         return []

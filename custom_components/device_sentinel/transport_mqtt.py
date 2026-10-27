@@ -3,48 +3,35 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: transport_mqtt.py, Version: 0.21.12 (2026-09-17)
+# File: transport_mqtt.py, Version: 0.27.10 (2026-10-27)
 
-"""The MQTT broker itself, watched directly.
+"""The MQTT broker itself, watched directly (rule UP-02).
 
-Not a stack. The broker sits underneath every MQTT stack and belongs
-to none of them, which is why this is its own file rather than part
-of stack_z2m.py: a house running Tasmota or ESPHome over MQTT and no
-Zigbee at all has a broker, and it can fail the same way.
+Not a stack. The broker sits under every MQTT stack and belongs to
+none of them, so it has its own file: a house running Tasmota or
+ESPHome over MQTT with no Zigbee still has a broker that can fail.
 
-WHY IT EXISTS. A bridge reader cannot see its own broker die. When
-the broker stops, nothing delivers Zigbee2MQTT's last will, because
-the broker is the deliverer, so the bridge's last known state stands
-and no transition is recorded. Measured on the reference fleet on
-2026-08-06: sixteen minutes with the broker stopped took 75 devices
-unavailable and swelled the problem list from 3 to 75, and the system
-events log recorded nothing at all while the bridge sensor read
-running throughout. The daily brief would have described a night in
-which nothing happened. That is the failure this project exists to
-catch, occurring inside the project (ruling #224).
+A bridge reader cannot see its own broker die. When the broker stops,
+nothing delivers Zigbee2MQTT's last will, because the broker is the
+deliverer, so the bridge keeps its last state and records nothing.
+Sixteen minutes with the broker stopped took 75 devices unavailable
+while the bridge sensor read running throughout (rules UP-01, UP-02).
 
-TWO SIGNALS, DIFFERENT JOBS. A regression, where the uptime value is
-lower than the last one seen, means the broker restarted, and the
-value says when: the start is the arrival minus the uptime. It needs
-no continuity of its own, which is why it catches an outage that
-spanned a restart of Home Assistant, when nothing here was running to
-observe the silence. Silence past a threshold covers the other case,
-a broker that dies while we stay alive, which is precisely the case
-above and which the regression alone would miss until the broker came
-back.
+Two signals do two jobs. An uptime value lower than the last one seen
+means the broker restarted, and the start is the arrival minus the
+uptime. That needs no continuity, so it catches an outage that spanned
+a restart of Home Assistant. Silence past a threshold catches a broker
+that dies while Home Assistant runs, which the regression alone would
+miss until the broker came back.
 
-THE THRESHOLD IS LEARNED, NOT SET. The cadence is read from the
-arrivals themselves and the threshold is a multiple of it, so a
-broker publishing on a different interval is judged correctly without
-being asked about. Measured on the reference broker: 2,363 intervals,
-median 9.997 seconds, maximum 10.350, standard deviation 0.082. The
-multiple is far outside anything that spread produces.
+The threshold is a multiple of the cadence learned from the arrivals,
+so a broker on a different interval is judged without being asked
+about. A broker publishing every 10 seconds varies by under a tenth of
+a second, far inside the multiple.
 
-EVERYTHING IS GUARDED. Nothing is claimed until two arrivals have
-parsed, so a broker with $SYS switched off, or one whose payload is
-worded differently, leaves the state unknown forever and costs
-nothing. A watch that cannot read reports unknown, which every
-consumer treats as no opinion.
+Nothing is claimed until two arrivals have parsed, so a broker with
+$SYS switched off, or one worded differently, stays unknown and costs
+nothing. Every consumer reads unknown as no opinion.
 """
 
 from __future__ import annotations
@@ -94,17 +81,13 @@ class MQTTBrokerReader:
     async def async_start(self) -> bool:
         """Subscribe to the uptime topic. Never raises.
 
-        A broker that is not up yet is not a failure: MQTT may come up
-        after Device Sentinel does, and the topic is published on an
-        interval rather than retained, so the first reading simply
-        arrives when it arrives (ruling #146).
+        A broker that is not up yet is not a failure: MQTT may come up after
+        Device Sentinel, and the topic is published on an interval, not
+        retained, so the first reading arrives when it arrives.
 
-        The presence of a loaded MQTT entry is checked before waiting
-        for its client. Waiting is what a bridge reader does, and it
-        is safe there because a bridge reader only starts where a
-        bridge device was found, which means MQTT is configured. This
-        watch starts everywhere, so on a house with no MQTT at all
-        the wait would never return and setup would never finish.
+        The MQTT entry is checked for before waiting on its client, because
+        this watch starts on every house, and on a house with no MQTT the
+        wait would never return and setup would never finish (rule STACK-03).
         """
         try:
             if not any(
@@ -196,8 +179,7 @@ class MQTTBrokerReader:
 
     @property
     def loaded(self) -> bool:
-        """Whether the broker has been heard since this run began
-        (ruling #445)."""
+        """Whether the broker has been heard since this run began (rule UP-02)."""
         return self._last_heard is not None
 
     @property
@@ -236,13 +218,10 @@ class MQTTBrokerReader:
                 self._intervals.append(interval)
                 del self._intervals[:-_CADENCE_SAMPLES]
         self._arrivals += 1
-        # A value lower than the last one seen is a restart, and the
-        # arrival before it is the last moment the broker was known
-        # to be up. That, not the previous start, is where an outage
-        # is measured from: the previous start is the length of the
-        # session that just ended, and reporting that as downtime
-        # turned a ten second restart into a twelve hour outage on
-        # the reference fleet, 10 September 2026 (ruling #396).
+        # A value lower than the last one seen is a restart. The outage runs
+        # from the arrival before it, the last moment the broker was known up,
+        # not from the previous start, which is how long the broker had been
+        # up (rule UP-02).
         if self._uptime is not None and seconds < self._uptime:
             self._stopped_at = self._last_heard
         self._uptime = seconds
@@ -298,12 +277,11 @@ def _uptime_seconds(payload: Any) -> float | None:
         value = float(token)
     except ValueError:
         return None
-    # Finite and not absurd. A broker cannot have been up longer than
-    # this and an infinity would put its computed start before the
-    # epoch, which every consumer would then read as a restart that
-    # never happened (ruling #231).
-    # value != value is the NaN test: NaN is the one float that is
-    # not equal to itself, and a JSON payload can carry one.
+    # Finite and not absurd. An infinity would put the broker's start
+    # before the epoch, which every consumer would read as a restart that
+    # never happened.
+    # value != value is the NaN test: NaN is the one float not equal to
+    # itself, and a JSON payload can carry one.
     if value < 0 or value != value or value > BROKER_UPTIME_CEILING:
         return None
     return value

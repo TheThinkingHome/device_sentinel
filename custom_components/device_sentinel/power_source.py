@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.27.7 (2026-10-27)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.27.10 (2026-10-27)
 
-"""What powers each device (0.24.7, Project__0_24_7.md).
+"""What powers each device (rule DEV-06).
 
 Two sources, in this order: what the owner entered on the device page,
 then the Battery Notes device library shipped inside Device Sentinel
@@ -14,8 +14,8 @@ Nothing here reads an installed Battery Notes.
 
 The library is a read-only file in the integration's own folder, read
 once at start and replaced only when a release replaces it. Owner
-entries live in the answers file with the device types (0.25.1,
-answers_store.py), written only when a pencil is used, so the main
+entries live in the answers file with the device types
+(answers_store.py), written only when a pencil is used, so the main
 storage file never carries them.
 
 The matcher is a port of Battery Notes' own get_device_battery_details,
@@ -45,9 +45,8 @@ from .device_fields import device_field
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
 
 # The ten battery types the library names most often, most used first
-# (5 October 2026: 94.8% of the library's devices, 97.1% of the
-# matched devices in three real houses), then the two that are not
-# batteries, then Other.
+# (about 95% of the library's devices), then the two that are not
+# batteries, then Other (rule DEV-08).
 BATTERY_CHOICES: tuple[str, ...] = (
     "AA", "AAA", "CR2032", "CR2450", "Rechargeable",
     "CR123A", "CR2", "CR2477", "CR1632", "CR2430",
@@ -55,9 +54,9 @@ BATTERY_CHOICES: tuple[str, ...] = (
 POWER_MAINS = "Mains Powered"
 POWER_USB = "USB Powered"
 # Plugged straight into the Home Assistant machine, so it goes down with
-# it (0.25.3, James's Z-Wave stick).
+# it, such as a Z-Wave stick.
 POWER_USB_SERVER = "USB Direct to Server"
-POWER_POE = "PoE Powered"  # Power over Ethernet (0.24.8)
+POWER_POE = "PoE Powered"  # Power over Ethernet
 POWER_OTHER = "Other"
 POWER_WIRED: tuple[str, ...] = (POWER_MAINS, POWER_USB, POWER_USB_SERVER, POWER_POE)
 POWER_CHOICES: tuple[str, ...] = (*BATTERY_CHOICES, *POWER_WIRED, POWER_OTHER)
@@ -96,14 +95,13 @@ NOT_KNOWN = "Not known"
 
 def lithium_cell(battery_type: Any) -> bool:
     """Whether a battery type is a lithium primary cell, a coin cell
-    (CR2032, CR1632, CR2450 and their kin) or a CR123A or CR2 (#736).
+    (CR2032, CR1632, CR2450 and their kin) or a CR123A or CR2.
 
     Every CR type is lithium manganese dioxide: its voltage holds near
     3 V for most of its life and falls quickly at the end, and the
     percentage most coordinators work out from it holds near full the
-    whole time (James's 11 Aqara cells on Zigbee2MQTT read exactly 100%
-    on all 85 days of 23 October 2026). A steady reading from one says
-    nothing about how long it has left."""
+    whole time, often exactly 100% for months. A steady reading from
+    one says nothing about how long it has left (rule BAT-16)."""
     return isinstance(battery_type, str) and battery_type.strip().upper().startswith("CR")
 
 
@@ -119,11 +117,11 @@ def _fold(value: Any) -> str:
 
 
 def model_key(manufacturer: Any, model: Any, model_id: Any) -> str | None:
-    """What makes two devices the same model, for an owner's entry
-    (0.24.8): manufacturer, model and model ID, exactly as Home
-    Assistant reports them. The hardware version is left out, because
-    one model reports a version on some devices and none on others.
-    None for a device with no manufacturer or no model.
+    """What makes two devices the same model, for an owner's entry:
+    manufacturer, model and model ID, exactly as Home Assistant reports
+    them. The hardware version is left out, because one model reports a
+    version on some devices and none on others. None for a device with
+    no manufacturer or no model (rule DEV-06).
     """
     if not manufacturer or not model:
         return None
@@ -131,9 +129,9 @@ def model_key(manufacturer: Any, model: Any, model_id: Any) -> str | None:
 
 
 def is_model_key(key: Any) -> bool:
-    """Whether a stored key has the shape model_key gives (0.25.1): the
-    JSON text of three strings, the first two not empty. A damaged key
-    is left out at load rather than carried into the diagnostics."""
+    """Whether a stored key has the shape model_key gives: the JSON text
+    of three strings, the first two not empty. A damaged key is left out
+    at load rather than carried into the diagnostics."""
     if not isinstance(key, str):
         return False
     try:
@@ -204,17 +202,16 @@ class BatteryLibrary:
     ) -> LibraryAnswer | None:
         """Battery Notes' answer for a device, or None.
 
-        Battery Notes' own search and nothing looser: a looser second
-        search was built for 0.24.8 and withdrawn the same day, because
-        a match that is not certain is worse than "Not known" and a
-        report to the library.
+        Battery Notes' own search and nothing looser, because a match
+        that is not certain is worse than "Not known" and a report to
+        the library.
         """
         if not manufacturer or not all(
             value is None or isinstance(value, str)
             for value in (manufacturer, model, model_id, hw_version)
         ):
-            # A question that is not text has no answer (0.24.11); the
-            # device's own fields are made text before they are asked.
+            # A question that is not text has no answer; the device's
+            # own fields are made text before they are asked.
             return None
         model_id = model_id or None
         hw_version = hw_version or None
@@ -278,7 +275,7 @@ class BatteryLibrary:
 
 
 def _library_entry_usable(entry: Any) -> bool:
-    """Whether a library entry can be shown as it stands (0.24.11).
+    """Whether a library entry can be shown as it stands.
 
     The library is copied unchanged from Battery Notes, so a malformed
     entry in a future copy reaches every surface that names a battery.
@@ -311,8 +308,8 @@ def _library_entry_usable(entry: Any) -> bool:
 
 def _as_text(value: Any) -> str | None:
     """A registry field as text, as Home Assistant 2026.6 and later store a
-    new registration (0.24.11). A field saved as a number by 2026.5 is
-    still loaded as one, and the library search compares text."""
+    new registration. A field saved as a number by 2026.5 is still loaded
+    as one, and the library search compares text."""
     if value is None or isinstance(value, str):
         return value
     return str(value)
@@ -345,7 +342,7 @@ def load_library(path: Path = LIBRARY_PATH) -> BatteryLibrary | None:
 
 
 def power_choices() -> dict[str, Any]:
-    """The pencil's choices, for any page that sets power (0.24.9)."""
+    """The pencil's choices, for any page that sets power (rule DEV-08)."""
     return {
         "choices": list(POWER_CHOICES),
         "battery_choices": list(BATTERY_CHOICES),
@@ -384,9 +381,8 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     quantity = raw.get("quantity")
     if kind == KIND_BATTERY and wired_choice(battery_type) is not None:
         # A wired source typed under Other, as a battery, before it was a
-        # choice: read as the choice (0.25.3, James's "USB Direct to
-        # Server", saved as one battery), whatever its capitals (rule
-        # DEV-08).
+        # choice: read as the choice, whatever its capitals
+        # (rule DEV-08).
         battery_type = wired_choice(battery_type) or battery_type
         kind = WIRED_KINDS[battery_type]
     if kind == KIND_BATTERY:
@@ -409,7 +405,7 @@ class PowerMixin:
 
     async def async_load_power(self) -> None:
         """Read the library; a missing or damaged one never stops a start.
-        The owner's entries are read with the answers file (0.25.1)."""
+        The owner's entries are read with the answers file."""
         hass = self.hass  # type: ignore[attr-defined]
         self._power_library = await hass.async_add_executor_job(load_library)
 
@@ -420,17 +416,17 @@ class PowerMixin:
     def _power_read(self, payload: dict[str, Any], legacy: bool = False) -> int:
         """Take the owner's entries from a stored payload; the number left out.
 
-        Since 0.24.8 an entry belongs to a model, so one set on one
-        Third Reality button covers all four. Read from the old power
-        file (legacy), 0.24.7's entries, held per device, become model
-        entries; a device with no manufacturer or model keeps its entry
-        to itself. The copies 0.25.0 and earlier wrote for 0.24.7,
-        marked with their model, are skipped.
+        An entry belongs to a model, so one set on one button covers
+        every button of that model (rule DEV-06). Read from the old
+        power file, entries held per device become model entries; a
+        device with no manufacturer or model keeps its entry to itself.
+        The per-device copies older releases wrote, marked with their
+        model, are skipped.
 
         Read from the answers file, a device's own entry stays its own,
-        as the page showed it, even once the device reports a model: a
-        restart turned it into an answer for the whole model, or dropped
-        it when the model had one (0.25.1, found by testing).
+        as the page showed it, even once the device reports a model, so
+        a restart neither turns it into an answer for the whole model
+        nor drops it when the model has one.
         """
         dropped = 0
         models = payload.get("models")
@@ -444,7 +440,7 @@ class PowerMixin:
         devices = payload.get("devices")
         for device_id, raw in (devices.items() if isinstance(devices, dict) else ()):
             if isinstance(raw, dict) and "model" in raw:
-                continue  # the copy kept for 0.24.7, not an entry of its own
+                continue  # an older release's copy, not an entry of its own
             entry = _clean_entry(raw)
             if not isinstance(device_id, str) or entry is None:
                 dropped += 1
@@ -454,7 +450,7 @@ class PowerMixin:
                 self._power_models[key] = {**entry, "device_id": device_id}
             else:
                 # No model, or the model already has an answer: the entry
-                # stays the device's own, never dropped (found by review).
+                # stays the device's own, never dropped.
                 self._power_entries[device_id] = entry
         return dropped
 
@@ -481,7 +477,7 @@ class PowerMixin:
         return model_key(maker, model, model_id)
 
     def _model_devices_anywhere(self, key: str, leaving: str | None = None) -> list[str]:
-        """Devices of this model in Home Assistant, watched or not (0.25.1).
+        """Devices of this model in Home Assistant, watched or not.
 
         A model answer is handed on from a deleted device to one of
         these, so an excluded device of the model keeps it.
@@ -495,15 +491,15 @@ class PowerMixin:
 
     def _model_covers(self, key: str, own: dict[str, Any], device_id: str | None = None) -> int:
         """How many devices a model answer covers: those of the model with
-        no answer of their own (0.25.1, found by review). device_id counts
-        as covered, since setting a model answer on it replaces its own."""
+        no answer of their own. device_id counts as covered, since
+        setting a model answer on it replaces its own."""
         return len([d for d in self._power_same_model(key) if d not in own or d == device_id])
 
     def _power_same_model(self, key: str, leaving: str | None = None) -> list[str]:
         """Devices Device Sentinel knows that are this model."""
         records = self.data.get(DATA_DEVICES) or {}  # type: ignore[attr-defined]
-        # Not a removed device's held record (ruling #622): an old
-        # composite id could still answer to the model (found by review).
+        # Not a removed device's held record (rule WATCH-07), because an
+        # old composite id could still answer to the model.
         return [
             d for d in records
             if d != leaving and not self.is_held(d) and self._power_key(d) == key  # type: ignore[attr-defined]
@@ -534,9 +530,10 @@ class PowerMixin:
     def power_of(self, device_id: str, covers: bool = False) -> dict[str, Any] | None:
         """What powers the device, and where that came from, or None.
 
-        covers counts the devices of the model, which walks every record;
-        only the device page asks for it (0.25.1: every list asked, so a
-        Devices tab on a big house cost the square of its size).
+        covers counts the devices of the model, which walks every
+        record, so only the device page asks for it: asked by every
+        list, a Devices tab on a big house would cost the square of its
+        size.
         """
         entry, key = self._power_entry(device_id)
         if entry is not None:
@@ -562,8 +559,8 @@ class PowerMixin:
         return None
 
     def battery_lithium(self, device_id: str) -> str | None:
-        """The device's battery type when it is a lithium primary cell
-        (#736), from the owner's answer or the library; None otherwise."""
+        """The device's battery type when it is a lithium primary cell,
+        from the owner's answer or the library; None otherwise (rule BAT-16)."""
         known = self.power_of(device_id)
         if known and known.get("kind") == KIND_BATTERY and lithium_cell(known.get("type")):
             return str(known["type"])
@@ -571,10 +568,10 @@ class PowerMixin:
 
     def battery_cell(self, device_id: str) -> tuple[str | None, str | None]:
         """The battery a device takes as its Power row says it, "2× AAA",
-        and its type again when it is a lithium cell (#736); None for
-        either it is not. One lookup for Battery Trends' CELL column,
-        which shows every known battery and "Not set" for the rest
-        (James, 23 October 2026: one blank meant two things)."""
+        and its type again when it is a lithium cell; None for either it
+        is not. One lookup for Battery Trends' CELL column, which shows
+        every known battery and "Not set" for the rest, so one blank
+        does not mean two things (rule BAT-18)."""
         known = self.power_of(device_id)
         if not known:
             return None, None
@@ -593,7 +590,7 @@ class PowerMixin:
         not already give, on a device with a manufacturer and a model,
         which the form requires. Mains and USB are not batteries, so
         the library has no place for them. The title is filled too,
-        "[Device]: Third Reality Smart button (3RSB22BZ)" (0.24.8).
+        "[Device]: Third Reality Smart button (3RSB22BZ)" (rule DEV-09).
         """
         entry, _key = self._power_entry(device_id)
         if entry is None or entry["kind"] != KIND_BATTERY:
@@ -624,7 +621,7 @@ class PowerMixin:
             "source": known["source"] if known else None,
             "entry": {f: entry[f] for f in ("kind", "type", "quantity", "set")} if entry else None,
             # Where an owner's entry was set, and how many devices it
-            # covers (0.24.8): "set on Button Master Shower, covers 4".
+            # covers: "set on Button Master Shower, covers 4" (rule DEV-07).
             "set_on": set_on,
             # Named only while Home Assistant still has that device;
             # otherwise the page says "another device".
@@ -635,7 +632,7 @@ class PowerMixin:
             ),
             "covers": known.get("covers") if known else None,
             # The model's answer, when this device has its own: what
-            # clearing its own puts in place (found by review).
+            # clearing its own puts in place.
             "model_answer": self._power_model_words(device_id),
             "library": answer.words if answer else None,
             "library_home": LIBRARY_HOME,
@@ -644,7 +641,7 @@ class PowerMixin:
             "battery_choices": list(BATTERY_CHOICES),
             "mains": POWER_MAINS,
             "usb": POWER_USB,
-            # The choices that take no quantity and no report (0.24.8).
+            # The choices that take no quantity and no report (rule DEV-09).
             "wired": list(POWER_WIRED),
             "other": POWER_OTHER,
             "quantity": [QUANTITY_MIN, QUANTITY_MAX],
@@ -666,8 +663,8 @@ class PowerMixin:
     ) -> None:
         """Set the owner's answer from the device page; None clears it.
 
-        Since 0.24.8 the answer covers every device of the same model,
-        and clearing it clears it for all of them.
+        The answer covers every device of the same model, and clearing
+        it clears it for all of them (rule DEV-06).
         """
         self._device(device_id)  # type: ignore[attr-defined]
         entry: dict[str, Any]
@@ -677,7 +674,7 @@ class PowerMixin:
         if not choice:
             # A device's own answer, from before it reported a model, is
             # cleared alone; the model's answer, set on another device,
-            # stays for the rest (0.25.1, found by review).
+            # stays for the rest.
             had_own = self._power_entries.pop(device_id, None) is not None
             had_model = not had_own and key is not None and self._power_models.pop(key, None) is not None
             if not (had_own or had_model):
@@ -730,12 +727,12 @@ class PowerMixin:
         """A device gone from Home Assistant takes its own entry with it.
 
         A model entry it set passes to another device of the model, a
-        watched one first, then any in Home Assistant (0.25.1), or goes
-        with the last of them.
+        watched one first, then any in Home Assistant, or goes with the
+        last of them.
 
-        hold: the device's record is held after its removal (ruling
-        #622), so its own answer stays and a model answer with no other
-        device to pass to stays with it until the purge.
+        hold: the device's record is held after its removal, so its own
+        answer stays and a model answer with no other device to pass to
+        stays with it until the purge (rule WATCH-07).
         """
         if not device_id:
             return

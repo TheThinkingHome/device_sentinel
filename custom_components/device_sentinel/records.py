@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.27.6 (2026-10-26)
+# File: records.py, Version: 0.27.10 (2026-10-27)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -12,16 +12,15 @@ compact span are the module-level names the coordinator split left
 needing a home of their own: the record
 schema is the authority both the core and the storage module read,
 and putting it in either would have made the other import from it
-and closed a circle (ruling #201).
+and closed a circle (rule CODE-11).
 
 _new_device_record is the one authoritative field set. A key a
 fresh one carries that a stored one does not belongs to a version
-newer than the file, and is filled on load (ruling #189). A key a
+newer than the file, and is filled on load (rule STOR-19). A key a
 stored record carries that a fresh one does not is either retired,
 written by a past version and removed (RETIRED_DEVICE_FIELDS), or
 written by a newer version, and kept untouched so a house can go
-back a release and forward again without losing it (#189, amended
-28 September 2026).
+back a release and forward again without losing it (rule STOR-19).
 """
 
 from __future__ import annotations
@@ -102,10 +101,8 @@ def _shift(seconds: float) -> str:
 def _span(seconds: float) -> str:
     """A compact span for a label: 74m, 4.1h, 2.3d, 3.5w.
 
-    First written for the label the resurrection cap printed when it
-    held a gap down (ruling #166, retired by #638 in 0.26.0); since
-    0.23.19 it is the one compact format, `durations.compact_span`,
-    which every table uses.
+    The one compact format, `durations.compact_span`, which every
+    table uses (rule GEN-09).
     """
     return compact_span(seconds)
 
@@ -114,7 +111,7 @@ def _reset_signal_day(record: dict[str, Any]) -> None:
     """Clear the day's signal accumulators and estimators.
 
     The fold calls this at midnight and the load-time repair calls it
-    on a day a broken version corrupted (rulings #254, #256). One
+    on a day a broken version corrupted (rule SIG-05). One
     place, because a field added to the day's working set and cleared
     in only one of the two would leave the other reading yesterday.
     """
@@ -129,7 +126,7 @@ def _reset_signal_day(record: dict[str, Any]) -> None:
 def forget_signal_history(record: dict[str, Any]) -> None:
     """Start a record's signal history again, both scales and their dates.
 
-    For a removed device that comes back on a later day (ruling #622):
+    For a removed device that comes back on a later day (rule WATCH-07):
     it may have been moved, so the signal it learned describes a place
     it may no longer be."""
     fresh = _new_device_record("", None)
@@ -153,19 +150,19 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_TAINTED: False,
         # None while the device is watched; the moment it was set
         # aside otherwise, so a gap spanning a disabling is refused
-        # rather than learned (ruling #257).
+        # rather than learned (rule WATCH-03).
         DEV_SET_ASIDE_SINCE: None,
-        # The outage starts, kept on disk (ruling #647).
+        # The outage starts, kept on disk (rule UNAV-04).
         DEV_DOWN_SINCE: None,
-        # When it was watched again after being set aside (#648).
+        # When it was watched again after being set aside (rule WATCH-08).
         DEV_WATCHED_FROM: None,
         # None while the device is in Home Assistant; when it was
         # removed, and its name then, while the record is held for
-        # REMOVED_HOLD_DAYS (ruling #622).
+        # REMOVED_HOLD_DAYS (rule WATCH-07).
         DEV_REMOVED_SINCE: None,
         DEV_REMOVED_NAME: None,
         # Which scale the fields below are measured on, and the
-        # second scale when a device publishes one (ruling #285).
+        # second scale when a device publishes one (rule SIG-03).
         # None until the first reading says.
         DEV_SIGNAL_SCALE: None,
         DEV_SIGNAL_ALT: None,
@@ -224,7 +221,7 @@ def series_key(series: Any) -> tuple[Any, ...]:
 
     The series itself as a key held every version of every cell's
     history until the memo filled, about 7 MB of days nobody would
-    ask about again (the 0.23.19 adversarial round). Its length, its
+    ask about again. Its length, its
     hash and its last three values name it as surely at a fraction of
     the size: two different series agreeing on all three is not a case
     the arithmetic can meet."""

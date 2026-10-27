@@ -3,27 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.27.8 (2026-10-27)
+# File: backup.py, Version: 0.27.10 (2026-10-27)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
 
-Why this exists (ruling #130). The two-file split was built so that stepping
-back to an earlier version was free at every stage: the main file went
-on carrying the clock fields unused, so an older build loaded a
-complete record and lost nothing. The phase that removes those fields
-closes that window. Afterwards, going back means loading a file whose
-clocks stopped at the moment of the strip, and every device would come
-up with an activity time hours or days stale. So the release that
-strips takes a copy of what it is about to change, before it changes
-it.
+Why this exists: a release that removes fields from the main file
+closes the way back. Going back would load a file whose clocks stopped
+at the moment of the strip, and every device would come up with an
+activity time hours or days stale. So the release takes a copy of what
+it is about to change, before it changes it.
 
-It first shipped with no caller, built and tested ahead of the release
-that would need it, so that the backup's first exercise was not the one
-run that mattered. Its caller is the statistics epoch: a bump wipes
-learned data with nothing behind it, so it takes a copy first, under a
-suffix naming the epoch, and wipes nothing if the copy fails (ruling
-#204, on the mechanism of #130).
+Its caller is the statistics epoch: a bump wipes learned data with
+nothing behind it, so it takes a copy first, under a suffix naming the
+epoch, and wipes nothing if the copy fails (rule STOR-19).
 
 The copy is deliberately a byte copy of the files on disk rather than a
 serialization of what is in memory. What a rollback needs is the file
@@ -70,7 +63,7 @@ def _copy_one(source: Path, destination: Path) -> bool:
 
     A missing source is not a failure. The clocks file is the second
     half of the storage split and does not exist until a version that
-    writes it has saved at least once (it arrived in 0.8.8), and a
+    writes it has saved at least once, and a
     house that has never run that far has nothing to preserve; the
     caller's job is to protect what is there, not to invent what is
     not.
@@ -113,7 +106,7 @@ async def async_take_backup(
             _storage_path(hass, key),
             _storage_path(hass, f"{key}.{suffix}"),
         )
-        # The history file and its copy since 0.26.2: the main file
+        # The history file and its copy, because the main file
         # alone holds only the newest thirty days.
         for key in (
             STORAGE_KEY,
@@ -159,7 +152,7 @@ async def async_take_backup(
 async def async_rotate_last_good(hass: HomeAssistant) -> bool:
     """Rename the live main file to last-good, ahead of a clean save.
 
-    The one backup rule (ruling #370): before each clean save, the
+    The one backup rule (rule STOR-04): before each clean save, the
     file about to be replaced becomes the last-good copy, so
     last-good is always the most recent clean file. A rename rather
     than a copy, because the atomic write that follows puts a whole
@@ -193,7 +186,7 @@ async def async_rotate_last_good(hass: HomeAssistant) -> bool:
 def copy_main_over_last_good(hass: HomeAssistant) -> bool:
     """Copy the live main file over last-good, after a history write.
 
-    The fifth step of a save that wrote the history file (ruling #660):
+    The last step of a save that wrote the history file (rule STOR-04):
     the rotation made last-good the file from before the history
     changed, so the new main file is copied over it, and the main
     last-good copy pairs with the history files again at once. To a
@@ -213,11 +206,10 @@ def copy_main_over_last_good(hass: HomeAssistant) -> bool:
 async def async_delete_clocks_last_good(hass: HomeAssistant) -> bool:
     """Remove the clocks last-good file an earlier version wrote.
 
-    Retired by ruling #370: the clocks file's contents are derived, a
-    lost clock restarts honestly at now, and a restore has always
-    deleted the file rather than restored it, so a backup of it
-    protected nothing. Installs upgraded from 0.19.8 or earlier still
-    carry one; it is deleted once here so no dump or evidence copy
+    The clocks file's contents are derived, a lost clock restarts
+    honestly at now, and a restore deletes the file rather than
+    restoring it, so a backup of it protects nothing. Older installs
+    still carry one; it is deleted once here so no dump or evidence copy
     keeps carrying a file nothing reads. Returns True when a file was
     removed.
     """
@@ -254,25 +246,25 @@ async def async_copy_evidence(
 ) -> tuple[str | None, list[str]]:
     """Copy both storage files and the last-good file aside, raw.
 
-    Called before any repair touches anything (ruling #340). The live
+    Called before any repair touches anything (rule STOR-11). The live
     pair is the evidence: a repair rewrites the file, so without this
     copy the original of what actually went wrong is destroyed by the
     process that found it. The main last-good copy rides along
     because it is what a restore reads, and a session that is about
     to act on either should preserve both first. The clocks file has
-    no last-good since ruling #370.
+    no last-good.
 
     Raw bytes, not a re-serialization: `shutil.copy2` of whichever of
     the four files exist. Nothing in the integration ever reads these
     copies back; the directory is the person's way back, pruned at
     the fold by the same retention setting as everything else
-    (ruling #343).
+    (rule STOR-13).
 
     Returns the stamp that names the copies and a plain list of what
     was actually written, or (None, []) when nothing could be copied.
-    The list matters because the notice used to name four files
-    whatever happened (ruling #349): on a missing storage file there
-    was no storage file to copy, and the sentence said there was. A
+    The list matters because the notice names only what was copied: on
+    a missing storage file there is no storage file to copy, and the
+    sentence must not say there is (rule STOR-11). A
     failure is a log line, not a stop: refusing to load because an
     evidence copy failed would turn a full disk into a dead
     integration.
@@ -294,7 +286,7 @@ async def async_copy_evidence(
             suffix += 1
         # Each source carries the words the notice will use, so the
         # sentence is built from what was copied rather than from an
-        # assumption about what existed (ruling #349).
+        # assumption about what existed (rule STOR-11).
         sources = [
             (
                 _storage_path(hass, STORAGE_KEY),
@@ -313,7 +305,7 @@ async def async_copy_evidence(
                 f"{stamp}.storage.last-good",
                 "the storage backup",
             ),
-            # The history file and its copy (0.26.2): what a restore
+            # The history file and its copy: what a restore
             # joins is evidence as much as the main file is.
             (
                 _storage_path(hass, STORAGE_HISTORY_KEY),
@@ -348,10 +340,10 @@ async def async_copy_evidence(
 async def async_last_good_taken(hass: HomeAssistant) -> float | None:
     """Return when the last-good main file was made.
 
-    One file since ruling #370: the clocks backup is retired, so the
+    One file: the clocks backup is retired, so the
     main copy's own stamp is the whole answer. Read from the file
     rather than from memory so the answer survives a restart
-    (ruling #341). Under the rotation this is the moment of the last
+    (rule STOR-12). Under the rotation this is the moment of the last
     clean save's rename.
     """
     path = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
@@ -370,13 +362,13 @@ async def async_last_good_taken(hass: HomeAssistant) -> float | None:
 async def async_prune_backups(
     hass: HomeAssistant, retention_days: int
 ) -> int:
-    """Delete trim-backup copies past their keep (rulings #343, #634).
+    """Delete trim-backup copies past their keep (rule STOR-13).
 
     A copy is the set of files one moment wrote, named by its stamp.
     Every copy, all its files alike, is deleted after thirty days,
     except the newest copy, which is kept for the full History
     retention: the one way back is never pruned while it describes a
-    state the integration still remembers (#634, amending #343).
+    state the integration still remembers.
 
     Returns how many files were removed.
     """
@@ -444,7 +436,7 @@ async def async_restore_main_file(
     """Replace an unreadable main storage file from the last-good copy.
 
     Called from the one place a storage file is found unreadable
-    (ruling #345). The alternative to replacing it is not running at
+    (rule STOR-08). The alternative to replacing it is not running at
     all, so nobody is asked: a question with one sensible answer is
     not a question.
 
@@ -457,8 +449,8 @@ async def async_restore_main_file(
     Returns (restored, taken), where taken is the copy's timestamp so
     the caller can say how old it was and what that cost. A missing
     copy, an unreadable one, or a failed write all return (False,
-    None) and the caller behaves exactly as it did before this
-    existed: it stops with the sentence #327 gives it. One attempt,
+    None) and the caller stops with its own sentence (rule STOR-08).
+    One attempt,
     no retry: a copy that cannot be read now will not read better on
     a second pass, and a loop here is a boot loop.
     """
@@ -499,7 +491,7 @@ def describe_restore_loss(
 
     The backup's timestamp is knowable and the corrupt file's contents
     are not, so this states the window and the kinds of record inside
-    it, never how many (ruling #345). Any count of events or readings
+    it, never how many (rule STOR-08). Any count of events or readings
     here would be a guess dressed as a fact.
 
     The number that matters is midnights crossed, not hours elapsed:
@@ -508,14 +500,12 @@ def describe_restore_loss(
     at all however old it looks. Dividing hours by 24 gets that wrong
     in both directions.
 
-    Two forms from one arithmetic (ruling #352). The standalone form
+    Two forms from one arithmetic. The standalone form
     opens "The last-good backup was taken" and stands on its own in
     the repair card and the notification. The embedded form opens
     "which was taken" and follows "restored from the last-good
     backup," in the event detail, so the brief's sentence reads with
-    one colon, no capital mid-sentence, and one full stop. The old
-    shape embedded the standalone form and produced all three faults
-    at once, live on the reference fleet on 27 August.
+    one colon, no capital mid-sentence, and one full stop (rule STOR-08).
     """
     local_taken = dt_util.as_local(dt_util.utc_from_timestamp(taken))
     local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
@@ -544,11 +534,11 @@ def describe_restore_loss(
 def _last_good_holds_devices(hass: HomeAssistant) -> bool:
     """Say whether the last-good main copy is worth restoring from.
 
-    Ruling #348. Existing is not enough and parsing is not enough: a
+    Existing is not enough and parsing is not enough: a
     copy that parses to an empty document is indistinguishable from a
     first install, and promoting it over a genuine first install would
     invent a fleet from nothing. So the question asked is the only one
-    that matters, does it hold device records.
+    that matters, does it hold device records (rule STOR-04).
     """
     copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
     try:
@@ -571,8 +561,8 @@ def _corrupt_siblings(hass: HomeAssistant) -> list[str]:
     When a storage file will not parse, Home Assistant renames it to
     `<file>.corrupt.<isotime>`, raises its own repair issue, and hands
     the integration None. It never raises, which is why the exception
-    branch below it almost never fires (ruling #348). The presence of
-    one of these files is Home Assistant telling us exactly what
+    branch below it almost never fires (rule STOR-08). The presence of
+    one of these files is Home Assistant saying exactly what
     happened, so it is read as evidence rather than guessed at.
     """
     live = _storage_path(hass, STORAGE_KEY)
@@ -623,9 +613,10 @@ async def async_copy_corrupt_evidence(
 
     They are the only remaining trace of what went wrong, and Home
     Assistant leaves them beside the live file where a later
-    corruption puts a second one (ruling #348). Copied, not moved:
+    corruption puts a second one (rule STOR-08). Copied, not moved:
     moving a person's file out from under them is a decision they did
-    not ask for, and the trim retention already prunes what we own.
+    not ask for, and the trim retention already prunes what Device
+    Sentinel owns.
     """
     live = _storage_path(hass, STORAGE_KEY)
     directory = os.path.dirname(live)
@@ -658,7 +649,7 @@ def read_main_file_raw(hass: HomeAssistant) -> dict[str, Any] | None:
     The Store object caches its first parse, so a load that has
     already happened cannot see a file the restore just replaced.
     This reads the file itself, for the one caller that restores
-    mid-load (ruling #370). Returns the data payload alone.
+    mid-load (rule STOR-08). Returns the data payload alone.
     """
     path = _storage_path(hass, STORAGE_KEY)
     try:
@@ -673,7 +664,7 @@ def read_main_file_raw(hass: HomeAssistant) -> dict[str, Any] | None:
 def read_last_good_raw(hass: HomeAssistant) -> dict[str, Any] | None:
     """Read the last-good main copy straight off disk, or None.
 
-    Gate 1 looks before it leaps (ruling #372): a copy carrying the
+    Gate 1 looks before it leaps (rule STOR-09): a copy carrying the
     same container fault is not worth restoring to, and reading it
     first is cheaper than restoring and finding out. Returns the data
     payload alone.

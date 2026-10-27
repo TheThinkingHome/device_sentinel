@@ -3,23 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.9 (2026-10-27)
+# File: router_ties.py, Version: 0.27.10 (2026-10-27)
 
 """Router ties: which watched devices a router says have left.
 
-Renamed from `wifi.py` in 0.20.8, with no change in behaviour, ahead
-of a second capability taking that name. The split is by what answers
-the question rather than by subject (#391). This file asks a router
+The split from `wifi.py` is by what answers the question rather than
+by subject (rule UP-12). This file asks a router
 integration which of the watched devices left the network, which is
 attribution: how many, and which ones, so they are counted rather
 than listed. Whether the network itself is up is a different question
 with a different source, answered from the host without any router
 integration at all, and it belongs in `wifi.py`.
 
-The rename changed no behaviour, and kept the `wifi` upstream kind and
-the `Bridge: WiFi` sensor under their names, because both are a
-published contract. The file has grown since: the medium judgment
-(rulings #415 to #434) and the router-integration exclusion (#420).
+The `wifi` upstream kind and the `Bridge: WiFi` sensor keep their
+names, because both are a published contract. The file also holds the
+medium judgment (rule UP-14) and the router-integration exclusion
+(rule MUTE-02).
 
 The Wi-Fi outage: a capability, deliberately not a stack.
 
@@ -34,24 +33,24 @@ subscription, no sensor, no rung.
 The trigger is trackers because trackers are the portable signal:
 `device_tracker` entities with `source_type: router` are the common
 contract across router integrations, where every client-count sensor
-is one product's private spelling. Trackers also lead: on the
-measured outage the router reported nine watched trackers not_home
-inside sixty seconds while the slowest integration took four minutes
-to notice, so the outage is declared before most of the devices
-behind it know, and their unavailability arrives already explained.
+is one product's private spelling. Trackers also lead: a router can
+report nine watched trackers not_home inside sixty seconds while the
+slowest integration takes four minutes to notice, so the outage is
+declared before most of the devices behind it know, and their
+unavailability arrives already explained (rule UP-13).
 
 The tie ladder binds a tracker to the watched device it shadows,
 because on a real fleet they are separate registry devices. Two rungs,
 both deterministic, neither a name: a normalized MAC shared between
 the tracker and the device's registry connections, then the tracker's
 full twelve-hex MAC embedded in one of the device's identifiers (the
-shape NSPanel-class devices actually have). Names are ruled out
+shape NSPanel-class devices actually have). Names are never used
 because people rename devices to be descriptive, and a wrong tie
 suppresses an innocent device's verdicts, which is the one direction
 this feature must never fail in. Devices no rung can claim wait for
 the picker, honestly unclaimed until then.
 
-Trigger and hold as ruled: three or more tied trackers not_home
+Trigger and hold: three or more tied trackers not_home
 inside a sliding sixty-second window starts a sixty-second hold; at
 its end the outage is declared only if three or more are still gone,
 dated from the first fall of the burst. A flap clears inside the hold
@@ -59,7 +58,7 @@ and nothing is said. Entity confirmation, how many claimed devices
 already read unavailable at declaration, rides in the event and the
 log as evidence and is never a gate, because a fleet whose Wi-Fi
 devices all notice slowly would fail a confirmation gate during a
-real outage.
+real outage (rule UP-12).
 
 An outage still open is kept in storage as it stands, and after a
 restart it is taken back from there whole: its start, its fallen set,
@@ -181,43 +180,34 @@ WIRED_MARKERS = (
 )
 
 # What a router states outright about a client's medium, read as
-# stated (ruling #417). UniFi carries `essid`, `radio` and `ap_mac`
+# stated (rule UP-14). UniFi carries `essid`, `radio` and `ap_mac`
 # on a wireless client. TP-Link carries none of those and instead
 # spells the network's own name into `connection` and the band into
 # `band`, so a client reading `connection=IoT band=2G` is the router
-# saying it is wireless as plainly as UniFi does. Measured on the
-# reference fleet: 8,815 tracker lines, zero occurrences of the UniFi
-# spellings, and 29 of 40 trackers left unknown by reading only
-# those. Every one of the 29 is wireless by TP-Link's own account.
+# saying it is wireless as plainly as UniFi does.
 WIRELESS_KEYS = ("essid", "ssid", "radio", "radio_proto", "ap_mac")
 
-# The medium is scored rather than fixed by one reading (ruling
-# #415), and a minority that reaches this share of the evidence
-# sends the tracker to unknown rather than to its majority (ruling
-# #427). Measured, not chosen: the tightest contradiction on either
-# fleet is 2 against 22, the next 1 against 52, and the thirteen
-# plainly false readings on the reference fleet are all one or two
-# samples against 45 to 184. A tenth discards every one of them and
-# is reached by none. Unknown is the safe state because unknown keeps
-# the tie.
+# The medium is scored rather than fixed by one reading, and a
+# minority that reaches this share of the evidence sends the tracker
+# to unknown rather than to its majority. Measured, not chosen: the
+# tightest real contradiction seen is 2 against 22, and plainly false
+# readings are one or two samples against 45 to 184. A tenth discards
+# every false one and is reached by no real one. Unknown is the safe
+# state because unknown keeps the tie (rule UP-14).
 MEDIUM_MINORITY_SHARE = 0.10
 
 # And a minority overrules nothing until there is this much evidence
-# behind it (ruling #432).
+# behind it (rule UP-14).
 #
-# This is the whole of the answer to the stripped reading found on 14
-# September, and the only one available. When a client leaves, TP-Link strips
+# This answers the stripped reading. When a client leaves, TP-Link strips
 # its network name and band and reports it as wired, which is byte for byte
 # what it publishes for a genuine wired client. A tie rebuild landing between
 # the attribute update and the state update reads `home` carrying that shape.
-# Refusing the shape was tried and reverted: it turns every real wired device
-# on the fleet into unknown. The two cases cannot be told apart from one
-# reading, so they are told apart by how often each occurs. The share was
-# measured over ten days, where the tightest contradiction on either fleet was
-# 2 against 22. On six samples one bad reading is sixteen percent: on 14
-# September three known-wireless devices went to unknown on a single stripped
-# reading each, hours after a fresh install. A share means nothing until there
-# are enough samples for it to be a share of anything.
+# Refusing the shape would turn every real wired device into unknown. The two
+# cases cannot be told apart from one reading, so they are told apart by how
+# often each occurs. On six samples one bad reading is sixteen percent, enough
+# to send a wireless device to unknown. A share means nothing until there are
+# enough samples for it to be a share of anything.
 MEDIUM_MINORITY_FLOOR = 20
 
 
@@ -226,7 +216,7 @@ def tracker_medium(attributes: Any) -> str:
 
     Wired wins, because it is the exclusion the tie ladder acts on.
     A named network or a band is the router stating wireless outright
-    (ruling #417); `band=None` and `connection=wired` together are
+    (rule UP-14); `band=None` and `connection=wired` together are
     what TP-Link publishes for a wired client and, for one sample at
     every router restart, for every client at once.
     """
@@ -253,9 +243,9 @@ def medium_from_score(score: dict[str, int]) -> str:
     """Judge a tracker's medium from its accumulated evidence.
 
     Majority wins. A minority below MEDIUM_MINORITY_SHARE of the
-    whole is a router restart or a stale entry and is ignored (#415).
+    whole is a router restart or a stale entry and is ignored.
     A minority at or above it is a device that cannot be told, and
-    that is unknown (#427).
+    that is unknown (rule UP-14).
     """
     wired = int(score.get("wired", 0))
     wireless = int(score.get("wireless", 0))
@@ -342,22 +332,20 @@ class RouterTiesMixin:
         self, tracker: str, reading: str, stamp: float
     ) -> str:
         """Fold one home reading into the score and return the
-        judgment (rulings #415, #418, #428).
+        judgment (rule UP-14).
 
         A sample is one state update, not one look at the state. The
         tie rebuild runs on every registry change and on every rejoin
-        sweep, and scoring on each run counted one unchanged reading
-        ten times over during setup alone, which buried the next real
-        reading below the minority line. The state's own last_updated
-        is the stamp, and a reading is counted once per stamp.
+        sweep, and scoring on each run would count one unchanged reading
+        many times over, burying the next real reading below the
+        minority line. The state's own last_updated is the stamp, and a
+        reading is counted once per stamp.
 
         A reading of unknown carries no evidence and is not counted,
         which is what a router that has not polled yet publishes. A
         reading that the judgment then discards as a minority is
         counted separately: that count is what makes the case for a
-        source-restart grace measurable. Thirteen such readings were
-        found on the reference fleet, all one or two samples against
-        45 to 184, and the grace was set aside on that measurement.
+        source-restart grace measurable.
         """
         table = self.data.setdefault(DATA_WIFI_MEDIUM, {})
         score = table.setdefault(tracker, {"wired": 0, "wireless": 0})
@@ -369,13 +357,10 @@ class RouterTiesMixin:
         judged = medium_from_score(score)
         if fresh and reading in ("wired", "wireless") and reading != judged:
             if judged != "unknown":
-                # Persisted (ruling #434). Held in memory until
-                # 0.21.7 and wiped at every restart, which made it
-                # read empty forever: on the reference fleet four
-                # trackers carried a discarded reading each and the
-                # published count read nothing at all. The count
-                # exists so the case for a general source-restart
-                # grace can be judged over weeks.
+                # Persisted, because a count wiped at every restart
+                # reads empty forever. The count exists so the case for
+                # a general source-restart grace can be judged over
+                # weeks (rule UP-14).
                 table = self.data.setdefault(DATA_WIFI_MEDIUM_REJECTED, {})
                 table[tracker] = int(table.get(tracker, 0)) + 1
                 self._dirty = True
@@ -388,7 +373,7 @@ class RouterTiesMixin:
     @property
     def wifi_medium_rejected(self) -> dict[str, int]:
         """Readings the scoring has discarded, per tracker, for the
-        life of the install (rulings #428 and #434)."""
+        life of the install (rule UP-14)."""
         return dict(self.data.get(DATA_WIFI_MEDIUM_REJECTED) or {})
 
     # ------------------------------------------------------------ ties
@@ -407,7 +392,7 @@ class RouterTiesMixin:
                 break
         # Rung 2: the full twelve-hex MAC inside an identifier.
         # Every part after the domain is searched, whatever the
-        # identifier's length (issue #16: hOn's has three).
+        # identifier's length (hOn's has three parts).
         if tracker is None:
             for _domain, parts in identifier_values(device):
                 for ident in parts:
@@ -429,8 +414,8 @@ class RouterTiesMixin:
         Runs with the registry rebuild, so a tracker that appears, a
         device that gains a MAC, or a rename costs nothing and heals
         nothing by accident: both rungs are exact. The tie is stored
-        as the tracker's entity id, per ruling: the discovery is the
-        ladder, the keeping is the entity.
+        as the tracker's entity id: the discovery is the ladder, the
+        keeping is the entity (rule UP-13).
         """
         registry = er.async_get(self.hass)
         devices = dr.async_get(self.hass)
@@ -457,16 +442,14 @@ class RouterTiesMixin:
                             break
             # A medium is judged only while the tracker is home. A
             # router does not maintain a disconnected client's
-            # attributes: on the reference fleet an outage left seven
-            # wireless trackers reading wired, and because a skipped
-            # tracker was never looked at again the tie set fell from
-            # twelve to six and stayed there. The feature that detects
-            # Wi-Fi outages was being shrunk by Wi-Fi outages.
+            # attributes, so an outage can leave wireless trackers
+            # reading wired, and the tie set would shrink with every
+            # Wi-Fi outage.
             #
             # So an away tracker keeps whatever it was last judged
-            # while connected, which is the #221 principle: a live
-            # reading confirms or doubts a classification and never
-            # decides one on its own.
+            # while connected: a live reading confirms or doubts a
+            # classification and never decides one on its own
+            # (rule UP-14).
             if state.state == STATE_HOME:
                 medium = self._score_wifi_medium(
                     entry.entity_id,
@@ -482,7 +465,7 @@ class RouterTiesMixin:
                 if medium is None:
                     # Never seen home, so nothing is known about it.
                     # Unknown keeps the tie, because the exclusion
-                    # acts only on a published wired marker (#388).
+                    # acts only on a published wired marker (rule UP-14).
                     medium = "unknown"
             census[medium] = census.get(medium, 0) + 1
             if medium == "wired":
@@ -501,21 +484,19 @@ class RouterTiesMixin:
             device = devices.async_get(device_id)
             if device is None:
                 continue
-            # The self-tie bar (ruling #419). A router integration
+            # The self-tie bar (rule UP-13). A router integration
             # registers every client on the network as its own
             # registry device, so without this a client is tied to
             # its own tracker: the device and the witness are the
             # same object, the tie cannot fail to agree with itself,
             # and three computers powering down inside a minute
-            # declare a network outage. Measured on the second fleet,
-            # where 126 of 205 tied devices were this and sixteen of
-            # nineteen declared outages came from it.
+            # would declare a network outage.
             owner = self._watched.get(device_id)
             try:
                 tracker = self._tie_for(device, tracker_by_mac, owner)
             except Exception as err:  # noqa: BLE001 - another integration's data
                 # One device's registry entry must not stop the ties
-                # being built for the house (issue #16).
+                # being built for the house.
                 self._note_odd_device(device, str(device.name_by_user or device.name or device_id), err)  # type: ignore[attr-defined]
                 tracker = None
             if tracker is not None:
@@ -591,13 +572,12 @@ class RouterTiesMixin:
 
     def _first_seen_exclusions_present(self) -> set[str]:
         """The integrations excluded when first seen that this house has:
-        its router integrations (#420), and those of
-        AUTO_EXCLUDED_INTEGRATIONS with an entry in Home Assistant
-        (ruling #711)."""
+        its router integrations, and those of AUTO_EXCLUDED_INTEGRATIONS
+        with an entry in Home Assistant (rule MUTE-02)."""
         present = self._router_integrations_present()
         entries = self.hass.config_entries
         # An entry a person ignored or disabled is not an integration
-        # the house has (adversarial round of 0.26.8).
+        # the house has.
         present |= {
             domain
             for domain in AUTO_EXCLUDED_INTEGRATIONS
@@ -607,14 +587,14 @@ class RouterTiesMixin:
 
     def _choice_made(self, domain: str) -> bool:
         """Whether the person has already decided something about this
-        integration (James, 20 October 2026): muted it for anything, or
+        integration: muted it for anything, or
         muted or excluded any of its devices, on the device or by a
         label. Their choice stands, and a first sighting does not
-        exclude it over them.
+        exclude it over them (rule MUTE-02).
 
         Read from the options and the registry, not from the watched
         view, because a device the default list already sets aside has
-        no place in that view (seventh adversarial round of 0.26.8).
+        no place in that view.
         """
         options = self.entry.options
 
@@ -659,15 +639,15 @@ class RouterTiesMixin:
         return False
 
     def _leave_as_chosen(self, domain: str) -> bool:
-        """A #711 integration the person decided about; never a router
-        integration, which #420 excludes whatever was muted."""
+        """An auto-excluded integration the person decided about; never a
+        router integration, which is excluded whatever was muted
+        (rule MUTE-02)."""
         return domain in AUTO_EXCLUDED_INTEGRATIONS and self._choice_made(domain)
 
     async def _sight_router_integrations(self) -> None:
-        """Exclude a router integration the first time it is seen
-        (ruling #420), and each of AUTO_EXCLUDED_INTEGRATIONS (#711), on
-        a new install; on a house that already exists, recommend it
-        (Ruled Change 70, rule MUTE-02).
+        """Exclude a router integration the first time it is seen, and
+        each of AUTO_EXCLUDED_INTEGRATIONS, on a new install; on a house
+        that already exists, recommend it (rule MUTE-02).
 
         Fires once per integration, ever. A new install gets these from
         the default list, and one the default lacks, such as a FRITZ!Box
@@ -689,14 +669,14 @@ class RouterTiesMixin:
             lock = self._sighting_lock = asyncio.Lock()
         async with lock:
             # Checked again once the lock is held: a reload may have come
-            # while it waited (eighth adversarial round of 0.26.8).
+            # while it waited.
             if self._stopped:  # type: ignore[attr-defined]
                 return
             await self._sight_once()
 
     def exclusion_offers(self) -> dict[str, str]:
         """Each integration recommended for exclusion, "open" while its
-        card stands and "closed" once it was excluded (Ruled Change 70).
+        card stands and "closed" once it was excluded (rule MUTE-02).
         Read defensively: the shape is this release's own."""
         found = self.data.get(DATA_EXCLUSION_OFFERS)
         if not isinstance(found, dict):
@@ -712,13 +692,13 @@ class RouterTiesMixin:
 
         Reads the list and writes it with no wait between, so a change
         the person makes at the same moment is never written over; the
-        file is saved last (sixth adversarial round of 0.26.8).
+        file is saved last.
         """
         present = self._first_seen_exclusions_present()
         seen = set(self.data.get(DATA_ROUTERS_SEEN) or [])
         fresh = present - seen
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
-        # The first run of a new install (Ruled Change 70).
+        # The first run of a new install (rule MUTE-02).
         new_install = self.setup_count <= 1 and not self._pin_before_0277  # type: ignore[attr-defined]
         offers = self.exclusion_offers()
         pinned = False
@@ -726,18 +706,17 @@ class RouterTiesMixin:
             # A house that already exists and never saved its list
             # follows the default, so the names this release adds to it
             # would exclude without asking: the list it already used is
-            # written as its own, once (Ruled Change 70).
+            # written as its own, once (rule MUTE-02).
             stored = list(DEFAULT_EXCLUDED_BEFORE_0277)
             pinned = True
         current = (
             [name for name in stored if isinstance(name, str)]
             if isinstance(stored, (list, tuple))
-            # A list damaged by hand is not a reason to fail the start
-            # (fifth adversarial round of 0.26.8).
+            # A list damaged by hand is not a reason to fail the start.
             else ([] if stored is not None else list(self.default_exclusions()))  # type: ignore[attr-defined]
         )
         # A card whose integration is now excluded is closed for good:
-        # taken back later, it does not come back (Ruled Change 70).
+        # taken back later, it does not come back (rule MUTE-02).
         closing = {
             domain for domain, state in offers.items()
             if state == OFFER_OPEN and domain in current
@@ -750,14 +729,13 @@ class RouterTiesMixin:
         kept_out: list[str] = []
         if new_install and stored is None:
             # A list never saved is the default. Those the default
-            # already holds are excluded by it; a #711 name the person
-            # has decided about is taken off it, as they chose; one the
-            # default lacks, such as a FRITZ!Box router, is added (sixth
-            # adversarial round of 0.26.8).
+            # already holds are excluded by it; an auto-excluded name the
+            # person has decided about is taken off it, as they chose;
+            # one the default lacks, such as a FRITZ!Box router, is added
+            # (rule MUTE-02).
             default = set(DEFAULT_EXCLUDED_INTEGRATIONS)
             kept_out = [n for n in sorted(fresh & set(AUTO_EXCLUDED_INTEGRATIONS)) if self._choice_made(n)]
-            # A router is excluded as #420 always did, whatever was muted
-            # (seventh adversarial round of 0.26.8).
+            # A router is excluded whatever was muted (rule MUTE-02).
             adding = [n for n in sorted(fresh - default) if not self._leave_as_chosen(n)]
             told = sorted(((fresh & default) - set(kept_out)) | set(adding))
             new_list = [n for n in current if n not in kept_out] + adding
@@ -771,7 +749,7 @@ class RouterTiesMixin:
         else:
             # A house that already exists: recommended, not excluded,
             # routers and media alike, unless the person has decided
-            # about it already (Ruled Change 70).
+            # about it already (rule MUTE-02).
             offered = [
                 name for name in sorted(fresh)
                 if name not in current
@@ -821,8 +799,7 @@ class RouterTiesMixin:
             # exclusion list as a setting the person changed. At a start
             # the listener is not yet in place, so the view is rebuilt
             # here for the devices to be set aside at once; while
-            # running, the listener rebuilds it again, which is harmless
-            # (adversarial rounds of 0.26.8).
+            # running, the listener rebuilds it again, which is harmless.
             self._options_seen = dict(options)
             self.hass.config_entries.async_update_entry(self.entry, options=options)
             self._rebuild_registry_view()  # type: ignore[attr-defined]
@@ -859,28 +836,26 @@ class RouterTiesMixin:
 
     def _wifi_recovery_needed(self, fell: int) -> int:
         """How many of the fallen set must return to announce a
-        recovery (ruling #423).
+        recovery (rule UP-16).
 
-        A bare share with no floor. A floor of three was measured
-        against churn and rejected here: on a three device outage it
-        requires all three back, which is the hours-long hold this
-        rule exists to remove. Closing early is the cheap error,
-        because whatever is still away goes back to per-device
-        detection rather than being forgotten (ruling #426).
+        A bare share with no floor, because a floor of three on a three
+        device outage requires all three back, which is the hours-long
+        hold this rule exists to remove. Closing early is the cheap
+        error, because whatever is still away goes back to per-device
+        detection rather than being forgotten (rule UP-16).
         """
         return math.ceil(WIFI_RECOVERY_SHARE * fell) if fell else 0
 
     def _wifi_burst_needed(self) -> int:
         """Return how many tied trackers must fall together to declare
-        an outage (ruling #421).
+        an outage (rule UP-12).
 
-        The greater of the floor and a share of the tied set. Three
-        was measured against churn on a twelve tracker fleet, where
-        three is a quarter of the house and a share cannot
-        discriminate at all; on a hundred device fleet the same three
-        is three percent. The floor protects the small fleet and the
-        share protects the large one, and they meet at thirty tied
-        trackers.
+        The greater of the floor and a share of the tied set. On a
+        twelve tracker house three is a quarter of the house and a
+        share cannot discriminate at all; on a hundred device house the
+        same three is three percent. The floor protects the small house
+        and the share protects the large one, and they meet at thirty
+        tied trackers.
         """
         return max(
             WIFI_BURST_FLOOR,
@@ -940,20 +915,18 @@ class RouterTiesMixin:
             self._wifi_not_home.setdefault(entity_id, now)
             # A tracker that falls while the outage stands joins the
             # fallen set unless it has already returned once: a
-            # returned member never rejoins (ruling #422), or the set
-            # can never empty and the shipped defect returns wearing
-            # a different hat.
+            # returned member never rejoins, or the set could never
+            # empty (rule UP-16).
             if (
                 self._wifi_down_at is not None
                 and entity_id not in self._wifi_returned
             ):
                 self._wifi_fallen.setdefault(entity_id, now)
             # A member that returned and has gone away again during
-            # the settle is a loss (ruling #425). Membership of the
-            # returned set stays permanent (#422), so losses are
-            # counted in their own right rather than by subtracting
-            # from the return count: the two rulings would otherwise
-            # cancel and no loss could ever be seen.
+            # the settle is a loss. Membership of the returned set
+            # stays permanent, so losses are counted in their own right
+            # rather than by subtracting from the return count, or no
+            # loss could ever be seen (rule UP-16).
             elif self._wifi_announced and entity_id in self._wifi_returned:
                 self._wifi_settle_losses += 1
             self._wifi_burst.append(now)
@@ -982,19 +955,16 @@ class RouterTiesMixin:
             # no longer claimed.
             self._wifi_not_home.pop(entity_id, None)
             # And if it was a casualty of the standing outage, it has
-            # returned, permanently (ruling #422).
+            # returned, permanently (rule UP-16).
             if entity_id in self._wifi_fallen:
                 was = len(self._wifi_returned)
                 self._wifi_returned.add(entity_id)
                 # The recovering row counts what has not come back
-                # (ruling #431), and that number is what a person
+                # (rule UP-11), and that number is what a person
                 # watches. It is not the casualty count, which does
                 # not move during a recovery, so nothing else marks
                 # the list for rewriting and the row would sit at its
-                # opening number until the outage closed. Observed on
-                # the staged outage of 15 September 10:03: the row
-                # read 11 of 11 throughout while the returns climbed
-                # from nought to nine.
+                # opening number until the outage closed.
                 if (
                     self._wifi_recovering_at is not None
                     and len(self._wifi_returned) != was
@@ -1040,7 +1010,7 @@ class RouterTiesMixin:
     def wifi_confirmation(self) -> dict[str, Any]:
         """What the ties can say about an outage the scan declared.
 
-        Where the scan is primary (#391) this is the whole of the
+        Where the scan is primary (rule UP-12) this is the whole of the
         ties' contribution to detection: how many watched devices the
         router says have left, and which. The count is what turns
         twenty individual reports into one line naming a cause.
@@ -1081,11 +1051,9 @@ class RouterTiesMixin:
             return
         if now - self._wifi_hold_since < WIFI_HOLD_SECONDS:
             return
-        # The same threshold the burst used (ruling #421). These
-        # disagreed in 0.21.0: the burst scaled with the fleet and
-        # the hold did not, so a burst of seven decaying to three
-        # still declared on a fleet where three is ordinary churn.
-        # Only trackers that left with the burst count, by the same
+        # The same threshold the burst used, so a burst of seven
+        # decaying to three never declares on a house where three is
+        # ordinary churn. Only trackers that left with the burst count, by the same
         # line the fallen set is drawn with: one already away before
         # it is not a casualty, and phones away all day must not lift
         # a small flap over the threshold (rule UP-12).
@@ -1107,7 +1075,7 @@ class RouterTiesMixin:
 
     @callback
     def on_wifi_scan_down(self, since: float, missing: list[str]) -> None:
-        """The scan says the network is gone, so declare it (#391).
+        """The scan says the network is gone, so declare it (rule UP-12).
 
         The same outage the ties would have declared, dated from when
         the network actually went. What the ties add is the count:
@@ -1156,20 +1124,9 @@ class RouterTiesMixin:
         It reports the return; it does not end the outage. Hearing
         the network is not the same as the devices on it being back,
         and the recovery rule is what knows the difference
-        (ruling #429).
-
-        Until 0.21.5 this called the restore directly, so on any
-        house with a network configured the whole recovery rule was
-        dead: the fallen set, the announce, the settle and the
-        reopen never ran. Measured on 14 September, the trackers came
-        home at 15:13:38, the scan closed the outage at 15:13:58, and
-        the five Motion Blinds devices behind it finished
-        reconnecting between 15:14:16 and 15:14:18. Every one was
-        handed back under #426 inside that twenty second window,
-        wrote its own row and announced itself, and twenty seconds
-        later they were all fine. The same half-applied shape as the
-        fallen set: a rule built for the tie route and never given to
-        the scan.
+        (rule UP-16). Devices can finish reconnecting tens of seconds
+        after the network is heard, and ending the outage at once would
+        give each one its own row.
         """
         if self._wifi_down_at is None:
             return
@@ -1210,19 +1167,19 @@ class RouterTiesMixin:
     def _sample_wifi_recovery(self, now: float) -> None:
         """Judge the recovery of a standing outage on the tick.
 
-        Announced when a share of the fallen set has returned
-        (#423), then settled: the settle extends while returns keep
-        arriving and closes after two consecutive quiet ticks (#424),
+        Announced when a share of the fallen set has returned, then
+        settled: the settle extends while returns keep
+        arriving and closes after two consecutive quiet ticks,
         which rides the burst out rather than cutting it at a fixed
-        delay. Three losses during the settle withdraw the announce
-        (#425), reusing the declaration floor because three trackers
+        delay. Three losses during the settle withdraw the announce,
+        reusing the declaration floor because three trackers
         falling together is what declared the outage in the first
         place.
 
         An outage with nothing in its fallen set ends when the network
-        is heard, because there is nothing else to wait for; until
-        0.27.5 it returned here and stayed open until a restart,
-        claiming every device that failed meanwhile (rule UP-16).
+        is heard, because there is nothing else to wait for; otherwise
+        it would stay open until a restart, claiming every device that
+        failed meanwhile (rule UP-16).
         """
         if self._wifi_resume_waiting():
             return
@@ -1236,7 +1193,7 @@ class RouterTiesMixin:
 
         if back >= fell:
             # Every member of the fallen set is home, so there is
-            # provably nothing left to wait for (ruling #430).
+            # provably nothing left to wait for (rule UP-16).
             # Checked before the announce, because a recovery that is already complete
             # has nothing to settle: announcing and then serving out
             # two quiet ticks would hold the outage open for two
@@ -1293,16 +1250,12 @@ class RouterTiesMixin:
 
         Called by both routes that declare one. The ties declare from
         a burst of trackers; a house that can hear its own radio
-        declares from the scan instead (#391) and the burst branch is
-        switched off entirely. 0.21.1 built the fallen set in the tie
-        route alone, so on any house with a network configured there
-        was never a fallen set at all and the recovery ran against an
-        empty one. Found by a staged outage on 14 September; neither
-        fleet file configures a network and no harness case did
-        either, so nothing covered the scan route.
+        declares from the scan instead (rule UP-12) and the burst branch
+        is switched off entirely. Both routes need the fallen set, or the
+        recovery runs against an empty one.
 
         A tracker already away before the outage began is left out
-        (ruling #409): it is not a casualty and must not vote against
+        (rule UP-15): it is not a casualty and must not vote against
         recovery. Anything the scan route cannot date is taken as
         part of the outage, because the scan knows the network went
         and knows nothing about when each tracker followed.
@@ -1422,8 +1375,8 @@ class RouterTiesMixin:
 
         Written when the outage opens, and again whenever its start,
         fallen set, worst count or announcements change, so a restart
-        resumes it as it stood; removed when it ends (James, 26 October
-        2026; rule UP-04). It lives in the main file, which a routine
+        resumes it as it stood; removed when it ends (rule UP-04). It
+        lives in the main file, which a routine
         write takes only when marked, so every change marks it.
         Opening, ending, and a change to whether its down was told or
         pushed are saved at once: a power cut that lost a push already
@@ -1574,15 +1527,15 @@ class RouterTiesMixin:
     def _resume_wifi_outage(self, now: float) -> None:
         """Take back, once a run, a Wi-Fi outage open before the restart.
 
-        Read from the stored outage alone (James, 26 October 2026): its
+        Read from the stored outage alone: its
         start as backdated, its fallen trackers with their fall times,
         its worst count, its announced count, whether its down was told
         and pushed, and the scan's down mark. So it stands again exactly
         as it was, across any number of restarts: its devices stay
         claimed, its start does not move, and its recovery carries its
         real length and its worst moment (rules UP-04, UP-11). A file
-        written by 0.27.4 or before holds no stored outage, and nothing
-        is resumed. A stored outage that is not whole is dropped.
+        from an older release holds no stored outage, and nothing is
+        resumed. A stored outage that is not whole is dropped.
 
         A down the bus heard is owed its restored, with the count it was
         announced with (rule UP-10); one held for the grace is held
@@ -1654,11 +1607,11 @@ class RouterTiesMixin:
 
     def _wifi_restore(self, now: float) -> None:
         """Close the outage: called when every fallen tracker is home
-        (ruling #430) or when the recovery has settled (#423, #424)."""
+        or when the recovery has settled (rule UP-16)."""
         since = self._wifi_down_at
         # Read before the outage is cleared, or there is nothing left
         # to ask: whatever it was claiming keeps that claim for a
-        # short while (ruling #433), dated from the outage rather
+        # short while (rule UP-08), dated from the outage rather
         # than from now, so a device that never comes back still
         # shows as down since the network went.
         # The second stamp is wall clock, not the sample's own time.
@@ -1711,7 +1664,7 @@ class RouterTiesMixin:
     def _wifi_confirmed_count(self) -> int:
         """How many claimed devices already read unavailable.
 
-        Evidence, never a gate (ruled 4 September): a real outage on
+        Evidence, never a gate: a real outage on
         a fleet of slow integrations would show zero here at
         declaration and still be real. Recorded because it separates
         a network outage from a tracker-side artifact after the fact.
@@ -1743,38 +1696,34 @@ class RouterTiesMixin:
         """Return the Wi-Fi outage claiming this device, if any.
 
         Claimed for the life of the outage rather than while its own
-        tracker happens to be away (ruling #411).
+        tracker happens to be away (rule UP-15).
 
-        The two are not the same and the difference is the fault the
-        second fleet reported. Trackers lead and verdicts trail: on
-        12 September the trackers were home 76 seconds after the peak
-        while the entities behind them were still going unavailable on
-        their own timers, 41 seconds to four minutes on the measured
-        3 September outage. A claim tied to the live tracker state had
-        expired by the time its casualties reached the problem list,
-        so forty-odd devices were listed individually and nothing
-        named the cause.
+        Trackers lead and verdicts trail: trackers can be home a minute
+        after the peak while the entities behind them are still going
+        unavailable on their own timers, 41 seconds to four minutes
+        later. A claim tied to the live tracker state would expire
+        before its casualties reached the problem list, so each device
+        would be listed alone and nothing would name the cause.
 
-        Not a device a radio stack owns (ruling #412): Zigbee, Z-Wave
+        Not a device a radio stack owns: Zigbee, Z-Wave
         and Matter hardware has its own bridge rung and its own
         medium, and a Wi-Fi outage does not explain it. Everything
         else is either Wi-Fi or wired, and a wired device is counted
         among the casualties even though a wired tracker is never
-        counted toward declaring an outage (ruling #413): declaring
-        wants precision, attributing wants coverage.
+        counted toward declaring an outage: declaring wants precision,
+        attributing wants coverage (rule UP-15).
 
-        The claim ends when the outage does (ruling #426). Whatever is
+        The claim ends when the outage does (rule UP-16). Whatever is
         still down then is its own problem, with its own timing.
         """
         since = self._wifi_down_at
         if since is None:
             # The outage is over, and a device it claimed is given a
             # short window to come back before it becomes its own
-            # problem (ruling #433). Hearing the network is not the
+            # problem (rule UP-08). Hearing the network is not the
             # same as the devices on it being back, and neither is
-            # the settle ending: on 14 September the settle closed
-            # 120 seconds before the last tracker came home, and six
-            # devices wrote their own rows inside that gap.
+            # the settle ending: the last tracker can come home
+            # minutes after the settle closes.
             held = self._wifi_handback.get(device_id)
             if held is not None:
                 if self._wifi_handback_now() - held[1] < WIFI_HANDBACK_SECONDS:
@@ -1788,7 +1737,7 @@ class RouterTiesMixin:
         # One whose tracker was already away when the outage began is
         # not a casualty of it, so its tracker claims nothing: it is
         # judged by its own failure time below, like any other device
-        # (rule UP-15, ruling #409).
+        # (rule UP-15).
         tracker = self._wifi_ties.get(device_id)
         if tracker is not None and tracker in self._wifi_fallen:
             return WIFI_KEY, since
@@ -1807,14 +1756,13 @@ class RouterTiesMixin:
     def _wifi_backdate(self) -> None:
         """Date the outage from the first device that noticed it.
 
-        Ruling #440. The outage is first dated from its first tracker
-        to leave, which is when the router noticed, not when the
-        network went. A tied device whose tracker fell in this outage
-        and whose own failure began no more than WIFI_LOOKBACK_SECONDS
-        earlier went down with the network, not before it; left as
-        it was, the rule for an already broken device kept each one's
-        row, and 53 were listed beside the second fleet's outage row
-        on 16 September. Only a device the router saw leave can say
+        The outage is first dated from its first tracker to leave,
+        which is when the router noticed, not when the network went. A
+        tied device whose tracker fell in this outage and whose own
+        failure began no more than WIFI_LOOKBACK_SECONDS earlier went
+        down with the network, not before it; otherwise the rule for an
+        already broken device would keep each one's row beside the
+        outage row (rule UP-15). Only a device the router saw leave can say
         so, and only within the router's own detection time, so a
         device broken for hours keeps its row.
 
@@ -1875,7 +1823,7 @@ class RouterTiesMixin:
             self._move_wifi_down_row(earliest)
 
     def wifi_burst_held(self) -> set[str]:
-        """Tied devices whose rows wait for the router (ruling #446).
+        """Tied devices whose rows wait for the router (rule UP-15).
 
         A device's own integration can notice a network drop minutes
         before the router marks it away, so a burst of verdicts can
@@ -1888,8 +1836,7 @@ class RouterTiesMixin:
         Once an outage stands its claim decides for every device it
         has taken, and a burst device the router has not marked away
         yet keeps waiting out its own hold, because the router's
-        second wave can come minutes after its first: on the second
-        fleet, 16 September, five minutes. Nothing is held for a
+        second wave can come minutes after its first. Nothing is held for a
         device the router does not track or a radio stack owns.
         """
         if not self._wifi_ties:

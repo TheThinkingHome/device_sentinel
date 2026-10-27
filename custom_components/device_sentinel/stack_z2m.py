@@ -3,37 +3,32 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.25.2 (2026-10-09)
+# File: stack_z2m.py, Version: 0.27.10 (2026-10-27)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
-One file per coordinator stack (ruling #218). Before this file the
-same knowledge sat in three places: the reader in bridge.py, the
-bridge test in interventions.py, and a branch in the middle of
-coordinator.py's registry walk. Adding a stack now touches one new
-file and one line in stacks.py.
+One file per coordinator stack, so adding a stack touches one new
+file and one line in stacks.py (rule STACK-01).
 
 Three questions this module answers, and every stack module answers
 the same three. Does this device prove the stack is present
 (`detects`). Does this stack own a device on that integration domain
 (`owns_domain`). Give me a reader for it, or None (`make_reader`).
 
-Z2M is the stack this project was developed against, the first with a
-reader (ZHA's followed in 0.19.0), and the only one that publishes a
-pairing window. It is the clean case: two retained MQTT topics,
+Z2M is the stack Device Sentinel was developed against, and the only
+one that publishes a pairing window. It is the clean case: two retained MQTT topics,
 bridge/state (online or offline) and bridge/info (which carries
 permit_join and the absolute permit_join_end). Retained means the
-current state arrives the moment we subscribe, so a restart in the
+current state arrives the moment Device Sentinel subscribes, so a restart in the
 middle of a pairing window loses nothing.
 
 Everything in the reader is guarded. If MQTT is not available, if the
 topics never arrive, or if a payload will not parse, the state stays
 unknown and nothing raises. A bridge reader that cannot read simply
 reports unknown, and the detector that reads it goes back to judging
-by how long the silence lasted, which is what it did before this
-reader existed. So a reader that fails can only cost a pairing it
-would have caught, and can never make a judgment worse than the one
-the project already trusted (rulings #138 and #147).
+by how long the silence lasted. So a reader that fails can only cost
+a pairing it would have caught, and can never make a judgment worse
+than one made without it (rule FRZ-16).
 """
 
 from __future__ import annotations
@@ -70,10 +65,9 @@ from .device_fields import device_field, identifier_values
 
 STACK = STACK_Z2M
 
-# This stack shares its domain (ruling #412). Z2M's devices arrive
-# through MQTT discovery and carry the mqtt domain, which anything
-# else publishing its own discovery carries too: on the reference
-# fleet two NSPanel Pros are MQTT and Wi-Fi. Owning the domain is
+# This stack shares its domain. Z2M's devices arrive through MQTT
+# discovery and carry the mqtt domain, which anything else publishing
+# its own discovery carries too, such as an NSPanel Pro on MQTT and Wi-Fi. Owning the domain is
 # therefore not enough to own a device, and `device_key` is asked as
 # well. The other three stacks own their domain outright.
 SHARED_DOMAIN = True
@@ -86,10 +80,10 @@ def owns_domain(domain: str) -> bool:
     domain: its devices arrive through MQTT discovery and carry the
     `mqtt` domain, shared with every other MQTT thing in the house.
     That is why presence is told by the bridge device rather than by
-    this test (ruling #139), and why ownership is the widest claim
+    this test (rule STACK-01), and why ownership is the widest claim
     this stack can make about a single device: a non-Z2M MQTT device
     reads as Z2M's here. The only consequence is a discarded gap,
-    which is the fail-safe direction (ruling #145).
+    which is the fail-safe direction (rule FRZ-16).
     """
     return domain == "mqtt"
 
@@ -98,7 +92,7 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device proves Zigbee2MQTT is running.
 
     The bridge device is the tell, never a count of mqtt devices
-    (rulings #139 and #143).
+    (rule STACK-01).
     """
     return owns_domain(domain) and is_bridge_device(device)
 
@@ -110,11 +104,10 @@ def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     registry holds the coordinator as an ordinary device on the mqtt
     domain. It is not ordinary. It speaks only when something changes,
     so a rhythm learned from it measures the intervals between
-    unrelated events rather than a heartbeat: 16.5 hours on the
-    reference fleet, 70.9 on the second, 30.8 on a third where it was
-    convicted frozen while the Bridge sensor for the same coordinator
-    read running. The coordinator is watched twice and the two answers
-    disagree, which is the fault ruling #400 closes.
+    unrelated events rather than a heartbeat, anywhere from 16 to 71
+    hours, and it can read frozen while the Bridge sensor for the same
+    coordinator reads running. Watched twice, the coordinator gives two
+    answers that disagree (rule WATCH-05).
 
     This is not `detects`. That question asks which device proves the
     stack is present, and for ZHA, Z-Wave and Matter every device on
@@ -130,9 +123,8 @@ def device_key(device: dr.DeviceEntry) -> str | None:
     Z2M publishes through MQTT discovery with an identifier of the
     shape ('mqtt', 'zigbee2mqtt_0x282c02bfffeafa5b'), so the address
     is the tail of the second element. It is the only reliable join:
-    matching on name fails on the reference fleet today, where a
-    switch carries one name in Home Assistant and another in
-    Zigbee2MQTT (ruling #221). An MQTT device that is not Z2M's, such
+    matching on name fails where a switch carries one name in Home
+    Assistant and another in Zigbee2MQTT (rule STACK-03). An MQTT device that is not Z2M's, such
     as a panel publishing its own discovery, has no such identifier
     and returns None, which rejects it without a special case.
     """
@@ -140,7 +132,7 @@ def device_key(device: dr.DeviceEntry) -> str | None:
         if domain != "mqtt":
             continue
         # Any length, since an integration may register more than a
-        # pair (issue #16).
+        # pair.
         for value in parts:
             if not isinstance(value, str):
                 continue
@@ -156,7 +148,7 @@ def make_reader(hass: HomeAssistant) -> Z2MBridgeReader:
 
 
 def is_bridge_device(device: dr.DeviceEntry) -> bool:
-    """Recognise the Zigbee2MQTT bridge device (ruling #143).
+    """Recognize the Zigbee2MQTT bridge device (rule STACK-01).
 
     Z2M publishes its bridge through MQTT discovery with a name
     ending "Zigbee2MQTT Bridge", or a model of "Bridge" under the
@@ -164,7 +156,7 @@ def is_bridge_device(device: dr.DeviceEntry) -> bool:
     it holds whatever coordinator hardware sits behind it, so the
     tell does not depend on any one adapter. This is the clean
     signal that Z2M is running, since the mqtt domain alone cannot
-    tell Z2M apart from any other MQTT device (ruling #139).
+    tell Z2M apart from any other MQTT device.
     """
     name = device.name_by_user or device.name or ""
     if isinstance(name, str) and Z2M_BRIDGE_NAME_MARK in name:
@@ -204,7 +196,7 @@ class Z2MBridgeReader:
         # just after it closes, so the detector counts a recovery in
         # a short window after this moment as pairing too, rather
         # than crediting the device with recovering on its own
-        # (ruling #145). None until a window has closed.
+        # (rule FRZ-16). None until a window has closed.
         self._pairing_closed_at: float | None = None
         # Reachability. Zigbee2MQTT publishes its own verdict on every
         # device to <name>/availability, retained, and the verdict is
@@ -212,7 +204,7 @@ class Z2MBridgeReader:
         # by its IEEE address. bridge/devices is the only thing that
         # joins the two, and it is also what rejects a topic with no
         # device behind it: a group, or a retained topic left by a
-        # device that was renamed or removed (ruling #221).
+        # device that was renamed or removed (rule STACK-03).
         self._availability: dict[str, tuple[str, str]] = {}
         self._devices_by_name: dict[str, dict[str, Any]] = {}
         # How long Z2M waits before it calls a device offline, read
@@ -223,8 +215,8 @@ class Z2MBridgeReader:
         self._availability_enabled: bool | None = None
         self._active_timeout: int | None = None
         self._passive_timeout: int | None = None
-        # Where the coordinator is, from bridge/info's serial port
-        # (0.25.2): a network coordinator reads tcp://host:port, which
+        # Where the coordinator is, from bridge/info's serial port: a
+        # network coordinator reads tcp://host:port, which
         # names the device a coordinator's own integration shows.
         self._serial_port: str | None = None
 
@@ -246,11 +238,11 @@ class Z2MBridgeReader:
     def availability_enabled(self) -> bool | None:
         """Return whether Zigbee2MQTT's availability feature is on.
 
-        Read from bridge info (ruling #236): True or False once info has
+        Read from bridge info: True or False once info has
         arrived, None before it. Surfaced on the bridge sensor so a
         person can see the setting without opening Zigbee2MQTT;
         never written, because enabling it is Zigbee2MQTT's own
-        configuration.
+        configuration (rule STACK-13).
         """
         return self._availability_enabled
 
@@ -276,7 +268,7 @@ class Z2MBridgeReader:
         called offline only after a silence far longer than any window
         this integration learns. A caller that shows the state without
         the timeout would tell a person a dead battery device is fine
-        (ruling #221).
+        (rule STACK-03).
         """
         if not key or not self.reachability_known:
             return None
@@ -337,7 +329,7 @@ class Z2MBridgeReader:
 
     @property
     def loaded(self) -> bool:
-        """Whether the bridge has said it is online (ruling #445)."""
+        """Whether the bridge has said it is online (rule UP-03)."""
         return self._online is True
 
     @property
@@ -377,7 +369,7 @@ class Z2MBridgeReader:
         grace after it closed, recovered because somebody was pairing
         it, not on its own. That silence is then discarded instead of
         being learned, because its ending measures the hand rather
-        than the device (ruling #145). Open now is the clear case;
+        than the device (rule FRZ-16). Open now is the clear case;
         the grace covers a device that reports just after the window
         closes, which the observed publish lag on a real bridge makes
         a real case.
@@ -397,17 +389,12 @@ class Z2MBridgeReader:
         swallowed: the reader simply stays at unknown, and every
         consumer treats unknown as "cannot tell", which is safe.
         """
-        # Ask before waiting (ruling #437). async_wait_for_mqtt_client
-        # answers an absent MQTT integration by waiting its full
-        # timeout, fifty seconds, before giving up, and this reader
-        # called it unconditionally. So any house with a Zigbee2MQTT
-        # bridge device in its registry blocked Device Sentinel's setup
-        # for fifty seconds whenever MQTT was not yet loaded, and the
-        # test suite paid the same fifty seconds on every bridge case
-        # without anyone noticing, because the runs passed. The broker
-        # transport has guarded against exactly this since it was
-        # written; this is the same guard. Found through a third
-        # fleet's diagnostics on 15 September.
+        # Ask before waiting. async_wait_for_mqtt_client answers an
+        # absent MQTT integration by waiting its full timeout, fifty
+        # seconds, so calling it unconditionally would hold Device
+        # Sentinel's setup that long in any house with a Zigbee2MQTT
+        # bridge whenever MQTT is not yet loaded. The broker transport
+        # has the same guard (rule STACK-03).
         if not any(
             entry.state is ConfigEntryState.LOADED
             for entry in self._hass.config_entries.async_entries("mqtt")
@@ -509,7 +496,7 @@ class Z2MBridgeReader:
         self._permit_join = bool(data.get("permit_join", False))
         # Note the moment a window closes, so a device that reports
         # just after it can still be credited to the pairing rather
-        # than to itself (ruling #145).
+        # than to itself (rule FRZ-16).
         if was_open and not self._permit_join:
             self._pairing_closed_at = dt_util.utcnow().timestamp()
         end = data.get("permit_join_end")

@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.27.5 (2026-10-25)
+# File: hubs.py, Version: 0.27.10 (2026-10-27)
 
-"""Judged by its hub (rulings #663 to #665).
+"""Judged by its hub (rules STACK-09, STACK-10).
 
 Some integrations put their devices behind a hub that reports nothing
 about any one of them. Lutron Caseta is the first: a light, switch,
@@ -22,23 +22,23 @@ device of a hub-judged integration registered via another device of
 the same integration and config entry is controlled by that device,
 and that device is a hub. Nothing here names Lutron except the one
 reader in HUB_READERS, so Hue and SmartThings can join with a reader
-of their own (James, 14 October 2026).
+of their own.
 
-The Lutron reader is the one private field #663 rules in under #639:
-the library's session handle. pylutron-caseta checks its hub once a
-minute itself and clears the handle when the hub stops answering, then
-keeps it clear while it retries; `is_connected()` is no help, since it
-stays True through an outage (Christopher Robert's five outages, 20
-September 2026, and the library's own code, 0.29.0). Nothing is
-imported, nothing is sent to the hub, and any failure to read it is no
-opinion: the hub is then judged as any other device, never down.
+The Lutron reader reads one private field, the library's session
+handle (rule STACK-08). pylutron-caseta checks its hub once a minute
+itself and clears the handle when the hub stops answering, then keeps
+it clear while it retries; `is_connected()` is no help, since it stays
+True through an outage. Nothing is imported, nothing is sent to the
+hub, and any failure to read it is no opinion: the hub is then judged
+as any other device, never down (rule STACK-13).
 
 A hub reads down once two not-connected readings of the minute check
 stand HUB_DOWN_CONFIRM_SECONDS or more apart, which rides past the
 library's own reconnect of a few seconds; a reading with no opinion
-between them confirms nothing (rule STACK-09). Its entity changes only at a
-restart, so its silence is not judged either. A hub whose integration
-failed to start is the integration outage rule's (#445), as before.
+between them confirms nothing (rule STACK-09). Its entity changes only
+at a restart, so its silence is not judged either. A hub whose
+integration failed to start falls to the integration outage rule
+(rule UP-03).
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ _FAILED_SETUP = frozenset({ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_
 
 
 def _lutron_connected(entry: Any) -> bool:
-    """Whether a Lutron hub's session is up (#663).
+    """Whether a Lutron hub's session is up (rule STACK-09).
 
     The bridge keeps its session in `_leap`, set on a connection and
     cleared when the connection drops. A bridge without the attribute
@@ -91,18 +91,18 @@ def _lutron_connected(entry: Any) -> bool:
     bridge = entry.runtime_data.bridge
     if not hasattr(bridge, "_leap"):
         raise AttributeError("the Lutron bridge has no session field")
-    return bridge._leap is not None  # noqa: SLF001 - ruled under #639 and #663
+    return bridge._leap is not None  # noqa: SLF001 - private read (rules STACK-08, STACK-09)
 
 
 # The one line per hub-judged integration: its domain and how to read
-# whether one of its hubs is up. Hue and SmartThings join here (0.26.4).
+# whether one of its hubs is up.
 HUB_READERS: dict[str, Any] = {LUTRON: _lutron_connected}
 
 # The bus events that say a device controlled by a hub was used, where
-# the device has no entity that would say so (#664): a Lutron Pico's
-# buttons are disabled by default and only command it from Home
-# Assistant, so a press reaches Home Assistant only as this event,
-# carrying the device's registry id.
+# the device has no entity that would say so: a Lutron Pico's buttons
+# are disabled by default and only command it from Home Assistant, so
+# a press reaches Home Assistant only as this event, carrying the
+# device's registry id (rule STACK-09).
 HUB_BUTTON_EVENTS = ("lutron_caseta_button_event",)
 HUB_BUTTON_PRESS = "press"
 
@@ -203,7 +203,7 @@ class HubMixin:
 
     @callback
     def _on_hub_button(self, event: Any) -> None:
-        """A press counts as the device reporting (#664)."""
+        """A press counts as the device reporting (rule STACK-09)."""
         device_id = event.data.get("device_id")
         if device_id not in self._watched:  # type: ignore[attr-defined]
             return
@@ -212,15 +212,15 @@ class HubMixin:
         )
 
     def judged_by_hub(self, device_id: str) -> bool:
-        """Whether a device is a hub or controlled by one (#664)."""
+        """Whether a device is a hub or controlled by one (rule STACK-09)."""
         return device_id in self._hub_of or device_id in self._hub_entry
 
     def hub_takes_over(self, device_id: str) -> bool:
-        """Whether a watched hub speaks for this device's outages (#664).
+        """Whether a watched hub speaks for this device's outages (rule STACK-09).
 
         A hub that is not watched (no entity of its own, or excluded)
         gets no verdict, so the integration outage rule keeps covering
-        its entry, as in 0.26.2. A muted hub still speaks, silently.
+        its entry. A muted hub still speaks, silently.
         """
         if device_id in self._hub_entry:
             return self._hub_judged(device_id)
@@ -230,13 +230,11 @@ class HubMixin:
     def _hub_judged(self, hub_id: str) -> bool:
         """Whether a hub is watched, so it speaks for its devices.
 
-        Muted or not: a hub's mute covers the devices it controls
-        (James, 14 October 2026), so muting it silences them all and
-        hands nothing to anyone. Until then a muted hub's devices went
-        to their own entities and the integration outage rule, and a
-        mute changed mid-outage moved verdicts, rows and an announced
-        outage from one to the other, which took three review rounds
-        and was never whole.
+        Muted or not: a hub's mute covers the devices it controls, so
+        muting it silences them all and hands nothing to anyone. If a
+        muted hub's devices fell to their own entities instead, a mute
+        changed mid-outage would move verdicts, rows and an announced
+        outage from one to the other (rule STACK-09).
         """
         return hub_id in self._watched  # type: ignore[attr-defined]
 
@@ -244,7 +242,7 @@ class HubMixin:
         """Whether the hub controlling a device is muted by `is_muted`.
 
         One family's mute check, asked of the hub: a hub's mute covers
-        the devices it controls, mute by mute (James, 14 October 2026).
+        the devices it controls, mute by mute (rule STACK-09).
         """
         hub = self.watched_hub_of(device_id)
         return hub is not None and bool(is_muted(hub))
@@ -253,8 +251,7 @@ class HubMixin:
         """The watched hub that speaks for a device, or None.
 
         A hub that is not watched (excluded, disabled, or with no
-        entity) speaks for nothing, so its mute covers nothing either
-        (seventh review round, 14 October 2026).
+        entity) speaks for nothing, so its mute covers nothing either.
         """
         hub = getattr(self, "_hub_of", {}).get(device_id)
         if hub is None or hub not in getattr(self, "_watched", {}):
@@ -273,7 +270,7 @@ class HubMixin:
         """A hub's words for unavailable: "went down" and "down".
 
         The card and the Daily Brief say of a hub what the Problem List
-        says (James, 14 October 2026). None for any other device.
+        says (rule STACK-10). None for any other device.
         """
         if device_id is None or not self.is_hub(device_id):
             return None
@@ -282,10 +279,9 @@ class HubMixin:
     def unavailable_words(self, device_id: str | None) -> tuple[str, str] | None:
         """The brief's words for this device going unavailable, if not the usual.
 
-        A hub's (James, 14 October 2026), or "became unavailable" for a
-        device whose stack keeps a node status, as Z-Wave does (James,
-        16 October 2026, with ruling #670). None means the usual words,
-        also "became unavailable" since 17 October 2026 (James).
+        A hub's (rule STACK-10), or "became unavailable" for a device
+        whose stack keeps a node status, as Z-Wave does. None means the
+        usual words, also "became unavailable" (rule UNAV-08).
         """
         hub = self.hub_unavailable_words(device_id)
         if hub is not None:
@@ -302,10 +298,10 @@ class HubMixin:
     def _hub_connected(self, hub_id: str) -> bool | None:
         """Whether a hub's connection is up, or None for no opinion.
 
-        No opinion when its entry is not loaded (that is the integration
-        outage rule's, #445), when the integration has no reader, and
-        when the reader cannot read: the first failure per entry is
-        logged once at info, as #639 asks.
+        No opinion when its entry is not loaded, since the integration
+        outage rule covers that (rule UP-03); when the integration has
+        no reader; and when the reader cannot read: the first failure
+        per entry is logged once at info (rule STACK-08).
         """
         entry_id = self._hub_entry.get(hub_id)
         if entry_id is None:
@@ -315,7 +311,8 @@ class HubMixin:
             return None
         if entry.state in _FAILED_SETUP:
             # Its integration could not start, as after a restart taken
-            # with the hub unplugged: the hub is not connected (#664).
+            # with the hub unplugged: the hub is not connected
+            # (rule STACK-09).
             return False
         if entry.state is not ConfigEntryState.LOADED:
             return None
@@ -368,16 +365,16 @@ class HubMixin:
         return self._hub_lost.get(hub_id)
 
     def _hub_category(self, device_id: str, record: dict[str, Any], now: float) -> str | None:
-        """The verdict for a hub or a device it controls (#664).
+        """The verdict for a hub or a device it controls (rule STACK-09).
 
         Never frozen and never "never reported": these devices report
         only when used or at a restart. A hub whose connection is down
         is unavailable. Otherwise a device is down only when the
         entities that decide (_live_entity_states, its main entities
         first) all read unavailable, an unknown among them counting as
-        nothing, which happens at a restart with its hub away. A frozen verdict standing from before 0.26.3 stays
-        until the device reports, as #529 keeps one through a rule
-        change.
+        nothing, which happens at a restart with its hub away. A frozen
+        verdict standing from an older release stays until the device
+        reports, as a verdict is kept through a rule change.
         """
         current = record.get(DEV_FROZEN_CATEGORY)
         if self.is_hub(device_id):
@@ -388,7 +385,8 @@ class HubMixin:
                 return current
             if self._hub_connected(device_id) is True:
                 # Its connection is the truth for a hub: up is up, and a
-                # frozen verdict from 0.26.2 has nothing behind it.
+                # frozen verdict from an older release has nothing
+                # behind it.
                 return None
         hub = self._hub_of.get(device_id)
         if hub is not None and hub in self._hub_lost and self.hub_takes_over(device_id):
@@ -397,17 +395,17 @@ class HubMixin:
             # verdict as it stood.
             return current
         states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
-        # Unknown counts as nothing (James, 17 October 2026).
+        # Unknown counts as nothing (rule UNAV-02).
         known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
         if known and all(s in BAD_STATES for s in known):
-            # Alive while another entity of its own reports (James, 17
-            # October 2026).
+            # Alive while another entity of its own reports
+            # (rule UNAV-01).
             if self._reporting_through_others(device_id):  # type: ignore[attr-defined]
                 return None
             return FREEZE_CATEGORY_UNAVAILABLE
         if states and not known and current in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN):
             # Nothing but unknown: down stays down until the device says
-            # something (#529; second adversarial round of 0.26.6).
+            # something (rule UNAV-02).
             return current
         if current == FREEZE_CATEGORY_FROZEN and not self.is_hub(device_id):
             return FREEZE_CATEGORY_FROZEN
@@ -466,7 +464,7 @@ class HubMixin:
                 "type": self.type_words(member) or device_kind(self._model_text(member)).capitalize(),  # type: ignore[attr-defined]
                 "standing": (
                     # Muted by its hub alone, it says so in those words
-                    # (James, 14 October 2026).
+                    # (rule STACK-09).
                     "Muted with its hub" if (muted := self.mute_text(member))  # type: ignore[attr-defined]
                     and all("with its hub" in part for part in muted.split("; "))
                     else f"Watched, muted: {muted}" if muted
@@ -543,7 +541,7 @@ class HubMixin:
         return str(device_field(device, "model") or "") if device is not None else ""
 
     def hub_problem_words(self, device_id: str | None) -> str | None:
-        """The Problem List's words for a hub that is down (#665)."""
+        """The Problem List's words for a hub that is down (rule STACK-10)."""
         if device_id is None or not self.is_hub(device_id) or self.hub_down_since(device_id) is None:
             return None
         count = len(self.hub_members(device_id))
@@ -551,7 +549,7 @@ class HubMixin:
         return f"Hub down, {count} {noun} that it controls"
 
     def hub_problem_line(self, device_id: str, when: str | None) -> str | None:
-        """The tap-open line for a hub that is down (#665)."""
+        """The tap-open line for a hub that is down (rule STACK-10)."""
         if not self.is_hub(device_id) or self.hub_down_since(device_id) is None:
             return None
         count = len(self.hub_members(device_id))

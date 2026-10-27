@@ -3,13 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.27.5 (2026-10-26)
+# File: events.py, Version: 0.27.10 (2026-10-27)
 
 """What Device Sentinel says on the Home Assistant bus.
 
-Until now the integration only listened. An automation could not react
-to a device going frozen except by polling an entity's state, which is
-the one thing a monitoring integration ought to make easy.
+An automation reacts to a device going frozen through these events
+rather than by polling an entity's state.
 
 Every fire call lives here, the same way every Repair call lives in
 `repairs.py`, so the payload shape is decided once rather than in each
@@ -17,27 +16,24 @@ module that has a transition to announce.
 
 Six event types, each with its own name rather than one type carrying
 an action field, because an automation triggers on event_type and a
-distinct name is what a person types into the trigger box (ruling
-#289): a fault, its recovery, an acknowledgment, a withdrawal when a
-device leaves the watched set without recovering (ruling #370), and
-an upstream going down and coming back.
+distinct name is what a person types into the trigger box: a fault,
+its recovery, an acknowledgment, a withdrawal when a device leaves the
+watched set without recovering, and an upstream going down and coming
+back (rule NOTE-12).
 
-Where they fire is the whole design (ruling #289). A device earns an
+Where they fire is the whole design. A device earns an
 event when its line is added to the problem list, when a kind leaves
 it, and when a person ticks it. Nowhere else. That boundary already
-carries the per-device debounce (#117) and the multi-fault collapse
-(#213), so an automation gets the same filtering a person gets: no
-thirty-second blips, one event for a device with two faults, and
-nothing at all during the startup grace (#291).
+carries the per-device debounce and the multi-fault collapse, so an
+automation gets the same filtering a person gets: no thirty-second
+blips, one event for a device with two faults, and nothing at all
+during the startup grace (rules NOTE-12, WATCH-10).
 
 An outage upstream, a broker or bridge, fires its own pair rather
-than one event per device: #264 suppresses the cascade at the problem
-list, so the devices behind a downed bridge never become rows and
-never fire. It was once left out altogether, on the grounds that a
-coordinator has its own availability entity; but a stopped broker or
-bridge silences a whole house deliberately, and an automation could
-not see the one failure that takes a house quiet, so the pair was
-added.
+than one event per device, because the devices behind a downed bridge
+never become rows and never fire (rule UP-05). A stopped broker or
+bridge silences a whole house, and without the pair an automation
+could not see the one failure that takes a house quiet (rule UP-10).
 """
 
 from __future__ import annotations
@@ -93,12 +89,12 @@ def _sound_recovery(payload: Any) -> bool:
 
 @callback
 def sort_kinds(kinds) -> list[str]:
-    """Return a device's kinds worst first (ruling #289).
+    """Return a device's kinds worst first (rule NOTE-12).
 
     kinds[0] is the headline, so an automation can read the worst
     thing wrong with a device without writing a template. Unavailable
-    leads because FREEZE_CATEGORY_PRIORITY already ruled it above
-    frozen, and nothing here contradicts a decision already made.
+    leads because FREEZE_CATEGORY_PRIORITY already puts it above
+    frozen, and this order agrees with it.
 
     A kind this release has never heard of sorts last rather than
     first. A record written by a later version should not be able to
@@ -115,13 +111,13 @@ def resolved_by(cause: str | None) -> str:
     The incident carries a few cause values in practice. A person's
     own act, handling the device, is an intervention; a restart or an
     outage is not, and a recovery after one is the device recovering
-    by itself (#535, amending #228), as is a recorded absence of any
-    intervention; and a null is two different things wearing one
-    value, a battery or a rail that has no lever to name and a silence
-    whose episode fell outside #228's slack.
+    by itself, as is a recorded absence of any intervention (rule
+    BRIEF-05); and a null is two different things wearing one value, a
+    battery or a rail that has no lever to name and a silence whose
+    episode fell outside the slack.
 
     Those nulls become unknown rather than being guessed into self
-    (ruling #291). An automation that resumes trusting a device on a
+    (rule NOTE-12). An automation that resumes trusting a device on a
     self-recovery must not be told self when the truth is that nobody
     knows.
     """
@@ -175,7 +171,7 @@ class EventMixin:
 
         Not one per kind. _journal_addition runs once for every kind
         that arrives, so firing there would give a device landing with
-        two faults two events, which is #213's collapse undone on the
+        two faults two events, the multi-fault collapse undone on the
         bus while it holds on the screen.
 
         A device that gains a second fault later fires again with the
@@ -203,7 +199,7 @@ class EventMixin:
         ):
             payload["battery_level"] = level
         if battery_type is None and any(kind.endswith("battery") for kind in ordered):
-            # What powers it (0.24.7), beside a battery fault only.
+            # What powers it, beside a battery fault only.
             battery_type = self.power_text(device_id)  # type: ignore[attr-defined]
         if battery_type is not None:
             payload["battery_type"] = battery_type
@@ -254,9 +250,9 @@ class EventMixin:
     ) -> None:
         """One event when a line leaves without a recovery.
 
-        The device was set aside, so nobody watches it (ruling #370),
-        or a person muted it, which is their own act and leaves
-        silently (ruling #537); the reason says which. Not a recovery:
+        The device was set aside, so nobody watches it, or a person
+        muted it, which is their own act and leaves silently (rule
+        LIST-09); the reason says which. Not a recovery:
         the device did not come back. An automation that paired a fault
         with this line gets its closing event here, carrying every kind
         the line held, and never hears "recovered" for a device that
@@ -282,10 +278,10 @@ class EventMixin:
 
         A stopped broker or bridge silences every device behind it
         deliberately: they are reported as the upstream rather than
-        as themselves (ruling #264), and they get no incident, no
-        event and no journal line of their own (ruling #266). Both
-        are right, and together they left the one failure that takes
-        a house quiet as the one failure an automation could not see.
+        as themselves, and they get no incident, no event and no
+        journal line of their own (rule UP-05). Without this event the
+        one failure that takes a house quiet is the one failure an
+        automation cannot see.
 
         `devices` is what makes it actionable. Without it every
         outage looks alike on the bus, and a bridge carrying two
@@ -298,7 +294,7 @@ class EventMixin:
             "devices": devices,
         }
         # Evidence, present only where a kind produces it (the Wi-Fi
-        # outage, ruled 4 September): how many claimed devices
+        # outage): how many claimed devices
         # already read unavailable at declaration. The contract's
         # four fields are untouched; a field that is absent for
         # every other kind amends nothing.
@@ -316,7 +312,7 @@ class EventMixin:
 
         Fired on the transition rather than on the state, so a
         restart that comes up with an upstream already down does not
-        announce a recovery that never happened (ruling #222).
+        announce a recovery that never happened (rule UP-04).
         """
         self._fire(
             EVENT_UPSTREAM_RESTORED,
@@ -378,11 +374,9 @@ class EventMixin:
         # A withdrawal is a fact about the house, not an echo of the
         # restart: a device removed or set aside while Home Assistant was
         # stopped closes the fault an automation paired it with, so it is
-        # fired inside the startup grace too (0.25.5, found by the
-        # adversarial round).
+        # fired inside the startup grace too.
         # So is a recovery owed to a down announced before the restart:
-        # the automation that heard the down is waiting for it (round 33
-        # of 0.26.6).
+        # the automation that heard the down is waiting for it.
         if self._in_startup_grace() and event_type != EVENT_WITHDRAWN and not owed:
             # A device that really reported inside the grace has already
             # left its verdict; its recovery is kept and fired when the

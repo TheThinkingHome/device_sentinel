@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.27.7 (2026-10-27)
+# File: config_flow.py, Version: 0.27.10 (2026-10-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -19,15 +19,15 @@ watched, and what is watched but never judged), then one screen per
 family, Low Battery, Signal Strength and Freeze Detection, each with
 its own settings and its own muting; WiFi; Advanced; and Extended
 Diagnostics, where a person volunteers what their hardware says
-(ruling #393).
+(rules CFG-01, STACK-11).
 
 Every muting picker runs one priority ladder, broadest first:
 integration, label, device. Each
 picker lists only what the kinds above it have not already caught,
 and a pick a broader kind covers is pruned from stored options on
-save. Pruning is silent and permanent by ruling: the screens warn
-about it up front, and undoing a broad muting does not restore
-the narrower picks it erased.
+save. Pruning is silent and permanent: the screens warn about it up
+front, and undoing a broad muting does not restore the narrower picks
+it erased (rule MUTE-04).
 
 Each step's description carries a wiki_link placeholder rather than
 a literal URL, because hassfest rejects URLs in the translation
@@ -196,8 +196,7 @@ def _discover_notify_targets(hass: Any) -> list[str]:
         NOTIFY_DOMAIN, {}
     ):
         # notify.send_message is the action for notify entities, not a
-        # target of its own; offered as one, it sent to nobody
-        # (0.23.0).
+        # target of its own; offered as one, it would send to nobody.
         if service_name == "send_message":
             continue
         targets.add(f"{NOTIFY_DOMAIN}.{service_name}")
@@ -207,12 +206,12 @@ def _discover_notify_targets(hass: Any) -> list[str]:
 def _smtp_recipients(hass: Any) -> list[selector.SelectOptionDict]:
     """Return the SMTP recipients, each chosen as its notify entity.
 
-    Home Assistant 2026.8 gave the SMTP integration one notify entity
-    per recipient and the smtp.send_message action, which carries an
-    HTML body; the old-style notify action per recipient is retired in
-    2027.3. Offered beside the old actions rather than in place of
-    them, so a person moves over when they choose (0.23.0). Labelled
-    by the entity's name, because its id says nothing a person reads.
+    The SMTP integration has one notify entity per recipient and the
+    smtp.send_message action, which carries an HTML body; the
+    old-style notify action per recipient is being retired. Offered
+    beside the old actions rather than in place of them, so a person
+    moves over when they choose. Labeled by the entity's name, because
+    its id says nothing a person reads.
     """
     options: list[selector.SelectOptionDict] = []
     for entry in er.async_get(hass).entities.values():
@@ -245,10 +244,9 @@ def _device_options(
     builds from a narrower set than the registry: the battery screen
     lists devices that have a battery entity, the signal screen those
     that report a signal, and both drop a device the moment that
-    entity is disabled. A pick left holding such a device seeded the
-    form with a value its own selector rejected, and the save failed
-    for the whole screen rather than the one pick, so no muting of
-    any kind could be changed while one such id sat in the options.
+    entity is disabled. A pick left holding such a device would seed
+    the form with a value its own selector rejects, and the save would
+    fail for the whole screen rather than the one pick.
 
     So a pick whose device is still in the registry is offered back,
     named, and the person decides. Disabling an entity for an
@@ -256,9 +254,9 @@ def _device_options(
     muting that goes with it. A pick whose device the registry no
     longer holds is not offered here at all: it is pruned on save,
     which is the one case where absence is proof rather than
-    inference (ruling #45).
+    inference (rule MUTE-04).
 
-    Sorted by label before it is returned (ruling #312). Row order is
+    Sorted by label before it is returned (rule CFG-05). Row order is
     whatever the coordinator built it in, which on a fleet of three
     hundred devices is unscannable, and a large fleet is exactly who
     runs this tool. The sort is case-insensitive so a lowercase name
@@ -268,7 +266,7 @@ def _device_options(
 
     A held pick is named by `name_for`, the coordinator's resolver, so
     a nameless device reads as the ladder names it everywhere else
-    (ruling #402). Without one, the ladder is asked without a domain.
+    (rule DEV-02). Without one, the ladder is asked without a domain.
     """
     options = [
         selector.SelectOptionDict(
@@ -305,8 +303,8 @@ def _alphabetical(words: str) -> str:
     Accents are set aside, letters drawn with a stroke or joined (Ø, Ł,
     Đ, Æ, Œ) are read as their plain letters, invisible marks such as a
     zero-width space are dropped, and case is folded, so a Spanish,
-    German or Nordic name sits where a reader looks for it (adversarial
-    rounds of 12 October 2026).
+    German or Nordic name sits where a reader looks for it
+    (rule DEV-04).
     """
     import unicodedata
 
@@ -327,9 +325,9 @@ def _badges_in_order(hass: Any, schema: vol.Schema) -> vol.Schema:
     """Return the form with each multiple pick list's saved values sorted.
 
     Home Assistant draws a list's badges in the order its value holds
-    them, which was the order they were picked, so a long exclusion or
-    mute list had no order a person could scan (Tim Plas, 12 October
-    2026). Each saved value is sorted by the words its badge shows: the
+    them, which is the order they were picked, so a long exclusion or
+    mute list would have no order a person could scan (rule CFG-05).
+    Each saved value is sorted by the words its badge shows: the
     option's label, a label's name, or the value itself. Sections are
     walked the same way; anything else passes through untouched.
     """
@@ -374,12 +372,12 @@ def _surviving_picks(
 ) -> list[str]:
     """Return the picks worth keeping: covered ones go, deleted ones go.
 
-    Ruling #45 prunes on proof and never on absence, and a device
+    Pruning goes on proof and never on absence, and a device
     missing from the registry is proof: the registry holds every
     device of every config entry, loaded or not, enabled or not, so
     an id it cannot find belongs to hardware that has been removed.
     Its name went with it, which is why keeping the pick helps nobody:
-    it can only ever be shown as a raw id.
+    it can only ever be shown as a raw id (rule MUTE-04).
     """
     return [
         device_id
@@ -435,11 +433,11 @@ def _globally_muted(
 def _link_choices(hass) -> list[selector.SelectOptionDict]:
     """The three choices, each showing the address it would publish.
 
-    Ruling #453. Home Assistant's own names for its two addresses,
+    Home Assistant's own names for its two addresses,
     with the address itself beside each one, so nobody picks blind or
     picks one that is not set. The labels are built here rather than
     translated, because what makes them useful is an address this house
-    holds right now.
+    holds right now (rule BRIEF-13).
     """
     return [
         selector.SelectOptionDict(
@@ -467,7 +465,7 @@ def _house_url(hass, choice: str) -> str | None:
 
     Asked for by name rather than by preference: the person picked
     which of the two goes into their reports, so the other one is not
-    a fallback (issue #13, and the privacy that goes with it).
+    a fallback, which keeps the person's choice of what to publish.
     """
     from homeassistant.helpers.network import get_url
 
@@ -483,7 +481,7 @@ def _house_url(hass, choice: str) -> str | None:
 
 # The muting ladder, broadest first. Each rung is the option keys
 # that carry one level of decision, and a pick on a lower rung is
-# dead once a higher rung already covers it (ruling #336).
+# dead once a higher rung already covers it (rule MUTE-04).
 SECTION_MUTING = (
     (
         CONF_BATTERY_MUTED_INTEGRATIONS,
@@ -509,14 +507,10 @@ def settle_options(
     """Return the options with every superseded pick removed.
 
     The ladder has three rungs, integration, label and device,
-    with the exclusion above them all. They were only ever
-    settled along one axis: within a screen, a device pick went
-    when that screen's own integration or label pick covered it. Nothing
-    ever settled the rungs against each other, so excluding an
-    integration left it muted, and muting one globally left it
-    muted in all three sections. Reported by James on 25 August
-    after excluding tplink_router and finding it still listed as
-    muted when he came back to the screen.
+    with the exclusion above them all, and the rungs are settled
+    against each other as well as within a screen: excluding an
+    integration clears its mutes, and muting one globally clears it
+    from all three sections (rule MUTE-04).
 
     The cost of leaving it is not tidiness. A decision that is
     never cleared is a decision that comes back: un-exclude an
@@ -536,7 +530,7 @@ def settle_options(
     to reach the battery screen's picks, and only a merged view
     of the options can see both.
 
-    Coverage is proved, never assumed (ruling #45). A device pick
+    Coverage is proved, never assumed. A device pick
     is removed only where a row demonstrates that device belongs
     to a covered integration or carries a covered label; a device
     the rows cannot account for is kept. An excluded integration
@@ -545,10 +539,9 @@ def settle_options(
 
     A non-string entry in any pick list is skipped rather than
     settled: it can name nothing, so it covers nothing and is
-    covered by nothing, and it stays where it was. That case came
-    from an attack rather than from the schema, which writes
-    strings, and it is here so a hand-edited entry cannot raise
-    inside a person's options dialog.
+    covered by nothing, and it stays where it was. The schema writes
+    strings; this is here so a hand-edited entry cannot raise inside
+    a person's options dialog.
     """
 
     settled = dict(merged)
@@ -563,10 +556,9 @@ def settle_options(
         non-string cannot name an integration, a label or a
         device, so it can neither cover nor be covered. Skipping
         it keeps it in the list, which is what proof-only pruning
-        requires (ruling #45), and keeps a hand-edited entry from
-        raising inside a person's options dialog: the attack that
-        found this put a list inside a pick list and the covering
-        set could not be built.
+        requires (rule MUTE-04), and keeps a hand-edited entry, such
+        as a list inside a pick list, from raising inside a person's
+        options dialog.
         """
         value = settled.get(key)
         if isinstance(value, str) or not isinstance(
@@ -582,7 +574,7 @@ def settle_options(
         ]
 
     excluded = set(names(CONF_EXCLUDED_INTEGRATIONS))
-    # A device excluded on its own (ruling #625) goes from the list
+    # A device excluded on its own (rule MUTE-03) goes from the list
     # once Home Assistant no longer has it, as a mute pick does.
     if CONF_EXCLUDED_DEVICES in settled:
         settled[CONF_EXCLUDED_DEVICES] = _surviving_picks(
@@ -591,7 +583,7 @@ def settle_options(
     # Rung one: an excluded integration is never watched, so every
     # mute of it, global or sectional, is a decision about something
     # that has already been decided. A device excluded on its own
-    # keeps its mutes (ruling #625): taking the exclusion back
+    # keeps its mutes (rule MUTE-03): taking the exclusion back
     # before midnight must give back everything, mutes included,
     # and a mute of an excluded device changes nothing meanwhile.
     if excluded:
@@ -629,7 +621,7 @@ def settle_options(
         settled[devices] = _surviving_picks(
             names(devices), covered | globally, dev_reg
         )
-    # The unavailable mute, by label or device (James, 18 October 2026):
+    # The unavailable mute, by label or device (rule MUTE-06):
     # an exclusion, a global mute or a muted label supersedes a device
     # pick, and a device Home Assistant no longer has goes, as every
     # other pick does.
@@ -650,7 +642,7 @@ class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
     # Bumped with every options migration step, so Home Assistant
     # runs async_migrate_entry once per entry and knows how far each
-    # one has come (ruling #316).
+    # one has come (rule STOR-19).
     MINOR_VERSION = OPTIONS_MINOR_VERSION
 
     async def async_step_user(
@@ -674,7 +666,7 @@ def _studiable(hass) -> list[str]:
     Only what is present, and only what is still wanted. When a
     stack is supported the entry is removed from this list rather
     than left offering to study something already understood, so the
-    screen never asks for data nobody needs (#393).
+    screen never asks for data nobody needs (rule STACK-11).
     """
     present = {
         entry.domain for entry in hass.config_entries.async_entries()
@@ -694,7 +686,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema = _badges_in_order(self.hass, data_schema)
         return super().async_show_form(data_schema=data_schema, **kwargs)
 
-    # The muting ladder, broadest first (ruling #336); the module keeps
+    # The muting ladder, broadest first (rule MUTE-04); the module keeps
     # it, so the dashboard's exclusions settle it as Settings does.
     _SECTION_MUTING = SECTION_MUTING
 
@@ -705,7 +697,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         The ladder is settled in one place, `settle_options`, which an
         integration excluded from its dashboard page also passes
-        through (0.26.1, ruling #659).
+        through (rule MUTE-03).
         """
         return settle_options(
             self.hass, self.config_entry.runtime_data, merged
@@ -716,25 +708,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Write a section's settings and go back to the menu.
 
-        Ruling #313. Every section used to end by creating the entry,
-        which writes the options and ends the flow in one call, and
-        ending the flow is what closed the dialog and put a person
-        back in Home Assistant. Tim Plas, working through six screens
-        on a fleet of 332 devices, called that annoying, and he is
-        right: a menu you are thrown out of after each visit is a
-        menu you visit once.
+        Creating the entry would write the options and end the flow in
+        one call, closing the dialog and putting a person back in Home
+        Assistant, and a menu you are thrown out of after each visit is
+        a menu you visit once (rule CFG-01).
 
         Writing without ending is `async_update_entry`, which fires
         the same update listener the integration already registers,
-        so the running coordinator picks the change up exactly as it
-        did before. Nothing is reloaded; options are applied in place.
+        so the running coordinator picks the change up. Nothing is
+        reloaded; options are applied in place.
 
         Each section saves itself. A person who submits three
         sections and then closes the dialog keeps all three, and one
         who abandons a section loses only that section's edits, which
         is what the X on a form has always meant.
 
-        Every save settles the whole muting ladder (ruling #336), not
+        Every save settles the whole muting ladder (rule MUTE-04), not
         only the screen that was submitted, because a decision made
         on one screen can supersede a pick stored by another.
         """
@@ -752,7 +741,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """Put back the mutes of removed devices whose records are held.
 
         A device removed from Home Assistant keeps its mutes for the 30
-        days its record is held (ruling #622). The screens cannot offer
+        days its record is held (rule WATCH-07). The screens cannot offer
         it, since the registry no longer names it, so a save would drop
         its pick; it is put back here from the options as they were. A
         pick whose hold has ended is pruned on the next save, as before.
@@ -823,19 +812,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         The muting lists run the same priority ladder as the global
         surface, broadest first: integration, label, device. There is
-        no entity kind here by ruling, because battery judgment is
-        device-level and an entity pick could be dodged by a battery
-        re-election.
+        no entity kind here, because battery judgment is device-level
+        and an entity pick could be dodged by a battery re-election
+        (rule BAT-04).
 
-        The device picker is populated from the detected batteries,
-        the pick-from-detected ruling: what you see listed is exactly
+        The device picker is populated from the detected batteries, so
+        what you see listed is exactly
         what is being judged, each device named "Name (integration)" as
         on every Settings list (rule DEV-04).
         """
         battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
             # The mute pickers arrive nested under their section
-            # and the stored keys stay flat (ruling #314): every
+            # and the stored keys stay flat (rule CFG-02): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
             # is a way of drawing the screen rather than a change to
@@ -906,7 +895,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     # The second question the screen answers. The
                     # threshold says which cells are low; this says
                     # how far ahead a falling one is called out
-                    # (ruling #197). It sits beside the threshold
+                    # (rule BAT-14). It sits beside the threshold
                     # because they are one decision made twice, and
                     # a person setting one should meet the other.
                     vol.Optional(
@@ -924,7 +913,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     # The three muting lists move into a section of their
-                    # own (ruling #314), so the heading and the
+                    # own (rule CFG-02), so the heading and the
                     # ladder's explanation sit above the pickers
                     # rather than the ladder being explained at the
                     # top of a screen whose first two fields are not
@@ -1022,7 +1011,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """The signal section: the bad-day settings and the
         signal-only muting, together, the family pattern.
 
-        Four settings shape the bad signal day (ruling #310): the drop
+        Four settings shape the bad signal day (rule SIG-08): the drop
         a day needs in the device's own units, one for LQI and one for
         RSSI, how many of its own spreads the fall must clear, and how
         many days form its normal. Each past day is judged again with
@@ -1038,7 +1027,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         signal_rows = self.config_entry.runtime_data.detected_signals
         if user_input is not None:
             # The mute pickers arrive nested under their section
-            # and the stored keys stay flat (ruling #314): every
+            # and the stored keys stay flat (rule CFG-02): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
             # is a way of drawing the screen rather than a change to
@@ -1140,7 +1129,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     # The three muting lists move into a section of their
-                    # own (ruling #314). Collapsed, because a person
+                    # own (rule CFG-02). Collapsed, because a person
                     # opening Signal Strength came for the bad-day
                     # settings above.
                     vol.Required("signal_muting"): section(
@@ -1247,7 +1236,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         multiple, because rhythms span seconds to hours and no single
         multiple fits both ends; it follows a curve the two deltas
         shape, generous where the rhythm is fast and tight where it
-        is slow (ruling #85). delta-low is the grace a fast device
+        is slow (rule FRZ-06). delta-low is the grace a fast device
         gets, the floor in minutes, so a device reporting every few seconds is
         not called dead for missing a couple of reports. delta-high
         is the grace a slow device gets, the ceiling in hours, so the
@@ -1265,12 +1254,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         freeze or not-reported verdict, so a device intermittent by
         nature can be silenced here without being hidden everywhere.
         Unavailable has its own section below, by label and device
-        (James, 18 October 2026).
+        (rule MUTE-06).
         """
         device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
             # The mute pickers arrive nested under their section
-            # and the stored keys stay flat (ruling #314): every
+            # and the stored keys stay flat (rule CFG-02): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
             # is a way of drawing the screen rather than a change to
@@ -1303,8 +1292,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             dev_reg,
             self.config_entry.runtime_data._device_name,
         )
-        # The unavailable mute, by label or device (James, 18 October
-        # 2026), with the same ladder and pruning as freeze.
+        # The unavailable mute, by label or device, with the same ladder
+        # and pruning as freeze (rule MUTE-06).
         unavailable_covered = _devices_covered_by(
             device_rows, [], options.get(CONF_UNAVAILABLE_MUTED_LABELS, [])
         ) | globally
@@ -1359,7 +1348,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     # The three muting lists move into a section of their
-                    # own (ruling #314). Collapsed, because a person
+                    # own (rule CFG-02). Collapsed, because a person
                     # opening Freeze Detection came for the two
                     # graces above.
                     vol.Required("freeze_muting"): section(
@@ -1420,8 +1409,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # Unavailable muting, its own section under freeze
-                    # (James, 18 October 2026): labels and devices only.
+                    # Unavailable muting, its own section under freeze:
+                    # labels and devices only (rule MUTE-06).
                     vol.Optional("unavailable_muting"): section(
                         vol.Schema(
                             {
@@ -1503,9 +1492,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         selectors, every way of narrowing attention in one place.
 
         Two different verbs live on this screen and the distinction is
-        the screen's whole job (moved here from Advanced in 0.16.4,
-        where it read as an expert setting and turned out to be the
-        first thing a diverse fleet needs). Mute watches but
+        the screen's whole job (rule MUTE-01). Mute watches but
         silences: a muted device still learns, still counts, and
         is never reported, so undo is instant and the rhythm history
         carries no holes. Excluding discards: an excluded integration's
@@ -1534,7 +1521,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         device_rows = coordinator.watched_device_rows
         if user_input is not None:
             # The mute pickers arrive nested under their section
-            # and the stored keys stay flat (ruling #314): every
+            # and the stored keys stay flat (rule CFG-02): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
             # is a way of drawing the screen rather than a change to
@@ -1553,8 +1540,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         options = self.config_entry.options
         stored = options.get(CONF_EXCLUDED_INTEGRATIONS)
         if stored is None:
-            # The list a house follows until it saves its own (Ruled
-            # Change 70).
+            # The list a house follows until it saves its own
+            # (rule MUTE-02).
             runtime = getattr(self.config_entry, "runtime_data", None)
             stored = (
                 runtime.default_exclusions()
@@ -1571,8 +1558,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         # already-excluded are kept because excluding took them out of
         # the watched set, and a picker that forgot them would strand
         # a choice it had just made. An integration since uninstalled
-        # survives as a custom value rather than failing the form
-        # (the 0.13.2 fault).
+        # survives as a custom value rather than failing the form.
         breakdown = self.config_entry.runtime_data.classification_breakdown
         excludable_domains = sorted(
             {
@@ -1602,7 +1588,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered_devices,
             dev_reg,
         )
-        # Single devices to exclude (ruling #625): any watched device,
+        # Single devices to exclude (rule MUTE-03): any watched device,
         # plus the ones already excluded, which are set aside and so
         # are not among the watched rows. A device whose integration is
         # excluded is not watched, so it is not offered unless it was
@@ -1644,10 +1630,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
             data_schema=vol.Schema(
                 {
-                    # The screen splits by verb (ruling #314), and
-                    # both halves are sections so both carry a
-                    # heading and an explanation above their picker
-                    # (ruling #315).
+                    # The screen splits by verb, and both halves are
+                    # sections so both carry a heading and an
+                    # explanation above their picker (rule CFG-02).
                     # A loose field gets its label above the input
                     # and its help below it, which put the exclude
                     # list's explanation underneath the chooser while
@@ -1694,7 +1679,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                         {"collapsed": False},
                     ),
-                    # The screen splits by verb (ruling #314). Exclusion
+                    # The screen splits by verb (rule CFG-02). Exclusion
                     # stays loose at the top because it is the
                     # different one: it discards rather than
                     # silences. The three-tier ladder moves into its
@@ -1783,7 +1768,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         quiet window, and the daily brief. They sit together because
         they are all about who hears, which is a different question
         from how a detector is tuned, and tuning stays on its own
-        detector's screen (ruling #117). High-priority targets get a
+        detector's screen (rule CFG-02). High-priority targets get a
         message when a device develops a problem and the brief with
         its history; normal-priority targets get the brief alone. A
         target in both is normalized to high on save, so the engine
@@ -1794,7 +1779,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         Quiet hours suppress both tiers; nothing pierces, not even a
         high-priority message, because an event inside quiet hours is
         dropped rather than queued and the morning brief carries it
-        instead (ruling #111).
+        instead (rule NOTE-07).
         """
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -1816,7 +1801,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             ):
                 # Saving a choice Home Assistant cannot serve would
                 # leave a person thinking the links are on while every
-                # report prints plain names (ruling #453).
+                # report prints plain names (rule BRIEF-13).
                 errors["base"] = f"{wanted}_url_not_set"
             else:
                 return await self._save_and_return(flat)
@@ -1965,7 +1950,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """WiFi detection, read from the host's own radio.
 
-        Detection and attribution are separate jobs (#391): this
+        Detection and attribution are separate jobs (rule UP-12): this
         screen configures the first, which needs no router
         integration at all. The screen explains itself differently
         depending on whether a wireless adapter exists, because a
@@ -2040,7 +2025,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_extended(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Hardware a person volunteers for study (#393).
+        """Hardware a person volunteers for study (rule STACK-11).
 
         Support for a stack or a router cannot be built without
         seeing how it behaves on a fleet nobody here owns. This
@@ -2084,7 +2069,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         Cross-cutting values live here while anything that tunes one
         detector stays on that detector's own screen, where a person
-        adjusting it expects to find it (ruling #117).
+        adjusting it expects to find it (rule CFG-02).
 
         Each is a share of something the device already earned, or a
         plain interval, so no value here can produce a nonsensical
@@ -2109,12 +2094,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         # The trim pickers offer everything the integration knows,
         # unfiltered, and are shown empty every time: they name what
         # to erase on this save, not a setting the entry holds
-        # (ruling #307). The save applies them and writes them back
+        # (rule CFG-10). The save applies them and writes them back
         # empty, so a value seeded here would delete again at the
         # next save of any setting on this screen.
         trim_rows = self.config_entry.runtime_data.trimmable_device_rows
         # Sorted for the same reason every other device picker is
-        # (ruling #312): this list holds every device on the system,
+        # (rule CFG-05): this list holds every device on the system,
         # watched, muted, excluded and set aside alike, so it is
         # the longest picker in the integration and the hardest to
         # scan unsorted.
@@ -2137,7 +2122,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_ADVANCED},
             data_schema=vol.Schema(
                 {
-                    # The dashboard each window opens in (ruling #693).
+                    # The dashboard each window opens in (rule DASH-03).
                     vol.Required(
                         CONF_DASHBOARD_MODE,
                         default=options.get(
@@ -2253,7 +2238,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         # things a person tunes, and this is the one
                         # that destroys data, so it does not sit open
                         # under the cursor of somebody adjusting a
-                        # slider (ruling #307).
+                        # slider (rule CFG-10).
                         {"collapsed": True},
                     ),
                 }

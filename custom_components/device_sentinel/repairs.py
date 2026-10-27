@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.27.8 (2026-10-27)
+# File: repairs.py, Version: 0.27.10 (2026-10-27)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -12,54 +12,52 @@ integration lives here, the same way every bus event lives in
 `events.py`, so the rules below are enforced in one place rather than
 in each module that happens to notice something.
 
-A device is never the subject of a Repair (ruling #292). The problem
+A device is never the subject of a Repair (rule REP-01). The problem
 list is what is wrong with a person's devices; Repairs is what is
 wrong with Device Sentinel's own ability to do its job, or with the
 plumbing beneath it. Every open Repair lights the Settings badge for
 as long as it exists, so a frozen motion sensor there would make
 Repairs a second and noisier copy of the to-do list and teach a person
-to ignore the gear. The line is never crossed.
+to ignore the badge.
 
 The rest of the rules, in the order they bite:
 
-One issue per class, keyed by a stable identifier (ruling #293). Ten
+One issue per class, keyed by a stable identifier (rule REP-03). Ten
 bridge flaps in a day are one issue that comes and goes, not ten rows.
-The identifier is stable across releases, which is what lets an issue
-gain a fix flow in a later release without becoming a different issue
-and orphaning the one a person already has open.
+The identifier is stable across releases, so an issue can gain a fix
+flow later without becoming a different issue and orphaning the one a
+person already has open.
 
-An issue is deleted the moment its condition clears (ruling #294).
-Nothing outlives its cause, because a badge lit with nothing behind it
-hides the next real issue inside it.
+An issue is deleted the moment its condition clears (rule REP-04),
+because a badge lit with nothing behind it hides the next real issue
+inside it.
 
 Severity is `warning` by default; `error` is reserved for setup and
-storage; `critical` is never used (ruling #295).
+storage; `critical` is never used (rule REP-05).
 
-An issue is fixable only where a fix flow exists (ruling #296): the
+An issue is fixable only where a fix flow exists (rule REP-06): the
 three storage notices (repaired containers, a repaired record, a
-restored file) and a missing notify target have one.
-`storage_shape` is no longer raised: storage is repaired where the
-fault is found since #370, and the identifier is only cleared, for
-installs that raised it before.
+restored file) and a missing notify target have one. `storage_shape`
+is no longer raised, because storage is repaired where the fault is
+found (rule STOR-09); the identifier is only cleared, for installs
+that raised it before.
 
 A card is for what stops Device Sentinel working now, or a repair it
-made (ruling #697). Four cards were retired by it and are cleared at
-every evaluation: disabled entities (switched-off sensors are on the
-Recommendations tab, one device at a time, #698), nothing to send to
-(a recommendation says so), and the two clock notices (told in the
-brief).
+made (rule REP-02). Four older cards are cleared at every evaluation:
+disabled entities (switched-off sensors are on the Recommendations
+tab, one device at a time), nothing to send to (a recommendation says
+so), and the two clock notices (told in the brief).
 
-Issues are not persistent (ruling #297). They live in memory and are
-re-raised on load if the condition still holds, which makes the
-condition the single source of truth: an issue can never survive the
-thing it describes, and a restart is a free reconciliation.
+Issues are not persistent (rule REP-04). They live in memory and are
+raised again on load if the condition still holds, so the condition
+is the single source of truth: an issue can never survive the thing
+it describes, and a restart is a free reconciliation.
 
-Nothing is raised during the startup grace (ruling #291). Everything
-reports at once on a restart and none of it is news. The two
-evaluation moments are grace close and the midnight fold, which is the
-cadence the fold's other periodic work already uses; there is no tick,
-deliberately, because a Repair a person has read is worse than useless
-if it comes back before they have finished reading it.
+Nothing is raised during the startup grace, because everything reports
+at once on a restart and none of it is news. The evaluation moments
+are grace close and just after the scheduled brief; there is no tick,
+because a Repair that comes back while a person is still reading it
+is worse than useless (rule REP-07).
 """
 
 from __future__ import annotations
@@ -163,7 +161,7 @@ def missing_targets(hass: HomeAssistant, entry: Any) -> list[str]:
             continue
         if target.startswith(SMTP_TARGET_PREFIX):
             # An SMTP recipient is present while its entity is and the
-            # action that sends to it exists (0.23.0).
+            # action that sends to it exists.
             entity_id = target[len(SMTP_TARGET_PREFIX):]
             if entities.async_get(entity_id) is None or not (
                 hass.services.has_service(SMTP_DOMAIN, SMTP_SEND_MESSAGE)
@@ -180,15 +178,12 @@ def missing_targets(hass: HomeAssistant, entry: Any) -> list[str]:
 def delivery_is_configured(entry: Any) -> bool:
     """Is there any target at all for a push or the daily brief?
 
-    The persistent card is deliberately not counted here (ruling
-    #301, a rule #309 kept when it moved #301's timing). A card is
+    The persistent card is deliberately not counted here. A card is
     read only by someone already looking, so it reaches nobody who is
-    away; and when it defaulted on, counting it would have meant this
-    never fired on a system left exactly as installed, the system it
-    exists for. It has defaulted off since 0.22.5 (ruling #462) and
-    the rule stands. What the card does is said in the issue's own
-    words, so nothing tells the person their card is off when it is
-    on.
+    away; and counting it would mean this never fires on a system
+    whose card is on and nothing else is set (rule NOTE-11). What the
+    card does is said in the issue's own words, so nothing tells the
+    person their card is off when it is on.
     """
     for key in (
         CONF_HIGH_PRIORITY_TARGETS,
@@ -217,9 +212,9 @@ def _raise(
     """Create or update one issue.
 
     Home Assistant treats a second create on a live identifier as an
-    update, which is what ruling #293 asks for: a recurrence changes
-    the placeholders of the issue already open rather than stacking a
-    second row beside it.
+    update, so a recurrence changes the placeholders of the issue
+    already open rather than stacking a second row beside it
+    (rule REP-03).
     """
     ir.async_create_issue(
         hass,
@@ -246,15 +241,15 @@ def async_clear_all(hass: HomeAssistant) -> None:
     """Delete every issue this integration can raise.
 
     Called on unload, so an integration that is being removed or
-    reconfigured does not leave a badge lit behind it (ruling #240).
+    reconfigured does not leave a badge lit behind it (rule STOR-24).
     The issues are not persistent, so a restart would clear them
     anyway; this covers the reload and the uninstall, where there is
     no restart to do it.
     """
     for issue_id in (*REPAIRS_ALL, *REPAIRS_RETIRED):
         _clear(hass, issue_id)
-    # The retired three-option card's identifier (ruling #370),
-    # cleared so an install upgraded mid-issue leaves nothing lit.
+    # The retired three-option card's identifier, cleared so an install
+    # upgraded mid-issue leaves nothing lit (rule REP-02).
     _clear(hass, REPAIR_STORAGE_SHAPE)
 
 
@@ -267,13 +262,14 @@ def _evaluate_containers_repaired(
     notice: dict[str, str] | None,
     entry_id: str,
 ) -> None:
-    """Raise or clear gate 1's notice (ruling #371).
+    """Raise or clear the first load check's notice (rule STOR-05).
 
-    Its own card rather than a line inside gate 2's, because the two
-    gates answer different questions: this one says the file held a
-    container of the wrong kind, which would have stopped the load
-    before anything could judge it. Same shape as gate 2's notice: a
-    warning, dismissible, nothing to decide.
+    Its own card rather than a line inside the second check's, because
+    the two checks answer different questions: this one says the file
+    held a container of the wrong kind, which would have stopped the
+    load before anything could judge it. Same shape as the second
+    check's notice: a warning, dismissible, nothing to decide
+    (rule REP-02).
     """
     if not notice:
         _clear(hass, REPAIR_CONTAINERS_REPAIRED)
@@ -297,14 +293,14 @@ def _evaluate_storage_repaired(
     notice: dict[str, str] | None,
     entry_id: str,
 ) -> None:
-    """Raise or clear the storage-repaired notice (ruling #370).
+    """Raise or clear the storage-repaired notice (rule REP-02).
 
     A notice, not a decision: the repair already ran at the point of
     detection, so the card names what was repaired and where the
     originals are and offers nothing to press but acknowledgement.
     No notice this session means nothing was repaired, and the card
-    clears, which is the self-clearing the ruling asks for: a
-    restart that loads clean starts a session with no notice.
+    clears itself: a restart that loads clean starts a session with
+    no notice (rule REP-04).
     """
     if not notice:
         _clear(hass, REPAIR_STORAGE_REPAIRED)
@@ -381,10 +377,10 @@ def async_evaluate(
     _evaluate_containers_repaired(hass, container_notice, entry.entry_id)
     # The identifier the retired three-option card used. Cleared
     # unconditionally so an install upgraded mid-issue does not
-    # carry a card whose flow no longer exists (ruling #370).
+    # carry a card whose flow no longer exists (rule REP-02).
     _clear(hass, REPAIR_STORAGE_SHAPE)
-    # The four cards ruling #697 retired, cleared for an install that
-    # holds one from before 0.26.7.
+    # The four retired cards, cleared for an install that still holds
+    # one (rule REP-02).
     for issue_id in REPAIRS_RETIRED:
         _clear(hass, issue_id)
     _evaluate_notify_targets(
@@ -425,15 +421,14 @@ class _SentinelRepairFlow(RepairsFlow):
     async def async_step_ignore(
         self, user_input: dict[str, str] | None = None
     ) -> Any:
-        """Hide the issue without changing anything (ruling #325).
+        """Hide the issue without changing anything (rule REP-06).
 
         Home Assistant offers its own Ignore on an issue that is not
         fixable, and takes it away as soon as one is: a fixable issue
         opens its flow instead of the dialog that carries the button.
         A person who does not want the fix then has no way out of the
-        card, which is the fault reported against 0.16.3. The way
-        back is to offer the ignore inside the flow, on the same
-        registry call Home Assistant would have made, so the issue
+        card. So the ignore is offered inside the flow, on the same
+        registry call Home Assistant would have made, and the issue
         hides and stays hidden until the person shows ignored issues
         again.
         """
@@ -447,7 +442,7 @@ class RemoveDeadTargetsFlow(_SentinelRepairFlow):
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
     ) -> Any:
-        """Offer the fix and the ignore side by side (ruling #325)."""
+        """Offer the fix and the ignore side by side (rule REP-06)."""
         return self.async_show_menu(
             step_id="init",
             menu_options=["confirm", "ignore"],
@@ -549,23 +544,23 @@ async def async_create_fix_flow(
     payload = data or {}
     entry_id = str(payload.get("entry_id") or "")
     if issue_id in REPAIRS_RETIRED:
-        # A card retired by #697 that an install still showed when
-        # Fix was pressed: nothing is left to fix, so it closes.
+        # A retired card that an install still showed when Fix was
+        # pressed: nothing is left to fix, so it closes (rule REP-02).
         return ConfirmRepairFlow()
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
     if issue_id == REPAIR_CONTAINERS_REPAIRED:
-        # The repair already ran (ruling #371); acknowledgement, which
-        # puts the card down until a new repair (rule REP-04).
+        # The repair already ran; acknowledgement, which puts the card
+        # down until a new repair (rule REP-04).
         return AcknowledgeStorageFlow(entry_id, "_container_notice")
     if issue_id == REPAIR_STORAGE_REPAIRED:
-        # The repair already ran (ruling #370); the flow is
-        # acknowledgement, the same as the restored card, and puts the
-        # card down until a new repair (rule REP-04).
+        # The repair already ran; the flow is acknowledgement, the same
+        # as the restored card, and puts the card down until a new
+        # repair (rule REP-04).
         return AcknowledgeStorageFlow(entry_id, "_repair_notice")
     if issue_id == REPAIR_STORAGE_RESTORED:
         # Nothing left to repair, so the flow is acknowledgement
-        # (ruling #350). Home Assistant's own ConfirmRepairFlow shows
+        # (rule REP-06). Home Assistant's own ConfirmRepairFlow shows
         # the issue's words and clears it on Submit, which is exactly
         # what is wanted and is not worth reimplementing.
         return ConfirmRepairFlow()
@@ -594,13 +589,12 @@ def async_raise_restored(
     loss: str,
     where: str,
 ) -> None:
-    """Report a completed restore as a repair card (ruling #350).
+    """Report a completed restore as a repair card (rule REP-08).
 
-    This replaces the persistent notification the restore used to
-    post. A persistent notification sits among transient things and
-    is dismissed by reflex; a repair card sits in the place a person
-    looks for things that need attention, survives a restart, and
-    carries a severity of its own.
+    A persistent notification sits among transient things and is
+    dismissed by reflex; a repair card sits in the place a person looks
+    for things that need attention, survives a restart, and carries a
+    severity of its own.
 
     A warning rather than an error, because the problem is over by
     the time this is raised: the file has already been replaced and
@@ -638,7 +632,7 @@ def async_clear_home_assistant_corruption(
     hand and put it back, or to restore the whole system from a
     backup. After a successful restore both instructions are wrong,
     and the second is expensive: a system restore to recover a file
-    that has already been recovered (ruling #350).
+    that has already been recovered (rule REP-08).
 
     The identifier is derived rather than searched for. Home Assistant
     builds the corrupt filename and the issue identifier from the same
@@ -650,10 +644,9 @@ def async_clear_home_assistant_corruption(
     Called only after a restore succeeded. A failed restore leaves the
     issue standing, because then its advice is the right advice.
 
-    Deleting an issue that is not there is not an error, which is what
-    makes this safe against an upstream change: if the identifier ever
-    stops matching, nothing happens and the issue stays, which is the
-    behaviour before this existed.
+    Deleting an issue that is not there is not an error, so this is
+    safe against an upstream change: if the identifier ever stops
+    matching, nothing happens and the issue stays.
     """
     cleared = 0
     for name in corrupt_names:

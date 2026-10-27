@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: outage_detail.py, Version: 0.26.6 (2026-10-18)
+# File: outage_detail.py, Version: 0.27.10 (2026-10-27)
 
 """Which config entry an integration outage was, and which device.
 
-An integration outage was recorded by the integration's name alone.
-SwitchBot, TP-Link and Brother make one config entry per device, so on
-the second fleet one freezer sensor with a dead battery read as "the
-switchbot integration went down", two such sensors could not be told
-apart, and one coming back closed the other's outage (0.22.23).
+SwitchBot, TP-Link and Brother make one config entry per device, so
+an outage named by the integration alone reads one dead device as the
+whole integration down, cannot tell two such devices apart, and closes
+one's outage when the other comes back (rule UP-03).
 
 The entry, the one watched device it carries when it carries one, and
 whether it failed to start or went down after running, travel in the
@@ -19,7 +18,7 @@ event's `detail`, a string by the storage shape:
 
     entry:01ABC... device:9f3e... failed
 
-An event written before 0.22.23 has no detail and reads as it did.
+An older event with no detail reads as it did.
 """
 
 from __future__ import annotations
@@ -29,10 +28,10 @@ from typing import Any
 FAILED = "failed"
 DOWN = "down"
 # An entry deleted from Home Assistant while it was down: its outage is
-# closed as removed, never told as back (round 32 of 0.26.6).
+# closed as removed, never told as back (rule UP-11).
 REMOVED = "removed"
 # An entry still in Home Assistant whose devices Device Sentinel stopped
-# watching while it was down, excluded or set aside (round 33 of 0.26.6).
+# watching while it was down, excluded or set aside.
 UNWATCHED = "unwatched"
 
 

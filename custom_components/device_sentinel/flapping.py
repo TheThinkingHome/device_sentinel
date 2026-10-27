@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.27.4 (2026-10-25)
+# File: flapping.py, Version: 0.27.10 (2026-10-27)
 
-"""A device that keeps dropping out, learned and held (0.23.2).
+"""A device that keeps dropping out, learned and held (rule UNAV-06).
 
-The second fleet's S73 Door tilt sensor Shed3-Bay2 went unavailable
-for three to four and a half minutes 53 times in 17 hours. Each drop
-outlasted the three-minute wait, so each opened a problem, closed it,
-and would have pushed twice. The owner ruled on 24 September: three
-drops within two hours make a device flapping. While it flaps, the
+A device can drop out for a few minutes dozens of times a day. Each
+drop outlasts the three-minute wait, so each would open a problem,
+close it and push twice. So three drops within two hours make a
+device flapping. While it flaps, the
 longest it stayed back between drops is learned, from the current run
 only, so a repaired device is never judged on an old run. It stays
 flapping until it has stayed back longer than that plus the freeze
@@ -72,7 +71,7 @@ class FlapMixin:
             if not isinstance(record, dict):
                 continue
             if record.get(DEV_REMOVED_SINCE) is not None:
-                # Held after its removal (ruling #622): not judged.
+                # Held after its removal, so not judged (rule WATCH-07).
                 continue
             drops = [
                 value
@@ -166,7 +165,7 @@ class FlapMixin:
                 continue
             # Dropping out is unavailable, again and again: the
             # unavailable mute takes it, the freeze mute does not
-            # (James, 17 October 2026).
+            # (rule MUTE-06).
             if self._unavailable_muted(device_id):
                 continue
             rows.append({

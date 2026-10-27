@@ -3,35 +3,27 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.9 (2026-10-27)
+# File: detect_freeze.py, Version: 0.27.10 (2026-10-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
 The failure this exists for is the quiet one: a device that has
 stopped reporting while its entities still hold their last values,
-so every dashboard and every automation downstream keeps believing a
-dead reading. Unavailable and unknown are the honest cases and are
-caught here too, along with a device that has never spoken since it
-was discovered.
+so every dashboard and automation keeps believing a dead reading.
+Unavailable and unknown are caught here too, along with a device that
+has never spoken since it was discovered.
 
 Each device is measured against its own learned rhythm plus a grace
 margin, never a fixed timeout, because a chatty motion sensor and a
 twice-a-day rain gauge cannot share a number. A device is judged
-frozen only once it has learned enough days to have a trustworthy
-rhythm; until then it is watched for the honest cases only. Devices
-with no natural heartbeat, buttons and remotes that speak when
-pressed, learn a very long rhythm and are effectively never called
-frozen for ordinary quiet, which is why the watched count always
-exceeds the learned one.
+frozen only once it has learned enough days; until then it is watched
+for unavailable only. Buttons and remotes that speak only when pressed
+learn a very long rhythm and are almost never called frozen, so the
+watched count always exceeds the learned one (rules FRZ-01, FRZ-07).
 
-One of six subject modules split out of coordinator.py, which
-had reached four thousand lines. The seam is the subject, chosen
-by measuring which methods call which: storage and interventions
-call nothing outside themselves at all, and the three detectors
-reach out fewer than ten times each (ruling #201).
-
-A file split rather than a boundary. These are mixins on the
-coordinator and read its state freely, so `self` is the
+One of the subject modules split out of coordinator.py, along the
+seam measured by which methods call which (rule CODE-11). These are
+mixins on the coordinator and read its state freely, so `self` is the
 coordinator throughout and nothing here stands alone.
 """
 
@@ -129,26 +121,19 @@ class FreezeMixin:
     ) -> tuple[float | None, set[int]]:
         """Return (operative rhythm, indices of set-aside outliers).
 
-        The trimmed maximum is the rhythm every freeze window is built
-        from: the top TRIM_TOP_K daily maxima are set aside as
-        suspected anomalies, and the rhythm is the maximum of the
-        survivors. One anomalous day therefore moves nothing,
-        while a spike that recurs leaves a second high value among
-        the survivors and correctly raises the rhythm. Below
-        TRIM_MIN_SAMPLES days nothing is trimmed: with so few samples
-        an apparent outlier cannot be told from the true rhythm.
+        The top TRIM_TOP_K daily maxima are set aside as possible flukes and
+        the rhythm is the maximum of the rest, so one bad day moves nothing
+        while a spike that recurs raises the rhythm. Below TRIM_MIN_SAMPLES
+        days nothing is trimmed, since an outlier cannot yet be told from the
+        true rhythm.
 
-        Only the most recent DAILY_MAX_KEEP days are read, however
-        many are stored (ruling #131). The trimmed maximum of ninety
-        days is higher than of fourteen, because more days mean more
-        chances at a long gap, so reading the whole series would
-        quietly widen every freeze window on the fleet. Sliced here,
-        in the one place the rhythm is computed, so no caller can
-        forget; the two callers that use the returned indices to
-        style a cell slice their own copy to match. The Log-Normal
-        Percentile is computed beside it, and the wait is the shorter
-        of the two (ruling #542, amended in 0.24.0: `_freeze_rhythm`
-        below).
+        Only the newest DAILY_MAX_KEEP days are read, however many are
+        stored, because more days mean more chances at a long gap and would
+        widen every freeze window. The slice is here, where the rhythm is
+        computed, so no caller can forget; the two callers that style a cell
+        from the returned indices slice their own copy to match (rule FRZ-03).
+        The wait in use is the shorter of this and the Log-Normal Percentile
+        (`_freeze_rhythm`, rule FRZ-05).
         """
         daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
@@ -157,8 +142,8 @@ class FreezeMixin:
             isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
             for gap in daily_maximum_gaps
         ):
-            # Anything but a number gives no rhythm (0.24.9), as an
-            # empty history does, rather than a failure.
+            # Anything but a number gives no rhythm, as an empty history does,
+            # rather than a failure.
             return None, set()
         if len(daily_maximum_gaps) < TRIM_MIN_SAMPLES:
             return max(daily_maximum_gaps), set()
@@ -193,15 +178,13 @@ class FreezeMixin:
         return float(low_min) * 60.0, float(high_hr) * 3600.0
 
     def _freeze_grace(self, rhythm: float) -> float:
-        """Return the grace margin for a rhythm, in seconds (ruling #85).
+        """Return the grace margin for a rhythm, in seconds (rule FRZ-06).
 
-        grace = a * rhythm^p, where a and p are solved so the curve
-        passes through delta-low grace at the fast reference rhythm
-        and delta-high grace at the slow one. The two deltas therefore
-        set the whole shape, not just the ends, and the result is
-        clamped to [delta-low, delta-high] so they double as the hard
-        floor and ceiling. The rhythm itself is never touched here: it
-        is the measured trimmed maximum, and grace is only the
+        grace = a * rhythm^p, with a and p solved so the curve passes through
+        delta-low grace at the fast reference rhythm and delta-high grace at
+        the slow one. The two deltas set the whole shape, and the result is
+        clamped to [delta-low, delta-high], so they are also the floor and
+        ceiling. The rhythm itself is never touched here: grace is only the
         patience added on top of it.
         """
         delta_low, delta_high = self._freeze_deltas()
@@ -216,20 +199,15 @@ class FreezeMixin:
     def _esphome_flags(self, device_id: str) -> tuple[bool | None, bool | None]:
         """Return an ESPHome device's deep-sleep and connection flags.
 
-        The two private fields detection reads (rulings #639 and #640).
-        Home Assistant keeps both only in the ESPHome integration's
-        runtime data: whether the device deep-sleeps, which nothing
-        public says (of Tim Plas's 35 devices one reports a battery and
-        eight were ever seen unavailable), and whether its connection
-        is up. The connection flag is the one the device's Status
-        sensor shows; ESPHome sets it before it writes the entities
-        unavailable on a drop, and before any state arrives on a
-        reconnect. The read is wrapped so a missing entry, a missing
-        attribute or a value that is not True or False answers None,
-        which keeps the device on the ordinary freeze rule; a Home
-        Assistant update that moves a field costs this exception and
-        nothing else. The first failure per entry is logged once at
-        info, so a moved field is visible without filling the log.
+        Home Assistant keeps both only in the ESPHome integration's runtime
+        data: whether the device deep-sleeps, which nothing public says, and
+        whether its connection is up, which the device's Status sensor shows.
+        ESPHome sets the connection flag before it writes the entities
+        unavailable on a drop, and before any state arrives on a reconnect.
+        The read is wrapped, so a missing entry or attribute, or a value that
+        is not True or False, answers None and leaves the device on the
+        ordinary freeze rule. The first failure per entry is logged once at
+        info, so a moved field shows without filling the log (rule STACK-08).
         """
         entry_id = self._entry_of_device.get(device_id)
         if entry_id is None:
@@ -239,8 +217,7 @@ class FreezeMixin:
             deep_sleep = runtime.device_info.has_deep_sleep
             connected = runtime.available
             if not isinstance(deep_sleep, bool) or not isinstance(connected, bool):
-                # None or any other shape is a changed field, not an
-                # answer (adversarial round three, 12 October 2026).
+                # None or any other shape is a changed field, not an answer.
                 raise TypeError(f"{type(deep_sleep).__name__}, {type(connected).__name__}")
             return deep_sleep, connected
         except Exception:  # noqa: BLE001
@@ -254,49 +231,39 @@ class FreezeMixin:
             return None, None
 
     def _esphome_deep_sleep(self, device_id: str) -> bool | None:
-        """Whether an ESPHome device deep-sleeps, or None if unknown (#639)."""
+        """Whether an ESPHome device deep-sleeps, or None if unknown (rule STACK-08)."""
         return self._esphome_flags(device_id)[0]
 
     def _awake_esphome(self, device_id: str) -> bool:
         """Whether this is an ESPHome device whose connection speaks for it.
 
-        An ESPHome device that does not deep-sleep is never newly
-        judged frozen while Home Assistant's connection to it is up
-        (rulings #636 and #640): a device that hangs loses the
-        connection with everything else. On Tim Plas's house all 18
-        closed frozen episodes on ESPHome devices ran with the
-        connection up throughout. An entity of its own reading
-        unavailable while the connection is up, such as a firmware
-        update entity with the ESPHome dashboard stopped, does not
-        change this. A deep-sleep device is shown available while it
-        sleeps, so it keeps the freeze rule, and so does a device
-        whose flags cannot be read.
+        An ESPHome device that does not deep-sleep is never newly judged
+        frozen while Home Assistant's connection to it is up, because a device
+        that hangs loses the connection with everything else. An entity of
+        its own reading unavailable while the connection is up, such as a
+        firmware update entity with the ESPHome dashboard stopped, does not
+        change this. A deep-sleep device shows available while it sleeps, so
+        it keeps the freeze rule, and so does a device whose flags cannot be
+        read (rules FRZ-07, STACK-07).
         """
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, True)
 
     def _awake_matter(self, device_id: str) -> bool:
-        """Whether this is a Matter device whose being available speaks
-        for it (ruling #710, narrowed by #718).
+        """Whether this is a Matter device whose being available speaks for it.
 
-        A Matter device of a type that reports only on use, not behind a bridge, is
-        never newly judged frozen while any of its entities reads
-        available, whatever powers it. These report only when someone
-        uses them, so a learned rhythm on one is a guess and its frozen
-        verdicts were noise: Tim Plas muted L20, L21 and P52 and the
-        buttons B13 to B15 for them. A lost one is still reported
-        unavailable, since Matter marks it away and Home Assistant
-        follows in the same second: about five minutes after a lamp and
-        a plug were unplugged (Tim, 19 October 2026), about fourteen
-        after button B13 lost its battery (21 October). A sensor, and
-        any other type, keeps the freeze rule whatever powers it: S87,
-        a Matter temperature sensor, went silent on 13 October while
-        Matter still called it available, and its frozen verdict was
-        the only catch. So does a device whose type cannot be read, a
-        device whose entities read nothing but unknown, and a device
-        behind a Matter bridge, which may keep a dead sensor reachable
-        (adversarial round of 0.26.8).
+        A Matter device not behind a bridge, of a type that reports only on
+        use, is never newly judged frozen while any of its entities reads
+        available, whatever powers it. Such a device reports only when
+        someone uses it, so a learned rhythm is a guess and its frozen
+        verdicts are noise. A lost one is still reported unavailable, since
+        Matter marks it away and Home Assistant follows within minutes.
+        A sensor, or any other type, keeps the freeze rule, because Matter can
+        call a silent sensor available. So does a device whose type cannot be
+        read, one whose entities read nothing but unknown, and one behind a
+        Matter bridge, which may keep a dead sensor reachable (rules FRZ-07,
+        STACK-06).
         """
         if not available_speaks(self._watched.get(device_id)):
             return False
@@ -309,8 +276,8 @@ class FreezeMixin:
         if device_field(device, "via_device_id", "") is not None:
             return False
         # A type read from the entities is not trusted over a measuring
-        # entity: a sensor with a switch is still a sensor. The owner's
-        # own type is (adversarial round of 0.27.0).
+        # entity: a sensor with a switch is still a sensor. A type the owner
+        # set is trusted.
         if known.get("source") != SOURCE_OWNER and measures(
             er.async_entries_for_device(er.async_get(self.hass), device_id)
         ):
@@ -318,22 +285,20 @@ class FreezeMixin:
         return True
 
     def _matter_available_now(self, device_id: str) -> bool:
-        """Whether _awake_matter applies now: some entity of the device
-        reads something other than unknown or unavailable, which is when
-        the freeze rule spares it (#710). The page and the Slow
-        Reporting Devices card read this, so neither says it is spared
-        while its entities read nothing but unknown (second adversarial
-        round of 0.26.8)."""
+        """Whether _awake_matter applies now: some entity of the device reads
+        something other than unknown or unavailable (rule STACK-06).
+
+        The page and the Slow Reporting Devices card read this, so neither
+        says a device is spared while its entities read nothing but unknown.
+        """
         if not self._awake_matter(device_id):
             return False
         states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
         known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
         if not known:
-            # A button never pressed reads unknown, and its battery is the
-            # only value it shows (Tim Plas's B13 to B15, 23 October 2026,
-            # missed by 0.27.0): any entity of its own holding a value
-            # shows it available. One that reads nothing at all keeps the
-            # freeze rule.
+            # A button never pressed reads unknown, and its battery is the only
+            # value it shows, so any entity of its own holding a value shows it
+            # available. One that reads nothing at all keeps the freeze rule.
             known = [
                 s for s in self._states_of(self._own_entities.get(device_id, ()))  # type: ignore[attr-defined]
                 if s not in (STATE_UNKNOWN, EVENT_RESTING)
@@ -343,20 +308,20 @@ class FreezeMixin:
     def _dropped_esphome(self, device_id: str) -> bool:
         """Whether an ESPHome device that does not sleep has lost its connection.
 
-        Such a device is unavailable, whatever its Status sensor reads,
-        and nothing its entities show while the connection is down is
-        the device speaking (ruling #640): ESPHome keeps the Status
-        sensor available and switches it off on a drop.
+        Such a device is unavailable whatever its Status sensor reads, and
+        nothing its entities show while the connection is down is the device
+        speaking: ESPHome keeps the Status sensor available and switches it
+        off on a drop (rule STACK-07).
         """
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, False)
 
     def _connection_only(self, device_id: str) -> bool:
-        """Whether an ESPHome device has nothing to report but its
-        connection: every entity of its own switched on is a firmware
-        notice or a command button, whatever it has switched off (James,
-        17 October 2026; fourteenth adversarial round of 0.26.6)."""
+        """Whether an ESPHome device has nothing to report but its connection:
+        every entity of its own switched on is a firmware notice or a command
+        button, whatever it has switched off (rule STACK-07).
+        """
         return (
             self._watched.get(device_id) == "esphome"
             and device_id in self._devices_with_entities
@@ -364,14 +329,14 @@ class FreezeMixin:
         )
 
     def _esphome_back(self, device_id: str, record: dict[str, Any]) -> None:
-        """An ESPHome connection coming back is the device speaking (James,
-        17 October 2026): ESPHome connects only when the device answers.
+        """An ESPHome connection coming back is the device speaking, because
+        ESPHome connects only when the device answers (rule STACK-07).
 
-        Read each sweep, so a reconnect is noticed whatever its entities
-        do; after a restart the first reading counts as coming back. Taken
-        only while a down verdict stands, and not while the entities that
-        decide still say unavailable: that is a sensor down on a live
-        device, not a device back.
+        Read each sweep, so a reconnect is noticed whatever its entities do;
+        after a restart the first reading counts as coming back. Taken only
+        while a down verdict stands, and not while the deciding entities
+        still say unavailable: that is a sensor down on a live device, not a
+        device back.
         """
         if self._watched.get(device_id) != "esphome":
             return
@@ -391,16 +356,15 @@ class FreezeMixin:
         )
 
     def _dead_node(self, device_id: str) -> bool:
-        """Whether the device's own stack says its node is dead (#670).
+        """Whether the device's own stack says its node is dead (rule STACK-05).
 
-        Read from the node status sensor a stack keeps, as Z-Wave JS
-        does: such a device is unavailable while the sensor reads dead,
-        because Home Assistant keeps its other entities available and
-        nothing else would show it. Z-Wave learns a node is dead only
-        when a command to it fails, so this catches a device somebody
-        tried to reach; one nobody reaches is left to the freeze rule.
-        A sensor that is switched off, missing or unreadable says
-        nothing, and neither does a device on a stack without one.
+        Read from the node status sensor a stack keeps, as Z-Wave JS does.
+        Such a device is unavailable while the sensor reads dead, because Home
+        Assistant keeps its other entities available and nothing else would
+        show it. Z-Wave learns a node is dead only when a command to it fails,
+        so this catches a device somebody tried to reach; one nobody reaches
+        is left to the freeze rule. A sensor that is switched off, missing or
+        unreadable says nothing, and neither does a stack without one.
         """
         entity_id = self._node_status_entity.get(device_id)
         if entity_id is None:
@@ -427,8 +391,8 @@ class FreezeMixin:
             return True
         record = self.data[DATA_DEVICES].get(device_id)
         saved = record.get(DEV_DOWN_SINCE) if isinstance(record, dict) else None
-        # Only a node known dead is held: an outage that began some
-        # other way is not (third adversarial round of 16 October 2026).
+        # Only a node known dead is held: an outage that began some other way
+        # is not.
         return (
             isinstance(saved, list)
             and len(saved) == 2
@@ -436,20 +400,17 @@ class FreezeMixin:
         )
 
     def _freeze_rhythm(self, record: dict[str, Any]) -> dict[str, Any] | None:
-        """Return the rhythm in use for a device, kept in memory (0.24.0).
+        """Return the rhythm in use for a device, kept in memory (rule FRZ-23).
 
-        Worked out once each time its inputs change and read from memory
-        every other time (James, 2 October 2026): the minute check asks
-        for every device's wait every minute, but the wait changes only
-        when a day folds in, a reset is made, the Freeze Detection
-        settings change, or the record is loaded afresh. Each kept
-        result carries a stamp of what it was built from: the day list
-        itself, its length and newest day, the count since a reset, and
-        the two settings. The fold's append and trim change the length
-        and the newest day; every other writer replaces the list. A
-        stamp that no longer matches means the inputs moved, and the
-        wait is worked out again; nothing has to remember to clear it.
-        Nothing is written to disk.
+        The minute check asks for every device's wait every minute, but the
+        wait changes only when a day folds in, a reset is made, the Freeze
+        Detection settings change, or the record is loaded afresh. Each kept
+        result carries a stamp of its inputs: the day list itself, its length
+        and newest day, the count since a reset, and the two settings. The
+        fold's append and trim change the length and newest day; every other
+        writer replaces the list. A stamp that no longer matches means the
+        inputs moved, so the wait is worked out again and nothing has to
+        remember to clear it. Nothing is written to disk.
         """
         daily = record.get(DEV_DAILY_MAX)
         if not isinstance(daily, list):
@@ -461,12 +422,11 @@ class FreezeMixin:
             since if isinstance(since, (int, float, type(None))) else repr(since),
             self._freeze_deltas(),
         )
-        # One entry per device record, which lives as long as the device:
-        # a replaced day list overwrites the device's entry rather than
-        # leaving the old list behind (found by the 0.24.0 adversarial
-        # round: twenty devices had left forty entries). The store is
-        # cleared if it ever holds more than twice the house's devices,
-        # so records for deleted devices cannot build up.
+        # One entry per device record, which lives as long as the device, so a
+        # replaced day list overwrites the device's entry rather than leaving
+        # the old list behind. The store is cleared if it ever holds more than
+        # twice the house's devices, so records for deleted devices cannot
+        # build up.
         memo = self._rhythm_memo
         kept = memo.get(id(record))
         if (
@@ -488,21 +448,20 @@ class FreezeMixin:
         """Work out the rhythm in use for a device, and both rules' figures.
 
         The rhythm in use is the shorter of the Trimmed Maximum and the
-        Log-Normal Percentile (#542, amended in 0.24.0). After bad days
-        the Trimmed Maximum is stretched and the Log-Normal Percentile,
-        which sets them aside, is shorter; after a device starts
-        reporting more often, the Trimmed Maximum follows within 14
-        days while the Log-Normal Percentile, reading up to 42, lags.
-        The grace margin rises with the rhythm, so the shorter rhythm
-        always gives the shorter wait. A tie goes to the Trimmed
-        Maximum, the rule a device has from its first armed day.
+        Log-Normal Percentile (rule FRZ-05). After bad days the Trimmed
+        Maximum is stretched and the Log-Normal Percentile, which sets them
+        aside, is shorter; after a device starts reporting more often, the
+        Trimmed Maximum follows within 14 days while the Log-Normal
+        Percentile, reading up to 42, lags. The grace margin rises with the
+        rhythm, so the shorter rhythm always gives the shorter wait. A tie
+        goes to the Trimmed Maximum, the rule a device has from its first
+        armed day.
 
-        None where the device is not armed (#27). The Log-Normal
-        Percentile is None before 28 days, or 28 days since a reset,
-        and the Trimmed Maximum is then the only rule. Each rule's
-        days are the days it read, bad days included, as its name
-        gives them: "14-Day Trimmed Maximum", "37-Day Log-Normal
-        Percentile".
+        None where the device is not armed (rule FRZ-01). The Log-Normal
+        Percentile is None before 28 days, or 28 days since a reset, and the
+        Trimmed Maximum is then the only rule. Each rule's days are the days
+        it read, bad days included, as its name gives them: "14-Day Trimmed
+        Maximum", "37-Day Log-Normal Percentile" (rule FRZ-04).
         """
         daily = record.get(DEV_DAILY_MAX) or []
         if len(daily) < FREEZE_ARMING_DAYS:
@@ -511,10 +470,10 @@ class FreezeMixin:
             isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
             for gap in daily
         ):
-            # A history holding anything but a number cannot be judged
-            # (0.24.9): the device waits as a young one does, rather
-            # than its minute check and its page failing. Only a fault
-            # could put one there; the file check removes them on load.
+            # A history holding anything but a number cannot be judged, so the
+            # device waits as a young one does, rather than its minute check and
+            # its page failing. Only a fault could put one there; the file check
+            # removes them on load.
             return None
         trimmed, _ = self._trimmed_maximum(daily)
         if trimmed is None or trimmed <= 0:
@@ -545,18 +504,17 @@ class FreezeMixin:
         return found
 
     def _init_rule_counts(self) -> None:
-        """Start the day's counts of the two freeze rules (#542, amended).
+        """Start the day's counts of the two freeze rules (rule FRZ-23).
 
-        Held in memory and begun again at a restart, as the rhythm
-        shadow's were; the line they make is written into the
-        Telemetry report at each fold. `_lognormal_listed` remembers,
-        for each device listed while the Log-Normal Percentile was in
-        use, when it was listed and how much longer the Trimmed Maximum
-        would have waited, so its recovery can say whether the Trimmed
-        Maximum would ever have listed it.
+        Held in memory and begun again at a restart; the line they make is
+        written into the Telemetry report at each fold. `_lognormal_listed`
+        remembers, for each device listed while the Log-Normal Percentile was
+        in use, when it was listed and how much longer the Trimmed Maximum
+        would have waited, so its recovery can say whether the Trimmed Maximum
+        would ever have listed it.
         """
         self._rule_counts_since: float = dt_util.utcnow().timestamp()
-        # Each device's wait, kept until its inputs change (0.24.0).
+        # Each device's wait, kept until its inputs change (rule FRZ-23).
         self._rhythm_memo: dict[int, tuple[Any, Any, Any, Any]] = {}
         self._lognormal_listings = 0
         self._lognormal_only = 0
@@ -609,15 +567,14 @@ class FreezeMixin:
     def use_trimmed_maximum(self, device_id: str) -> bool:
         """Start a device's Log-Normal Percentile count again, by hand.
 
-        The dashboard's button (James, 2 October 2026): the same act a
-        firmware update, a battery change or a re-pair performs, for a
-        change Device Sentinel cannot see. The device waits on the
-        Trimmed Maximum until it has 28 new days. False for a device
-        with no record.
+        The dashboard's button does what a firmware update, a battery change
+        or a re-pair does, for a change Device Sentinel cannot see. The device
+        waits on the Trimmed Maximum until it has 28 new days. False for a
+        device with no record (rule FRZ-05).
         """
         record = self.data[DATA_DEVICES].get(device_id)
         if record is None or self.is_held(device_id):  # type: ignore[attr-defined]
-            # A removed device's held record has no page (ruling #622).
+            # A removed device's held record has no page (rule WATCH-07).
             return False
         record[DEV_LOGNORMAL_DAYS] = 0
         self._mark_cold_dirty()
@@ -641,12 +598,12 @@ class FreezeMixin:
     def _freeze_window(self, record: dict[str, Any]) -> float | None:
         """Return the freeze window for a device, in seconds, or None.
 
-        The window is the rhythm in use plus the grace margin. None
-        means the device is not yet armed for freeze: it has too few
-        learned days for a trustworthy rhythm (the arming gate, ruling #27),
-        so it is watched for unavailable and unknown but never called
-        frozen, because there is no window to miss. The rhythm in use
-        is the shorter of the two rules (`_freeze_rhythm`).
+        The window is the rhythm in use plus the grace margin (rule FRZ-06).
+        None means the device is not yet armed: it has too few learned days
+        for a trustworthy rhythm, so it is watched for unavailable and unknown
+        but never called frozen, because there is no window to miss (rule
+        FRZ-01). The rhythm in use is the shorter of the two rules
+        (`_freeze_rhythm`).
         """
         found = self._freeze_rhythm(record)
         if found is None:
@@ -659,19 +616,16 @@ class FreezeMixin:
     def _recovered_during_pairing(self, device_id: str, now: float) -> bool:
         """Return whether this device recovered during a pairing window.
 
-        A pairing window is a coordinator-wide state, so any device
-        behind that coordinator which recovers while the window is
-        open (or within the grace after it closed) is a pairing
-        candidate (ruling #145). The available per-device signal is the
-        integration domain, and which stack owns a domain is that
-        stack's own question rather than this detector's (ruling #218):
-        a domain no stack claims, or a stack with no reader, gives no
-        reader here. Ownership is the widest claim a stack can make
-        about one device, so a device that merely shares a domain with
-        the stack would also be caught, but the only cost is a single
-        discarded gap, which is the conservative, fail-safe direction.
-        Everything is guarded: no reader, no bridge, or any failure
-        returns False and the taint decision stands (ruling #147).
+        A pairing window is open for the whole coordinator, so any device
+        behind it that recovers while the window is open, or within the grace
+        after it closed, is a pairing candidate (rule FRZ-16). The per-device
+        signal is the integration domain, and which stack owns a domain is
+        that stack's own question, not this detector's (rule STACK-01): a
+        domain no stack claims, or a stack with no reader, gives no reader
+        here. A device that merely shares a domain with the stack is caught
+        too, but that costs one discarded gap, the safe direction. No reader,
+        no bridge, or any failure returns False and the taint decision stands
+        (rule FRZ-15).
         """
         reader = reader_for_domain(
             self._bridge_readers, self._watched.get(device_id)
@@ -697,14 +651,12 @@ class FreezeMixin:
         """Undo the daily-max bump a now-discarded gap just made.
 
         The gap update runs before the pairing, maintenance, handled,
-        set-aside and commanded checks, so a discarded gap that was the
-        day's largest has to be pulled back out, or it would widen the
-        learned rhythm it should never touch. Only the exact value is
-        retracted, and only when it is the current max, so an unrelated
-        larger gap is left alone. The day's longest gap from before
-        this one goes back in its place (ruling #641): setting it to
-        nothing threw away the real gaps the device had earlier that
-        day (adversarial round three, 12 October 2026).
+        set-aside and commanded checks, so a discarded gap that was the day's
+        largest is pulled back out, or it would widen the rhythm it should
+        never touch. Only the exact value is retracted, and only when it is
+        the current max, so a larger unrelated gap is left alone. The day's
+        longest gap from before this one goes back in its place, so the real
+        gaps the device had earlier that day are kept (rule FRZ-15).
         """
         if record[DEV_TODAY_MAX] is not None and record[DEV_TODAY_MAX] == gap:
             record[DEV_TODAY_MAX] = before
@@ -712,15 +664,12 @@ class FreezeMixin:
     def _taint_debounce(self, record: dict[str, Any]) -> float:
         """Return the unavailable a device tolerates before a taint.
 
-        Short absences are mesh blips and the silence around them is
-        still learned; an unavailable at or over this is real downtime
-        and the completed gap is discarded (ruling #137). The value is
-        a floor plus a
-        share of the device's own freeze window, so a fast device
-        keeps the floor while a slow one earns proportionally more
-        patience. An unarmed device has no window yet, so it falls
-        back to the floor alone, which is correct: with nothing
-        learned there is no grace to take a share of.
+        Short absences are mesh blips and the silence around them is still
+        learned; an unavailable at or over this is real downtime and the gap
+        is discarded. The value is a floor plus a share of the device's own
+        freeze window, so a fast device keeps the floor while a slow one earns
+        more patience. An unarmed device has no window yet, so it falls back
+        to the floor alone (rule FRZ-14).
         """
         floor = (
             float(TAINT_FLOOR_MINUTES) * 60.0
@@ -738,16 +687,15 @@ class FreezeMixin:
     ) -> str | None:
         """Return the down category for a device, or None if alive.
 
-        The device-level rule: if any live entity is fresh, the
-        device is alive, whatever its other entities read. A device is
-        down only when nothing on it is reporting. Then the category
-        is read from what the entities that decide show
-        (_live_entity_states, its main entities first): unavailable when
-        every one that says anything says unavailable, an unknown among
-        them counting as nothing, and frozen when they hold values the
-        clock says are stale (James, 17 October 2026). A device whose main
-        entities are unavailable while another entity of its own is
-        actively reporting is alive (_reporting_through_others).
+        If any live entity is fresh, the device is alive, whatever its other
+        entities read; a device is down only when nothing on it is reporting.
+        The category is then read from the deciding entities
+        (_live_entity_states, main entities first): unavailable when every one
+        that says anything says unavailable, an unknown among them counting as
+        nothing, and frozen when they hold values the clock says are stale. A
+        device whose main entities are unavailable while another entity of its
+        own is actively reporting is alive (_reporting_through_others; rules
+        UNAV-01, UNAV-02).
         """
         # A globally-muted device keeps its
         # clock and rhythm but is never given a verdict of any kind.
@@ -757,21 +705,20 @@ class FreezeMixin:
         # integration to exclude.
         if device_id in self._muted_devices:
             return None
-        # Two mutes, each its own kind (James, 18 October 2026): the
-        # freeze mute silences frozen and never reported, the unavailable
-        # mute unavailable. A device muted for both is given no verdict.
-        # With mutes False, the verdict as it would be with no freeze or
-        # unavailable mute: whether the device is still down at all.
+        # Two mutes, each its own kind: the freeze mute silences frozen and
+        # never reported, the unavailable mute unavailable. A device muted for
+        # both is given no verdict. With mutes False, the verdict as it would be
+        # with no freeze or unavailable mute: whether the device is still down
+        # at all (rule MUTE-06).
         muted_freeze = mutes and self._freeze_muted(device_id)
         muted_unavailable = mutes and self._unavailable_muted(device_id)
         if muted_freeze and muted_unavailable:
             return None
         standing = record.get(DEV_FROZEN_CATEGORY)
-        # What a device gone while muted for unavailable is given: nothing,
-        # unless its trouble began as a freeze the freeze mute does not
-        # cover, which stands until the device reports (#529; first and
-        # second adversarial rounds of 0.26.6). How the trouble began
-        # decides, not the order of the two.
+        # A device gone while muted for unavailable is given nothing, unless its
+        # trouble began as a freeze the freeze mute does not cover, which stands
+        # until the device reports. How the trouble began decides, not the order
+        # of the two (rules MUTE-06, UNAV-02).
         gone = (
             FREEZE_CATEGORY_FROZEN
             if not muted_freeze
@@ -785,10 +732,9 @@ class FreezeMixin:
             else None
         )
 
-        # A hub, or a device a hub controls, is judged by its hub
-        # (rulings #663 and #664): never frozen, never "never reported".
-        # A freeze-muted hub that goes down is reported (James, 17
-        # October 2026, reversing the 14 October amendment).
+        # A hub, or a device a hub controls, is judged by its hub: never frozen,
+        # never "never reported". A freeze-muted hub that goes down is still
+        # reported (rules STACK-09, MUTE-06).
         if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
             category = self._hub_category(device_id, record, now)  # type: ignore[attr-defined]
             if category == FREEZE_CATEGORY_UNAVAILABLE and muted_unavailable:
@@ -796,9 +742,9 @@ class FreezeMixin:
             return self._muted_away(category, muted_freeze, muted_unavailable)
 
         # An ESPHome device with nothing but firmware notices and command
-        # buttons, such as a Bluetooth proxy, is judged by its connection
-        # alone, its only report (James, 17 October 2026): unavailable
-        # while it is dropped, never frozen or never reported.
+        # buttons, such as a Bluetooth proxy, is judged by its connection alone,
+        # its only report: unavailable while it is dropped, never frozen or never
+        # reported (rule STACK-07).
         if self._connection_only(device_id):
             if self._dropped_esphome(device_id):
                 return None if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
@@ -807,17 +753,13 @@ class FreezeMixin:
                 return None if muted_unavailable else standing
             return None
 
-        # Never reported: zero lifetime events past the grace window.
-        # Checked first because it is categorically different from a
-        # device that reported and stopped, and because such a device
-        # has no rhythm to miss and may have no live entity to read.
-        # A device with learned history has reported, by definition,
-        # whatever its clock and counter say now: a lost clocks file
-        # empties both, and 31 healthy devices on the reference rig
-        # read "never reported" for it (0.22.28).
-        # A freeze-muted device is never called never reported, and is
-        # read on below for the rest, so one that is unavailable, dead
-        # or dropped is still told (first adversarial round of 0.26.6).
+        # Never reported: zero lifetime events past the grace window. Checked
+        # first because such a device has no rhythm to miss and may have no live
+        # entity to read. A device with learned history has reported, whatever
+        # its clock and counter say now, because a lost clocks file empties both
+        # (rule FRZ-09). A freeze-muted device is never called never reported,
+        # and is read on below, so one that is unavailable, dead or dropped is
+        # still told (rule MUTE-06).
         if (
             not muted_freeze
             and record[DEV_EVENT_COUNT] == 0
@@ -825,15 +767,11 @@ class FreezeMixin:
             and not record.get(DEV_DAILY_MAX)
         ):
             if device_id not in self._devices_with_entities:
-                # Nothing that could report, so never reported says
-                # nothing about the device. A ZHA coordinator owns no
-                # entity and never will, and the startup window
-                # watched it long enough to judge it and send a
-                # person a notification about a device that was
-                # working perfectly. A device whose entities are all
-                # disabled is a different case and still qualifies:
-                # those entities exist, and the row is the prompt to
-                # switch them on (ruling #369).
+                # Nothing that could report, so never reported says nothing about the
+                # device. A ZHA coordinator owns no entity and never will, and would be
+                # reported while working perfectly. A device whose entities are all
+                # disabled still qualifies: those entities exist, and the row is the
+                # prompt to switch them on (rule FRZ-09).
                 return None
             first = record.get(DEV_FIRST_OBSERVED)
             if first is not None:
@@ -848,13 +786,13 @@ class FreezeMixin:
 
         window = self._freeze_window(record)
 
-        # An ESPHome device whose connection is down is unavailable
-        # (ruling #640), and a frozen verdict standing escalates to it.
+        # An ESPHome device whose connection is down is unavailable, and a
+        # standing frozen verdict escalates to it (rule STACK-07).
         if self._dropped_esphome(device_id):
             return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
 
-        # A node its own stack calls dead is unavailable (ruling #670),
-        # and a frozen verdict standing moves to it, as for ESPHome.
+        # A node its own stack calls dead is unavailable, and a standing frozen
+        # verdict moves to it, as for ESPHome (rule STACK-05).
         if self._dead_node(device_id):
             return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
 
@@ -871,50 +809,42 @@ class FreezeMixin:
 
         states = self._live_entity_states(device_id)
         if not states:
-            # Nothing readable. Two different situations arrive here
-            # and only one of them is judgeable.
+            # Nothing readable. Two different situations arrive here and only one
+            # of them can be judged.
             #
-            # A device whose entities are in the registry but have no
-            # state objects has not finished loading. Every restart
-            # passes through that state for as long as the owning
-            # integration takes to set up, and during it the clock is
-            # the only evidence left, which on a device that is down
-            # reads as frozen. The verdict is then corrected on the
-            # next tick when the states appear, and the correction
-            # writes a kind onto an item that never should have
-            # moved. The reference fleet produced 62 such rows on one
-            # device across 31 restarts, and a push each time
-            # (ruling #318).
+            # A device whose entities are in the registry but have no state objects
+            # has not finished loading. Every restart passes through that state while
+            # the owning integration sets up, and during it the clock alone reads a
+            # down device as frozen. The next tick corrects the verdict when the
+            # states appear, but the correction writes a kind onto an item that
+            # should never have moved, and pushes each time (rule LIST-06).
             #
-            # A device with no registry entities at all is the case
-            # this branch was written for: there is nothing to read
-            # and nothing coming, so the clock is the whole story.
+            # A device with no registry entities at all is the case this branch is
+            # for: there is nothing to read and nothing coming, so the clock is the
+            # whole story.
             if self._has_registered_entities(device_id):
                 if self._node_reads_up(device_id):  # type: ignore[attr-defined]
-                    # Nothing readable but the node status, and it says
-                    # the node is up (fifth adversarial round of 16
-                    # October 2026): judged by the clock alone.
+                    # Nothing readable but the node status, and it says the node is up:
+                    # judged by the clock alone.
                     return FREEZE_CATEGORY_FROZEN if frozen else None
                 if muted_unavailable and standing == FREEZE_CATEGORY_UNAVAILABLE:
-                    # A standing unavailable verdict hidden by the mute has
-                    # passed the debounce already (round 25 of 0.26.6).
+                    # A standing unavailable verdict hidden by the mute has passed the
+                    # debounce already (rule UNAV-03).
                     self._gone_under_mute(device_id, record, now, gone, listed=True)
                 return self._held(standing, gone, muted_freeze, muted_unavailable)
             return FREEZE_CATEGORY_FROZEN if frozen else None
 
-        # Unknown is neither down nor alive (James, 17 October 2026): a
-        # button reads unknown until it is first pressed, so a device
-        # whose entities say nothing but unknown is judged by its clock.
+        # Unknown is neither down nor alive: a button reads unknown until it is
+        # first pressed, so a device whose entities say nothing but unknown is
+        # judged by its clock (rule UNAV-02).
         known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
         if not known or all(s in BAD_STATES for s in known):
-            # An awake ESPHome device whose entities read unknown is
-            # still connected (ruling #636): frozen is not shown unless
-            # a frozen verdict already stands (#529). Found by the
-            # adversarial round of 12 October 2026: a device of buttons
-            # reads unknown until one is pressed.
-            # A Matter button never pressed is the same while an entity of
-            # its own, such as its battery, holds a value (#718; Tim Plas's
-            # B13 to B15, 23 October 2026, called frozen on 0.27.1 too).
+            # An awake ESPHome device whose entities read unknown is still
+            # connected, so frozen is not shown unless a frozen verdict already
+            # stands, because a device of buttons reads unknown until one is pressed
+            # (rules STACK-07, UNAV-02). A Matter button never pressed is the same
+            # while an entity of its own, such as its battery, holds a value (rule
+            # STACK-06).
             if (
                 frozen
                 and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
@@ -922,40 +852,33 @@ class FreezeMixin:
             ):
                 frozen = False
             if known:
-                # Every entity that says anything says unavailable: the
-                # device is down now, regardless of the clock, which
-                # needs no arming because it reads present state. Unless
-                # another entity of its own has reported since: a device
-                # actively reporting is alive, whatever its main entity
-                # reads (James, 17 October 2026; eighteenth adversarial
-                # round of 0.26.6).
+                # Every entity that says anything says unavailable: the device is down
+                # now, whatever the clock says, which needs no arming because it reads
+                # present state. Unless another entity of its own has reported since: a
+                # device actively reporting is alive, whatever its main entity reads
+                # (rule UNAV-01).
                 if self._reporting_through_others(device_id):  # type: ignore[attr-defined]
                     return FREEZE_CATEGORY_FROZEN if frozen else None
                 return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
-            # Nothing but unknown: a device already down stays down
-            # until it says something (#529), as an unknown problem
-            # from before 0.26.6 does, never told as a recovery (first
-            # adversarial round of 0.26.6).
-            # Unavailable outranks frozen, and frozen unknown, as they
-            # always have; a standing unknown no longer stops the clock
-            # (second adversarial round of 0.26.6).
+            # Nothing but unknown: a device already down stays down until it says
+            # something, never told as a recovery (rule UNAV-02).
+            # Unavailable outranks frozen, and frozen unknown; a standing unknown
+            # does not stop the clock.
             if standing == FREEZE_CATEGORY_UNAVAILABLE:
                 if muted_unavailable and standing == FREEZE_CATEGORY_UNAVAILABLE:
-                    # A standing unavailable verdict hidden by the mute has
-                    # passed the debounce already (round 25 of 0.26.6).
+                    # A standing unavailable verdict hidden by the mute has passed the
+                    # debounce already (rule UNAV-03).
                     self._gone_under_mute(device_id, record, now, gone, listed=True)
                 return self._held(standing, gone, muted_freeze, muted_unavailable)
             if self._gone_as_unavailable(record) and (  # type: ignore[attr-defined]
                 muted_unavailable or self._listed_but_for_mute(device_id, record)
             ):
-                # Nothing but unknown on a device muted for unavailable
-                # whose outage began as unavailable: still that outage,
-                # not a new freeze (fourth and fifth adversarial rounds
-                # of 0.26.6). Once the mute is lifted it reads as a
-                # device never muted does: unavailable if the outage
-                # lasted long enough to be listed (James, 18 October
-                # 2026, round 23), judged by its clock if it was a blip
-                # (round 24). A device never gone is judged by its clock.
+                # Nothing but unknown on a device muted for unavailable whose outage
+                # began as unavailable: still that outage, not a new freeze. Once the
+                # mute is lifted it reads as a device never muted does: unavailable if
+                # the outage lasted long enough to be listed, judged by its clock if it
+                # was a blip. A device never gone is judged by its clock (rules MUTE-08,
+                # UNAV-02).
                 return gone if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
             if frozen:
                 return FREEZE_CATEGORY_FROZEN
@@ -963,17 +886,15 @@ class FreezeMixin:
                 return self._muted_away(standing, muted_freeze, muted_unavailable)
             return None
 
-        # Some entity is not bad. If the clock says frozen and the
-        # non-bad entities are stale (not fresh), the device is
-        # frozen; a genuinely fresh entity would have re-armed the
-        # timer, so reaching here with frozen True means the values
-        # are held, not live. Unless the device's own connection says
-        # otherwise (rulings #636 and #640): an awake ESPHome device
-        # whose connection is up has nothing new to say, which is not
-        # a freeze. A verdict already standing is kept until the
-        # device reports (#529): a device frozen when 0.26.0 starts is
-        # not told as recovered by a rule changing. An available Matter
-        # device of a type that reports only on use is the same (#710, #718).
+        # Some entity is not bad. If the clock says frozen and the non-bad
+        # entities are stale, the device is frozen: a fresh entity would have
+        # re-armed the timer, so frozen True here means the values are held, not
+        # live. Unless the device's own connection says otherwise: an awake
+        # ESPHome device whose connection is up has nothing new to say, which is
+        # not a freeze, and an available Matter device of a type that reports
+        # only on use is the same (rules FRZ-07, STACK-06, STACK-07). A verdict
+        # already standing is kept until the device reports, so a device is not
+        # told as recovered because a rule changed (rule UNAV-02).
         if (
             frozen
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
@@ -985,13 +906,12 @@ class FreezeMixin:
         return None
 
     def _frozen_start(self, device_id: str, record: dict[str, Any], now: float) -> float:
-        """When a freeze began: the device's last report plus its freeze
-        window, counting only time someone was listening, the moment it
-        would have been listed. Used for every new frozen listing, and
-        worked out rather than kept, so a device listed again when a mute
-        is lifted, or one that froze while muted, is dated from when the
-        freeze began, as an unavailable device is from its saved outage
-        start (James, 17 October 2026). Now, when that cannot be read."""
+        """When a freeze began: the device's last report plus its freeze window,
+        counting only time Device Sentinel was listening, the moment it would
+        have been listed. Worked out rather than kept, so a device listed again
+        when a mute is lifted, or one that froze while muted, is dated from
+        when the freeze began. Now, when that cannot be read (rule MUTE-08).
+        """
         window = self._freeze_window(record)
         if window is None:
             return now
@@ -999,10 +919,9 @@ class FreezeMixin:
         if found is None:
             return now
         last, spans = found
-        # The wall time at which the counted silence reached the window:
-        # walk forward from the last report, stepping over each span
-        # nobody was listening, however long (ninth adversarial round of
-        # 0.26.6).
+        # The wall time at which the counted silence reached the window: walk
+        # forward from the last report, stepping over each span nobody was
+        # listening, however long (rule FRZ-10).
         at, remaining = last, window
         for start, end in sorted((max(a, last), b) for a, b in spans if b > last):
             if end <= at:
@@ -1016,10 +935,10 @@ class FreezeMixin:
 
     @staticmethod
     def _never_reported_start(record: dict[str, Any], now: float) -> float:
-        """When a device qualified as never reported: first seen plus the
-        wait (James, 17 October 2026), worked out as a freeze's start is,
-        so a mute lifted later does not date it from the lift. Now, when
-        that cannot be read."""
+        """When a device qualified as never reported: first seen plus the wait,
+        worked out as a freeze's start is, so a mute lifted later does not
+        date it from the lift. Now, when that cannot be read (rule MUTE-08).
+        """
         first = record.get(DEV_FIRST_OBSERVED)
         if not isinstance(first, str):
             return now
@@ -1054,11 +973,12 @@ class FreezeMixin:
         *,
         listed: bool = False,
     ) -> str | None:
-        """An unavailable verdict an unavailable mute hides, remembered
-        once the outage has lasted past the debounce, so that a lift
-        after its entities turn to unknown lists it as a device never
-        muted would have been (round 24 of 0.26.6). Not persisted: after
-        a restart such a device is judged by its clock."""
+        """An unavailable verdict an unavailable mute hides, remembered once the
+        outage has lasted past the debounce, so that a lift after its entities
+        turn to unknown lists it as a device never muted would have been. Not
+        persisted: after a restart such a device is judged by its clock (rule
+        UNAV-02).
+        """
         saved = self._saved_down_since(record)  # type: ignore[attr-defined]
         if saved is not None and (listed or now - saved[0] >= FREEZE_UNAVAILABLE_DEBOUNCE):
             self._unavailable_under_mute[device_id] = saved[0]  # type: ignore[attr-defined]
@@ -1084,18 +1004,17 @@ class FreezeMixin:
         because its window already is the wait.
         """
         category = self._device_down_category(device_id, record, now)
-        # A record missing these fields is filled at load (ruling
-        # #189), so this is the sweep's own guard for a record made
-        # some other way: default them before reading, or the direct
-        # read raises KeyError and, with the sweep's per-device guard,
-        # that record is skipped.
+        # A record missing these fields is filled at load (rule STOR-19), so
+        # this is the sweep's own guard for a record made some other way:
+        # default them before reading, or the direct read raises KeyError and
+        # the sweep's per-device guard skips that record.
         record.setdefault(DEV_FROZEN_CATEGORY, None)
         record.setdefault(DEV_FROZEN_SINCE, None)
         current = record[DEV_FROZEN_CATEGORY]
         # A verdict a mute takes away while the device is still down is
-        # remembered, so its item leaves silently (#537) whichever kind
-        # it showed (first adversarial round of 0.26.6). Read before the
-        # verdict is stored, while the record still holds it.
+        # remembered, so its item leaves silently whichever kind it showed (rule
+        # MUTE-07). Read before the verdict is stored, while the record still
+        # holds it.
         if category is None and current is not None:
             if self._device_down_category(device_id, record, now, mutes=False) is not None:
                 self._muted_down.add(device_id)  # type: ignore[attr-defined]
@@ -1109,9 +1028,9 @@ class FreezeMixin:
             # Debounce the transition: only publish once the device
             # has read down for longer than a quick-succession flip.
             since = record.get(DEV_FROZEN_SINCE)
-            # A hub's lost connection has already been confirmed over
-            # two readings (ruling #663): it is dated from when it was
-            # first seen gone and published without the debounce.
+            # A hub's lost connection is already confirmed over two readings: it is
+            # dated from when it was first seen gone and published without the
+            # debounce (rules STACK-09, UNAV-03).
             hub_lost = (
                 self.hub_down_since(device_id, now)  # type: ignore[attr-defined]
                 if category == FREEZE_CATEGORY_UNAVAILABLE
@@ -1119,25 +1038,23 @@ class FreezeMixin:
                 else None
             )
             if hub_lost is not None:
-                # From when the connection went, whatever stood before
-                # it: a frozen verdict from 0.26.2 is not its start.
+                # From when the connection went, whatever stood before it: an earlier
+                # frozen verdict is not its start.
                 if current != FREEZE_CATEGORY_UNAVAILABLE:
                     record[DEV_FROZEN_SINCE] = hub_lost
             elif current == FREEZE_CATEGORY_FROZEN:
-                # A frozen device turns unavailable only once it has
-                # been gone past the debounce, as any device does: a
-                # stack restart's first minute, before its outage is
-                # confirmed and held, is not one (round 29 of 0.26.6).
+                # A frozen device turns unavailable only once it has been gone past the
+                # debounce, as any device does: a stack restart's first minute, before
+                # its outage is confirmed and held, is not one (rule UNAV-03).
                 saved = self._saved_down_since(record)  # type: ignore[attr-defined]
                 if saved is None or (now - saved[0]) < FREEZE_UNAVAILABLE_DEBOUNCE:
                     return False
             elif current is None:
                 if since is None:
-                    # Dated from the saved start of the outage when one
-                    # is held (ruling #647): the sweep sees a drop up
-                    # to a minute late, and after a restart much later.
-                    # The debounce still counts from the moment the
-                    # whole device went.
+                    # Dated from the saved start of the outage when one is held, because the
+                    # sweep sees a drop up to a minute late, and after a restart much later.
+                    # The debounce still counts from the moment the whole device went (rule
+                    # UNAV-04).
                     record[DEV_FROZEN_SINCE] = self._outage_began(record, now)
                     self._dirty = True
                     # Critical, not merely dirty. This stamp is what
@@ -1151,17 +1068,14 @@ class FreezeMixin:
                     return False
 
         if category == current:
-            # A blip stamps a down-since before any verdict is
-            # published. If the device came back by republishing a
-            # retained value, its contact clock never advanced, so the
-            # report path never ran and nothing there cleared the
-            # stamp. Clear it here instead: a stamp with no verdict
-            # behind it has nothing left to time, and leaving it dates
-            # the next outage from the old blip, which both overstates
-            # how long the device has been down and skips the debounce
-            # that outage was owed. A published verdict is untouched,
-            # so a republish still cannot erase a standing silence
-            # (ruling #124).
+            # A blip stamps a down-since before any verdict is published. If the
+            # device came back by republishing a retained value, its contact clock
+            # never advanced, so the report path never ran and nothing there cleared
+            # the stamp. Clear it here instead: a stamp with no verdict behind it has
+            # nothing left to time, and leaving it would date the next outage from
+            # the old blip and skip the debounce that outage is owed. A published
+            # verdict is untouched, so a republish still cannot erase a standing
+            # silence (rule FRZ-11).
             if (
                 category is None
                 and record.get(DEV_FROZEN_SINCE) is not None
@@ -1172,12 +1086,10 @@ class FreezeMixin:
             return False
 
         record[DEV_FROZEN_CATEGORY] = category
-        # How the trouble began, saved with the record so a restart
-        # cannot turn a freeze that went unavailable into a drop (#644,
-        # amended; adversarial round thirteen).
-        # Kept while a mute is all that took the verdict away, so lifting
-        # one of two mutes finds how the trouble began (round 26 of
-        # 0.26.6); the device's next report clears it.
+        # How the trouble began, saved with the record so a restart cannot turn
+        # a freeze that went unavailable into a drop (rule UNAV-07). Kept while
+        # a mute is all that took the verdict away, so lifting one of two mutes
+        # finds how the trouble began; the device's next report clears it.
         if category is None and device_id not in self._muted_down:  # type: ignore[attr-defined]
             record[DEV_DOWN_BEGAN_AS] = None
         elif current is None and category is not None:
@@ -1243,7 +1155,7 @@ class FreezeMixin:
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
         if record.get(DEV_DOWN_BEGAN_AS) is not None:
-            # Kept under a mute (round 26 of 0.26.6): a report ends it.
+            # Kept under a mute: a report ends it (rule UNAV-07).
             record[DEV_DOWN_BEGAN_AS] = None
             self._dirty = True
 
@@ -1260,13 +1172,11 @@ class FreezeMixin:
         self._trim_episodes(now)
         self._note_drops(now)
         if self._in_startup_grace():
-            # Nothing is judged inside the grace (ruling #291): every
-            # verdict stays as the last start left it, and the first
-            # sweep after the window shuts applies whatever is still
-            # true then, once. Judging here moved the reference rig's
-            # watering sensor from unavailable to never reported one
-            # minute into a start, closed the unavailable incident as
-            # a recovery, and pushed it (0.22.28).
+            # Nothing is judged inside the grace: every verdict stays as the last
+            # start left it, and the first sweep after the window shuts applies
+            # whatever is still true then, once. Judging here would move a device
+            # between kinds a minute into a start and push a false recovery (rule
+            # WATCH-10).
             return
         flipped = False
         for device_id in self._watched:
@@ -1293,12 +1203,12 @@ class FreezeMixin:
             self._notify()
 
     def _note_drops(self, now: float) -> None:
-        """Start or end each device's outage from what it reads now (#647).
+        """Start or end each device's outage from what it reads now (rule UNAV-04).
 
-        Run each minute, inside the startup grace and for muted devices
-        too, since muting stops judgment and not learning. It catches
-        what no state change announces: an ESPHome connection dropping
-        or coming back, and an entity renamed or removed.
+        Run each minute, inside the startup grace and for muted devices too,
+        since muting stops judgment and not learning. It catches what no state
+        change announces: an ESPHome connection dropping or coming back, and an
+        entity renamed or removed.
         """
         for device_id in self._watched:
             self._settle_down(device_id, None)  # type: ignore[attr-defined]
@@ -1306,22 +1216,18 @@ class FreezeMixin:
     def _held_by_upstream(self, device_id: str, now: float) -> bool:
         """Whether the device's upstream is down or still handing back.
 
-        A restart or an outage says nothing about the devices, on any
-        stack (#535, generalising #523 from bridges). While the
-        device's broker, bridge, coordinator, integration or Wi-Fi
-        network is down, and through the window its devices are given
-        to rejoin (#436, #441), the device's verdict stays exactly as
-        it was, working, frozen or unavailable, and so does any
-        debounce stamp. Home Assistant's own restart is held by the
-        startup grace, which judges nothing. After that each device is
-        judged on its own again.
+        A restart or an outage says nothing about the devices, on any stack
+        (rule UP-06). While the device's broker, bridge, coordinator,
+        integration or Wi-Fi network is down, and through the window its
+        devices are given to rejoin (rule UP-08), the device's verdict stays
+        exactly as it was, working, frozen or unavailable, and so does any
+        debounce stamp. Home Assistant's own restart is held by the startup
+        grace, which judges nothing. After that each device is judged on its
+        own again.
 
-        The reference rig, 3:40 AM on 27 September: Switch Hall Living,
-        frozen since the afternoon, turned unavailable 0.2 seconds after
-        Zigbee2MQTT went down, its frozen record closed, the bus heard
-        it recover, and the brief told one silence twice. The second
-        fleet's Z-Wave stick returning on 26 September stored five
-        sleepy devices unavailable the same way through its integration.
+        Without the hold, a device frozen before a bridge went down turns
+        unavailable the moment the bridge goes, its frozen record closes, the
+        bus hears it recover, and the brief tells one silence twice.
         """
         return self.upstream_down_since(device_id) is not None
 
@@ -1332,20 +1238,17 @@ class FreezeMixin:
         device_id: str | None = None,
         window: float | None = None,
     ) -> float | None:
-        """How long this device was silent while anyone was listening.
+        """How long this device was silent while anyone was listening (rule FRZ-10).
 
-        Wall-clock silence counts the time the system was off, which
-        no device is responsible for. On return the fastest reporters
-        cross their windows first, purely by arithmetic: a six-minute
-        power cut once produced twenty-three frozen verdicts against
-        devices whose windows are two to four minutes, and touched
-        nothing with an hour-scale window (ruling #160). What is counted
-        instead is the silence before the last save plus the silence
-        since this start, so the unwatched middle counts against
-        nobody. The credit lapses the moment a device reports, its
-        clock then postdating the outage, and it needs no cap: a
-        device already silent beforehand carries that silence into
-        the sum and is still caught the instant the system returns.
+        Wall-clock silence counts the time the system was off, which no device
+        is responsible for. On return the fastest reporters would cross their
+        windows first, purely by arithmetic: a six-minute power cut produces
+        frozen verdicts on every device with a window of a few minutes. What
+        is counted instead is the silence before the last save plus the
+        silence since this start, so the unwatched middle counts against
+        nobody. The credit lapses the moment a device reports, and needs no
+        cap: a device already silent beforehand carries that silence into the
+        sum and is still caught the instant the system returns.
         """
         found = self._silence_spans(record, now, device_id, window)
         if found is None:
@@ -1365,12 +1268,10 @@ class FreezeMixin:
         last = record.get(DEV_LAST_ACTIVITY)
         if not isinstance(last, (int, float)):
             return None
-        # A device set aside, excluded or removed and then watched again
-        # is judged from the moment it was watched again: the time
-        # nobody watched it is not its silence (ruling #648). A
-        # cancelled exclusion raised a frozen alert for the unwatched
-        # hour before. A clock restarted since (#468, #538, #622) is
-        # later than that moment and wins.
+        # A device set aside, excluded or removed and then watched again is
+        # judged from the moment it was watched again, because the time nobody
+        # watched it is not its silence (rule WATCH-08). A clock restarted since
+        # is later than that moment and wins.
         back = record.get(DEV_WATCHED_FROM)
         if isinstance(back, (int, float)) and not isinstance(back, bool) and last < back <= now:
             last = float(back)
@@ -1388,33 +1289,28 @@ class FreezeMixin:
     def _gap_untrusted(
         self, device_id: str, record: dict[str, Any], last: float, stamp: float
     ) -> str | None:
-        """Why a gap ending now cannot be learned, or None (0.24.1).
+        """Why a gap ending now cannot be learned, or None (rule FRZ-12).
 
-        A gap is learned only if Device Sentinel could trust all of it
-        (ruling #549, 3 October 2026). Two things break that trust here.
+        A gap is learned only if Device Sentinel could trust all of it. Two
+        things break that trust here.
 
-        An upstream outage on the device's path that the device could
-        have reported into. An outage shorter than the device's rhythm
-        and lying wholly inside it, from the last report to the end of
-        the rhythm, could only have swallowed a report the device was
-        not yet due to send: a lost report there ends the gap at the
-        next one, still within the device's normal range, so the gap is
-        learned whole. An outage that reaches past the rhythm, into the
-        grace when the device was due, or is as long as the rhythm,
-        pollutes the gap, and it is forgotten. The outages are the
-        stored ones (#536) and any still open, by the ladder the holds
-        read (`upstream_down_since`), counted as running to this
-        report: an upstream's return is stored at the next minute
-        check, and Zigbee2MQTT's devices report the moment the bridge is
-        back. A device with no rhythm yet forgets any gap an outage
-        touched. Before this rule every outage forgot the gap, so a
-        three-minute nightly restart cost slow reporters their longest
-        gap of the night; and an outage still open forgot nothing, so a
-        four-hour one was learned as the fast reporters' silence.
+        An upstream outage on the device's path that the device could have
+        reported into. An outage shorter than the device's rhythm and lying
+        wholly inside it, from the last report to the end of the rhythm, could
+        only have swallowed a report the device was not yet due to send: the
+        gap then ends at the next report, still within the device's normal
+        range, so it is learned whole. An outage that reaches past the rhythm,
+        into the grace when the device was due, or is as long as the rhythm,
+        pollutes the gap, and it is forgotten. The outages are the stored ones
+        and any still open, by the ladder the holds read
+        (`upstream_down_since`), counted as running to this report, because an
+        upstream's return is stored at the next minute check while
+        Zigbee2MQTT's devices report the moment the bridge is back. A device
+        with no rhythm yet forgets any gap an outage touched (rule UP-07).
 
-        A jump of the system clock since the last minute check, which
-        that check restarts every clock for, but only after this gap
-        has been measured across it.
+        A jump of the system clock since the last minute check, which that
+        check restarts every clock for, but only after this gap has been
+        measured across it (rule FRZ-21).
         """
         spans = [
             (begun, ended)
@@ -1456,17 +1352,16 @@ class FreezeMixin:
     ) -> list[tuple[float, float]]:
         """The outages of this device's upstreams that its silence leaves out.
 
-        Time an upstream was down is not counted as its devices'
-        silence (#536), exactly as Device Sentinel's own downtime is not
-        (#160): the reference rig's Zigbee2MQTT was down from 3:40 to
-        7:37 on 28 September, and when the three-minute rejoin window
-        (#436) closed, 24 living devices were announced frozen in one
-        check on four hours they could not have been heard in.
+        Time an upstream was down is not counted as its devices' silence,
+        exactly as Device Sentinel's own downtime is not (rules UP-07,
+        FRZ-10). Otherwise, when a long bridge outage ends and the rejoin
+        window closes, every living device behind it is announced frozen on
+        hours it could not have been heard in.
 
-        The outages come from the stored returns, so a restart in the
-        middle of an outage cannot erase them. An outage that began only
-        after the device was already past its window is left out, so a
-        device frozen before the outage keeps that verdict.
+        The outages come from the stored returns, so a restart in the middle
+        of an outage cannot erase them. An outage that began only after the
+        device was already past its window is left out, so a device frozen
+        before the outage keeps that verdict.
         """
         found: list[tuple[float, float]] = []
         for start, end in self._device_outages(device_id):
@@ -1524,12 +1419,11 @@ class FreezeMixin:
         }
         opened: dict[tuple[str, str], float] = {}
         spans: dict[tuple[str, str], list[tuple[float, float]]] = {}
-        # Where each upstream last came back. An outage cannot have
-        # begun before that, so a corrupt duration, or a fall stamped
-        # at zero, covers at most the time since the last return and
-        # never the whole history: the hostile-data round of 28
-        # September found one such row silencing every device behind
-        # its upstream for as long as it was stored (0.23.15).
+        # Where each upstream last came back. An outage cannot have begun
+        # before that, so a corrupt duration, or a fall stamped at zero, covers
+        # at most the time since the last return and never the whole history,
+        # which would silence every device behind that upstream for as long as
+        # the row was stored.
         returned: dict[tuple[str, str], float] = {}
         fell: dict[tuple[str, str], float] = {}
         for row in events:
@@ -1592,12 +1486,12 @@ class FreezeMixin:
     def _stop_spans(self) -> list[tuple[float, float]]:
         """Every stop of Device Sentinel itself, from the stored restarts.
 
-        Each restart row carries the moment this run began and how long
-        the previous run had been down, so a stop spans from that
-        moment less its duration to that moment. Read from storage the
-        way the upstream outages are (#536), so several stops inside
-        one long gap are all found, and the current run's own stop is
-        added from memory in case its row is not yet written.
+        Each restart row carries the moment this run began and how long the
+        previous run had been down, so a stop spans from that moment less its
+        duration to that moment. Read from storage the way the upstream
+        outages are, so several stops inside one long gap are all found, and
+        the current run's own stop is added from memory in case its row is not
+        yet written (rule FRZ-12).
         """
         events = self.data.get(DATA_SYSTEM_EVENTS) or []
         last = events[-1] if events else None
@@ -1632,12 +1526,10 @@ class FreezeMixin:
     def _stopped_within(self, start: float, end: float) -> float:
         """How much of [start, end] Device Sentinel was stopped for.
 
-        Take the downtime out (ruling #541): a completed gap is learned
-        minus the time Device Sentinel was stopped, because a device
-        that reported while nobody was listening was not silent, and a
-        gap measuring the stop teaches every device it is slower than
-        it is. The reference rig learned 17 minutes on 24 September
-        from a 16.5-minute stop, on 25 devices at once.
+        A completed gap is learned minus the time Device Sentinel was stopped,
+        because a device that reported while nobody was listening was not
+        silent, and a gap measuring the stop teaches every device it is slower
+        than it is (rule FRZ-12).
         """
         return _covered(self._stop_spans(), start, end)
 
@@ -1645,12 +1537,12 @@ class FreezeMixin:
     def frozen_devices_list(self) -> list[dict[str, Any]]:
         """Return devices judged frozen, unknown, or unavailable.
 
-        The Device: Frozen problem sensor. One row per down device, carrying its
-        category (the worst of what its entities show) and the UTC time the
-        verdict began, so a person sees what is down, how, and for how long.
-        A device muted for the kind its verdict is, is left out at once,
-        even while its verdict is held behind a down upstream, where the
-        sweep does not judge it (sixth adversarial round of 0.26.6).
+        The Device: Frozen problem sensor. One row per down device, carrying
+        its category (the worst of what its entities show) and the UTC time
+        the verdict began, so a person sees what is down, how, and for how
+        long. A device muted for the kind its verdict is, is left out at once,
+        even while its verdict is held behind a down upstream, where the sweep
+        does not judge it (rule MUTE-07).
         """
         rows: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
@@ -1682,13 +1574,12 @@ class FreezeMixin:
     ) -> bool:
         """Whether a device was already broken when its upstream went.
 
-        Such a device keeps its own row (ruling #264): the upstream is
-        not the reason for it. An outage dated from the start of this
-        run is the exception, because nothing inside the run happened
-        before it, and every device behind it failed either with it or
-        while it stood. Left unqualified, a restart taken during an
-        integration outage listed each device behind it on its own,
-        which is the fault ruling #440 closed for Wi-Fi.
+        Such a device keeps its own row, because the upstream is not the
+        reason for it (rule UP-05). An outage dated from the start of this run
+        is the exception: nothing inside the run happened before it, and every
+        device behind it failed either with it or while it stood. Without
+        this, a restart taken during an integration outage would list each
+        device behind it on its own.
         """
         if since is None:
             return False
@@ -1700,25 +1591,22 @@ class FreezeMixin:
     def reportable_down_rows(self) -> list[dict[str, Any]]:
         """Return the down devices worth reporting on their own.
 
-        Ruling #264: while a device's upstream is down, the fault is
-        the upstream and the devices are its symptoms, so they are not
-        reported; and since #523, generalised by #535, the verdict
-        itself holds as it was. Stopping one add-on on the
-        reference system raised seventy-four problems and pushed a
-        notification naming seventy-four devices without naming the
-        bridge, which is the one thing a person can act on.
+        While a device's upstream is down, the fault is the upstream and the
+        devices are its symptoms, so they are not reported, and the verdict
+        itself holds as it was (rules UP-05, UP-06). Stopping one add-on would
+        otherwise raise a problem and a push for every device behind it
+        without naming the bridge, the one thing a person can act on.
 
-        Two devices survive the suppression. One whose verdict began
-        before the upstream went down is genuinely broken and was
-        broken already, so it keeps its row rather than vanishing into
-        the outage and reappearing when the outage clears. One still
-        down after the upstream returns is the most useful row of the
+        Two devices survive the suppression. One whose verdict began before
+        the upstream went down was broken already, so it keeps its row rather
+        than vanishing into the outage and reappearing when it clears. One
+        still down after the upstream returns is the most useful row of the
         week: everything else came back and this did not.
         """
         rows: list[dict[str, Any]] = []
-        # A burst of tied devices waits for the router before it is
-        # reported (ruling #446), and a device whose upstream has not
-        # loaded yet waits for it (ruling #449).
+        # A burst of tied devices waits for the router before it is reported
+        # (rule UP-15), and a device whose upstream has not loaded yet waits for
+        # it (rule UP-04).
         held = self.wifi_burst_held() | self.loading_held()
         for row in self.frozen_devices_list:
             upstream = self.upstream_down_since(row["device_id"])
@@ -1737,15 +1625,14 @@ class FreezeMixin:
     ) -> bool:
         """Whether a device behind a down upstream went down with it.
 
-        A device's verdict is held while its upstream is down (#535),
-        so on a house that was healthy when the upstream went no device
-        is ever given one, and a count built from verdicts read zero:
-        no row, no push, and a brief saying none went down. What the
-        device reads is counted instead, as Home Assistant shows it: a
-        standing verdict, or the device reading unavailable or unknown
-        as a whole (its saved outage start, #647). A device whose own
-        verdict began before the outage keeps its own row and is not
-        counted here (rule UP-05).
+        A device's verdict is held while its upstream is down (rule UP-06),
+        so on a house that was healthy when the upstream went no device is
+        given one, and a count built from verdicts would read zero: no row, no
+        push, and a brief saying none went down. What the device reads is
+        counted instead, as Home Assistant shows it: a standing verdict, or the
+        device reading unavailable or unknown as a whole (its saved outage
+        start, rule UNAV-04). A device whose own verdict began before the
+        outage keeps its own row and is not counted here (rule UP-05).
         """
         category = record.get(DEV_FROZEN_CATEGORY)
         if category is not None:
@@ -1786,17 +1673,14 @@ class FreezeMixin:
             if self._broken_before(name, since, down_since):
                 continue
             counts[name] = counts.get(name, 0) + 1
-        # A Wi-Fi outage counts the devices it took, not the devices
-        # Home Assistant has finished marking down. The two are the
-        # same for a bridge, whose casualties are unavailable the
-        # moment it goes; they are not the same for a network, where
-        # each device goes unavailable on its own timer. On the
-        # staged outage of 14 September the row read 1 of 12 four
-        # minutes in and 10 at thirteen minutes, while the network
-        # had been down and ten devices on it from the first minute.
-        # The row exists for the life of the outage on that count,
-        # so it appears when the outage is declared rather than when
-        # the verdicts catch up.
+        # A Wi-Fi outage counts the devices it took, not the devices Home
+        # Assistant has finished marking down. The two are the same for a
+        # bridge, whose devices are unavailable the moment it goes; not for a
+        # network, where each device goes unavailable on its own timer, so the
+        # count would creep up for many minutes while every device was down from
+        # the first. The row lives for the whole outage on that count, so it
+        # appears when the outage is declared rather than when the verdicts
+        # catch up (rule UP-11).
         if self.wifi_down_at is not None:
             counts[WIFI_KEY] = max(
                 counts.get(WIFI_KEY, 0), self.wifi_casualties
@@ -1810,15 +1694,14 @@ class FreezeMixin:
         return len(self.frozen_devices_list)
 
     def _freeze_muted(self, device_id: str) -> bool:
-        """Return whether a device is muted from freeze judgment:
-        frozen and never reported. The same broad-to-narrow ladder as battery and signal,
-        and the same principle: the device keeps its clock and its
-        learned rhythm, so re-including it is instant and arrives with
-        history; it simply is never given a freeze or not-reported
-        verdict. Unavailable has its own mute (James, 18 October 2026).
-        This is the release valve
-        for a device that is intermittent by nature, silenced in the
-        freeze report without being hidden from the rest.
+        """Return whether a device is muted from freeze judgment: frozen and
+        never reported (rule MUTE-06).
+
+        The same broad-to-narrow ladder as battery and signal (rule MUTE-04):
+        the device keeps its clock and learned rhythm, so re-including it is
+        instant and arrives with history; it is simply never given a freeze or
+        never-reported verdict. Unavailable has its own mute. This is the
+        release valve for a device that is intermittent by nature.
         """
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
@@ -1831,8 +1714,7 @@ class FreezeMixin:
             return True
         if device_id in options.get(CONF_FREEZE_MUTED_DEVICES, []):
             return True
-        # A hub's mute covers the devices it controls (James, 14
-        # October 2026).
+        # A hub's mute covers the devices it controls (rule STACK-09).
         return self.hub_mutes(device_id, self._freeze_muted)  # type: ignore[attr-defined]
 
     def _freeze_muted_own(self, device_id: str) -> bool:
@@ -1840,8 +1722,8 @@ class FreezeMixin:
         return self._freeze_muted(device_id)
 
     def _unavailable_muted(self, device_id: str) -> bool:
-        """Whether a device is muted from unavailable judgment: unavailable
-        and dropping out, nothing else (James, 18 October 2026).
+        """Whether a device is muted from unavailable judgment: unavailable and
+        dropping out, nothing else (rule MUTE-06).
 
         Set by label or on the device, never by integration; a hub's mute
         covers the devices it controls, as every other mute does.
@@ -1863,9 +1745,9 @@ class FreezeMixin:
         muted_unavailable: bool,
     ) -> str | None:
         """A standing verdict kept while nothing new can be read, with the
-        device's mutes applied: an unavailable that began as a freeze
-        keeps the freeze under an unavailable mute (third adversarial
-        round of 0.26.6)."""
+        device's mutes applied: an unavailable that began as a freeze keeps
+        the freeze under an unavailable mute (rule MUTE-06).
+        """
         if standing == FREEZE_CATEGORY_UNAVAILABLE and muted_unavailable:
             return gone
         return self._muted_away(standing, muted_freeze, muted_unavailable)
@@ -1889,13 +1771,13 @@ class FreezeMixin:
 
     @staticmethod
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:
-        """Give a stored boolean taint the reason it always meant.
+        """Give a stored boolean taint the reason it always meant (rule FRZ-14).
 
-        Before ruling #164 the field was true or false, and the only writer
-        was the unavailable path, so a stored true means exactly that.
-        False is left alone: falsy is still how every caller asks
-        whether a device is tainted. Returns how many were converted,
-        zero once storage has been written by this version.
+        The field was once true or false, and the only writer was the
+        unavailable path, so a stored true means exactly that. False is left
+        alone: falsy is still how every caller asks whether a device is
+        tainted. Returns how many were converted, zero once storage has been
+        written by this version.
         """
         converted = 0
         for record in devices.values():
@@ -1920,5 +1802,5 @@ def _covered(spans: list[tuple[float, float]], start: float, end: float) -> floa
     return total
 
 
-# How far before its recorded fall an outage may be dated (0.23.15).
+# How far before its recorded fall an outage may be dated.
 _FALL_SLACK_SECONDS = 3600.0

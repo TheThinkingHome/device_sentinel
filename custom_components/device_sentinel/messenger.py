@@ -3,32 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.27.8 (2026-10-27)
+# File: messenger.py, Version: 0.27.10 (2026-10-27)
 
 """Sending the daily brief, and the notice after a storage restore.
 
-The third file split out of the coordinator, and the first that
-spoke outward. Ruling #126 held the event-triggered engine closed
-until the detection formulas were settled, and ruling #132 opened the
-document channel first, because emailing the brief repeats a report
-the person already reads on a schedule they set, and makes no claim
-in the moment about a device that just broke. The engine that pushes
-about devices was built later, in `notifier.py`; this file keeps the
-two messages that are documents and notices rather than alerts.
+A file split out of the coordinator. The engine that pushes about
+devices lives in `notifier.py`; this file keeps the two messages that
+are documents and notices rather than alerts.
 
 This module chooses the targets and sends; the
 rendering lives with the reports, which is where the document is
 written, so the email and the file are one string rather than two
-renderings that agree by inspection. This file used to hold a second
-renderer, and the warning written here at the time, that two
-renderers over one set of rows could drift invisibly until somebody
-compared an email against a file, turned out to be exactly what
-happened (ruling #188).
+renderings that can drift apart (rule BRIEF-12).
 
 The sender reads the settings already stored and composes nothing
 new: mailing a document a person already reads asserts nothing the
 file did not already assert, where a push says this device is wrong
-now and inherits the formula behind it (ruling #132).
+now and inherits the formula behind it (rule BRIEF-11).
 """
 
 from __future__ import annotations
@@ -71,7 +62,7 @@ class MessengerMixin:
         somebody; the brief arrives at an hour the person chose, and
         it is the thing that carries what quiet hours suppressed, so
         suppressing it too would mean nothing ever arrived
-        (ruling #136).
+        (rule NOTE-07).
         """
         mode = self.entry.options.get(
             CONF_REMINDER_MODE, DEFAULT_REMINDER_MODE
@@ -100,20 +91,16 @@ class MessengerMixin:
             # serves the file and the mail client, so what arrives
             # is what is on disk. The composed text stays as
             # the message field for services without HTML and as the
-            # plain fallback. The rule that the mail must be the
-            # document that was written predates the HTML page and
-            # was carried across to it when the page replaced the
-            # Markdown brief (rulings #135 and #179).
+            # plain fallback. The mail is the document that was
+            # written (rule BRIEF-12).
             #
             # The stashed page is used only where it was rendered
             # from this very text, so the body can never describe a
-            # different document from the one being sent
-            # (ruling #184). A
+            # different document from the one being sent. A
             # mismatched or missing stash renders the text again
-            # rather than sending the stashed page. Since the two
-            # renderers became one (ruling #188) that fallback
-            # produces the identical document, so a mismatch now
-            # costs nothing at all.
+            # rather than sending the stashed page. There is one
+            # renderer, so that fallback produces the identical
+            # document (rule BRIEF-12).
             stashed_text, stashed_page = getattr(
                 self, "_last_brief_pair", (None, None)
             )
@@ -130,7 +117,7 @@ class MessengerMixin:
         Called only from the brief's own scheduled write, so a
         regenerate or a midnight rewrite cannot mail an in-progress
         document: mailing one of those would deliver the same day
-        several times, each incomplete (ruling #135). Each target is
+        several times, each incomplete (rule BRIEF-11). Each target is
         tried on its own and a
         failure is logged rather than raised: one unreachable mail
         server must not stop the other targets, and a brief that
@@ -152,7 +139,7 @@ class MessengerMixin:
                 # as the email's HTML body through smtp.send_message,
                 # which Home Assistant keeps when it retires the
                 # old-style notify actions for SMTP in 2027.3. The
-                # composed text stays as the plain body (0.23.0).
+                # composed text stays as the plain body.
                 payload = self._brief_payload(target, text)
                 try:
                     await self.hass.services.async_call(
@@ -209,19 +196,18 @@ class MessengerMixin:
     ) -> int:
         """Send the restore notice everywhere, ignoring quiet hours.
 
-        Ruling #345. Two surfaces here: the daily-brief targets,
+        Two surfaces here: the daily-brief targets,
         which is where a person's email lives, and the high-priority
         targets, which is the phone. The durable third is a Repair
-        card the caller raises (ruling #350), which replaced the
-        persistent notification this once posted: it sits where a
-        person looks for things needing attention, survives a
-        restart, and carries a severity.
+        card the caller raises: it sits where a person looks for
+        things needing attention, survives a restart, and carries a
+        severity (rule REP-08).
 
         Quiet hours do not apply. A device flapping at three in the
         morning should stay quiet; a storage file that could not be
         read is a one-time event about the integrity of everything
         the integration knows, and a person wants it on waking rather
-        than three days later.
+        than three days later (rule STOR-12).
 
         Every target is tried on its own and a failure is a log line:
         the restore already succeeded, and a notify platform that
@@ -234,7 +220,7 @@ class MessengerMixin:
             for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
             if target and target != PERSISTENT_TARGET
         }
-        # The high-priority targets at any hour, as #345 says, and the
+        # The high-priority targets at any hour (rule STOR-12), and the
         # normal-priority targets outside Quiet Hours, as every push
         # reaches them (rule NOTE-02).
         targets.update(self._push_targets())
@@ -263,11 +249,9 @@ class MessengerMixin:
                 )
                 continue
             sent += 1
-        # No persistent notification here any more (ruling #350). The
-        # durable surface is a repair card, raised by the caller: it
-        # sits where a person looks for things needing attention,
-        # survives a restart, and carries a severity. Posting both put
+        # No persistent notification here. The durable surface is a
+        # repair card, raised by the caller, because posting both puts
         # one event on five surfaces with the most durable one in the
-        # place things are dismissed by reflex.
+        # place things are dismissed by reflex (rule REP-08).
         LOGGER.debug("Restore notice sent to %d surface(s)", sent)
         return sent

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: naming.py, Version: 0.23.19 (2026-09-30)
+# File: naming.py, Version: 0.27.10 (2026-10-27)
 
 """What a device is called, when the registry does not say.
 
@@ -14,7 +14,7 @@ router fleet carries dozens. Every human surface used to fall back to
 anywhere. This module answers instead, in a fixed order, and every
 surface asks it.
 
-The order (ruling #402):
+The order (rule DEV-01):
 
 1. ``name_by_user``, what the person called it.
 2. ``name``, what the integration called it.
@@ -30,7 +30,7 @@ The order (ruling #402):
    and is the last resort rather than the first.
 
 The integration is named by the same map the problem list uses for
-upstreams (ruling #266) where it has an entry, and by its domain
+upstreams (rule UP-11) where it has an entry, and by its domain
 otherwise.
 """
 
@@ -68,15 +68,12 @@ def integration_label(domain: str | None) -> str:
 
 
 def _fit(name: str) -> str:
-    """A name cut to NAME_LENGTH_MAX characters, the cut marked (ruling
-    #547).
+    """A name cut to NAME_LENGTH_MAX characters, the cut marked (rule DEV-03).
 
-    Measured on 29 September 2026 across the five houses: the longest
-    real name is 54 characters (a TP-Link power strip outlet on the
-    second house), so the cut reaches no real name; it stops a name of
-    any length, which a registry allows, from reaching every report,
-    page and message whole. An adversarial 10,000-character name made
-    a 10,409-character telemetry row.
+    The longest real name seen is 54 characters, so the cut reaches no
+    real name. It stops a name of any length, which a registry allows,
+    from reaching every report, page and message whole: a 10,000-character
+    name made a 10,409-character telemetry row.
     """
     if len(name) <= NAME_LENGTH_MAX:
         return name
@@ -86,7 +83,7 @@ def _fit(name: str) -> str:
 def display_name(
     device: dr.DeviceEntry | None, domain: str | None, device_id: str
 ) -> str:
-    """Return what to call this device, never its raw id (ruling #402),
+    """Return what to call this device, never its raw id (rule DEV-01),
     and never longer than NAME_LENGTH_MAX characters."""
     if device is not None:
         named = _clean(device.name_by_user) or _clean(device.name)

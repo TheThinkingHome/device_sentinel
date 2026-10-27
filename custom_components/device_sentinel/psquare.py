@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: psquare.py, Version: 0.23.19 (2026-09-30)
+# File: psquare.py, Version: 0.27.10 (2026-10-27)
 
 """Streaming percentiles in constant memory: the P-Square estimator.
 
@@ -15,14 +15,13 @@ it); when a marker drifts from its ideal position, its height is
 nudged along a parabola fitted through its neighbours, falling back
 to linear interpolation when the parabola would break the ordering.
 
-Why it is here (ruling #253): the daily minimum is a one-packet
-statistic, and the fleet measured 47 percent of device-days carrying
-a minimum more than three deviations below that day's own mean, a
+Why it is here: the daily minimum is a one-packet statistic, and
+47 percent of device-days carry a minimum more than three deviations below that day's own mean, a
 reading the day itself disowns. A time-weighted percentile replaces
 belief with duration: a value only registers as the day's sustained
 low after the device has held it for its share of the day, about 72
 cumulative minutes for the 5th percentile. The estimators feed the
-two recorded series (daily P5 and P50) and judge nothing.
+two recorded series (daily P5 and P50) and judge nothing (rule SIG-05).
 
 The state is a plain list so it can live inside a device record and
 ride the clocks file untouched: [count, h1..h5, p1..p5]. Positions
@@ -139,12 +138,11 @@ def psquare_feed_many(
 ) -> None:
     """Feed one value repeatedly, without paying per observation.
 
-    Time weighting feeds a held value once per minute it lasted
-    (ruling #253), so a device that reports twice a day hands the
-    estimator hundreds of identical observations in one call, and a
-    restart after an outage can hand it a full day's worth. The loop
-    that did this ran on the event loop at exactly the moment Home
-    Assistant is busiest.
+    Time weighting feeds a held value once per minute it lasted, so a
+    device that reports twice a day hands the estimator hundreds of
+    identical observations in one call, and a restart after an outage
+    can hand it a full day's worth, on the event loop when Home
+    Assistant is busiest (rules SIG-05, CODE-06).
 
     The marker machinery has no closed form for a repeat, because
     each observation moves the ideal positions and the markers chase

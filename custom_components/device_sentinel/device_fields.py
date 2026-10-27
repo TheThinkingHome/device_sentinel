@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: device_fields.py, Version: 0.23.13 (2026-09-27)
+# File: device_fields.py, Version: 0.27.10 (2026-10-27)
 
 """Child devices, and the fields only an ordinary device carries.
 
@@ -63,11 +63,10 @@ def identifier_values(device: Any) -> list[tuple[str, tuple[Any, ...]]]:
     """Each of a device's identifiers as its domain and the parts after it.
 
     Home Assistant types an identifier as a pair, a domain and a value,
-    but stores whatever an integration registers. hOn 0.8.4 registers
-    three parts, its domain, the appliance's MAC and its type, and
-    reading every identifier as a pair stopped Device Sentinel starting
-    at all in any house with a Haier appliance, and failed the
-    diagnostics download (issue #16). Any length is read here: the
+    but stores whatever an integration registers. The hOn integration
+    registers three parts, its domain, the appliance's MAC and its type,
+    and reading every identifier as a pair stops Device Sentinel starting
+    and fails the diagnostics download. Any length is read here: the
     domain first, every part after it kept. Anything that is not a
     tuple or a list with a domain is skipped.
     """

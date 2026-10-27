@@ -3,48 +3,44 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.27.9 (2026-10-27)
+# File: stack_zha.py, Version: 0.27.10 (2026-10-27)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
-One file per coordinator stack (ruling #218), answering the same
+One file per coordinator stack (rule STACK-01), answering the same
 three questions every stack module answers: does this device prove
 the stack is present, does this stack own a device on that
 integration domain, and give me a reader.
 
-WHAT IS BUILT. Detection, and since 0.19.0 a coordinator reader,
-built on measurement rather than documentation (ruling #358). Two
-deliberate coordinator pulls on 28 August 2026, watched at
-thirty-second resolution on a live ZHA at Home Assistant 2026.8.3:
+WHAT IS BUILT. Detection and a coordinator reader, built on
+measurement rather than documentation (rule UP-03). Deliberate
+coordinator pulls on a live ZHA, watched at thirty-second resolution,
+showed:
 
 1. Within 35 to 60 seconds of the radio losing power, ZHA's config
    entry leaves the loaded state and its entity roster empties. The
    entry is the signal; ZHA publishes no liveness of its own, and
-   the coordinator device carries no entities to watch, which is why
-   a dead coordinator was reported as its children's problems before
-   this reader existed.
+   the coordinator device carries no entities to watch, so without
+   this reader a dead coordinator reads as its children's problems.
 2. Recovery is whole or nothing, four to six minutes from power,
    with no window where entities existed and read unavailable.
 3. A routine reload, by contrast, takes every entity unavailable for
-   nine seconds and returns, and a thirty-second poll missed it
-   entirely. That is why this reader is never polled on a schedule,
-   and why it holds a dwell before it will say down.
+   nine seconds and returns, and a thirty-second poll misses it
+   entirely. So this reader is never polled on a schedule, and it
+   holds a dwell before it will say down.
 
 WHAT IS NOT BUILT. A pairing window. `pairing_open` is always False
 here: ZHA keeps no window state anywhere, and a pairing window
-claimed wrongly discards real silences (rulings #142, #218). What is
-built instead is the join observer below: ZHA announces each device
-that joins or is reconfigured, and that device's recovery is
-credited to a person's hand (ruling #362). Anything else falls to the
-per-device debounce (ruling #138).
+claimed wrongly discards real silences. What is built instead is the
+join observer below: ZHA announces each device that joins or is
+reconfigured, and that device's recovery is credited to a person's
+hand (rule FRZ-17). Anything else falls to the per-device debounce.
 
 WHAT IS UNPROVEN, AND SHIPS SAYING SO. The dwell of sixty seconds
-comes from one radio, one fleet of two devices, and two outage runs.
-On that fleet every coordinator failure is total, so the case this
-cannot have tested is a partial mesh failure: a branch of a large
-network dying while the coordinator lives. Tim Plas's 234 device
-fleet is where that gets measured, and the number moves if his
-numbers say so.
+comes from one radio, a few devices, and two outage runs, where every
+coordinator failure was total. A partial mesh failure, a branch of a
+large network dying while the coordinator lives, is not yet measured
+(rule STACK-02).
 """
 
 from __future__ import annotations
@@ -85,7 +81,7 @@ from .const import (
 
 STACK = STACK_ZHA
 
-# Nothing but ZHA publishes on the zha domain (ruling #412).
+# Nothing but ZHA publishes on the zha domain.
 SHARED_DOMAIN = False
 
 
@@ -102,10 +98,10 @@ def owns_domain(domain: str) -> bool:
 def detects(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device proves ZHA is running.
 
-    The domain is the tell (rulings #139 and #143), so the device
-    entry itself is not consulted. It stays in the signature because
-    every stack module answers this question the same way and Z2M
-    needs the device to find its bridge.
+    The domain is the tell (rule STACK-01), so the device entry itself
+    is not consulted. It stays in the signature because every stack
+    module answers this question the same way and Z2M needs the device
+    to find its bridge.
     """
     return owns_domain(domain)
 
@@ -113,12 +109,11 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for ZHA (ruling #400). ZHA's coordinator carries no entities
-    and is already set aside for that reason on both fleets that have
-    one.
+    No for ZHA. ZHA's coordinator carries no entities and is already
+    set aside for that reason (rule WATCH-05).
 
     Every stack module answers this question so the walk can ask it
-    without knowing which stacks exist (ruling #218). The signature
+    without knowing which stacks exist (rule STACK-01). The signature
     matches the others; neither argument is consulted.
     """
     return False
@@ -131,7 +126,7 @@ def device_key(device: dr.DeviceEntry) -> None:
     ZHA very likely carries something equivalent. Very likely is
     not measured, and a join key guessed wrong joins a verdict to the
     wrong device, so nothing is claimed here until somebody with the
-    hardware sends a real identifier (rulings #218 and #219).
+    hardware sends a real identifier (rule STACK-02).
     """
     return None
 
@@ -141,14 +136,14 @@ class ZhaCoordinatorReader:
 
     No subscription, no timer, no network call: the entry state is an
     in-process read of what Home Assistant already knows, so a
-    healthy fleet costs nothing at all, and a dead one costs one
+    healthy house costs nothing at all, and a dead one costs one
     dictionary lookup per sample.
 
     The dwell is the whole subtlety. A reload drops the entry for
     nine seconds and a dead radio drops it for as long as the radio
     is dead, so the first sighting of an unloaded entry is evidence
     of nothing: the reader remembers when it first saw it and keeps
-    saying running until the dwell has passed (ruling #358). A reload
+    saying running until the dwell has passed (rule UP-03). A reload
     therefore never reaches the reporting layer, and an outage
     reaches it about a minute in, well inside the four to six minutes
     ZHA takes to come back.
@@ -190,8 +185,7 @@ class ZhaCoordinatorReader:
 
         Deliberately a constant rather than a guess. The detector
         reads this to decide whether to discard a silence, and a
-        window claimed wrongly discards a real one (rulings #142,
-        #147).
+        window claimed wrongly discards a real one (rule FRZ-17).
         """
         return False
 
@@ -225,7 +219,7 @@ class ZhaCoordinatorReader:
 
     @property
     def loaded(self) -> bool:
-        """Whether ZHA's entry is loaded right now (ruling #445).
+        """Whether ZHA's entry is loaded right now (rule UP-04).
 
         The state reads running through a reload's dwell, so it cannot
         say whether ZHA has actually come up since Home Assistant
@@ -275,22 +269,20 @@ class ZhaCoordinatorReader:
 
     @property
     def down_since(self) -> float | None:
-        """Return when the entry actually went down, not when we were
-        sure of it (ruling #359).
+        """Return when the entry actually went down, not when the reader
+        was sure of it (rule UP-03).
 
         The dwell means this reader says down about a minute after
         the radio dies, and the suppression rule reads a device that
-        fell before its upstream as a device that was already broken.
-        On the reference rig on 28 August that made every ZHA device
-        keep its own problem row during a real coordinator outage,
-        which is the noise the upstream row exists to end. The outage
-        began when the entry stopped being loaded; the dwell is how
-        long this reader waits before believing it, and a wait is not
-        a start time.
+        fell before its upstream as a device that was already broken,
+        so every ZHA device would keep its own problem row during a
+        real coordinator outage. The outage began when the entry
+        stopped being loaded; the dwell is how long this reader waits
+        before believing it, and a wait is not a start time.
 
         None while the entry is loaded, and None on a stack whose
         reader cannot say, in which case the caller stamps the
-        moment it noticed, exactly as before.
+        moment it noticed.
         """
         return self._first_down_at
 
@@ -298,10 +290,9 @@ class ZhaCoordinatorReader:
 class ZhaJoinObserver:
     """Report that a person handled a device, from what ZHA says.
 
-    The question is #145's, and ZHA answers it at the moment of
-    recovery: when a device comes back, did somebody cause it? A
-    silence ended by a person measures the hand rather than the
-    device, and its gap must not teach the device's rhythm.
+    When a device comes back, did somebody cause it? A silence ended
+    by a person measures the hand rather than the device, and its gap
+    must not teach the device's rhythm (rule FRZ-15).
 
     Z2M answers this by publishing a pairing window. ZHA keeps no
     window state anywhere: zigpy's permit broadcasts and returns,
@@ -309,25 +300,22 @@ class ZhaJoinObserver:
     reaches no event bus. What ZHA does announce, on the
     `zha_gateway_message` dispatcher signal, is the device itself.
 
-    Measured on 29 August 2026 with a throwaway probe, because a
-    dispatcher signal is in process and nothing outside can see it:
-    a re-pair fires `device_joined` then `device_fully_initialized`
-    twice; a reconfigure fires `raw_device_initialized` then the
-    full init; a removal fires `device_removed`; a battery swap and
-    an ordinary recovery fire nothing at all.
+    Measured with a probe, because a dispatcher signal is in process
+    and nothing outside can see it: a re-pair fires `device_joined`
+    then `device_fully_initialized` twice; a reconfigure fires
+    `raw_device_initialized` then the full init; a removal fires
+    `device_removed`; a battery swap and an ordinary recovery fire
+    nothing at all.
 
-    Three measured facts make this usable. The message always
-    precedes the recovery, by two to eight seconds across eighteen
-    observed recoveries, so nothing needs correlating backwards. The
-    full init carries `device_reg_id`, the registry id this
-    integration already files records under, so there is no matching
-    to get wrong. A restart was measured as producing none of these,
-    and that was wrong: on 21 October 2026, 9 to 18 seconds after a
-    restart, ZHA sent a full init alone for three devices nobody had
-    touched, the device setting itself up again (#719). And a join is
-    not enough either (adversarial round of 0.27.0, from zigpy 2.3.0's
-    source): a device that changes its own network address sends a
-    join and two full inits, exactly as a re-pair does.
+    Three facts make this usable. The message always precedes the
+    recovery, by two to eight seconds, so nothing needs correlating
+    backwards. The full init carries `device_reg_id`, the registry id
+    this integration already files records under, so there is no
+    matching to get wrong. And a full init alone proves nothing: 9 to
+    18 seconds after a restart, ZHA can send a full init for devices
+    nobody touched, the device setting itself up again, and a device
+    that changes its own network address sends a join and two full
+    inits, exactly as a re-pair does.
 
     So a full init counts as handling only after one of two starts for
     the same address, within ZHA_HANDLING_WINDOW_SECONDS and until ZHA
@@ -337,11 +325,12 @@ class ZhaJoinObserver:
     pairing is open. Pairing is read from what opening it leaves: the
     zha.permit action for its duration, and the log_output messages
     the Add Device page relays while it is open. A join with pairing
-    closed, and a full init with no start, are logged and nothing else.
+    closed, and a full init with no start, are logged and nothing else
+    (rule FRZ-17).
 
     What it deliberately does not do: claim a pairing window for the
     dashboard. `pairing_open` stays False on this stack. The log relay
-    that hints at it started and stopped 27 times in an hour of
+    that hints at it starts and stops dozens of times in an hour of
     ordinary clicking, which is too loose to show a person, though
     tight enough to tell a re-pair from a device moving on its own.
 
@@ -366,7 +355,7 @@ class ZhaJoinObserver:
         # Registry id -> when that device was last handled.
         self.handled: dict[str, float] = {}
         # IEEE address -> when a person's handling of it began, on the
-        # monotonic clock, so a clock change moves nothing (#719).
+        # monotonic clock, so a clock change moves nothing (rule FRZ-17).
         self._begun: dict[str, float] = {}
         # The addresses whose handling began with a join: a re-pair,
         # told apart from a reconfigure, which begins with a raw init
@@ -437,7 +426,7 @@ class ZhaJoinObserver:
         """Return when a person last handled this device, if lately.
 
         None when nobody has touched it inside the tail, which is
-        the ordinary answer for every device on a quiet fleet, and
+        the ordinary answer for every device in a quiet house, and
         the answer every other stack gives always.
         """
         when = self.handled.get(device_id)
@@ -463,13 +452,12 @@ class ZhaJoinObserver:
             return
         kind = message.get("type")
         if not isinstance(kind, str):
-            # A message type that is not a string. Found by the
-            # adversarial round with a list, which crashed the
-            # membership test outright: an unhashable value cannot be
-            # looked up in a set, and the exception would have
-            # travelled back into whatever dispatched the message,
-            # which is ZHA. An instrument that can break the thing it
-            # watches is worse than no instrument (ruling #360).
+            # A message type that is not a string, such as a list, would
+            # crash the membership test outright: an unhashable value
+            # cannot be looked up in a set, and the exception would
+            # travel back into whatever dispatched the message, which is
+            # ZHA. An instrument that can break the thing it watches is
+            # worse than no instrument (rule STACK-08).
             LOGGER.info(
                 "ZHA gateway message with a %s type; logged and "
                 "ignored",
@@ -512,8 +500,8 @@ class ZhaJoinObserver:
                     self._joined.pop()
             else:
                 # A device that changed its own network address joins
-                # again with nobody near it (adversarial round of
-                # 0.27.0). Without pairing open it is not a person's.
+                # again with nobody near it. Without pairing open it is
+                # not a person's (rule FRZ-17).
                 LOGGER.debug(
                     "ZHA says a device joined with pairing closed: ieee=%s; "
                     "a device moving on its own, not counted as handled",
@@ -523,12 +511,11 @@ class ZhaJoinObserver:
                 return
         if kind == ZHA_FULL_INIT and not self._begun_lately(ieee, tick):
             # A full init with no join or reconfigure before it is the
-            # device announcing itself again, most often just after a
-            # restart: the rig's three ZHA test devices at 15:06 on 21
-            # October 2026, 9 to 18 seconds after Home Assistant came
-            # back, with nobody near them (#719). Logged, and nothing
+            # device announcing itself again, most often 9 to 18 seconds
+            # after a restart, with nobody near it. Logged, and nothing
             # is filed: a person did not handle it, its rhythm count
-            # stands, and the report that follows teaches as any other.
+            # stands, and the report that follows teaches as any other
+            # (rule FRZ-17).
             LOGGER.debug(
                 "ZHA set up a device again on its own (%s): ieee=%s reg=%s "
                 "name=%s; not counted as handled",
@@ -579,11 +566,11 @@ class ZhaJoinObserver:
 
     def _begun_lately(self, ieee: Any, tick: float) -> bool:
         """Whether a person's handling of this address began lately
-        enough to explain a full init (#719). A re-pair sends its two
-        full inits within half a minute of the join (measured 29 August
-        2026), but a sleepy device's configure can run for minutes; an
-        entry older than the window is dropped as it is read, and the
-        oldest go when the table grows past a house's worth."""
+        enough to explain a full init (rule FRZ-17). A re-pair sends its
+        two full inits within half a minute of the join, but a sleepy
+        device's configure can run for minutes; an entry older than the
+        window is dropped as it is read, and the oldest go when the
+        table grows past a house's worth."""
         if not isinstance(ieee, str) or not ieee:
             return False
         when = self._begun.get(ieee)
@@ -609,10 +596,9 @@ def make_join_observer(hass: HomeAssistant, record: Any = None) -> Any:
 def make_reader(hass: HomeAssistant) -> Any:
     """Return the coordinator reader for ZHA.
 
-    Built since 0.19.0. It costs nothing on a house without ZHA:
-    with no entry to read its state is unknown, and the sampler
-    skips an unknown reading exactly as it skips a stack that has no
-    reader at all.
+    It costs nothing on a house without ZHA: with no entry to read its
+    state is unknown, and the sampler skips an unknown reading exactly
+    as it skips a stack that has no reader at all.
     """
     return ZhaCoordinatorReader(hass)
 
@@ -627,10 +613,10 @@ def last_heard(hass: HomeAssistant, device: dr.DeviceEntry) -> float | None:
     saved in ZHA's database, so a reload or a restart does not reset
     it. It is ZHA's own Last Seen clock, so a value a restarted ZHA
     hands back from its cache is not taken for the device speaking
-    (ruling #652). Read from what ZHA keeps in Home Assistant's data,
-    without importing ZHA (rulings #515 and #639); anything not where
-    it is expected, as on a ZHA that keeps it elsewhere, reads as None
-    and the device is judged as one without a Last Seen clock.
+    (rule STACK-04). Read from what ZHA keeps in Home Assistant's data,
+    without importing ZHA (rule STACK-08); anything not where it is
+    expected, as on a ZHA that keeps it elsewhere, reads as None and
+    the device is judged as one without a Last Seen clock.
     """
     try:
         ieee = next(

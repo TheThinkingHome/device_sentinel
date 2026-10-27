@@ -3,20 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.27.8 (2026-10-27)
+# File: wifi.py, Version: 0.27.10 (2026-10-27)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
-Detection and attribution are separate jobs with separate sources
-(#391). This file answers the first: whether the network exists at
-all. It needs no router integration, so it works the same whatever
-router a person owns, which matters because of sixteen router
-integrations read from source, most publish nothing usable. Which
-devices went down with it is the other question, answered by
-`router_ties.py` where a supported router exists.
+Seeing an outage and saying which devices went with it are separate
+jobs with separate sources. This file answers the first: whether the
+network exists at all. It needs no router integration, so it works
+the same whatever router a person owns, because most router
+integrations publish nothing usable. Which devices went down with it
+is the other question, answered by `router_ties.py` where a
+supported router exists (rule UP-12).
 
-**The network is up while any access point broadcasts a chosen name**
-(#392). Not a signal threshold. The scan reports what the host's
+**The network is up while any access point broadcasts a chosen name**,
+whatever its signal (rule UP-12). The scan reports what the host's
 radio can hear from where the server sits, so a weak reading means
 the host is far from that access point rather than that the access
 point is failing: a mesh satellite fifty feet away behind three
@@ -24,12 +24,11 @@ concrete walls may serve the devices beside it perfectly while barely
 reaching the server. Judging it by its signal at the server would be
 judging the wrong thing.
 
-Measured across a night of scans on a two satellite mesh: the near
-satellite was missing from one sweep of about two hundred, the far
-one from fifty nine, and both from none at all. The one real event
-was the nightly router reboot, thirty seconds, confirmed
-independently by the host's own association dropping and returning.
-The confirmation delay defaults to sixty seconds, twice that.
+On a two satellite mesh across a night of scans, the near satellite
+was missing from one sweep of about two hundred, the far one from
+fifty nine, and both from none at all. A router reboot takes about
+thirty seconds, so the confirmation delay defaults to sixty, twice
+that.
 
 An outage is dated from when the last access point went missing, not
 from when the delay expired, so what is reported is the real length.
@@ -138,7 +137,7 @@ class WifiScanMixin:
         loop. Only where no network is chosen: once one is, the sweep
         finds the adapter itself and the question has been answered.
         Held in memory, since the adapter is read again at every
-        write (ruling #458).
+        write (rule REC-02).
         """
         self._wifi_adapter_unused = None
         if self.wifi_networks:
