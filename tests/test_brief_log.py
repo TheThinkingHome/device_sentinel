@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_log.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_brief_log.py, Version: 0.27.10 (2026-10-27)
 
-"""The brief's Last 24 Hours table as a tester's log (ruling #444).
+"""The brief's Last 24 Hours table as a tester's log (rule BRIEF-07).
 
-The second fleet's tester overwrote several screenshots on 16
-September and ran two coordinator pulls again to take them, and asked
-for a log of what the problem list did instead. The table already
-lists every row opened and cleared with its cause. It now gives each
-time to the second, and it records the moment a Wi-Fi outage starts
-recovering, which until now was visible only on the row itself.
+A tester should not have to take screenshots to know what the Problem
+List did. The table lists every row opened and cleared with its cause,
+gives each time to the second, and records the moment a Wi-Fi outage
+starts recovering, which is otherwise visible only on the row itself.
 """
 
 from __future__ import annotations

@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_entities.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_diagnostics_entities.py, Version: 0.27.10 (2026-10-27)
 
-"""Every entity of a device in the diagnostics download (0.25.0).
+"""Every entity of a device in the diagnostics download (rule DEV-10).
 
-The device type (Project__Device_Type.md) is read from a device's own
-entities: a camera entity, a cover, a moisture sensor. Until 0.25.0 the
-download carried only the battery, signal and Last seen entities, so
-the type rules could not be tested on a real house. Each device now
-carries every entity the registry holds for it, with what those rules
-read and nothing they do not: no state.
+A device's type is read from its own entities: a camera entity, a
+cover, a moisture sensor. Each device carries every entity the registry
+holds for it, so the type rules can be tested on a real house. Each
+entity carries what those rules read and nothing they do not: no state.
 """
 
 from __future__ import annotations

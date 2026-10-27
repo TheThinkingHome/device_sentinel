@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_email.py, Version: 0.23.5 (2026-09-25)
+# File: test_brief_email.py, Version: 0.27.10 (2026-10-27)
 
-"""Sending the brief, and the page a mail client renders.
+"""Sending the brief, and the page a mail client renders
+(rules BRIEF-11, BRIEF-12).
 
-One of the files split out of test_email_brief.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+One of the files split out of a larger brief test file by subject.
+Helpers are carried to every file that calls them rather than pooled,
+so each file reads on its own.
 """
 
 
@@ -115,15 +114,14 @@ async def test_the_brief_is_emailed_whole(hass: HomeAssistant):
 
 
 async def test_an_in_progress_brief_is_never_sent(hass: HomeAssistant):
-    """#135: a regenerate or a midnight rewrite produces an unfinished
-    document, and mailing those would deliver one day several times.
+    """A regenerate or a midnight rewrite produces an unfinished document,
+    and mailing those would deliver one day several times (rule BRIEF-11).
 
     The guard has to return before the send loop, not merely produce a
     zero count. If a None text reached the loop, building its payload
-    would raise and the bare except would swallow it, leaving sent at
-    zero and a broken guard looking healthy. So this pins the loop is
-    never entered: _brief_payload is never called for an unfinished
-    brief.
+    would raise and the bare except would swallow it, leaving sent at zero
+    and a broken guard looking healthy. So this pins the loop is never
+    entered: _brief_payload is never called for an unfinished brief.
     """
     calls = _capture(hass)
     coord = await setup_coordinator(
@@ -253,15 +251,12 @@ async def test_the_persistent_notification_gets_no_html(
 async def test_the_renderer_makes_tables_and_escapes_content(
     hass: HomeAssistant,
 ):
-    """A mail client shows a pipe table as a wall of text, so the
-    tables are rendered; anything a device name could carry is
-    escaped rather than injected.
+    """A mail client shows a pipe table as a wall of text, so the tables are
+    rendered; anything a device name could carry is escaped rather than
+    injected (rule BRIEF-12).
 
-    Moved onto the surviving renderer in 0.10.22 (ruling #188). It
-    tested the messenger's renderer, which stopped being what the
-    file and the mail carried in 0.10.18, so it went on passing over
-    a renderer nothing read while the one that mattered escaped
-    nothing.
+    The test reads the renderer the file and the mail carry, so it cannot
+    pass over a renderer nothing reads.
     """
     coord = await setup_coordinator(hass)
     html = coord._render_brief_html(
@@ -289,19 +284,16 @@ async def test_the_renderer_makes_tables_and_escapes_content(
 async def test_a_device_name_cannot_inject_markup_into_the_brief(
     hass: HomeAssistant,
 ):
-    """The fault as found, end to end through the real brief path.
+    """End to end through the real brief path.
 
-    Reproduced on 0.10.21 before the fix: a device named with an
-    angle bracket in it reached daily_brief.html raw, and therefore
-    reached the mail raw, because the renderer that writes the file
-    escaped nothing while the one carrying the escaping test was no
-    longer read (ruling #188).
+    A device named with an angle bracket in it must not reach
+    daily_brief.html raw, and therefore the mail raw (rule CODE-10).
     """
     coord = await setup_coordinator(hass)
     coord.data[DATA_TODO_ITEMS] = [
         {
-            # Every field the shape requires (#332), because the
-            # to-do surface reads only rows that fit it (#369).
+            # Every field the shape requires (rule STOR-05), because the to-do
+            # surface reads only rows that fit it.
             "uid": "inject1-uid",
             "summary": "Sensor <script>alert(1)</script>: stopped reporting",
             TODO_DEVICE_ID: "inject1",
@@ -343,21 +335,20 @@ async def test_the_separator_is_told_by_its_characters(
 async def test_the_email_carries_the_closed_day_not_the_new_window(
     hass: HomeAssistant,
 ):
-    """The fault of 0.10.18, found on the first morning it ran (#184).
+    """The mail carries the closed day, not the day just opened
+    (rule BRIEF-12).
 
     The scheduled write closes yesterday and then immediately opens
-    today's in-progress brief, and the page was stashed on both
-    writes. So the mail went out with yesterday's text in the
-    message field and today's twenty-second window in the HTML body:
-    the scope line read "in progress" and the events table read
-    nothing happened.
+    today's in-progress brief. A page stashed on both writes would send
+    yesterday's text in the message field and today's twenty-second window
+    in the HTML body: the scope line reading "in progress" and the events
+    table reading nothing happened.
 
-    This walks that exact two-write sequence and pins the emailed
-    body to the closed day's own rendering. The second assertion is
-    the one that catches a regression, because after the roll the
-    file is the in-progress page by design, and a stash updated by
-    that write matches it. The dated file this once compared against
-    retired in 0.23.5.
+    This walks that exact two-write sequence and pins the emailed body to
+    the closed day's own rendering. The second assertion is the one that
+    catches a regression, because after the roll the file is the
+    in-progress page by design, and a stash updated by that write matches
+    it.
     """
     calls = _capture(hass)
     coord = await setup_coordinator(

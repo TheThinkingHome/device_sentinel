@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_handled.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_device_handled.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for 0.19.2, attributing a recovery to a person (ruling #362).
-#
-# The property that matters: a device that came back because somebody
-# handled it must not teach its own rhythm, and a device that came
-# back on its own must.
+"""A recovery a person caused is explained, not learned (rules FRZ-15, FRZ-17).
+
+A device that came back because somebody handled it must not teach
+its own rhythm, and a device that came back on its own must.
+"""
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -27,8 +27,8 @@ from custom_components.device_sentinel.const import (
 
 from .helpers import register_device, setup_coordinator
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -217,11 +217,11 @@ async def test_a_second_handling_later_is_its_own_event(
 
 
 def test_the_window_means_exactly_what_it_says():
-    """Found by the adversarial round. Every other window carries a
-    90 second allowance for the sampler noticing late, which made a
-    60 second handling reach 150 seconds forward and 90 backward: it
-    explained recoveries that happened before the person touched the
-    device. A handling is pushed, not sampled, so it gets none."""
+    """Every other window carries a 90 second allowance for the sampler
+    noticing late, which would make a 60 second handling reach 150 seconds
+    forward and 90 backward and explain recoveries that happened before
+    the person touched the device. A handling is pushed, not sampled, so
+    it gets none."""
     windows = attribution.windows([_event("dev_a", 1000.0)])
     window = windows[0]
     assert window.in_effect_at(999.0) is False
@@ -238,13 +238,11 @@ def test_the_window_means_exactly_what_it_says():
 
 # --------------------------------------------- the learning half
 
-# Added after the comparison of 29 August found both candidate
-# implementations incomplete in the same way: each explained the
-# recovery and neither stopped the gap being learned. The report
-# saying "a person handled this" while the daily maximum quietly
-# widened as though the device had chosen its own silence is worse
-# than saying nothing, because the two disagree and only one of them
-# is visible.
+# Explaining the recovery is not enough; the gap must not be learned
+# either. A report saying "a person handled this" while the daily
+# maximum quietly widens as though the device chose its own silence is
+# worse than saying nothing, because the two disagree and only one of
+# them is visible.
 
 
 async def test_a_handled_gap_is_discarded_and_retracted(
@@ -342,15 +340,16 @@ async def test_a_stale_handling_does_not_discard(hass: HomeAssistant):
 
 async def test_a_handling_is_told_on_the_devices_own_line(hass: HomeAssistant):
     """A device re-paired or reconfigured by hand is told on its own line in
-    the Last 24 Hours table and the dashboard's Daily Brief tab, as a battery
-    change is: "Hall Switch | re-paired by hand", never "The system | a
-    device was re-paired by hand" (James, 7 October, option A, 0.24.11)."""
+    the Last 24 Hours table and the dashboard's Daily Brief tab, as a
+    battery change is: "Hall Switch | re-paired by hand", never "The
+    system | a device was re-paired by hand" (rule BRIEF-07)."""
     device, _ = register_device(hass, "hall", name="Hall Switch")
     coord = await setup_coordinator(hass)
     for kind, words in (("device_joined", "re-paired by hand"),
                         ("raw_device_initialized", "reconfigured by hand"),
-                        # A full init with no join before it is a
-                        # reconfigure; a re-pair is filed as one (FRZ-05).
+                        # A full init with no join before it is a reconfigure;
+                        # a re-pair is
+                        # filed as one (rule FRZ-05).
                         ("device_fully_initialized", "reconfigured by hand"),
                         ("re-pair", "re-paired by hand"),
                         ("device_removed", "removed by hand")):

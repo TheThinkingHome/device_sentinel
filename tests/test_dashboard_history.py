@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_history.py, Version: 0.23.6 (2026-09-25)
+# File: tests/test_dashboard_history.py, Version: 0.27.10 (2026-10-27)
 
-"""The device page's history: the report's figures, worked out once.
+"""The device page's history: the report's figures, worked out once
+(rule FRZ-22).
 
 Every figure the page shows beside its graphs comes from the same
 functions the battery and signal reports call, so the page and the
@@ -14,8 +15,7 @@ recalculated from the daily history whenever it is asked for. The
 outages drawn behind the graphs are the natural ones on the device's
 own path; one that began during a restart or its grace is not drawn.
 
-The series are Button Terrace Dining's, from the reference rig's
-storage of 20 September.
+The series are a real button's, from a real house's storage.
 """
 
 from __future__ import annotations
@@ -96,11 +96,10 @@ async def _page(hass, hass_ws_client, device):
 
 
 async def test_the_battery_figures_are_the_reports_own(hass: HomeAssistant, hass_ws_client):
-    """Button Terrace Dining's cell of 20 September, which the report
-    listed as falling "over a year" on a seven-day slope of -0.167 a
-    day. Its weekly averages move by a few tenths, so since 0.23.6 it
-    reads steady, with no line drawn and no time left: the fault the
-    release was built for, on a real cell."""
+    """A real cell that a seven-day slope of -0.167 a day would list as
+    falling "over a year". Its weekly averages move by a few tenths, so it
+    reads steady, with no line drawn and no time left (rule BAT-11).
+    """
     from custom_components.device_sentinel.report_battery import battery_weeks
 
     coord, device = await _terrace(hass)

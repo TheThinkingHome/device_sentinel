@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_steps.py, Version: 0.27.6 (2026-10-26)
+# File: test_clock_steps.py, Version: 0.27.10 (2026-10-27)
 
-"""Time across a clock step is unknown (ruling #651).
+"""Time across a clock step is unknown (rule FRZ-21).
 
 At a step every clock and outage start restarts, an outage running
 across it is not learned, every verdict stands until the device
-reports, and every "down for" counts from the step. Found by the
-adversarial round of 12 October 2026.
+reports, and every "down for" counts from the step.
 """
 
 from __future__ import annotations

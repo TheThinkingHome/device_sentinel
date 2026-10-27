@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_daily_dates.py, Version: 0.24.6 (2026-10-05)
+# File: tests/test_daily_dates.py, Version: 0.27.10 (2026-10-27)
 
-"""The dates of a daily history's entries (0.24.4, issue #18)."""
+"""The dates of a daily history's entries (rules FRZ-02, STOR-16)."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def test_a_damaged_block_never_raises(block):
 
 
 def test_a_fold_at_the_limit_adds_today_and_drops_the_oldest():
-    # One added and one trimmed leaves the length where it was (0.24.6).
+    # One added and one trimmed leaves the length where it was.
     holder = {}
     set_dates(holder, FAMILY_GAP, _days(3, 2, 1))
     day_appended(holder, FAMILY_GAP, 3, 3, D, added=True)

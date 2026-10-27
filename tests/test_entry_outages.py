@@ -3,17 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entry_outages.py, Version: 0.23.1 (2026-09-24)
+# File: tests/test_entry_outages.py, Version: 0.27.10 (2026-10-27)
 
-"""An integration outage is one config entry's, and survives a restart.
+"""An integration outage is one config entry's, and survives a restart
+(rules UP-04, UP-05, LIST-13).
 
-SwitchBot, TP-Link and Brother make one config entry per device. On
-the second fleet one freezer sensor with a dead battery read as "the
-switchbot integration went down", two could not be told apart, and a
-TP-Link entry that never came back was recorded down afresh after
-every restart. Since 0.22.23 each outage carries its entry, one that
-carries a single device names that device as offline, and an outage
-still open at a restart is resumed rather than recorded again.
+SwitchBot, TP-Link and Brother make one config entry per device, so a
+sensor with a dead battery must not read as "the switchbot integration
+went down", two entries must be told apart, and an entry that never
+comes back must not be recorded down afresh after every restart. Each
+outage carries its entry, one that carries a single device names that
+device as offline, and an outage still open at a restart is resumed
+rather than recorded again.
 """
 
 from __future__ import annotations
@@ -127,8 +128,8 @@ async def test_an_outage_open_at_a_restart_is_resumed_not_repeated(
     coord = await setup_coordinator(hass)
     await _past_grace(coord, freezer)
     (down,) = _rows(coord, SYS_INTEGRATION_DOWN)
-    # Read from the outage itself: an entry that carries one device no
-    # longer claims it as a casualty (0.23.1).
+    # Read from the outage itself: an entry that carries one device does
+    # not claim it as a casualty.
     since = coord.upstream_down_since_for(DOMAIN)
 
     # A restart: everything held in memory is gone, the events log is

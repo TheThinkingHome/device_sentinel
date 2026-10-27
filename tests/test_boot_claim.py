@@ -3,23 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_boot_claim.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_boot_claim.py, Version: 0.27.10 (2026-10-27)
 
-"""A restart during an outage lists nothing on its own (#447).
+"""A restart during an outage lists nothing on its own (rules UP-02, UP-04).
 
-Staged on the reference rig on 17 September: the MQTT broker was
-stopped, Home Assistant restarted, and the problem list came up
-holding 75 individual rows, one for every Zigbee device, each
-"unavailable since 3:21 PM". A minute later the first tick replaced
-all 75 with the single Zigbee2MQTT row. The probe recorded both
-moments to the second.
+With the MQTT broker stopped and Home Assistant restarted, the problem
+list must not come up holding a row for every Zigbee device, each
+"unavailable since 3:21 PM", only for the first tick to replace them
+all with the single Zigbee2MQTT row.
 
 The cause is the order at setup: every device is judged and the
 problem list written before the bridge readers start and before the
 remembered outage is restored, so at that moment no device can be
-matched to its bridge and nothing claims it. Present in every release
-back to the feature, not new in 0.21.12, and it needs devices already
-down behind a bridge across a restart to show at all.
+matched to its bridge and nothing claims it. It shows only with devices
+already down behind a bridge across a restart.
 """
 
 from __future__ import annotations
@@ -190,9 +187,9 @@ async def test_a_device_broken_on_its_own_still_reaches_the_list(
 ):
     """The fix must not silence a device nothing explains.
 
-    Its own integration is running and says nothing about it, so no
-    hold applies (ruling #449 waits only on an upstream that reads
-    down or failed to set up) and the row stands at once."""
+    Its own integration is running and says nothing about it, so no hold
+    applies (the hold waits only on an upstream that reads down or failed
+    to set up) and the row stands at once (rule UP-04)."""
     down_at = dt_util.utcnow().timestamp() - 1800
     device_ids = _house(hass)
     source = MockConfigEntry(domain="brother", title="Printer")
@@ -224,9 +221,9 @@ async def test_a_device_broken_on_its_own_still_reaches_the_list(
 async def test_a_failing_integration_is_one_row_not_many(
     hass: HomeAssistant, hass_storage, _quiet_mqtt
 ):
-    """Ruling #449 holds them through the grace; #445 then reports the
-    integration itself, so the devices behind it are never listed one
-    by one."""
+    """They are held through the grace; the integration itself is then
+    reported, so the devices behind it are never listed one by one
+    (rules UP-04, UP-03)."""
     from homeassistant.config_entries import ConfigEntryState
 
     from custom_components.device_sentinel.const import (
@@ -280,16 +277,15 @@ async def test_a_failing_integration_is_one_row_not_many(
 async def test_a_silent_broker_owns_its_devices_after_the_grace(
     hass: HomeAssistant, hass_storage, _quiet_mqtt
 ):
-    """Rulings #449 and #451, the case staged on the reference rig on
-    17 September: Mosquitto stopped, Home Assistant restarted. It
-    loaded the MQTT entry a second later, so no integration outage
-    was owed, and the broker reader reads unknown until it first hears
-    the broker, so nothing else in the house would have spoken for
-    these devices.
+    """Mosquitto stopped, Home Assistant restarted. The MQTT entry loads a
+    second later, so no integration outage is owed, and the broker reader
+    reads unknown until it first hears the broker, so nothing else in the
+    house would speak for these devices.
 
-    Inside the grace they wait. Once the grace is over, a broker the
-    house has heard before and that has said nothing all run is down
-    from the start of the run, and the devices roll into its one row.
+    Inside the grace they wait. Once the grace is over, a broker the house
+    has heard before and that has said nothing all run is down from the
+    start of the run, and the devices roll into its one row
+    (rules UP-02, UP-04).
     """
     from custom_components.device_sentinel.const import (
         BRIDGE_SEEN_STATE,
@@ -324,8 +320,8 @@ async def test_a_silent_broker_owns_its_devices_after_the_grace(
     hass_storage[STORAGE_KEY]["data"][DATA_BROKER_SEEN] = {
         BRIDGE_SEEN_STATE: BROKER_RUNNING
     }
-    # Nothing remembered about the bridge: this is the case ruling
-    # #447 does not cover.
+    # Nothing remembered about the bridge: this case is outside the
+    # restart hold.
     hass_storage[STORAGE_KEY]["data"].pop(DATA_BRIDGE_SEEN)
 
     entry = await setup_entry(hass)

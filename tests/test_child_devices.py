@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_child_devices.py, Version: 0.24.11 (2026-10-07)
+# File: tests/test_child_devices.py, Version: 0.27.10 (2026-10-27)
 
-"""Child devices are watched like any other device.
+"""Child devices are watched like any other device (rules WATCH-01, GEN-07).
 
 Home Assistant 2026.9 added child devices: a device filed under
 another, such as a boiler's pump beneath the boiler. The registry keeps
-them apart from ordinary devices, and the lookup by config entry that
-the registry walk used returns ordinary devices only, so a child was
-never watched. An integration can also convert an existing device into
-a child after a restart, keeping its id, and a watched device converted
-that way dropped out of watch with its history left unused.
+them apart from ordinary devices, and the lookup by config entry
+returns ordinary devices only, so a registry walk using it never
+watches a child. An integration can also convert an existing device
+into a child after a restart, keeping its id, and a watched device
+converted that way must not drop out of watch.
 
 A child carries a name, an area, labels, a config entry and a disabled
 flag, and none of the fields an ordinary device adds (manufacturer,
@@ -287,9 +287,9 @@ async def test_every_surface_renders_a_child_without_a_deprecated_read(
 
 
 async def test_a_child_device_keeps_its_integrations_name(hass: HomeAssistant, hass_storage):
-    """A child device carries no identifiers of its own, so the
-    Zigbee2MQTT naming of 0.24.11 never asks about it: the Devices tab and
-    its page name its integration as before, without a deprecation line."""
+    """A child device carries no identifiers of its own, so the Zigbee2MQTT
+    naming never asks about it: the Devices tab and its page name its
+    integration as before, without a deprecation line."""
     source, registry, entities, parent = _boiler(hass)
     child, _, _ = _child(hass, source, registry, entities, parent)
     entry = await setup_entry(hass)

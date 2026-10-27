@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entry_outage_across_restart.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_entry_outage_across_restart.py, Version: 0.27.10 (2026-10-27)
 
 """An integration entry outage standing across a restart (rules UP-09,
 UP-10, UP-11).
@@ -240,15 +240,15 @@ async def test_entry_down_never_told_and_back_inside_the_grace_says_nothing(
 async def test_damaged_entry_marks_are_dropped(
     hass: HomeAssistant, freezer, hass_storage, damaged
 ):
-    """Anything but a flag or a count is dropped without an exception,
-    and the outage is taken as told, as one remembered before the marks
+    """Anything but a flag or a count is dropped without an exception, and
+    the outage is taken as told, as one remembered before the marks
     existed (rule STOR-07).
 
     The damage is written into the stored file after the stop and before
-    the start. Written into memory before the stop, it raced the old
-    run: a minute tick landing after the settle sent the real down push,
-    which marks pushed over the damaged value, so the test passed or
-    failed by the wall clock (0.27.5, 2026-10-26)."""
+    the start. Written into memory before the stop, it would race the old
+    run: a minute tick landing after the settle sends the real down push,
+    which marks pushed over the damaged value, so the test would pass or
+    fail by the wall clock."""
     from custom_components.device_sentinel.const import STORAGE_KEY
 
     source, devices = _hub(hass)

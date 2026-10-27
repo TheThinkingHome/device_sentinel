@@ -3,21 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_device_labels.py, Version: 0.27.10 (2026-10-27)
 
-"""A device's name in an HTML report: its area, and a link to it.
+"""A device's name in an HTML report: its area, and a link to it
+(rules BRIEF-13, CODE-10).
 
-Issue #13, from fetzerch: on a large house the reports name a device
-that means nothing on its own. Every one of his temperature sensors
-is called "Temperature & Humidity", and finding the one that is
-reported means going and looking. The name carries its area in
-square brackets and links to the device, on the address the Links in
-Reports setting names and no other (#453).
+On a large house a name can mean nothing on its own: every
+temperature sensor may be called "Temperature & Humidity". So the name
+carries its area in square brackets and links to the device, on the
+address the Links in Reports setting names and no other.
 
-Since 0.23.5 the link opens the device's page on the Device Sentinel
-dashboard, /device-sentinel/device/<id>, which says why the device is
-listed, in place of Home Assistant's device page; and the brief is
-the only HTML report left.
+The link opens the device's page on the Device Sentinel dashboard,
+/device-sentinel/device/<id>, which says why the device is listed, in
+place of Home Assistant's device page; and the brief is the only HTML
+report left.
 """
 
 from __future__ import annotations
@@ -78,8 +77,7 @@ async def test_a_device_with_no_area_says_none(hass: HomeAssistant):
     await _linking(hass, coord, REPORT_LINKS_INTERNAL)
 
     label = coord._device_cell(device.id, "HL-L2370DW")
-    # "Unassigned", the word the bus events use (the owner's choice, 28
-    # September 2026, 0.23.15); the reports said None.
+    # "Unassigned", the word the bus events use, not None.
     assert label.endswith(">HL-L2370DW</a> [Unassigned]")
 
 
@@ -220,9 +218,9 @@ async def test_the_brief_tables_carry_the_area_and_the_link(
 async def test_two_devices_sharing_a_name_link_to_the_right_one(
     hass: HomeAssistant, freezer
 ):
-    """The reference rig has two devices called "Dining Shades". When
-    one of them is the reason for a row, that row is exactly where a
-    person finds out which one it was, so it links to that one."""
+    """Two devices can share a name such as "Dining Shades". When one of
+    them is the reason for a row, that row is exactly where a person finds
+    out which one it was, so it links to that one."""
     first, _ = register_device(hass, "twin1", name="Dining Shades")
     second, _ = register_device(hass, "twin2", name="Dining Shades")
     coord = await setup_coordinator(hass)

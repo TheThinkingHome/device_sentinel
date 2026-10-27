@@ -3,20 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_clock_loss.py, Version: 0.27.10 (2026-10-27)
 
-"""A lost clocks file, and a startup grace that holds everything.
+"""A lost clocks file, and a startup grace that holds everything (rules
+STOR-10, LIST-12, WATCH-10).
 
-The owner deleted the reference rig's clocks file on 23 September to
-see what a person would meet. Every clock came back empty, and an
-empty clock with no events is what "never reported" means: 31 healthy
-devices went on the list when the grace closed, each with a fault
-event, and the watering sensor's verdict moved from unavailable to
-never reported one minute into the start, closed its unavailable
-incident as a recovery and pushed to the phone inside the grace.
-
-These tests replay that start. The ones that are not guards fail on
-0.22.27.
+Every clock comes back empty when the clocks file is lost, and an empty
+clock with no events is what "never reported" means. Without these
+guards, healthy devices go on the list when the grace closes, each with
+a fault event, and a device's verdict moves from unavailable to never
+reported inside the grace, closing its incident as a recovery and
+pushing to the phone. These tests replay that start.
 """
 
 from __future__ import annotations
@@ -104,7 +101,7 @@ async def _tick(hass, freezer, seconds: float = 60.0) -> None:
 
 
 async def _house(hass: HomeAssistant, freezer):
-    """The rig in miniature, settled past its first grace.
+    """A real house in miniature, settled past its first grace.
 
     A fast reporter, a slow one, a device already frozen, the watering
     kit already listed unavailable, and a device added yesterday that
@@ -166,7 +163,7 @@ def _listed(coordinator) -> dict[str, list[str]]:
 async def test_the_house_before_the_loss_is_as_the_rig_was(
     hass: HomeAssistant, freezer
 ):
-    """Guard: the scene is set as it stood on the rig."""
+    """Guard: the scene is set as it stands on a real house."""
     entry, devices, _phone = await _house(hass, freezer)
     coordinator = entry.runtime_data
     assert _verdict(coordinator, devices, DEAD) == FREEZE_CATEGORY_UNAVAILABLE
@@ -220,7 +217,7 @@ async def test_a_device_with_no_history_keeps_no_clock(
 async def test_a_frozen_device_stays_frozen_until_it_reports(
     hass: HomeAssistant, hass_storage, freezer
 ):
-    """A restarted clock is not a report (the owner's ruling, on #124)."""
+    """A restarted clock is not a report (rule FRZ-11)."""
     entry, devices, _phone = await _house(hass, freezer)
     frozen_since = entry.runtime_data.data[DATA_DEVICES][
         devices[FROZE][0].id
@@ -314,9 +311,8 @@ async def test_no_upstream_is_announced_inside_the_grace(
 async def test_the_lost_clocks_are_told_in_the_brief_not_on_a_card(
     hass: HomeAssistant, hass_storage, freezer
 ):
-    """Ruling #697 retired the "Activity Clocks Were Reset" card. The
-    repair is never silent (#342): the start writes one row, at the
-    load, and the brief tells it in the card's words."""
+    """The repair is never silent: the start writes one row, at the load,
+    and the brief tells it, with no Repairs card (rules STOR-12, LIST-12)."""
     entry, _devices, _phone = await _house(hass, freezer)
     coordinator = await _lose_the_clocks(hass, hass_storage, freezer, entry)
     loaded_at = dt_util.as_local(dt_util.utcnow()).strftime("%-I:%M %p")
@@ -358,8 +354,8 @@ async def test_a_whole_clocks_file_raises_no_card(
     ]
 
 
-# A clock reset or a paused system restarts the clocks (#538), told in
-# the brief rather than on a Repair card since #697.
+# A clock reset or a paused system restarts the clocks, told in the
+# brief rather than on a Repairs card (rule FRZ-21).
 
 
 async def _stepped(hass, freezer, seconds: float):
@@ -391,7 +387,7 @@ async def test_a_clock_reset_restarts_the_clocks_told_in_the_brief(hass: HomeAss
     events = [e for e in coord.data[DATA_SYSTEM_EVENTS] if e.get(SYS_KIND) == SYS_CLOCK_RESET]
     assert len(events) == 1 and abs(events[0][SYS_DURATION] - abs(seconds)) < 5, events
     assert ("+" if seconds > 0 else "-") in str(events[0].get("detail")), events
-    # The card is retired (ruling #697); the brief tells the reset.
+    # No card; the brief tells the reset (rule FRZ-21).
     assert ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCK_RESET) is None
     assert "system clock was reset" in coord._system_event_sentence(events[0])
 
@@ -419,8 +415,8 @@ async def test_a_frozen_device_stays_frozen_through_a_reset(hass: HomeAssistant,
     assert record[DEV_FROZEN_CATEGORY] == "frozen"
 
 async def test_a_dead_device_is_caught_after_a_backward_step(hass: HomeAssistant, freezer):
-    """On 0.23.15 the catch came a step late: 155 minutes after a
-    two-hour step, against 35 with none."""
+    """A backward step does not delay the catch: a dead device is caught
+    35 minutes on, as with no step, not 155 (rule FRZ-21)."""
     coord, device, record, bus = await _stepped(hass, freezer, -2 * HOUR)
     window = coord._freeze_window(record)
     await _minutes(hass, coord, freezer, int(window // 60) + 3)
@@ -453,9 +449,7 @@ async def test_running_windows_keep_their_real_time_through_a_reset(hass: HomeAs
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-# The second fleet's committed house. Until 8 October 2026 this read a
-# capture of 26 August that was never committed, so its cases skipped
-# everywhere and only the reference fleet was checked.
+# The second fleet's committed house.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
@@ -576,7 +570,7 @@ async def _run_round(hass: HomeAssistant, records: list[dict], seed: int):
     entityless = [house.add_entityless() for _ in range(n_less)]
     silent = [house.add_silent_with_entities() for _ in range(n_silent)]
     # Device Sentinel's view catches up with the new devices before
-    # anything reads them, as it does within 2 seconds (0.24.2).
+    # anything reads them, as it does within 2 seconds (rule WATCH-11).
     await registry_settled(hass)
     for device in entityless + silent:
         house.seed(device.id)
@@ -595,8 +589,8 @@ async def _run_round(hass: HomeAssistant, records: list[dict], seed: int):
             house.check_invariants(f"r{restart} judge-in-grace")
             if silent and rng.random() < 0.2:
                 house.speak(rng.choice(silent).id)
-        # Sometimes a device gains entities mid-window, the case #260
-        # protects: it must then be judged normally after grace.
+        # Sometimes a device gains entities mid-window: it must then be
+        # judged normally after grace (rule WATCH-10).
         if entityless and rng.random() < 0.3:
             device = rng.choice(entityless)
             house.entities.async_get_or_create(
@@ -660,7 +654,7 @@ async def test_attack_tim_fleet(hass: HomeAssistant, seed: int) -> None:
     await _run_round(hass, _fleet(TIM), 20_000 + seed)
 
 
-# A lost clocks file and a device with no learned day, found in the simulation of 23 September.
+# A lost clocks file and a device with no learned day (rule STOR-10).
 
 
 @pytest.fixture
@@ -734,11 +728,9 @@ async def test_a_young_device_keeps_no_clock(
 #
 # Home Assistant runs the minute check as a background task. Stopping
 # cancels its timer, not a check already running, and waiting for the
-# house to settle does not wait for it. Until 0.24.7 such a check
-# finished after the stop and wrote this session's storage again: over
-# the final save, or over a new session's files after a reload. The
-# two tests above that delete the clocks file failed about one run in
-# thirty for that reason.
+# house to settle does not wait for it. A check that finishes after the
+# stop must not write this session's storage again, over the final save
+# or over a new session's files after a reload (rule STOR-18).
 
 
 async def _hold_a_minute_check(hass, coordinator, monkeypatch):

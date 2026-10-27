@@ -3,33 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_strip.py, Version: 0.12.13 (2026-08-07)
+# File: test_clock_strip.py, Version: 0.27.10 (2026-10-27)
 
-"""The final phase of the storage split: the main file sheds the clocks.
+"""The main file carries no clocks (rules STOR-01, STOR-10, STOR-15).
 
-The two-file split (#101) put the nine per-device clock fields in a
-small hot file written every interval, and left copies of them in the
-main file purely as a rollback net: an older version loads the main
-file alone and loses nothing. This phase removes the copies. The
-witness watched the two files disagree zero times across every daily
-line of the soak, which is the evidence the copies are dead weight.
+The nine per-device clock fields live in a small file written every
+interval. Copies of them in the main file served only as a rollback
+net, so they are removed.
 
-Removing them changes two other things, and both are ruled:
-
-The merge rule (#101). Three of the old merge's four exits fell back
-to the main file's copies, and after the strip all three would mean a
-fleet loading with no clocks at all. The rule is now data-driven:
+The merge rule. With no copies in the main file, a merge that falls
+back to the main file would load a fleet with no clocks at all. So
 whether the main file still carries clocks is read from the records
-themselves, so the same code is correct on a stripped install, on one
-whose backup failed, and on a pre-0.10.0 file with no stamps.
+themselves, and the same code is correct on a stripped install, on one
+whose backup failed, and on an old file with no stamps.
 
-The backup (#130). The strip is the first step in the split that a
-rollback cannot survive unaided, so the release that strips takes a
-copy of both files before it changes anything, and a copy that cannot
-be taken stops the strip rather than the boot: the main file simply
-keeps carrying the clocks, which loses nothing.
-
-Three tests were retired with the transition they guarded (ruling #241): the backup that preceded the strip, the gate that kept writing clock copies where it failed, and the merge branch that preferred a main file still carrying them. The strip is unconditional now and the main file never carries clocks, so those states cannot occur.
+The backup. Stripping is a step a rollback cannot survive unaided, so
+a copy of both files is taken before anything changes, and a copy that
+cannot be taken stops the strip rather than the boot: the main file
+simply keeps carrying the clocks, which loses nothing (rule STOR-19).
 """
 
 from __future__ import annotations

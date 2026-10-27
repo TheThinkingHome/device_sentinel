@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type_roles.py, Version: 0.26.0 (2026-10-11)
+# File: tests/test_device_type_roles.py, Version: 0.27.10 (2026-10-27)
 
-"""Types the entities cannot show (0.25.2).
+"""Types the entities cannot show (rules DEV-10, DEV-11).
 
-A model James checked, what a device is to its network (a coordinator,
-a controller, a border router), and last what its integration says for
-a device whose entities name nothing. Answers James ruled on 9 October
-2026 from the reference house.
+A model checked by hand, what a device is to its network (a
+coordinator, a controller, a border router), and last what its
+integration says for a device whose entities name nothing.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ def test_a_known_model_wins_over_its_entities():
 
 
 def test_tims_water_shutoff_is_a_valve():
-    """Z-Wave shows the EcoNet EVC200 as a switch (#627, his answer)."""
+    """Z-Wave shows the EcoNet EVC200 as a switch; it is an appliance."""
     assert type_for_device([_e("switch")], model=("EcoNet Controls", "EVC200", ""), domain="zwave_js") == (
         "Valve", "known model")
 
@@ -73,7 +72,7 @@ def test_a_role_wins_over_entities():
     ({"domain": "hue", "hub": True}, [], "Hub"),
     ({"domain": "hue", "hub": True}, [_e("light")], "Light"),
     ({"domain": "hue"}, [], None),
-    # An appliance by its integration, whatever its entities (#627).
+    # An appliance by its integration, whatever its entities (rule DEV-10).
     ({"domain": "geappliances"}, [_e("switch")], "Appliance"),
     ({"domain": "ge_home"}, [], "Appliance"),
     ({"domain": "ge_home"}, [_e("climate"), _e("sensor", "temperature")], "Appliance"),
@@ -238,7 +237,7 @@ async def test_a_known_model_reads_from_the_registry(hass: HomeAssistant):
     assert view["words"] == "Plant Waterer"
 
 
-# ------------------------------------------------ the Zigbee2MQTT reader (0.25.2)
+# ------------------------------------------------ the Zigbee2MQTT reader
 
 def _reader_msg(topic, payload):
     import json
@@ -271,8 +270,8 @@ def test_the_reader_keeps_the_serial_port_and_each_devices_role():
 
 
 async def test_home_assistants_own_address_names_no_coordinator(hass: HomeAssistant):
-    """Found by review: an add-on coordinator shares Home Assistant's
-    address with every other add-on, such as a camera's."""
+    """An add-on coordinator shares Home Assistant's address with every
+    other add-on, such as a camera's."""
     await hass.config.async_update(internal_url="http://192.168.1.10:8123")
     _source(hass, "otbr", {"url": "http://192.168.1.10:8081"})
     _source(hass, "zha", {"device": {"path": "socket://127.0.0.1:6638"}})

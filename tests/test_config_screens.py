@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_config_screens.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_config_screens.py, Version: 0.27.10 (2026-10-27)
 
-"""What the configuration screens promise a person reading them.
+"""What the configuration screens promise a person reading them (rules
+CFG-01, CFG-02, CFG-05).
 
-Ruling #312, from the first outside review of this surface. Tim Plas
-runs 332 devices across 112 integrations and found the pickers
-unscannable: a list of three hundred names in whatever order the
-coordinator built them is not a list anybody reads. A large fleet is
-exactly who runs this tool, which is his argument and a good one.
+A large house runs hundreds of devices across a hundred integrations,
+and a picker of three hundred names in whatever order the coordinator
+built them is not a list anybody reads, so the choosers are sorted.
 
 Sorting is asserted at the source rather than trusted to the
 selector's own flag, because the flag is a request to a frontend and
@@ -107,10 +106,9 @@ async def test_a_pick_added_back_is_sorted_in_with_the_rest(
 
 
 async def test_the_menu_is_called_configuration(hass: HomeAssistant):
-    """Tim expected Configuration behind the gear icon and got
-    Tuning. Every other integration's gear leads to configuration,
-    and half these screens are exclusion lists rather than tuning
-    (ruling #312).
+    """The menu behind the gear icon is Configuration, as every other
+    integration's is, because half these screens are exclusion lists
+    rather than tuning (rule CFG-01).
     """
     package = pathlib.Path(
         __import__(
@@ -132,14 +130,11 @@ async def test_the_menu_is_called_configuration(hass: HomeAssistant):
 async def test_a_section_saves_and_returns_to_the_menu(
     hass: HomeAssistant,
 ):
-    """Ruling #313, the whole change in one test.
+    """Submitting a section writes it and shows the menu again.
 
-    A section used to end by creating the entry, which writes the
-    options and ends the flow in one call, so the dialog closed and
-    the person landed back in Home Assistant. Tim Plas, working
-    through six screens on a fleet of 332 devices, called that
-    annoying. Submitting now writes the section and shows the menu
-    again.
+    Creating the entry would write the options and end the flow in one
+    call, closing the dialog and dropping the person back in Home
+    Assistant halfway through six screens (rule CFG-01).
     """
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -245,18 +240,17 @@ async def test_the_menu_says_a_section_saves_on_submit(
 async def test_the_excludes_live_in_a_section_and_store_flat(
     hass: HomeAssistant,
 ):
-    """Ruling #314. The section draws the screen; the keys stay flat.
+    """The section draws the screen; the keys stay flat (rule CFG-02).
 
-    Tim Plas asked for the heading and its explanation to sit above
-    the pickers rather than below them, and a Home Assistant section
-    renders its name, then its description, then its fields. So each
-    screen keeps its plain settings loose at the top and moves its
-    exclude ladder into a section, the pattern Advanced already used
-    for Data Trim.
+    A Home Assistant section renders its name, then its description,
+    then its fields, so the heading and its explanation sit above the
+    pickers. Each screen keeps its plain settings loose at the top and
+    moves its exclude ladder into a section, as Advanced does for Data
+    Trim.
 
-    What must not change is storage. Every reader of these options,
-    and every entry already written to disk, knows them by their flat
-    names, so a save unwraps the section before storing.
+    Storage does not change. Every reader of these options, and every
+    entry already on disk, knows them by their flat names, so a save
+    unwraps the section before storing.
     """
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -291,11 +285,10 @@ async def test_every_sectioned_screen_keeps_its_settings_loose(
 ):
     """Sections hold only the mutes; the settings stay loose.
 
-    The pattern is Advanced's: what a person came for stays at the
-    top, and the mutes sit below it under their own headings. A
-    screen that swept its settings into a section would bury them.
-    Freeze and Unavailable Detection has two sections, one per mute
-    (0.26.6).
+    What a person came for stays at the top, and the mutes sit below it
+    under their own headings, because a screen that swept its settings
+    into a section would bury them. Freeze and Unavailable Detection has
+    two sections, one per mute (rules CFG-02, MUTE-06).
     """
     entry = await setup_entry(hass)
     expected = {
@@ -318,11 +311,9 @@ async def test_every_sectioned_screen_keeps_its_settings_loose(
 async def test_each_section_carries_a_heading_and_an_explanation(
     hass: HomeAssistant,
 ):
-    """The whole point of the change (ruling #314).
-
-    A section with no name and no description would move the fields
-    without moving the words, which is the complaint rather than the
-    fix.
+    """Each section carries a heading and an explanation, because a
+    section with neither would move the fields without moving the words
+    (rule CFG-02).
     """
     package = pathlib.Path(
         __import__(
@@ -348,14 +339,14 @@ async def test_each_section_carries_a_heading_and_an_explanation(
 
 
 async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
-    """Ruling #315. Both halves of Global Exclusions carry a heading.
+    """Both halves of Global Exclusions carry a heading (rule CFG-02).
 
-    A loose field renders its label above the input and its help
-    below it, which left the ignore list explained underneath its
-    chooser while the exclude ladder beside it had its explanation
-    above. Two sections and nothing loose departs from the Advanced
-    pattern on purpose: this screen has no plain settings, only two
-    groups of lists that need different explanations.
+    A loose field renders its label above the input and its help below
+    it, which would leave the ignore list explained underneath its
+    chooser while the exclude ladder beside it has its explanation
+    above. This screen has no plain settings, only two groups of lists
+    that need different explanations, so it has two sections and
+    nothing loose.
     """
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -401,7 +392,7 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
     ):
         step = json.loads(source.read_text())["options"]["step"]["exclusions"]
         assert not step["data"], "nothing loose on this screen"
-        # Devices joined the integrations in 0.25.6 (ruling #625).
+        # Devices sit with the integrations in one section (rule MUTE-03).
         assert step["sections"]["exclude"]["name"] == "Integrations and Devices to Exclude"
         assert (
             step["sections"]["muting"]["name"] == "Global Muting"

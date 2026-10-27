@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_dashboard_api.py, Version: 0.27.10 (2026-10-27)
 
-"""The dashboard's data layer: status, actions and the change marker.
+"""The dashboard's data layer: status, actions and the change marker
+(rules DASH-09, DASH-11).
 
 The dashboard reads the same coordinator facts the entities read, so
 the two can never disagree. Its actions call the same code the device
@@ -105,8 +106,8 @@ async def test_minutes_outside_the_steps_are_refused(hass: HomeAssistant, hass_w
 
 
 async def test_the_enable_actions_are_gone(hass: HomeAssistant, hass_ws_client):
-    """Ruling #696: the action command runs Maintenance only; the three
-    house-wide enable actions are refused."""
+    """The action command runs Maintenance only; the three house-wide
+    enable actions are refused (rule DASH-09)."""
     await setup_coordinator(hass)
     client = await hass_ws_client(hass)
     for action in ("enable_signals", "enable_last_seen", "enable_battery"):
@@ -116,8 +117,8 @@ async def test_the_enable_actions_are_gone(hass: HomeAssistant, hass_ws_client):
 async def test_a_turn_on_is_one_device_and_admin_only(
     hass: HomeAssistant, hass_ws_client, hass_read_only_access_token
 ):
-    """Ruling #696: device_turn_on switches on one device's own sensor
-    of one kind, and a user who is not an administrator is refused."""
+    """device_turn_on switches on one device's own sensor of one kind, and
+    a user who is not an administrator is refused (rule REC-05)."""
     from homeassistant.helpers import entity_registry as er
 
     device, (entity_id,) = register_device(hass, "turn_on_plug")
@@ -265,21 +266,21 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
     muted = next(row for row in rows if row["name"] == "Muted Panel")
     assert muted["muted"] == "Global (device)"
     aside = next(row for row in rows if row["name"] == "Old Tracker")
-    # An exclusion names the integration excluded since 0.22.13, by its
-    # name since 0.27.3, as the Devices tab names it; the id still opens
-    # its page. Every row carries the global mute on its own for the
-    # counts.
+    # An exclusion names the integration excluded, by its name, as the
+    # Devices tab names it (rule GEN-07); the id still opens its page. Every
+    # row carries the global mute on its own for the counts.
     assert aside == {
         "device_id": "x", "name": "Old Tracker", "integration": "tplink_router",
         "integration_name": "TP-Link Router",
         "watched": False, "muted": "", "muted_global": "",
         "set_aside": "excluded (integration: TP-Link Router)", "copies": 1,
-        # What it is (0.25.3); a device gone from the registry has none.
+        # What it is (rule DEV-10); a device gone from the registry has none.
         "type": None,
     }
 
 
-# ZHA is called ZHA, and MQTT's page lists the Tasmota devices that reach Home Assistant through its broker, from Tim Plas's review of 0.22.25.
+# ZHA is called ZHA, and MQTT's page lists the Tasmota devices that reach Home
+# Assistant through its broker (rule GEN-07).
 
 
 @pytest.fixture

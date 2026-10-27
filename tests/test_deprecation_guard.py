@@ -3,15 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_deprecation_guard.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_deprecation_guard.py, Version: 0.27.10 (2026-10-27)
 
-"""The deprecation guard can fail, and it reads what Home Assistant says.
+"""The deprecation guard can fail, and it reads what Home Assistant says
+(rule REL-03).
 
 A guard that has never been seen to fail proves nothing. These check
 both halves: the matching, against the exact text Home Assistant
 writes, and the collection, against a warning Home Assistant's own
-reporter emits for this integration. And the one use that raised a
-warning, issue #10, raises none.
+reporter emits for this integration. And the registry walk that once
+raised a warning raises none.
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ from tests.conftest import (
 )
 from tests.helpers import DOMAIN, register_device, setup_coordinator
 
-# The text Home Assistant 2026.9.2 logged for issue #10, as captured on
-# 16 September.
+# The exact text Home Assistant 2026.9.2 logs for a registry used as a
+# mapping.
 ISSUE_10 = (
     "Detected that custom integration 'device_sentinel' uses "
     "`device_registry.devices` as a mapping or calls its lookup methods, "
@@ -105,11 +106,11 @@ async def test_the_guard_hears_home_assistant(
 async def test_the_registry_walk_raises_no_deprecation(
     hass: HomeAssistant, no_new_deprecations: FrameLog
 ):
-    """Issue #10: setting up and walking the registry says nothing.
+    """Setting up and walking the registry says nothing.
 
-    On 2026.9.2 this walk logged the warning once per run before the
-    fix. On 2026.5.0 there was nothing to log, so there this holds
-    trivially and the 2026.9.2 run is the proof.
+    On Home Assistant 2026.9 this walk would log the warning once per run.
+    On 2026.5.0 there is nothing to log, so there this holds trivially and
+    the newer run is the proof (rule REL-03).
     """
     register_device(hass, "guard0", "Guard Device")
     coord = await setup_coordinator(hass)

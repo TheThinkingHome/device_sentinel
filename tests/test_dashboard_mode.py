@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_mode.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_dashboard_mode.py, Version: 0.27.10 (2026-10-27)
 
-"""Which dashboard a window opens in (ruling #693).
+"""Which dashboard a window opens in (rule DASH-03).
 
 A setting on the Advanced screen: Simple on a new install, Advanced on
-an install that upgrades to 0.26.7. The status reply carries it, and
-the dashboard's own switch keeps nothing.
+an install that upgrades from before the setting. The status reply
+carries it, and the dashboard's own switch keeps nothing.
 """
 
 from __future__ import annotations

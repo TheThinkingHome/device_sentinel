@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_dashboard_devices.py, Version: 0.27.10 (2026-10-27)
 
-"""The Devices tab and each device's page.
+"""The Devices tab and each device's page (rules DASH-06, DASH-08).
 
 The page answers every question about one device in one place: who it
 is (with the fields a battery library matches on), how it is doing
@@ -59,7 +59,7 @@ async def _call(client, **message):
 
 
 async def _door(hass: HomeAssistant):
-    """Door Entryway, from the reference rig, as closely as a test can."""
+    """Door Entryway, from a real house, as closely as a test can."""
     mqtt = MockConfigEntry(domain="mqtt", title="MQTT")
     mqtt.add_to_hass(hass)
     area = ar.async_get(hass).async_create("Entryway")
@@ -122,8 +122,8 @@ async def test_the_devices_tab_lists_every_watched_device(hass: HomeAssistant, h
 
 
 async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_ws_client):
-    """Voice Assistant Kitchen on 24 October 2026: a rhythm from five
-    days, no window yet, and a blank cell. It says learning (0.27.3)."""
+    """A rhythm from five days and no window yet says learning, not a
+    blank cell (rule FRZ-05)."""
     coord, device, _, _ = await _door(hass)
     record = coord.data["devices"][device.id]
     record[DEV_DAILY_MAX] = list(GAPS[:5])
@@ -137,15 +137,14 @@ async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_w
     rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
     row = next(r for r in rows if r["device_id"] == device.id)
     assert row["window"] and row["window_learning"] is False
-    # And a device with no learned day yet, on a fresh install
-    # (adversarial round).
+    # And a device with no learned day yet, on a fresh install.
     record[DEV_DAILY_MAX] = []
     rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
     row = next(r for r in rows if r["device_id"] == device.id)
     assert (row["window"], row["window_learning"]) == (None, True)
     # A hub, or a device its hub judges, is never judged by a window, so
-    # it is not learning one (adversarial round): a Lutron Caseta hub.
-    # Since 0.27.9 the row says how it is judged (tests/test_judged_by.py).
+    # it is not learning one: a Lutron Caseta hub. The row says how it
+    # is judged (rule STACK-10; tests/test_judged_by.py).
     coord.judged_by_hub = lambda device_id: True
     rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
     row = next(r for r in rows if r["device_id"] == device.id)
@@ -154,10 +153,9 @@ async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_w
 
 
 async def test_the_page_says_when_the_log_normal_count_started_again(hass: HomeAssistant):
-    """Stove Vent Relays on 24 October 2026: three long days started the
-    Log-Normal Percentile's count again, and its chart left the page
-    with nothing in its place for 20 days (James's dashboard review).
-    The page now says since when, and how many days are left (0.27.3)."""
+    """When three long days start the Log-Normal Percentile's count
+    again, its chart leaves the page, so the page says since when and
+    how many days are left rather than showing nothing (rule FRZ-05)."""
     from datetime import timedelta
 
     from custom_components.device_sentinel.const import DEV_LOGNORMAL_DAYS
@@ -169,8 +167,8 @@ async def test_the_page_says_when_the_log_normal_count_started_again(hass: HomeA
     again = coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]
     today = dt_util.now().date()
     assert again == {"since": (today - timedelta(days=8)).isoformat(), "to_go": 20}
-    # A day with no learned gap since does not move the restart date
-    # (adversarial round): dated by the history's own days.
+    # A day with no learned gap since does not move the restart date,
+    # because the history's own days date it.
     from custom_components.device_sentinel.daily_dates import FAMILY_GAP, set_dates
 
     yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
@@ -206,9 +204,9 @@ async def test_a_devices_page_carries_everything_known(hass: HomeAssistant, hass
     assert identity["integration"] == "mqtt"
     assert ["zigbee", "0x00158d0001a2b3c4"] in identity["connections"]
     assert identity["event_count"] == 10270
-    # What powers it (0.24.7): the shipped Battery Notes library knows
-    # this sensor with hardware version 2, and no owner entry exists.
-    # Battery Notes corrected this sensor to CR1632 on 10 October 2026.
+    # What powers it: the shipped Battery Notes library knows this
+    # sensor with hardware version 2 as a CR1632, and no owner entry
+    # exists (rule DEV-07).
     assert identity["power"]["words"] == "CR1632"
     assert identity["power"]["source"] == "library"
     assert identity["power"]["report_url"] is None

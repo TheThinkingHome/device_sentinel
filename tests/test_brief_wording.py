@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.27.7 (2026-10-27)
+# File: test_brief_wording.py, Version: 0.27.10 (2026-10-27)
 
-"""How the brief says things: prose, device lines, pairing.
+"""How the brief says things: prose, device lines, pairing
+(rules BRIEF-02, BRIEF-03, BRIEF-04, BRIEF-06, BRIEF-09, DEV-02).
 
-One of the files split out of test_email_brief.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+Helpers are copied into each file that calls them, so each file reads
+on its own.
 """
 
 
@@ -77,12 +75,11 @@ def _away_from_the_brief_time(freezer):
 
     The seeded incidents sit seconds after the brief window opens,
     which is 8:00 AM in the harness's Pacific time zone. Run within a
-    few minutes of that, the window was only minutes long, the
-    harness's own startup restart sat beside the seeded recovery, and
-    the brief rightly credited it: "revived by a restart". Three tests
-    here failed for a few minutes each day, whichever release was on
-    trial (found by the 0.22.14 gate at 15:00 UTC). A fixed moment
-    makes the result independent of when the gate runs.
+    few minutes of that, the window is only minutes long, the
+    harness's own startup restart sits beside the seeded recovery, and
+    the brief rightly credits it: "revived by a restart". A fixed
+    moment makes the result independent of when the suite runs
+    (rule CODE-13).
     """
     freezer.move_to("2026-09-21T20:00:00+00:00")
 
@@ -120,10 +117,9 @@ def _register(hass, uid, name, battery=False, source=None):
 def _brief_text(hass):
     """Return the composed brief text of the newest write.
 
-    Since 0.10.18 the file on disk is the rendered HTML page; the
-    composed text remains the product these tests assert on, because
-    it is the message field, the persistent-notification body, and
-    the source the page is rendered from, so its prose is the prose.
+    The file on disk is the rendered page; the composed text is the
+    message field, the persistent card's body and the source of the
+    page, so its prose is the prose these tests read.
     """
     from custom_components.device_sentinel.const import DOMAIN
 
@@ -212,8 +208,8 @@ async def test_recovery_sentence_carries_span_and_cause(
     )
     assert "recovered at " in text
     assert "after 2.0h" in text
-    # #535: a bridge reconnect revives nothing, even on a row stored
-    # with it as the cause before the ruling.
+    # A bridge reconnect revives nothing, even on a row stored with it
+    # as the cause (rule BRIEF-05).
     assert "revived by" not in text
 
     text = _row(
@@ -356,8 +352,7 @@ async def test_a_standing_problem_is_never_called_nothing(
 ):
     """The all-clear answers the sentence above it, so a brief that
     names a device standing right now cannot also say nothing needs
-    attention. Every brief carrying a standing problem and no repeat
-    offender said both, from 0.16.2 until this was written."""
+    attention (rule BRIEF-02)."""
     device, entity_id, _ = _register(hass, "n1", "Standing Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -420,9 +415,9 @@ async def test_history_reads_oldest_first(hass: HomeAssistant):
 async def test_acknowledged_devices_are_absent_from_the_prose(
     hass: HomeAssistant,
 ):
-    """#123: acknowledging a problem is the statement that the person
-    knows about it, so it leaves the brief rather than being listed
-    with a mark."""
+    """Acknowledging a problem is the statement that the person knows
+    about it, so it leaves the brief rather than being listed with a
+    mark (rule NOTE-08)."""
     device, entity_id, _ = _register(hass, "a1", "Acked Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -441,8 +436,8 @@ async def test_acknowledged_devices_are_absent_from_the_prose(
 
 
 async def test_battery_level_agrees_everywhere(hass: HomeAssistant):
-    """#120: the table said 'battery fell low' while the composer
-    said 'battery fell to 0%'. One composer, one wording."""
+    """The table and the composer say the same words: one composer, one
+    wording (rule NOTE-01)."""
     device, entity_id, _ = _register(hass, "b1", "Battery Sensor", True)
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -502,8 +497,8 @@ async def test_acknowledged_device_leaves_the_whole_brief(
     assert "Nothing needs attention." in text
     # The device is gone from every surface. The house's own events
     # remain, because acknowledging one device is not a request to
-    # stop hearing that the system restarted (0.10.6), so the table
-    # is asserted free of the device rather than empty.
+    # stop hearing that the system restarted, so the table is
+    # asserted free of the device rather than empty.
     assert "No device problems started or ended in this window." in text
     assert "| Quiet Please |" not in text
 
@@ -511,14 +506,13 @@ async def test_acknowledged_device_leaves_the_whole_brief(
 async def test_an_ordinary_restart_is_not_worth_a_sentence(
     hass: HomeAssistant, read_brief
 ):
-    """In Short reports the abnormal; the table reports everything.
+    """In Short reports the abnormal; the table reports everything
+    (rule BRIEF-03).
 
-    This reverses ruling #230, which held that a second restart is a
-    second event a person wants to see. It was decided when restarts
-    were rare, and a day carrying sixteen house sentences that read
-    almost identically to the table beneath them showed it was
-    wrong. A restart of a few seconds is a quiet night, and the row
-    stays in Last 24 Hours for anyone looking a time up.
+    A day can carry many restarts, and a sentence for each reads
+    almost the same as the table beneath it. A restart of a few
+    seconds is a quiet night, and the row stays in Last 24 Hours for
+    anyone looking a time up.
     """
     _register(hass, "h1", "Untroubled")
     coord = await setup_coordinator(hass)
@@ -548,8 +542,8 @@ async def test_a_fresh_install_does_not_claim_a_statistics_reset(
 async def test_recovery_of_an_acknowledged_device_is_news(
     hass: HomeAssistant, read_brief
 ):
-    """#114 with #123: acknowledgment ends at recovery, because the
-    item is deleted, so the recovery is reported."""
+    """Acknowledgment ends at recovery, because the item is deleted, so
+    the recovery is reported (rule NOTE-08)."""
     device, entity_id, _ = _register(hass, "a2", "Came Back")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -602,8 +596,8 @@ async def test_a_known_lever_is_still_credited(hass: HomeAssistant):
         INC_CAUSE: "handled at the device",
         INC_DURATION: 7200.0,
     }
-    # A person's own act is still credited (#535 keeps it); a restart
-    # or an outage is not.
+    # A person's own act is still credited; a restart or an outage is
+    # not (rule BRIEF-05).
     assert coord._compose_event(row).endswith("after 2.0h, handled at the device.")
     row[INC_CAUSE] = "bridge reconnect"
     assert "revived by" not in coord._compose_event(row)
@@ -612,7 +606,7 @@ async def test_a_known_lever_is_still_credited(hass: HomeAssistant):
 async def test_a_stop_and_its_recovery_are_one_sentence(
     hass: HomeAssistant, read_brief
 ):
-    """#134: the brief told them four sentences apart in a live file."""
+    """A stop and its recovery are told as one sentence (rule BRIEF-02)."""
     coord = await setup_coordinator(hass)
     _seed(coord, [
         ("d1", "Presence Guest", INCIDENT_OPENED, {}),
@@ -636,7 +630,7 @@ async def test_the_recovery_clock_time_is_dropped_from_a_pair(
 ):
     """The opening time plus the span gives it, and the table below
     carries exact times for anyone looking one up. A device that went
-    unavailable; a frozen one is told from when it went quiet (0.26.5)."""
+    unavailable; a frozen one is told from when it went quiet."""
     coord = await setup_coordinator(hass)
     _seed(coord, [
         ("d1", "Paired Sensor", INCIDENT_OPENED, {INC_KIND: TODO_KIND_UNAVAILABLE}),
@@ -697,7 +691,7 @@ async def test_two_breaks_in_one_window_give_two_episodes(
     prose = text[text.index("## In Short"): text.index("## Now")]
     # The prose says it once, with the count and the total, because a
     # device that goes and returns twice is one thing happening
-    # repeatedly (ruling #276). The pairing this test exists for is
+    # repeatedly (rule BRIEF-06). The pairing this test exists for is
     # asserted on the table, where each break keeps its own row and
     # its own duration: crossed pairing would show one 3.0h silence.
     assert prose.count("Twice Sensor") == 1
@@ -748,7 +742,8 @@ async def test_a_never_reported_device_is_never_paired(
 async def test_every_generated_heading_is_title_case(
     hass: HomeAssistant, read_brief
 ):
-    """#133: one file fixed and three left would be worse than none."""
+    """Titles in Title Case: one file fixed and three left would be worse
+    than none (rule GEN-06)."""
     _register(hass, "t1", "Title Sensor")
     coord = await setup_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "test")
@@ -774,15 +769,14 @@ async def test_every_generated_heading_is_title_case(
 async def test_a_noisy_day_reads_as_two_sentences(
     hass: HomeAssistant, read_brief
 ):
-    """The day that prompted ruling #275, replayed.
+    """A day of restarts, setting changes and bridge cycles (rule BRIEF-03).
 
-    On 15 August the reference system restarted seven times, changed
-    settings five times, and cycled its bridge twice, and In Short
-    carried sixteen sentences that read almost identically to the
-    table beneath them. Every restart was about thirty seconds and
-    every bridge outage a reboot artefact, so under the abnormal-only
-    rule none of them earns a sentence and the paragraph says the one
-    thing a person can act on: what they changed.
+    Seven restarts, five setting changes and two bridge cycles would
+    give In Short sixteen sentences that read almost the same as the
+    table beneath them. Every restart is about thirty seconds and every
+    bridge outage a reboot artifact, so under the abnormal-only rule
+    none of them earns a sentence and the paragraph says the one thing
+    a person can act on: what they changed.
     """
     coord = await setup_coordinator(hass)
     base = coord.data[DATA_SYSTEM_EVENTS] = []
@@ -858,7 +852,7 @@ async def test_one_long_outage_is_the_only_thing_said(
     short = short[short.index("## In Short"): short.index("## Now")]
 
     assert "The Zigbee2MQTT bridge was down for 17m" in short
-    # The two-minute artefact and the 28-second restart say nothing.
+    # The two-minute artifact and the 28-second restart say nothing.
     assert short.count("bridge") == 1
     assert "The system was unwatched" not in short
 
@@ -866,16 +860,13 @@ async def test_one_long_outage_is_the_only_thing_said(
 async def test_every_system_event_kind_has_a_sentence(
     hass: HomeAssistant,
 ):
-    """No event kind may render as its own name (ruling #287).
+    """No event kind may render as its own name (rule STOR-18).
 
-    storage_shape was added to the events log by 0.15.2 and never
-    given a branch in either renderer, so the brief read
-    "storage_shape at Aug 17, 8:14 AM" in the one section written for
-    a person, and the table below it read "The system | storage_shape".
-    Both renderers end in a fallback that prints the raw kind, and
-    nothing said which kinds were missing. This walks const.py, so a
-    kind added tomorrow fails here rather than appearing in somebody's
-    brief.
+    A kind with no branch in either renderer falls back to printing
+    the raw kind, so the brief would read "storage_shape at Aug 17,
+    8:14 AM" in the one section written for a person, and the table
+    "The system | storage_shape". This walks const.py, so a kind added
+    tomorrow fails here rather than appearing in somebody's brief.
     """
     import custom_components.device_sentinel.const as const
 
@@ -894,7 +885,7 @@ async def test_every_system_event_kind_has_a_sentence(
             "SYS_DURATION",
             "SYS_DEVICES",
             "SYS_WORST",
-            # The device a page act names (0.24.5): a field, not a kind.
+            # The device a page act names: a field, not a kind.
             "SYS_DEVICE_ID",
         )
     )
@@ -932,16 +923,13 @@ async def test_every_system_event_kind_has_a_sentence(
 
 
 async def test_a_flapping_device_is_not_told_twice(hass: HomeAssistant):
-    """A collapsed flood of flapping devices goes (ruling #304).
+    """A collapsed flood of flapping devices goes (rule BRIEF-06).
 
-    Reproduced from 19 August. Two devices, SLZB-06 and Presence
-    Guest, were revived by every one of the day's restarts, so each
-    restart grouped them into "2 devices went unavailable at ...".
-    The flapping collapse then dropped lines that started with a
-    device name, which those do not, so the brief carried nine of
-    them beside the two flapping sentences that already said it.
-    Twelve sentences became three when the collapse was decided from
-    the devices behind each line instead.
+    Two devices revived by every restart of the day group into "2
+    devices went unavailable at ..." each time. A collapse that drops
+    only lines starting with a device name misses those, leaving nine
+    of them beside the two flapping sentences that already said it.
+    The collapse is decided from the devices behind each line instead.
     """
     coord = await setup_coordinator(hass)
     first, _ = register_device(hass, "flap_a", name="SLZB-06")
@@ -988,9 +976,9 @@ async def test_a_flapping_device_is_not_told_twice(hass: HomeAssistant):
 async def test_a_real_outage_keeps_its_line(hass: HomeAssistant):
     """A flood is only dropped when every device in it is flapping.
 
-    The other half of #304. An outage that took a steady device as
-    well as a flapping one is news the flapping sentence does not
-    carry, so its line stays.
+    An outage that took a steady device as well as a flapping one is
+    news the flapping sentence does not carry, so its line stays
+    (rule BRIEF-06).
     """
     coord = await setup_coordinator(hass)
     flapper, _ = register_device(hass, "flap_c", name="SLZB-06")
@@ -1047,10 +1035,10 @@ async def test_a_real_outage_keeps_its_line(hass: HomeAssistant):
 async def test_repeat_offenders_count_only_unexplained(
     hass: HomeAssistant,
 ):
-    """A device revived by every restart earns no line (ruling #305).
+    """A device revived by every restart earns no line (rule BRIEF-09).
 
-    Counting every opening made the nightly reboot the loudest thing
-    on the reference fleet: 71 devices at exactly two openings each.
+    Counting every opening makes the nightly reboot the loudest thing
+    in the house, with dozens of devices at exactly two openings each.
     The filter is the detector, so an opening a restart covers must
     not count, and a device whose every interruption had no
     explanation must.
@@ -1105,7 +1093,7 @@ async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
     """"18 over 6 days" and "15 all on one day" read differently.
 
     The reader must not need arithmetic to tell a failing device
-    from one bad afternoon (ruling #305), so the line carries the
+    from one bad afternoon (rule BRIEF-09), so the line carries the
     count, the days, and the worst day.
     """
     coord = await setup_coordinator(hass)
@@ -1170,7 +1158,7 @@ async def test_the_repeat_floor_is_the_slider(hass: HomeAssistant):
 async def test_a_multi_day_pattern_earns_both_sentences(
     hass: HomeAssistant,
 ):
-    """The suppression is for one-day patterns only (ruling #305).
+    """The suppression is for one-day patterns only (rule BRIEF-09).
 
     A device flapping today whose unexplained record spans several
     days is exactly what the repeat line exists to show, so it keeps
@@ -1230,8 +1218,8 @@ async def test_a_multi_day_pattern_earns_both_sentences(
         )
     )
     assert "became unavailable twice" in prose
-    # The repeat offenders left In Short for their own section
-    # (ruling #374), so the prose carries the flapping sentence only.
+    # The repeat offenders have their own section (rule BRIEF-09), so
+    # the prose carries the flapping sentence only.
     assert "unexplained" not in prose
     # The multi-day pattern keeps its row beside today's sentence.
     rows = coord._repeat_offender_rows(now)
@@ -1257,13 +1245,12 @@ async def test_an_acknowledgment_never_joins_a_flapping_count(
 ):
     """An action row is not a going, and resolved is not still down.
 
-    Reproduced from the 25 August brief. Three devices railed at
-    7:28, were acknowledged at 7:29, and the rail resolved at the
-    midnight fold; one also went unavailable for 22 seconds. The
-    flapping collapse counted the acknowledgment as an unresolved
-    opening, so a fully recovered device read "went silent 3 times
-    and is still silent". The pairing already states the rule this
-    asserts: an acknowledgment is not an opening at all.
+    Three devices rail, are acknowledged a minute later, and the rail
+    resolves at the midnight fold; one also goes unavailable for 22
+    seconds. Counting the acknowledgment as an unresolved opening
+    would make a fully recovered device read "went silent 3 times and
+    is still silent". An acknowledgment is not an opening at all
+    (rule BRIEF-06).
     """
     coord = await setup_coordinator(hass)
     plug, _ = register_device(hass, "ack_plug", name="Plug Living Room Router")
@@ -1382,11 +1369,12 @@ async def test_kinds_flap_separately_on_one_device(hass: HomeAssistant):
     )
 
 
-# 0.19.12: the daily brief improvement update (rulings #373 to #377).
+# Names, Repeat Offenders, storms and stops (rules DEV-02, BRIEF-03,
+# BRIEF-04, BRIEF-09).
 
 
 async def test_the_brief_prints_the_current_name(hass: HomeAssistant):
-    """A renamed device is named as it is now (ruling #373).
+    """A renamed device is named as it is now (rule DEV-02).
 
     The stored name stays in the record, because it is what was true
     then, and nothing shown to a reader uses it.
@@ -1422,7 +1410,7 @@ async def test_a_gone_device_keeps_its_stored_name(
 ):
     """A device the registry no longer knows falls back to the
     stored name, because what was true then still beats a hex id
-    (ruling #373)."""
+    (rule DEV-02)."""
     coord = await setup_coordinator(hass)
     row = {
         INC_DEVICE_ID: "gone0123456789abcdef",
@@ -1438,8 +1426,8 @@ async def test_a_gone_device_keeps_its_stored_name(
 async def test_repeat_offenders_are_a_table_below_now(
     hass: HomeAssistant,
 ):
-    """The section takes its own heading with the ruled columns and
-    the verbatim paragraph beneath (ruling #374)."""
+    """The section takes its own heading with its columns and the
+    fixed paragraph beneath (rule BRIEF-09)."""
     device, _entity_id, _ = _register(hass, "rt1", "Closet Switch")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()
@@ -1483,7 +1471,7 @@ async def test_repeat_offenders_are_a_table_below_now(
     assert "| 12m | alone |" in text
     assert "This table lists repeat offenders." in text
     # The paragraph states the same number the code reads, so one
-    # cannot drift from the other (ruling #378).
+    # cannot drift from the other (rule BRIEF-09).
     assert "the last seven days" in text
     assert "fourteen" not in text
     assert "Keeps failing on its own" not in text
@@ -1493,7 +1481,7 @@ async def test_with_says_every_time_only_when_it_matched(
     hass: HomeAssistant,
 ):
     """WITH names the device that failed in the same second, and
-    says "every time" only when it matched every time (#374)."""
+    says "every time" only when it matched every time (rule BRIEF-09)."""
     first, _e1, source = _register(hass, "wp1", "Motion J")
     second, _e2, _ = _register(hass, "wp2", "Wave J", source=source)
     third, _e3, _ = _register(hass, "wp3", "Loner", source=source)
@@ -1541,7 +1529,7 @@ async def test_one_shared_second_is_not_a_partner(
     hass: HomeAssistant,
 ):
     """A device matching once out of many is a coincidence, not a
-    shared cause, and is not named (ruling #374)."""
+    shared cause, and is not named (rule BRIEF-09)."""
     first, _e1, source = _register(hass, "cf1", "Steady Failer")
     second, _e2, _ = _register(hass, "cf2", "Passer By", source=source)
     coord = await setup_coordinator(hass)
@@ -1585,7 +1573,7 @@ async def test_a_storm_inside_a_restart_is_the_restart(
     hass: HomeAssistant,
 ):
     """The storm rows a restart explains leave the summary and the
-    table; a storm on its own keeps them (ruling #375)."""
+    table; a storm on its own keeps them (rule BRIEF-04)."""
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
     events = [
@@ -1640,7 +1628,7 @@ async def test_a_storm_inside_a_restart_is_the_restart(
 
 async def test_a_clean_stop_is_named_clean(hass: HomeAssistant):
     """The gap ends at the time given, and a clean stop says so
-    (ruling #376)."""
+    (rule BRIEF-03)."""
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
     coord.data[DATA_SYSTEM_EVENTS] = [
@@ -1664,7 +1652,7 @@ async def test_an_unclean_stop_says_what_it_cost(
     hass: HomeAssistant,
 ):
     """The unclean line names the shutdown moment, the gap and the
-    timers restarted, and stops (ruling #376). The clean sentence is
+    timers restarted, and stops (rule BRIEF-03). The clean sentence is
     not said of it."""
     from custom_components.device_sentinel.const import (
         SYS_UNCLEAN_RESTART,
@@ -1702,7 +1690,7 @@ async def test_no_repeat_offenders_prints_no_section(
     hass: HomeAssistant,
 ):
     """An empty table shows nothing at all, not an all-clear
-    (ruling #374 as ruled on 2 September)."""
+    (rule BRIEF-09)."""
     coord = await setup_coordinator(hass)
     coord.data[DATA_INCIDENTS] = []
     coord.data[DATA_SYSTEM_EVENTS] = []
@@ -1716,7 +1704,7 @@ async def test_the_repeat_window_matches_its_paragraph(
     hass: HomeAssistant,
 ):
     """An opening older than the window is not on the table, and the
-    paragraph names the same number the code reads (ruling #378)."""
+    paragraph names the same number the code reads (rule BRIEF-09)."""
     from custom_components.device_sentinel.const import (
         REPEAT_WINDOW_DAYS,
     )
@@ -1766,7 +1754,7 @@ async def test_a_device_that_will_not_settle_is_one_row(
 
     The table names it once with a count. The failure this looks for
     is the count collapsing into forty rows, or the brief carrying
-    forty sentences, which is what the prose form did before #374.
+    forty sentences (rule BRIEF-09).
     """
     device, _entity_id, _ = _register(hass, "flap", "Will Not Settle")
     coord = await setup_coordinator(hass)
@@ -1798,9 +1786,10 @@ async def test_twenty_devices_failing_together_name_each_other(
 ):
     """A shared cause with nothing recorded behind it.
 
-    WITH is the column that earns its place (#374). Twenty devices
-    failing in the same second is true and is also nineteen names in
-    one cell, which is worth seeing before a real fleet does it.
+    WITH is the column that earns its place (rule BRIEF-09). Twenty
+    devices failing in the same second is true and is also nineteen
+    names in one cell, which is worth seeing before a real house
+    does it.
     """
     devices = []
     source = None
@@ -1871,10 +1860,10 @@ async def test_a_flood_with_a_cause_is_one_sentence(
 
 
 async def test_a_refused_row_is_not_told_as_unchanged(hass):
-    """Since #370 a storage-check event means the write seam refused a
-    row and dropped it, and its detail says so. The sentence once ended
-    "Nothing was changed.", the pre-#370 wording, and read against the
-    detail as a contradiction (found in the 0.23.19 reading pass)."""
+    """A storage-check event means the write seam refused a row and
+    dropped it, and its detail says so, so the sentence must not end
+    "Nothing was changed.", which reads against the detail as a
+    contradiction (rule STOR-06)."""
     from custom_components.device_sentinel.const import (
         SYS_DETAIL,
         SYS_KIND,
@@ -1897,8 +1886,8 @@ async def test_a_refused_row_is_not_told_as_unchanged(hass):
 
 async def test_a_storm_run_inside_one_minute_names_its_minute_once(hass: HomeAssistant, freezer):
     """A run whose bursts all fall inside one minute reads "at 5:11 PM",
-    not "between 5:11 PM and 5:11 PM" (ruling #629); a run that spans
-    minutes keeps its "between" (0.26.0)."""
+    not "between 5:11 PM and 5:11 PM"; a run that spans minutes keeps
+    its "between" (rule BRIEF-03)."""
     freezer.move_to("2026-10-11 20:00:00+00:00")
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
@@ -1925,7 +1914,7 @@ async def test_a_storm_run_inside_one_minute_names_its_minute_once(hass: HomeAss
 
 async def test_a_run_crossing_a_minute_keeps_between(hass: HomeAssistant, freezer):
     """Under sixty seconds but across a minute: both minutes are named,
-    since "at" would hide the second (#629 as built)."""
+    since "at" would hide the second (rule BRIEF-03)."""
     freezer.move_to("2026-10-11 20:00:00+00:00")
     coord = await setup_coordinator(hass)
     base = dt_util.utcnow().timestamp() - 7200.0 - (dt_util.utcnow().timestamp() % 60) + 50.0
@@ -1943,7 +1932,7 @@ async def test_a_run_crossing_a_minute_keeps_between(hass: HomeAssistant, freeze
 async def test_an_hour_apart_in_the_repeated_hour_keeps_between(hass: HomeAssistant):
     """When a clock sets back, 1:30 AM prints twice an hour apart; "at"
     would make two reloads one moment, so a run must also last under a
-    minute (adversarial round three, 12 October 2026)."""
+    minute (rule BRIEF-03)."""
     await hass.config.async_set_time_zone("America/Chicago")
     coord = await setup_coordinator(hass)
     first = dt_util.parse_datetime("2026-11-01 06:30:00+00:00").timestamp()  # 1:30 AM CDT
@@ -1959,12 +1948,13 @@ async def test_an_hour_apart_in_the_repeated_hour_keeps_between(hass: HomeAssist
 
 
 async def test_a_frozen_device_is_told_from_when_it_went_quiet(hass: HomeAssistant):
-    """Presence Master on the reference rig, 16 October 2026 (0.26.5).
+    """A frozen device's recovery is told from when it went quiet.
 
     Called frozen at 02:20:01, back at 02:21:01, after 13,431 seconds of
-    silence. The brief said "stopped reporting at 2:20 AM and recovered
-    3.7h later", which put the recovery at about 6 AM. It went quiet at
-    10:37 PM the evening before and reported again at 2:21 AM.
+    silence. "Stopped reporting at 2:20 AM and recovered 3.7h later"
+    would put the recovery at about 6 AM. The device went quiet at
+    10:37 PM the evening before and reported again at 2:21 AM
+    (rule BRIEF-02).
     """
     coord = await setup_coordinator(hass)
     local = dt_util.get_default_time_zone()

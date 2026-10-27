@@ -3,19 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_classification_sources.py, Version: 0.27.10 (2026-10-27)
 
-"""Classification says why: the source of every mute and exclusion.
+"""Classification says why: the source of every mute and exclusion
+(rules MUTE-10, DASH-16).
 
-From the second fleet's review of the dashboard. The MUTED cell named
-only the level of a global mute, "Global (label)", never which label;
-the battery, signal and freeze mutes did not appear at all; and an
-excluded device read "excluded" without saying what was excluded.
-
-Ruled 21 September 2026: name the source in the cell, show every
-family mute in the same cell broadest first, and put a key under the
-table for the set-aside reasons. The tab and classification.md are
-built by one function, so each assertion is made on both.
+A MUTED cell that names only the level of a global mute, "Global
+(label)", never which label, leaves a person guessing, and so does an
+excluded device that reads "excluded" without saying what was
+excluded. So the cell names the source, shows every family mute in the
+same cell broadest first, and a key under the table gives the set-aside
+reasons. The tab and classification.md are built by one function, so
+each assertion is made on both.
 """
 
 from __future__ import annotations
@@ -96,7 +95,7 @@ async def test_every_mute_broadest_first_each_with_its_source(hass: HomeAssistan
         CONF_SIGNAL_MUTED_LABELS: [label_id],
         CONF_FREEZE_MUTED_INTEGRATIONS: ["test"],
     })
-    # The order ruled on 21 September: global, freeze, battery, signal.
+    # The order: global, freeze, battery, signal (rule MUTE-10).
     assert _row(coord, "Echo Sensor")["muted"] == (
         "Global (device); freeze (integration: test); battery (device); "
         "signal (label: Noisy links)"
@@ -149,9 +148,9 @@ async def test_the_integrations_tab_counts_only_global_mutes(hass: HomeAssistant
 
 
 async def test_the_integration_page_shows_every_mute(hass: HomeAssistant):
-    """Ruled 21 September for 0.22.16: every surface that names a
-    device's mutes names all of them, in the same order. Only the
-    Integrations tab's count stays on the global mute."""
+    """Every surface that names a device's mutes names all of them, in the
+    same order. Only the Integrations tab's count stays on the global
+    mute (rule MUTE-10)."""
     device, _ = register_device(hass, "k", name="Kilo Panel")
     coord = await setup_coordinator(hass, {
         CONF_MUTED_DEVICES: [device.id],
@@ -195,7 +194,6 @@ async def test_the_report_keys_every_set_aside_reason(hass: HomeAssistant):
         assert f"- {reason}: {meaning}" in text
     assert [reason for reason, _ in SET_ASIDE_MEANINGS] == [
         "excluded", "service", "disabled", "duplicate coordinator", "clone",
-        # James, 17 October 2026 (0.26.6).
         "nothing switched on that can report",
         "no entities",
     ]
@@ -221,9 +219,9 @@ async def test_the_tab_receives_the_same_key(hass: HomeAssistant, hass_ws_client
 
 
 async def test_the_disabled_entities_advice_is_gone(hass: HomeAssistant):
-    """The brief's line sent a person to the Enable buttons and the
-    Repairs card, both retired (rulings #696, #697); a switched-off
-    sensor is a Recommendations card of its own now (#698)."""
+    """The brief's line does not send a person to retired Enable buttons or
+    a Repairs card; a switched-off sensor is a Recommendations card of its
+    own (rule REC-05)."""
     coord = await setup_coordinator(hass)
     assert not [
         item for item in coord._recommendation_items()
@@ -246,9 +244,9 @@ async def test_a_renamed_label_is_named_by_its_new_name(hass: HomeAssistant):
 
 
 async def test_a_muted_label_on_one_entity_mutes_nothing(hass: HomeAssistant):
-    """Devices are muted, never entities (ruling #642): a muted label on
-    one of a device's entities leaves the device watched and judged, and
-    the entity still speaks for it."""
+    """Devices are muted, never entities: a muted label on one of a
+    device's entities leaves the device watched and judged, and the entity
+    still speaks for it (rule MUTE-05)."""
     from homeassistant.helpers import entity_registry as er
 
     device, (eid,) = register_device(hass, "f", name="Foxtrot Sensor")

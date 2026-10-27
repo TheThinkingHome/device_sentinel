@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.23.16 (2026-09-29)
+# File: test_classification.py, Version: 0.27.10 (2026-10-27)
 
-"""How devices are counted and attributed to integrations.
+"""How devices are counted and attributed to integrations
+(rules WATCH-03, WATCH-05).
 
 Every registry device is sorted into watched or set aside, and a
 device that belongs to more than one config entry is attributed to its
@@ -82,9 +83,9 @@ async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
 def _class_device(hass, uid, name, entities=1):
     """Build a registry device with N enabled entities.
 
-    An entity is not decoration here: ruling #257 sets aside a device
-    with nothing enabled, because it has no way to speak, so a
-    fixture without one is no longer a watched device.
+    An entity is not decoration here: a device with nothing enabled is set
+    aside, because it has no way to speak, so a fixture without one is not
+    a watched device (rule WATCH-03).
     """
     src = MockConfigEntry(domain="test", title="Source")
     src.add_to_hass(hass)
@@ -128,7 +129,7 @@ async def test_one_table_three_states(hass: HomeAssistant):
     # Excluded device: watched check kept, reason named.
     excl_row = next(r for r in rows if "Alpha Excluded" in r)
     assert "\u2713" in excl_row
-    # The integration is named since 0.22.13, not only the level.
+    # The integration is named, not only the level.
     assert "Global (integration: test)" in excl_row
 
     # Watched device: watched check, no exclusion.
@@ -207,14 +208,14 @@ async def test_classification_sets_service_devices_aside(
 async def test_the_z2m_bridge_is_set_aside_as_a_duplicate(
     hass: HomeAssistant,
 ):
-    """Ruling #400, measured on three fleets before it was built.
+    """Zigbee2MQTT's coordinator, listed twice, is not judged as hardware
+    (rule WATCH-05).
 
     Zigbee2MQTT publishes its bridge through MQTT discovery, so the
-    coordinator reaches the registry twice: once as the thing the
-    Bridge sensor reads, and once as an ordinary mqtt device. Judged
-    as hardware it learned 16.5 hours of rhythm on the reference
-    fleet, 70.9 on the second and 30.8 on a third, where it was
-    convicted frozen while its own Bridge sensor read running.
+    coordinator reaches the registry twice: once as the thing the Bridge
+    sensor reads, and once as an ordinary mqtt device. Judged as hardware
+    it learns tens of hours of rhythm and can be convicted frozen while
+    its own Bridge sensor reads running.
     """
     source = MockConfigEntry(domain="mqtt")
     source.add_to_hass(hass)
@@ -299,9 +300,9 @@ async def test_coverage_sensors(hass: HomeAssistant):
     assert coverage.attributes["set_aside"] == coord.set_aside_count
     assert coverage.attributes["learning"]["observing"] >= 2
 
-    # Service Devices Ignored is opt-in since 0.11.11 (ruling #212),
-    # so it has no state until enabled. Its numbers are read from the
-    # coordinator, which is where the sensor reads them.
+    # Service Devices Ignored is opt-in (rule CFG-08), so it has no state
+    # until enabled. Its numbers are read from the coordinator, which is
+    # where the sensor reads them.
     assert hass.states.get(
         "sensor.device_sentinel_service_devices_ignored"
     ) is None
@@ -309,10 +310,9 @@ async def test_coverage_sensors(hass: HomeAssistant):
     assert breakdown["test"]["watched"] == 2
     assert breakdown["test"]["set_aside"] == 1
 
-    # Clock source was retired at 0.3.12: it counted devices lacking
-    # protocol truth, so a higher number read better while meaning
-    # worse, and its soak question closed. The split it published is
-    # still computed and still reaches diagnostics.
+    # The Clock source sensor is retired: it counted devices lacking
+    # protocol truth, so a higher number read better while meaning worse.
+    # The split it published is still computed and still reaches diagnostics.
     assert hass.states.get("sensor.device_sentinel_clock_source") is None
     assert coord.clock_source_split["without_last_seen"] >= 0
 
@@ -321,7 +321,7 @@ async def test_coverage_sensors(hass: HomeAssistant):
     assert learning.state == "0"
 
 
-# --------------------------- the row's columns stay in order (#331)
+# --------------------------- the row's columns stay in order
 
 async def test_the_classification_row_keeps_its_columns(
     hass: HomeAssistant,

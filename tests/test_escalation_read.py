@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_read.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_escalation_read.py, Version: 0.27.10 (2026-10-27)
 
-"""What 0.22.26 wrote and no reader read.
+"""A problem replaced by a worse one is told as the change it is
+(rules LIST-06, LIST-07).
 
-0.22.26 marked a problem replaced by a worse one on its row and
-stopped crediting the reboot, but the brief, its table, its counts and
-the dashboard never looked at the mark: an escalation still read
-"recovered after 31.0h", and so did a battery forecast in the second
-it came true. 0.22.27 tells each as the change it is, in the owner's
-words. Every test here but the guards fails on 0.22.26.
+A row marked as replaced by a worse problem must be read by the brief,
+its table, its counts and the dashboard, or an escalation reads
+"recovered after 31.0h", and so does a battery forecast in the second
+it comes true. Each is told as the change it is.
 """
 
 from __future__ import annotations
@@ -55,8 +54,8 @@ from custom_components.device_sentinel.normalise import (
 
 from .helpers import settle_parked, register_device, setup_coordinator
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 HOUR = 3600.0
@@ -76,10 +75,10 @@ def _arm(coordinator, device_id: str, category: str | None, since: float) -> Non
 
 
 async def _escalate(hass: HomeAssistant, name: str = "Watering Kit"):
-    """The rig's night: frozen for 31 hours, then unavailable at a reboot.
+    """A night: frozen for 31 hours, then unavailable at a reboot.
 
-    The freeze opened before the brief's window, as it did on the rig,
-    so the window holds only the escalation's two rows.
+    The freeze opened before the brief's window, so the window holds only
+    the escalation's two rows.
     """
     device, _entities = register_device(hass, "w1", name=name)
     coordinator = await setup_coordinator(hass)
@@ -153,7 +152,7 @@ async def test_a_real_recovery_still_reads_as_one(hass: HomeAssistant):
 async def test_a_row_written_before_the_mark_reads_as_it_did(
     hass: HomeAssistant,
 ):
-    """Guard: the rig's own row, from 0.22.25, is left as written."""
+    """Guard: an older row with no mark is left as written."""
     coordinator, device = await _escalate(hass)
     for row in coordinator.data[DATA_INCIDENTS]:
         if row[INC_EVENT] == INCIDENT_RESOLVED:
@@ -197,7 +196,7 @@ async def test_a_battery_forecast_coming_true_is_a_change(hass: HomeAssistant):
 async def test_the_level_is_left_out_once_the_cell_reads_full(
     hass: HomeAssistant,
 ):
-    """The low battery rule: no level a row cannot vouch for (#346)."""
+    """The low battery rule: no level a row cannot vouch for (rule BAT-03)."""
     device, _entities = register_device(hass, "b2", name="Door 2nd Bedroom")
     coordinator = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
@@ -266,7 +265,7 @@ def test_the_storage_check_reads_the_mark():
 
 
 async def test_in_short_names_every_device(hass: HomeAssistant):
-    """Guard, the owner's ruling of 23 September: In Short is never capped.
+    """Guard: In Short is never capped (rule BRIEF-02).
 
     It is the paragraph meant one day to be spoken aloud whole. The
     three-name limit belongs to the phone push alone.
@@ -291,9 +290,8 @@ async def test_in_short_names_every_device(hass: HomeAssistant):
 def test_a_row_written_before_the_mark_survives_the_load():
     """The load fills a missing field with None and must keep the row.
 
-    A plain boolean kind refused the None it had just filled, and the
-    first load of 0.22.27 dropped every incident written before
-    0.22.26: the rig's whole record.
+    A plain boolean kind would refuse the None it had just filled, and
+    drop every incident written before the mark existed.
     """
     data = {
         DATA_INCIDENTS: [

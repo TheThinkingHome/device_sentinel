@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_esphome_connection.py, Version: 0.26.6 (2026-10-18)
+# File: test_esphome_connection.py, Version: 0.27.10 (2026-10-27)
 
-"""An ESPHome device's connection through a drop and a return (ruling #640).
+"""An ESPHome device's connection through a drop and a return
+(rule STACK-07).
 
 Home Assistant's ESPHome integration sets the connection flag false
 before it writes the device's entities unavailable, keeps the Status
@@ -13,7 +14,7 @@ sensor available and switches it off, and sets the flag true before
 any state arrives on a reconnect. Nothing written while the flag is
 false is the device speaking; the device is unavailable for the whole
 drop, so the gap spanning it is not learned, whichever entity reports
-first on the return. Found by the adversarial round of 12 October 2026.
+first on the return.
 """
 
 from __future__ import annotations
@@ -56,7 +57,7 @@ HOUR = 3600.0
 
 
 def _dropped(coord, device_id):
-    """The saved start of a device's outage, its drop here (ruling #647)."""
+    """The saved start of a device's outage, its drop here (rule UNAV-04)."""
     saved = coord.data[DATA_DEVICES][device_id].get("down_since")
     return saved[0] if saved else None
 
@@ -144,11 +145,12 @@ def _mine(events, device_id):
 
 
 async def test_a_same_value_write_while_dropped_is_not_the_device_speaking(hass: HomeAssistant, freezer):
-    """#640: nothing written while the connection is down is the device
-    speaking. Home Assistant rewrites an entity with the same value (a
-    registry edit, a second device update) as a state_reported event, not
-    a state change. The Status sensor rewritten "off" while dropped must
-    not move the clock or clear the unavailable verdict."""
+    """Nothing written while the connection is down is the device
+    speaking (rule STACK-07). Home Assistant rewrites an entity with the
+    same value (a registry edit, a second device update) as a
+    state_reported event, not a state change. The Status sensor
+    rewritten "off" while dropped must not move the clock or clear the
+    unavailable verdict."""
     coord, device, eids, record, source = await _ready(hass, freezer, "r601")
     recoveries = record_events(hass, EVENT_RECOVERED)
     await _drop(hass, source, eids)
@@ -164,10 +166,10 @@ async def test_a_same_value_write_while_dropped_is_not_the_device_speaking(hass:
 
 
 async def test_the_report_on_reconnect_is_never_lost(hass: HomeAssistant, freezer):
-    """#640: True is set before any state on reconnect, so the first state
+    """True is set before any state on reconnect, so the first state
     after it is a report: the verdict clears at once, one recovery fires,
     and its down_for counts from the drop, since the trouble began as
-    unavailable, not as a freeze (#644, amended 12 October 2026)."""
+    unavailable, not as a freeze (rules STACK-07, UNAV-07)."""
     coord, device, eids, record, source = await _ready(hass, freezer, "r602")
     recoveries = record_events(hass, EVENT_RECOVERED)
     last_report = record[DEV_LAST_ACTIVITY]
@@ -188,11 +190,11 @@ async def test_the_report_on_reconnect_is_never_lost(hass: HomeAssistant, freeze
 
 @pytest.mark.parametrize("order", [(1, 0), (0, 1)], ids=["status_first", "sensor_first"])
 async def test_the_gap_spanning_a_drop_is_not_learned(hass: HomeAssistant, freezer, order):
-    """#549 and #137 under #640: a device judged unavailable for a two-hour
-    drop has not been heard for any of it, so the gap spanning the drop is
-    not learned. ESPHome sends binary sensors first on a reconnect, so the
-    Status sensor ("on") is normally the first entity written. Run both
-    orders."""
+    """A device judged unavailable for a two-hour drop has not been
+    heard for any of it, so the gap spanning the drop is not learned
+    (rules STACK-07, FRZ-14). ESPHome sends binary sensors first on a
+    reconnect, so the Status sensor ("on") is normally the first entity
+    written. Run both orders."""
     coord, device, eids, record, source = await _ready(hass, freezer, f"r603{order[0]}")
     await _tick(hass, freezer, step=60, n=2)
     record[DEV_TODAY_MAX] = None
@@ -224,8 +226,8 @@ async def test_a_status_only_device_does_not_learn_its_drop(hass: HomeAssistant,
 async def test_dropped_inside_startup_grace_then_judged_after(hass: HomeAssistant, freezer):
     """A device still disconnected when Device Sentinel starts (ESPHome sets
     available False until it connects): nothing judged inside the grace
-    (#291), unavailable after it, never frozen; its Status "off" written
-    during the grace is not a report."""
+    (rule WATCH-10), unavailable after it, never frozen; its Status "off"
+    written during the grace is not a report."""
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False, available=False))
     device, eids = _esp_device(hass, source, "r605", ("sensor", "binary_sensor"))
@@ -283,7 +285,7 @@ async def test_device_info_none_before_first_connect_then_readable(hass: HomeAss
     (0, True), (False, 1), (False, None), ("False", True), (False, "False"), (1.0, False),
 ])
 async def test_hostile_flags_answer_unknown(hass: HomeAssistant, freezer, deep, avail):
-    """#640: each flag must be a real bool; anything else answers unknown."""
+    """Each flag must be a real bool; anything else answers unknown (rule STACK-08)."""
     coord, device, eids, record, source = await _ready(hass, freezer, "r608")
     source.runtime_data = _Runtime(deep, avail)
     assert coord._esphome_flags(device.id) == (None, None)
@@ -378,7 +380,7 @@ async def test_ds_reload_while_dropped_keeps_unavailable(hass: HomeAssistant, fr
     assert not _mine(recoveries, device.id), recoveries
 
 
-# ------------------------------------------------------------ #644 down_for
+# --------------------------------------------------------------- down_for
 
 
 def _entry(hass):
@@ -390,8 +392,7 @@ async def test_a_drop_spanning_a_reload_is_not_learned(hass: HomeAssistant, free
     """A Device Sentinel reload, or a Home Assistant restart, during a drop
     forgets when the drop began, and the entities already read unavailable
     and off, so nothing more is written. The minute check notes the drop
-    again, so the gap spanning it is still not learned (ruling #640;
-    adversarial round of 12 October 2026)."""
+    again, so the gap spanning it is still not learned (rule STACK-07)."""
     coord, device, eids, record, source = await _ready(hass, freezer, f"reload{how[0]}")
     await _tick(hass, freezer, step=60, n=2)
     record[DEV_TODAY_MAX] = None
@@ -421,8 +422,7 @@ async def test_a_drop_spanning_a_reload_is_not_learned(hass: HomeAssistant, free
         _dropped(coord, device.id))
 
 
-# The drop survives a reload, a mute and a clock step (adversarial round of
-# 12 October 2026).
+# The drop survives a reload, a mute and a clock step.
 
 
 async def _ready_muted(hass, freezer, uid, options=None):
@@ -458,12 +458,12 @@ async def _return_status_first(hass, source, eids, values=("22.0", "on")):
 
 @pytest.mark.parametrize("mute", [CONF_FREEZE_MUTED_DEVICES, CONF_MUTED_DEVICES])
 async def test_a_muted_device_does_not_learn_a_drop_across_a_reload(hass: HomeAssistant, freezer, mute):
-    """#640 promises the drop is noted from the minute check so it survives
-    a reload. Muting suppresses judgment, not observation: a muted device
-    keeps learning its rhythm. `_device_down_category` returns for a muted
-    device before the drop check, so after a reload a muted, dropped
-    device is never noted, and the three-hour drop is learned as its own
-    silence, which the device carries into judgment once unmuted."""
+    """The drop is noted from the minute check, so it survives a reload,
+    and a muted device too (rule STACK-07). Muting suppresses judgment,
+    not observation: a muted device keeps learning its rhythm, so a
+    dropped, muted device must still be noted after a reload, or the
+    three-hour drop would be learned as its own silence and carried into
+    judgment once unmuted."""
     coord, device, eids, record, source = await _ready_muted(hass, freezer, f"mute{mute[:4]}", {mute: "SELF"})
     hass.states.async_set(eids[0], "21.6")
     await hass.async_block_till_done()
@@ -514,9 +514,9 @@ async def test_a_drop_written_just_after_a_clock_step_is_not_learned(hass: HomeA
     """The system clock is stepped, and the device drops before the next
     minute check notices the step. The drop is noted from the write in the
     new clock; the check then moves every in-memory moment by the step
-    (#538), the saved drop start among them, so the drop's start lands
-    `step_hours` away from when it really began. Two hours of drop must
-    still taint the gap on return."""
+    (rule FRZ-21), the saved drop start among them, so the drop's start
+    lands `step_hours` away from when it really began. Two hours of drop
+    must still taint the gap on return."""
     coord, device, eids, record, source = await _ready_muted(hass, freezer, f"step{step_hours}")
     mono = {"now": coord._monotonic()}
     coord._monotonic = lambda: mono["now"]
@@ -550,8 +550,8 @@ async def test_a_restart_before_esphome_connects_costs_no_gap(hass: HomeAssistan
     after Device Sentinel's first look, so a device that is fine reads as
     not connected for a few seconds. That is not a drop to date from its
     last report: the gap its first report ends, two quiet hours and a
-    three-minute restart, is learned with the downtime taken out (#549),
-    whichever came first (adversarial round of 12 October 2026)."""
+    three-minute restart, is learned with the downtime taken out, whichever
+    came first (rule UP-07)."""
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
     device, eids = _esp_device(hass, source, f"boot{connected_at_setup}", ("sensor", "binary_sensor"))
@@ -585,11 +585,11 @@ async def test_a_restart_before_esphome_connects_costs_no_gap(hass: HomeAssistan
     record = coord.data[DATA_DEVICES][device.id]
     learned = record[DEV_TODAY_MAX]
     # Two hours quiet and three minutes down: 7,385 s, 7,205 s with the
-    # downtime taken out (#541).
+    # downtime taken out (rule FRZ-12).
     assert learned is not None and 7000 < learned < 7400, learned
 
 
-# ----------------------------- judged by its connection alone (0.26.6)
+# ------------------------------------------ judged by its connection alone
 
 
 def _esp(hass, source, uid, shape):
@@ -782,8 +782,8 @@ async def test_r15_1_connection_only_proxy_page_not_never_reported(hass: HomeAss
 
 
 # 3. An ESPHome device with everything switched off, no notice or button at
-# all: in 0.26.5 the never-reported row was the prompt to switch its
-# entities on (#369); now it is judged by its connection and never told.
+# all: it is judged by its connection and never told it never reported
+# (rule STACK-07).
 async def test_r15_3_esphome_all_switched_off_is_judged_by_its_connection(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -796,7 +796,7 @@ async def test_r15_3_esphome_all_switched_off_is_judged_by_its_connection(hass: 
     await past_grace(hass, freezer)
     record = coord.data[DATA_DEVICES][device.id]
     await walk(hass, freezer, 50 * HOUR, step=1800)
-    # Connected, so never "never reported" (James, 17 October 2026).
+    # Connected, so never "never reported" (rule STACK-07).
     assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED
     assert coord._connection_only(device.id)
 
@@ -862,13 +862,13 @@ async def test_r17_3_connection_only_page_last_report(hass: HomeAssistant, freez
     await walk(hass, freezer, 50 * HOUR, step=1800)
     page = coord.dashboard_device(device.id)
     assert page["status"]["category"] == "reporting"
-    # Judged by its connection: the page says so (James, 17 October 2026).
+    # Judged by its connection: the page says so (rule STACK-07).
     assert page["status"]["connection"] == "connected"
 
 
-# 2. Rule 9: a Bluetooth proxy carried over from 0.26.5 with a learned
-# rhythm. Its page says it is judged by its connection, with no window bar,
-# but the payload still carries a window, so the bar's scale row is drawn.
+# 2. A Bluetooth proxy carried over with a learned rhythm. Its page says
+# it is judged by its connection, with no window bar, but the payload
+# still carries a window, so the bar's scale row is drawn.
 async def test_r18_2_connection_only_page_carries_window(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)
@@ -915,8 +915,8 @@ async def test_r18_3_connection_only_unreadable_says_connected(hass: HomeAssista
     assert page["status"]["connection"] != "connected", page["status"]
 
 
-# 4. #529 with rule 9: a connection-only proxy carried over with a frozen
-# verdict, its connection unreadable: the verdict ends with no report.
+# 4. A connection-only proxy carried over with a frozen verdict, its
+# connection unreadable: the verdict ends with no report (rule LIST-08).
 async def test_r18_4_connection_only_frozen_cleared_without_report(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)

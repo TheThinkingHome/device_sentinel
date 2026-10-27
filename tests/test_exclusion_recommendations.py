@@ -3,18 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusion_recommendations.py, Version: 0.27.7 (2026-10-27)
+# File: test_exclusion_recommendations.py, Version: 0.27.10 (2026-10-27)
 
 """On a house that already exists, a router or media integration seen for
-the first time is recommended for exclusion, not excluded (Ruled Change
-70, rule MUTE-02).
+the first time is recommended for exclusion, not excluded (rule MUTE-02).
 
 The card is on the Recommendations tab in Simple and Advanced. It names
 the integration, says why it is usually excluded, lists its devices, and
 offers Exclude and a tick to keep watching it. The brief says once that
 it is there. Once excluded or ticked, it does not come back. A house
-that never saved its exclusion list keeps the list it had before 0.27.7,
-so Alexa Media Player and Google Cast reach it as cards too.
+that never saved its exclusion list keeps the list it had before the
+card existed, so Alexa Media Player and Google Cast reach it as cards
+too.
 """
 from __future__ import annotations
 
@@ -139,8 +139,7 @@ async def test_a_choice_already_made_raises_no_card(hass: HomeAssistant):
     coord = await _house(hass, ["mobile_app"], **{CONF_MUTED_INTEGRATIONS: ["cast"]})
     await coord._sight_router_integrations()
     assert _line(coord, "cast") is None
-    # And the brief does not point to a card that is not there (second
-    # adversarial round of 0.27.7).
+    # And the brief does not point to a card that is not there.
     assert _told(coord, SYS_EXCLUSION_OFFERED) == []
     assert "cast" in coord.data["routers_seen"]
 
@@ -216,8 +215,8 @@ async def test_a_house_written_by_0276_is_read_as_one_that_exists(hass: HomeAssi
 
 
 async def test_a_new_install_keeps_alexa_and_cast_after_its_first_restart(hass: HomeAssistant, freezer):
-    """First adversarial round of 0.27.7: the second start read the
-    default from before 0.27.7 and watched both."""
+    """The second start reads the new install's saved default, not the
+    older one, so both stay excluded."""
     from .outage_helpers import restart
 
     _integration(hass, "alexa_media", ["Echo Kitchen"])

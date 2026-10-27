@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_device_actions.py, Version: 0.27.10 (2026-10-27)
 
-"""Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
+"""Acting from the device page (rule DASH-09).
 
 Each act writes Home Assistant's registry or Device Sentinel's own
 options, shows at once on the page, and records exactly one row in the
@@ -115,7 +115,7 @@ async def test_a_labels_meaning_is_read_from_the_mute_settings(hass: HomeAssista
     )
     await hass.async_block_till_done()
     reply = await _ws(client, type="device_sentinel/device_choices")
-    # With how many devices carry it, for Mute by label (#706).
+    # With how many devices carry it, for Mute by label (rule MUTE-09).
     assert {"id": garage.label_id, "name": "Garage", "meaning": "mutes freeze", "devices": 0} in reply["result"]["labels"]
 
 
@@ -214,11 +214,11 @@ async def test_the_brief_puts_a_page_act_on_the_devices_line(hass: HomeAssistant
     assert row not in [r for r in coord.data[DATA_SYSTEM_EVENTS] if coord._system_event_who(r) == "The system"]
 
 
-# ------------------------------------- a new area or label from the page (0.25.0)
+# ------------------------------------- a new area or label from the page
 #
-# Tim Plas, 6 October: Home Assistant lets a person create a label or an
-# area where they pick one, and Device Sentinel's pickers did not, so
-# he left the page for Home Assistant's settings and came back.
+# Home Assistant lets a person create a label or an area where they pick
+# one, so Device Sentinel's pickers do too, and nobody leaves the page
+# for Home Assistant's settings.
 
 
 async def test_a_new_area_is_made_and_the_device_moved_into_it(hass: HomeAssistant, hass_ws_client):
@@ -285,7 +285,7 @@ async def test_new_area_and_label_answer_not_found_and_refuse_a_non_admin(hass: 
 )
 async def test_a_mute_says_where_it_was_pressed(hass: HomeAssistant, hass_ws_client, source, said):
     """The Slow Reporting Devices card and the Problem List call the same
-    mute as the device page; the brief says which (ruling #643)."""
+    mute as the device page; the brief says which (rule MUTE-07)."""
     coord, client, device = await _setup(hass, hass_ws_client)
     extra = {"source": source} if source else {}
     reply = await _ws(client, type="device_sentinel/device_mute", device_id=device.id, kind="freeze", on=True, **extra)

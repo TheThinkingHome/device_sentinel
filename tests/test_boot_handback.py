@@ -3,10 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_boot_handback.py, Version: 0.27.6 (2026-10-26)
+# File: tests/test_boot_handback.py, Version: 0.27.10 (2026-10-27)
 
-"""A value handed back at a start is not the device speaking (rule
-WATCH-12).
+"""A value handed back at a start is not the device speaking
+(rule WATCH-12).
 
 On a real boot Device Sentinel can set up before the integrations it
 watches, and their entities then arrive carrying the value they kept:
@@ -16,7 +16,7 @@ standing verdict keeps its own entities' last good values from the
 verdict's start, and after a restart, a reload or an entity added again
 those entities are on watch: the held value coming back is the cache,
 the same value written again does not count, and only a different value
-is the device speaking. Known Gap 63.
+is the device speaking.
 """
 
 from __future__ import annotations
@@ -291,8 +291,8 @@ async def test_a_lutron_light_judged_by_its_hub_stays_unavailable(hass: HomeAssi
 
 
 async def test_a_healthy_device_is_untouched(hass: HomeAssistant, freezer):
-    """No verdict, nothing held, nothing on watch: a start reads it as
-    0.27.5 did."""
+    """No verdict, nothing held, nothing on watch: a start reads it as it
+    always has."""
     freezer.move_to(PIN)
     device, (eid,) = register_device(hass, "lamp", "Lamp")
     hass.states.async_set(eid, "on")
@@ -310,7 +310,7 @@ async def test_a_healthy_device_is_untouched(hass: HomeAssistant, freezer):
 
 
 async def test_a_normal_run_is_unchanged(hass: HomeAssistant, freezer):
-    """Outside a watch a same-value write counts as it did in 0.27.5."""
+    """Outside a watch a same-value write counts as it always has."""
     coord, device, (eid,) = await _frozen(hass, freezer)
     hass.states.async_set(eid, "on")
     await hass.async_block_till_done()
@@ -318,8 +318,8 @@ async def test_a_normal_run_is_unchanged(hass: HomeAssistant, freezer):
 
 
 async def test_exempt_devices_hold_nothing(hass: HomeAssistant, freezer, monkeypatch):
-    """A device with a Last Seen clock, a ZHA device whose radio keeps
-    its own clock (ruling #652) and an ESPHome device never store held
+    """A device with a Last Seen clock, a ZHA device whose radio keeps its
+    own clock (rule STACK-04) and an ESPHome device never store held
     values."""
     from custom_components.device_sentinel import stack_zha
 
@@ -416,8 +416,8 @@ async def test_a_reload_keeps_the_held_values_of_a_remote_resting_at_empty(
 async def test_empty_text_handed_back_does_not_recover_a_frozen_remote(
     hass: HomeAssistant, freezer
 ):
-    """Handed back after Home Assistant's placeholder, empty text reads
-    as 0.27.5 read it, a republish inside the grace."""
+    """Handed back after Home Assistant's placeholder, empty text reads as a
+    republish inside the grace."""
     coord, device = await _frozen_remote(hass, freezer)
     clock = rec(coord, device.id)[DEV_LAST_ACTIVITY]
     recovered = record_events(hass, EVENT_RECOVERED)

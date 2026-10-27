@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_integrations.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_dashboard_integrations.py, Version: 0.27.10 (2026-10-27)
 
-"""The Integrations tab and each integration's page.
+"""The Integrations tab and each integration's page (rule DASH-16).
 
 One row per integration that owns a device: its standing, its counts,
 and its outages. A bridge's outage belongs to the integration that
@@ -115,8 +115,8 @@ async def test_an_integrations_page(hass: HomeAssistant, hass_ws_client):
     assert outage["worst"] == 75
     assert page["bursts"] == 0
     assert isinstance(page["recommendations"], list)
-    # Each device carries the global mute alone, which the Integrations
-    # tab counts, so the page's count agrees with the tab's (0.27.3).
+    # Each device carries the global mute alone, which the Integrations tab
+    # counts, so the page's count agrees with the tab's.
     coord = hass.config_entries.async_entries("device_sentinel")[0].runtime_data
     global_mutes = {row["device_id"]: row["muted_global"] for row in coord.classification_rows()}
     assert all(device["muted_global"] == global_mutes[device["device_id"]] for device in page["devices"])

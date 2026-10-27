@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_problem_list.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_dashboard_problem_list.py, Version: 0.27.10 (2026-10-27)
 
-"""The Problem List and Recommendations tabs.
+"""The Problem List and Recommendations tabs (rules LIST-03, GEN-07).
 
 The Problem List reads the to-do items themselves, acknowledged ones
 included, because the to-do list shows them and the brief's Now table
@@ -107,7 +107,7 @@ async def test_recommendations_are_the_briefs_own(hass: HomeAssistant, hass_ws_c
     assert reply["success"], reply
     lines = reply["result"]["lines"]
     # Each line carries its key, whether Simple shows it and its tick
-    # since 0.26.7 (rulings #695, #699); the words are the brief's own.
+    # (rules REC-07, REC-09); the words are the brief's own.
     assert [line["text"] for line in lines] == coord._recommendation_items()
     assert any("(wlan0)" in line["text"] for line in lines)
     assert reply["result"]["closing"].startswith("These are suggestions")
@@ -126,10 +126,11 @@ async def test_the_new_commands_are_admin_only(hass: HomeAssistant, hass_ws_clie
 
 
 async def test_a_zigbee2mqtt_device_is_listed_as_zigbee2mqtt(hass: HomeAssistant, hass_ws_client):
-    """Tim Plas, 6 October: his Zigbee2MQTT door sensor read "mqtt" in the
-    Problem List, where its faults are Zigbee's. A device Zigbee2MQTT owns
-    is named for it; another MQTT device keeps MQTT's name, and every row
-    still carries the domain that opens its integration page (0.24.11)."""
+    """A device Zigbee2MQTT owns is named for it, not "mqtt", because its
+    faults are Zigbee's; another MQTT device keeps MQTT's name, and every
+    row still carries the domain that opens its integration page
+    (rule GEN-07).
+    """
     from homeassistant.config_entries import ConfigEntryState
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er

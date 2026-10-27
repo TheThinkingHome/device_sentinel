@@ -3,20 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_window.py, Version: 0.23.16 (2026-09-29)
+# File: test_brief_window.py, Version: 0.27.10 (2026-10-27)
 
-"""Which window the brief covers, and where it is written.
+"""Which window the brief covers, and where it is written (rules
+BRIEF-10, BRIEF-14).
 
-Since 0.23.5 the brief is one file, daily_brief.html in the reports
-folder. The dated copies that held each closed day retired with the
-www folder (#470): the closed day is the one returned to the sender
-and emailed, and the file then carries the day just beginning.
+The brief is one file, daily_brief.html in the reports folder. The
+closed day is the one returned to the sender and emailed, and the file
+then carries the day just beginning (rule BRIEF-11).
 
-One of the files split out of test_email_brief.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+Helpers are carried to every file that calls them rather than pooled,
+so each file reads on its own.
 """
 
 
@@ -117,22 +114,17 @@ async def test_the_scheduled_write_survives_a_day_boundary(
 async def test_the_live_brief_covers_a_rolling_day(
     hass: HomeAssistant, freezer,
 ):
-    """Ruling #187, found on the live fleet on 2026-08-03.
+    """The live brief covers a rolling day, not the brief hour to now.
 
-    The live file's window ran from the brief hour to now. Read at 11 AM that was four hours,
-    so the card said two events had happened while a full day of
-    twelve had passed. The live copy carries a rolling day.
-
-    An incident from yesterday afternoon is the test: outside the
-    brief-hour window, inside the rolling one.
+    Read at 11 AM, a window from the brief hour is four hours, so the
+    card would say two events happened while a full day of twelve had
+    passed. An incident from yesterday afternoon is the test: outside
+    the brief-hour window, inside the rolling one (rule BRIEF-10).
     """
-    # The clock is pinned. As first written this test placed the
-    # incident an hour before the brief hour and asserted it was
-    # inside a rolling day, which is only true while the brief hour
-    # is recent: run late enough in the day the brief hour is nearly
-    # twenty-four hours back and an hour before it is outside the
-    # window. It passed at build time and failed hours later on
-    # nothing but the wall clock (ruling #198).
+    # The clock is pinned, because an incident an hour before the brief
+    # hour is inside a rolling day only while the brief hour is recent;
+    # late in the day the test would fail on the wall clock alone
+    # (rule CODE-13).
     freezer.move_to("2026-08-04T12:00:00-05:00")
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "rw1", "Rolling Device")
@@ -161,14 +153,14 @@ async def test_the_live_brief_covers_a_rolling_day(
 async def test_the_span_is_counted_and_not_asserted(
     hass: HomeAssistant, freezer,
 ):
-    """Ruling #206. The window is anchored to the wall clock so a
-    seven o'clock brief covers seven to seven, which across a
-    daylight saving change is 23 or 25 real hours rather than 24.
+    """The window is anchored to the wall clock, so a seven o'clock
+    brief covers seven to seven, which across a daylight saving change
+    is 23 or 25 real hours rather than 24 (rule BRIEF-10).
 
-    Reproduced on a New York clock before the fix: the March window
-    measures 23.0 hours and the November one 25.0, and the page said
-    24 for both. Anchoring to the epoch instead would hold the number
-    and move the brief hour, which is the thing a person notices.
+    On a New York clock the March window measures 23.0 hours and the
+    November one 25.0, and the page must not say 24 for both. Anchoring
+    to the epoch instead would hold the number and move the brief hour,
+    which is the thing a person notices.
     """
     await hass.config.async_update(time_zone="America/New_York")
     coord = await setup_coordinator(hass)
@@ -194,7 +186,7 @@ async def test_the_span_is_counted_and_not_asserted(
 async def test_the_roll_emails_the_closed_day_and_opens_today(
     hass: HomeAssistant, freezer
 ):
-    """The 7 AM roll closes yesterday and opens today (#116, 0.9.9).
+    """The 7 AM roll closes yesterday and opens today (rule BRIEF-10).
 
     The closed day is what the writer returns, and what is emailed;
     the file then holds today's in-progress brief, so it is never
@@ -214,7 +206,7 @@ async def test_the_roll_emails_the_closed_day_and_opens_today(
 
 async def test_every_write_lands_on_the_one_file(hass: HomeAssistant):
     """Manual writes and a closing write leave one file, never a
-    dated copy beside it (0.23.5)."""
+    dated copy beside it (rule BRIEF-14)."""
     coord = await setup_coordinator(hass)
     for trigger in ("test", BRIEF_TRIGGER, "manual"):
         await hass.async_add_executor_job(coord._write_reports, trigger)
@@ -225,15 +217,16 @@ async def test_a_manual_write_stays_in_progress(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     returned = await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _text(_brief_path(hass))
-    # One marker, not two: the line used to open "In progress" and
-    # close "(incomplete)", saying the same thing twice (0.8.10).
+    # One marker, not two, so the line does not say the same thing
+    # twice.
     assert "(in progress)" in text
     assert "In progress" not in text
-    # And an in-progress brief is never handed to the sender (#135).
+    # And an in-progress brief is never handed to the sender
+    # (rule BRIEF-11).
     assert returned is None
 
 
-# One brief a day through daylight saving (#539).
+# One brief a day through daylight saving (rule BRIEF-11).
 
 
 HOUR = 3600.0
@@ -253,9 +246,9 @@ async def _brief_house(hass, freezer, when: str, zone: str, brief: str):
     return coord, sent
 
 async def test_a_brief_in_the_repeated_hour_sends_once(hass: HomeAssistant, freezer):
-    """1 November 2026 in Chicago: 1:30 AM happens twice, and Home
-    Assistant's tracker fires at both (measured on the fourth house's
-    week across the change). The second firing sends nothing."""
+    """The autumn change in Chicago: 1:30 AM happens twice, and Home
+    Assistant's tracker fires at both. The second firing sends nothing
+    (rule BRIEF-11)."""
     coord, sent = await _brief_house(hass, freezer, "2026-11-01 06:30:00+00:00", "America/Chicago", "01:30:00")
     await coord._on_brief_time(None)  # 1:30 CDT
     await hass.async_block_till_done()
@@ -272,7 +265,8 @@ async def test_a_brief_in_the_repeated_hour_sends_once(hass: HomeAssistant, free
     assert len(sent) == 2, sent
 
 async def test_a_brief_in_the_skipped_hour_still_sends(hass: HomeAssistant, freezer):
-    """14 March 2027 in Chicago: 2:30 AM never happens."""
+    """The spring change in Chicago: 2:30 AM never happens, and the
+    brief still sends (rule BRIEF-11)."""
     coord, sent = await _brief_house(hass, freezer, "2027-03-14 07:59:50+00:00", "America/Chicago", "02:30:00")
     for _ in range(4):
         freezer.tick(60)
@@ -292,11 +286,11 @@ async def test_a_brief_in_the_skipped_hour_still_sends(hass: HomeAssistant, free
     assert len(sent) == 1, "the skipped brief sent again"
 
 async def test_the_brief_minute_leaves_no_save_pending(hass: HomeAssistant, freezer):
-    """The gate of 29 September at 12:44 UTC: a four-hour step crossed
-    the 8:00 brief in the same pass as the minute check's save, and the
-    brief's stored day forced a critical write the save had already
-    cleared, failing test_verdict_flip_saves_immediately at that hour
-    only. Pinned to the hour, so it no longer depends on when it runs."""
+    """A four-hour step that crosses the 8:00 brief in the same pass as
+    the minute check's save must leave no save pending, because the
+    brief's stored day would force a critical write the save had already
+    cleared. Pinned to the hour, so it does not depend on when it runs
+    (rule CODE-13)."""
     await hass.config.async_set_time_zone("US/Pacific")
     freezer.move_to("2026-09-29 12:44:39+00:00")
     register_device(hass, "d", name="Door")

@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.26.1 (2026-10-13)
+# File: test_exclusions.py, Version: 0.27.10 (2026-10-27)
 
-"""Exclusion: watched and recorded, but not judged or reported.
+"""Exclusion: watched and recorded, but not judged or reported
+(rules MUTE-01, MUTE-03, MUTE-04, MUTE-07, WATCH-08).
 
 An excluded device keeps its clock and statistics and never stops being
 observed; exclusion only suppresses judgment and reporting, and the
@@ -255,8 +256,8 @@ async def test_device_level_battery_exclude(hass: HomeAssistant):
     coord = await setup_coordinator(
         hass, {CONF_BATTERY_MUTED_DEVICES: [dropped.id]}
     )
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window
+    # the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(kept_eid, "5")
@@ -278,8 +279,8 @@ async def test_integration_level_battery_exclude(hass: HomeAssistant):
     coord = await setup_coordinator(
         hass, {CONF_BATTERY_MUTED_INTEGRATIONS: ["mobile_app"]}
     )
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window
+    # the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(phone_eid, "5")
@@ -296,8 +297,8 @@ async def test_battery_exclude_applies_live(hass: HomeAssistant):
     device, eid = _battery_device(hass, source, 5, "bx", "BatX Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window
+    # the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(eid, "5")
@@ -504,7 +505,7 @@ def _ladder_device(hass, source, index, name=None):
     return device, reg.entity_id
 
 
-# The pure coverage helpers, where the ruling lives.
+# The pure coverage helpers, where the ladder lives (rule MUTE-04).
 
 
 def test_integration_covers_its_devices():
@@ -537,7 +538,7 @@ class _FakeRegistry:
     """A registry that holds exactly the ids it is given.
 
     The pruner asks it whether a picked device still exists, which is
-    the proof ruling #45 requires before dropping a pick.
+    the proof required before dropping a pick (rule MUTE-04).
     """
 
     def __init__(self, ids: set[str]):
@@ -711,7 +712,7 @@ def test_freeze_prune_settles_label_and_keeps_the_uncovered_pick():
 
 def test_freeze_prune_drops_a_deleted_device_pick():
     """A pick for a device the registry no longer holds is dropped on
-    proof of absence, so a stale id cannot wedge the save (ruling #45)."""
+    proof of absence, so a stale id cannot wedge the save (rule MUTE-04)."""
     pruned = DeviceSentinelOptionsFlow._pruned_freeze_input(
         {
             CONF_FREEZE_DELTA_LOW: 3,
@@ -755,7 +756,7 @@ def test_signal_prune_rounds_the_sliders_to_their_types():
     """Trim, margin, the two drops and the baseline days are
     integers; the lift and the bad-day sensitivity are floats. Each
     arrives from its slider as a float and is stored as the type the
-    option declares (ruling #310 for the four bad-day sliders)."""
+    option declares (rule SIG-08 for the four bad-day sliders)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
             CONF_BADDAY_DROP_LQI: 25.0,
@@ -835,7 +836,7 @@ def test_signal_prune_settles_label_and_keeps_the_uncovered_pick():
 
 def test_signal_prune_drops_a_deleted_device_pick():
     """A pick for a device the registry no longer holds is dropped on
-    proof of absence, never on a guess (ruling #45)."""
+    proof of absence, never on a guess (rule MUTE-04)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
             CONF_SIGNAL_MUTED_INTEGRATIONS: [],
@@ -848,7 +849,7 @@ def test_signal_prune_drops_a_deleted_device_pick():
     assert pruned[CONF_SIGNAL_MUTED_DEVICES] == ["c"]
 
 
-# The live coordinator, where the ruling has to hold.
+# The live coordinator, where the ladder has to hold.
 
 
 async def test_battery_label_excludes_the_device(hass: HomeAssistant):
@@ -946,9 +947,9 @@ async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
 
 
 async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
-    """The 0.3.3 notification shapes that 0.3.4 replaced. They read as
-    live settings in every diagnostics download for nine releases,
-    which is the rot ruling 49 exists to stop. Cleared at 0.3.13.
+    """Retired notification shapes are cleared, because a setting no
+    code reads would otherwise show as live in every diagnostics
+    download (rule STOR-19).
     """
     entry = await setup_entry(
         hass,
@@ -1105,8 +1106,8 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
         assert isinstance(entry.options[key], int), key
     assert entry.options[CONF_BADDAY_SENSITIVITY] == 4.0
     assert isinstance(entry.options[CONF_BADDAY_SENSITIVITY], float)
-    # The three line shapers are constants now (ruling #311), so the
-    # form cannot carry them and the entry must not gain them.
+    # The three line shapers are constants, so the form cannot carry
+    # them and the entry must not gain them (rule SIG-08).
     for gone in ("signal_margin", "signal_lift", "signal_sensitivity"):
         assert gone not in entry.options, gone
 
@@ -1138,8 +1139,8 @@ async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
 
 
 async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
-    """Notifications leads from 0.3.12: it is the one section a new
-    installation must visit for alerts to reach a phone."""
+    """Notifications leads: it is the one section a new installation
+    must visit for alerts to reach a phone (rule CFG-01)."""
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"] == [
@@ -1154,7 +1155,7 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
     ]
 
 
-# The rungs settled against each other (ruling #336). Every save
+# The rungs settled against each other (rule MUTE-04). Every save
 # passes through one method, so a decision made on one screen reaches
 # the picks stored by another.
 
@@ -1284,7 +1285,7 @@ async def test_a_pick_a_higher_rung_does_not_reach_survives(
 
     A second integration's device, muted in a section, is untouched
     by excluding the first. Coverage is proved rather than assumed
-    (ruling #45), so a pick nothing covers stays.
+    (rule MUTE-04), so a pick nothing covers stays.
     """
     first = MockConfigEntry(domain="test")
     first.add_to_hass(hass)
@@ -1409,12 +1410,10 @@ async def test_a_device_returns_when_its_exclusion_is_lifted(
 ):
     """Un-excluding puts a device back under judgment.
 
-    Excluding is easy to test and easy to get right. What nothing
-    covered was the way back: a person excludes a noisy integration,
-    recognises later that they excluded the wrong thing, and takes it
-    off the list. The device must return to the watched set, and its
-    record must still be there, because setting a device aside clears
-    its judgment and never its history (#367).
+    A person excludes a noisy integration, sees later that it was the
+    wrong one, and takes it off the list. The device must return to the
+    watched set with its record still there, because setting a device
+    aside clears its judgment and never its history (rule LIST-09).
     """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -1517,7 +1516,7 @@ async def test_muting_and_unmuting_around_an_open_fault(
     assert coord.battery_low_count == 1
 
 
-# A mute is a person's act, not a recovery (#537).
+# A mute is a person's act, not a recovery (rule MUTE-07).
 
 
 MUTES = {
@@ -1628,7 +1627,7 @@ async def test_a_genuine_recovery_still_announces(hass: HomeAssistant, freezer):
 
 
 # ---------------------------------------------------------------------
-# Excluding one device (0.25.6, ruling #625, from Tim Plas).
+# Excluding one device (rule MUTE-03).
 #
 # The integration exclusion's rules for a single device: set aside with
 # the same reason, its record, episodes and incidents discarded at the
@@ -1757,8 +1756,7 @@ async def test_settings_offers_watched_and_excluded_devices(hass: HomeAssistant)
 
 async def test_saving_settings_excludes_and_keeps_its_mutes(hass: HomeAssistant):
     """Taking an exclusion back before midnight gives back everything,
-    mutes included, whatever screen was saved meanwhile (found by
-    review)."""
+    mutes included, whatever screen was saved meanwhile (rule MUTE-03)."""
     entry, coord, keep, drop = await _two(
         hass, {CONF_MUTED_DEVICES: [], CONF_FREEZE_MUTED_DEVICES: []}
     )
@@ -1784,8 +1782,8 @@ async def test_saving_settings_excludes_and_keeps_its_mutes(hass: HomeAssistant)
 @pytest.mark.parametrize("how", ["device", "integration"])
 async def test_an_excluded_device_removed_is_not_held(hass: HomeAssistant, hass_ws_client, how):
     """Removed from Home Assistant after it was excluded, its record and
-    answers would have been held for 30 days; the person asked for them
-    to go, so they go with the removal (found by review)."""
+    answers are not held for 30 days: the person asked for them to go,
+    so they go with the removal (rule WATCH-07)."""
     entry, coord, keep, drop = await _two(hass)
     client = await hass_ws_client(hass)
     reply = await _ws(client, type="device_sentinel/device_power", device_id=drop.id, choice="AAA", quantity=2)
@@ -1809,8 +1807,8 @@ async def test_an_excluded_device_removed_is_not_held(hass: HomeAssistant, hass_
 
 
 async def test_a_watched_device_removed_is_still_held(hass: HomeAssistant):
-    """The control: ruling #622's hold is unchanged for a device that was
-    never excluded."""
+    """The control: the 30-day hold is unchanged for a device that was
+    never excluded (rule WATCH-07)."""
     entry, coord, keep, drop = await _two(hass)
     coord.data[DATA_DEVICES].setdefault(drop.id, {})
     dr.async_get(hass).async_remove_device(drop.id)
@@ -1841,7 +1839,7 @@ async def test_a_device_removed_from_home_assistant_leaves_the_list(hass: HomeAs
     assert entry.options.get(CONF_EXCLUDED_DEVICES) == []
 
 
-# An exclusion is a person's act, not a recovery, as a mute is (#537).
+# An exclusion is a person's act, not a recovery, as a mute is (rule LIST-09).
 
 
 @pytest.mark.parametrize("option", [CONF_EXCLUDED_DEVICES, CONF_EXCLUDED_INTEGRATIONS])
@@ -1910,7 +1908,7 @@ def _defaults_of(schema, section_name: str, key: str):
 
 async def test_the_badges_open_in_alphabetical_order(hass: HomeAssistant):
     """Saved picks are shown sorted by the words on their badges, not in
-    the order they were picked (Tim Plas, 12 October 2026)."""
+    the order they were picked (rule CFG-05)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     names = ["Zulu Plug", "alpha Sensor", "Mike Switch"]
@@ -1942,7 +1940,7 @@ async def test_the_badges_open_in_alphabetical_order(hass: HomeAssistant):
 
 def test_accented_names_sort_with_their_letter():
     """Names such as "Ático" and "Ärger" file with the A's, not after Z
-    (adversarial round of 12 October 2026)."""
+    (rule CFG-05)."""
     from custom_components.device_sentinel.config_flow import _alphabetical
 
     names = ["Zulu", "Ático", "Mike", "alpha", "Ärger"]
@@ -1956,7 +1954,7 @@ def test_accented_names_sort_with_their_letter():
 async def test_a_cancelled_exclusion_raises_no_frozen_alert(hass: HomeAssistant, freezer):
     """A device reporting every ten minutes, excluded for an hour and taken
     back: the hour nobody watched it is not its silence, so the next
-    minute check raises nothing before it reports (ruling #648)."""
+    minute check raises nothing before it reports (rule WATCH-08)."""
     from datetime import timedelta
 
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -1996,8 +1994,8 @@ async def test_a_cancelled_exclusion_raises_no_frozen_alert(hass: HomeAssistant,
 
 
 # ---------------------------------------------------------------------
-# Taking an exclusion back from the dashboard (0.26.1, rulings #658 and
-# #659). The Devices tab lists the excluded devices, read live, and an
+# Taking an exclusion back from the dashboard (rules MUTE-03, DASH-12).
+# The Devices tab lists the excluded devices, read live, and an
 # integration's page excludes it or takes it back, as Settings does.
 
 
@@ -2068,7 +2066,7 @@ async def test_an_integration_page_excludes_and_takes_back_with_one_row_each(has
     await hass.async_block_till_done()
     assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
     assert keep.id not in coord._watched and drop.id not in coord._watched
-    # Settled as a Settings save settles it (ruling #336): its mutes go.
+    # Settled as a Settings save settles it: its mutes go (rule MUTE-04).
     assert entry.options[CONF_MUTED_INTEGRATIONS] == []
     assert entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == []
     rows = _rows(coord, SYS_INTEGRATION_PAGE)

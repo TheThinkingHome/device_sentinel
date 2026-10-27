@@ -3,23 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_entity_defaults.py, Version: 0.27.10 (2026-10-27)
 
-"""Which entities a first install presents, and what deletion leaves.
+"""Which entities a first install presents, and what removal leaves
+(rules CFG-08, CFG-09, STOR-24).
 
-The defaults follow one test (ruling #239): enabled means a person reads
-it daily or acts on it in their first week. The table below is the
-ruling written as an assertion, so flipping a default is a decision
-that edits this file rather than a side effect nobody notices. The
-broker sensor is the one conditional: enabled where a bridge stack
-was detected, off where the house has no MQTT to watch.
+Enabled means a person reads it daily or acts on it in their first
+week. The table below is that rule as an assertion, so flipping a
+default edits this file rather than slipping by. The broker sensor is
+the one conditional: enabled where a bridge stack was detected, off
+where the house has no MQTT to watch.
 
-Deletion is the other end of the same courtesy (ruling #240): removing
-the integration removes both storage files, every backup beside
-them, every file it wrote in the reports folder and the old www
-folder, so an uninstall leaves nothing for a person to find later and
-wonder about. Only its own (#720): a file another tool keeps in the
-reports folder stays, and so does the folder that holds it.
+Removing the integration removes both storage files, every backup
+beside them, and every file it wrote in the reports folder and the old
+www folder, so an uninstall leaves nothing for a person to find later.
+Only its own: a file another tool keeps in the reports folder stays,
+and so does the folder that holds it.
 """
 
 from __future__ import annotations
@@ -39,23 +38,20 @@ from custom_components.device_sentinel.const import (
 )
 from tests.helpers import setup_entry
 
-# The ruling as data: entity object id -> enabled by default. Every
+# The rule as data: entity object id -> enabled by default. Every
 # sensor and button the integration creates on a bridge-less test
-# house appears here exactly once.
+# house appears here exactly once (rule CFG-08).
 EXPECTED_DEFAULTS = {
     # Read daily or acted on in the first week: on.
     "sensor.device_sentinel_status": True,
     "sensor.device_sentinel_devices_watched": True,
     "sensor.device_sentinel_devices_learned": True,
     "sensor.device_sentinel_maintenance_ends": True,
-    # The Data sensors (ruling #255): on, because the question they
-    # answer (how much history stands behind a verdict) was
-    # previously answerable only by downloading diagnostics, and a
-    # sensor nobody can find does not answer it either. Diagnostic
-    # category, so they sit under the device page's own heading
-    # rather than on the dashboard.
+    # The Data sensors: on, because the question they answer (how much
+    # history stands behind a verdict) is otherwise answerable only by
+    # downloading diagnostics. Diagnostic category, so they sit under
+    # the device page's own heading rather than on the dashboard.
     "todo.device_sentinel_problem_list": True,
-    # The three Enable buttons went in 0.26.7 (ruling #696).
     "button.device_sentinel_regenerate_reports": True,
     "button.device_sentinel_maintenance_mode": True,
     # Dashboard-builder detail: off, the problem list carries what is
@@ -75,7 +71,7 @@ EXPECTED_DEFAULTS = {
 async def test_every_entity_default_matches_the_ruling(
     hass: HomeAssistant, entity_registry
 ):
-    """The whole table (ruling #239), so a flip is always a decision."""
+    """The whole table, so a flip is always a decision (rule CFG-08)."""
     await setup_entry(hass)
     ours = {
         entry.entity_id: entry.disabled_by is None
@@ -86,9 +82,9 @@ async def test_every_entity_default_matches_the_ruling(
 
 
 async def test_removal_deletes_everything_written(hass: HomeAssistant):
-    """Deletion leaves nothing (ruling #240): storage, backups, reports,
-    and a www folder left over from before 0.23.5 all go, and files
-    belonging to anything else are untouched."""
+    """Removal leaves nothing: storage, backups, reports, and a leftover
+    www folder all go, and files belonging to anything else are
+    untouched (rule STOR-24)."""
     entry = await setup_entry(hass)
 
     storage = Path(hass.config.path(STORAGE_DIR))
@@ -136,9 +132,9 @@ def _write_own_reports(hass, report_dir):
 
 
 async def test_removal_leaves_what_another_tool_keeps_there(hass: HomeAssistant):
-    """Tim Plas's reports folder held Mesh Probe's files beside Device
-    Sentinel's (#720): removal takes Device Sentinel's and leaves his,
-    and the folder that holds them."""
+    """A reports folder that holds another tool's files beside Device
+    Sentinel's: removal takes Device Sentinel's and leaves the others,
+    and the folder that holds them (rule STOR-24)."""
     entry = await setup_entry(hass)
     report_dir = Path(hass.config.path(REPORT_DIR))
     _write_own_reports(hass, report_dir)
@@ -158,9 +154,9 @@ async def test_removal_leaves_what_another_tool_keeps_there(hass: HomeAssistant)
 async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(
     hass: HomeAssistant, entity_registry
 ):
-    """The conditional's other branch (ruling #239): a house whose
-    registry shows a Zigbee2MQTT bridge gets the broker sensor on,
-    and the bridge sensor arrives enabled with it."""
+    """The conditional's other branch: a house whose registry shows a
+    Zigbee2MQTT bridge gets the broker sensor on, and the bridge sensor
+    arrives enabled with it (rule CFG-08)."""
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from pytest_homeassistant_custom_component.common import (
@@ -195,18 +191,16 @@ async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(
 async def test_the_count_sensors_split_found_from_watched(
     hass: HomeAssistant,
 ):
-    """Ruling #247: counts of what was found are primary, counts of what
-    is watched are diagnostic.
+    """Counts of what was found are primary, counts of what is watched
+    are diagnostic (rule CFG-09).
 
-    Frozen Devices, Low Batteries, Falling Batteries, Signal Weak,
-    and Signal Rails are findings about the house, the same species
-    of fact as a stopped broker (#243), and a person who enables one
-    puts it on a dashboard, which diagnostic entities are left out
-    of. Classification and the three tracked totals describe the
-    integration's own bookkeeping and stay diagnostic, and #249 moved
-    Devices: Watched and Devices: Learned to the same side for the
-    same reason, renaming both into the Category: State pattern every
-    other sensor follows.
+    Frozen Devices, Low Batteries, Falling Batteries, Signal Weak and
+    Signal Rails are findings about the house, like a stopped broker,
+    and a person who enables one puts it on a dashboard, which leaves
+    diagnostic entities out. Classification, the three tracked totals,
+    Devices: Watched and Devices: Learned describe the integration's
+    own bookkeeping and stay diagnostic, named in the Category: State
+    pattern every other sensor follows (rule CFG-06).
     """
     from homeassistant.const import EntityCategory
     entry = await setup_entry(hass)
@@ -228,7 +222,7 @@ async def test_the_count_sensors_split_found_from_watched(
         ), key
 
 
-# Bulky and fixed attributes stay live and leave the recorder (0.23.19).
+# Bulky and fixed attributes stay live and leave the recorder (rule GEN-05).
 
 
 def test_lists_and_setting_mirrors_are_kept_out_of_history():
@@ -251,7 +245,7 @@ def test_lists_and_setting_mirrors_are_kept_out_of_history():
 async def test_an_unrecorded_list_is_still_live(hass):
     from .helpers import setup_entry
 
-    # The listing sensors are off by default (#239); a person who
+    # The listing sensors are off by default (rule CFG-08); a person who
     # enables one for an automation reads its list from the state.
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
@@ -265,8 +259,8 @@ async def test_an_unrecorded_list_is_still_live(hass):
     assert "devices" in hass.states.get(frozen.entity_id).attributes
 
 
-# Every entity's name lives in strings.json since 0.23.19 (Home
-# Assistant's entity-translations practice); the ids do not change.
+# Every entity's name lives in strings.json, as Home Assistant's entity
+# translations expect; the ids do not change (rule CFG-06).
 
 
 def test_every_translation_key_has_its_name():

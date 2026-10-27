@@ -3,24 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_bridge_hold.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_bridge_hold.py, Version: 0.27.10 (2026-10-27)
 
-"""A bridge going down says nothing about its devices (ruled 27 September 2026).
+"""A bridge going down says nothing about its devices (rules UP-06, UP-08).
 
-The reference rig, 3:40 AM on 27 September. Switch Hall Living, silent
-since the afternoon and frozen, turned unavailable 0.2 seconds after
-Zigbee2MQTT went down for the nightly reboot. Its frozen record closed
-and unavailable opened; the bus heard it recover; at 3:47 the grace
-ended and the pair swapped back, the bus hearing a second recovery; and
-the brief told the one silence twice. The owner ruled: while a device's
-bridge is down, it keeps what was known before, frozen, unavailable or
-working, and once the bridge is back each device is judged on its own.
-The hold lasts through the window #436 gives a bridge's devices to
-rejoin.
+A frozen switch that turns unavailable a moment after Zigbee2MQTT goes
+down for the nightly reboot must not close its frozen record, open
+unavailable, and swap back when the grace ends, so the bus hears two
+recoveries and the brief tells one silence twice. While a device's
+bridge is down, the device keeps what was known before, frozen,
+unavailable or working, and once the bridge is back each device is
+judged on its own. The hold lasts through the window a bridge's
+devices get to rejoin.
 
-The switch's clock is Zigbee2MQTT's own last seen, as it was on the
-rig, so a restored value cannot revive it. A device timed by its entity
-changes is #125's question, not yet ruled, and not tested here.
+The switch's clock is Zigbee2MQTT's own last seen, so a restored value
+cannot revive it. A device timed by its entity changes is not tested
+here.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ from .test_bridge_pairing import _Stub
 
 
 def _switch(hass, uid: str, name: str):
-    """A Zigbee2MQTT device with a value and a last seen, as on the rig."""
+    """A Zigbee2MQTT device with a value and a last seen."""
     source = MockConfigEntry(domain="mqtt", title="MQTT")
     source.add_to_hass(hass)
     source.mock_state(hass, ConfigEntryState.LOADED)
@@ -175,7 +173,8 @@ async def test_a_healthy_device_is_not_rewritten_by_its_bridge_outage(hass: Home
 
 async def test_after_the_bridge_is_back_a_device_is_judged_on_its_own(hass: HomeAssistant, freezer):
     """The hold ends with the hand-back window: a device still unavailable
-    then is its own problem, as #436 already reports it."""
+    then is its own problem (rule UP-08).
+    """
     coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
     now = dt_util.utcnow()
     hass.states.async_set(seen, now.isoformat())

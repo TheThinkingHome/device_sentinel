@@ -3,16 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.27.6 (2026-10-26)
+# File: tests/test_diagnostics_privacy.py, Version: 0.27.10 (2026-10-27)
 
-"""Network addresses leave the diagnostics download (0.23.19).
+"""Network addresses leave the diagnostics download (rule STOR-21).
 
-Testers attach the download to public GitHub issues. On the reference
-rig it carried 23 MAC addresses and the router's address. Each distinct
-address becomes a numbered stand-in, the same wherever it appears, so a
-device still reads as the same device in every section; a MAC keeps the
-half that names its maker. Versions spelled as four dotted numbers stay
-whole, because a version is what a fault report needs most.
+Testers attach the download to public GitHub issues, and a house's
+download can carry dozens of MAC addresses and the router's address.
+Each distinct address becomes a numbered stand-in, the same wherever it
+appears, so a device still reads as the same device in every section;
+a MAC keeps the half that names its maker. Versions spelled as four
+dotted numbers stay whole, because a version is what a fault report
+needs most.
 """
 
 from __future__ import annotations
@@ -87,9 +88,10 @@ async def test_the_download_carries_no_address(hass: HomeAssistant):
 
 
 def test_every_spelling_of_one_mac_is_one_stand_in():
-    """Found in the 0.23.19 adversarial round: the study snapshot's
-    identifiers carried MACs with no separators, which the colon rule
-    missed. A plain run of digits and a registry id are left alone."""
+    """The study snapshot's identifiers carry MACs with no separators, which
+    the colon rule misses. A plain run of digits and a registry id are
+    left alone.
+    """
     out = _redact_addresses(
         {
             "colon": "20:F8:3B:09:97:53",
@@ -109,10 +111,10 @@ def test_every_spelling_of_one_mac_is_one_stand_in():
 
 
 def test_a_zigbee_address_is_kept_whole():
-    """Rule STOR-21: a network (MAC) address is hidden, a Zigbee address
-    is kept whole. ZHA writes its eight-pair address with colons, and the
-    MAC pattern used to take its first six pairs, leaving
-    "00:12:4B:MAC-01:b2:c3", neither hidden nor readable."""
+    """A network (MAC) address is hidden, a Zigbee address is kept whole.
+    ZHA writes its eight-pair address with colons, so a MAC pattern that
+    takes its first six pairs leaves "00:12:4B:MAC-01:b2:c3", neither
+    hidden nor readable (rule STOR-21)."""
     out = _redact_addresses(
         {
             "mac": "20:F8:3B:09:97:53",
@@ -145,9 +147,10 @@ async def test_the_download_keeps_zigbee_addresses_and_hides_a_mac(hass: HomeAss
 
 
 async def test_held_values_do_not_reach_the_download(hass: HomeAssistant, freezer):
-    """The values a device holds while a verdict stands are its own
-    states, and the download carries no states (0.25.0): only how many
-    it holds goes (rule WATCH-12)."""
+    """The values a device holds while a verdict stands are its own states,
+    and the download carries no states: only how many it holds goes
+    (rule WATCH-12).
+    """
     from homeassistant.util import dt as dt_util
 
     from custom_components.device_sentinel.const import (

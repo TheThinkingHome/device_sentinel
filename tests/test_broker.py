@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_broker.py, Version: 0.12.4 (2026-08-06)
+# File: tests/test_broker.py, Version: 0.27.10 (2026-10-27)
 
-"""The MQTT broker watch, replayed against a real recording.
+"""The MQTT broker watch, replayed against a real recording (rule UP-02).
 
-tests/fixtures/broker_uptime.json is 2,459 arrivals captured from the
-reference broker on 2026-08-05 and 06, carrying three genuine restarts
-of three different shapes: a whole-host reboot where nothing was
-running to watch the silence, a nine-second broker bounce, and a
-sixteen-minute outage with Home Assistant up throughout. The third is
-the one this release exists for, because it produced no system event
-of any kind under 0.12.3 while the bridge sensor read running.
+tests/fixtures/broker_uptime.json is 2,459 arrivals captured from a
+real broker over two days, carrying three genuine restarts of three
+different shapes: a whole-host reboot where nothing was running to
+watch the silence, a nine-second broker bounce, and a sixteen-minute
+outage with Home Assistant up throughout. The third matters most,
+because the bridge sensor reads running throughout, so only the broker
+watch can see it.
 
 Every assertion about cadence and thresholds comes out of that
 recording rather than out of a chosen number.
@@ -131,7 +131,7 @@ def test_the_cadence_and_threshold_come_out_of_the_recording(monkeypatch):
 
 
 def test_the_sixteen_minute_outage_reads_as_down(monkeypatch):
-    """The case that produced no event at all under 0.12.3."""
+    """The outage the bridge sensor cannot see."""
     clock = _Clock(monkeypatch, FIXTURE[0]["t"])
     reader = transport_mqtt.MQTTBrokerReader(None)
     # Find the longest hole in the recording and stand inside it.
@@ -303,19 +303,17 @@ async def test_a_reader_that_raises_is_no_opinion(hass: HomeAssistant):
 
 # ==================================================================
 # A restart is measured from the last arrival, not the previous start
-# (ruling #396).
+# (rule UP-02).
 # ==================================================================
 
 
 def test_a_restart_names_the_last_moment_the_broker_was_heard(monkeypatch):
-    """The reference fleet, 10 September 2026, 15:55:51.
+    """A broker that published uptime every ten seconds for 12.2 hours and
+    then restarted: 44044 seconds on one arrival, 2 on the next.
 
-    The broker had published uptime every ten seconds for 12.2 hours
-    and then restarted: 44044 seconds on one arrival, 2 on the next.
-    The outage that restart represents is the ten seconds between
-    those arrivals. The previous start is how long the broker had
-    been up, which is the opposite of what an outage is, and it is
-    what the brief printed.
+    The outage that restart represents is the ten seconds between those
+    arrivals. The previous start is how long the broker had been up, the
+    opposite of an outage, so the brief must not print it.
     """
     clock = _Clock(monkeypatch, 1_789_073_741.0)
     reader = transport_mqtt.MQTTBrokerReader(hass=None)

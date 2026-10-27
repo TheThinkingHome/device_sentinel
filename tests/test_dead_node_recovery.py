@@ -3,12 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dead_node_recovery.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_dead_node_recovery.py, Version: 0.27.10 (2026-10-27)
 
-"""What counts as a Z-Wave device back from a dead node (rulings #670,
-#671), from the adversarial rounds on 0.26.5 of 16 October 2026,
-regrouped by subject in 0.26.7 (#707). Each test failed on the build
-as it stood before its round's fixes.
+"""What counts as a Z-Wave device back from a dead node (rule STACK-05).
 
 Accepted rather than tested: a node status sensor switched off while
 its node is dead says nothing from then on, so the device can be told
@@ -100,8 +97,9 @@ async def test_a_z_wave_reload_while_the_node_is_dead_is_not_a_recovery(
     """Z-Wave reloads (or its server reconnects) inside the integration
     outage dwell: every entity reads unavailable for a moment and comes
     back with Z-Wave's cached values. _republished returns False for a
-    device with an unavailable verdict, so the cached values are taken as
-    the genuine recovery #535 names, though the node is still dead."""
+    device with an unavailable verdict, so the cached values would be
+    taken as a real recovery (rule UNAV-05), though the node is still
+    dead."""
     coord, device, ids, record = await _house(hass, freezer, last_seen=False)
     faults = record_events(hass, EVENT_FAULT)
     recoveries = record_events(hass, EVENT_RECOVERED)

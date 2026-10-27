@@ -3,18 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_panel.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_dashboard_panel.py, Version: 0.27.10 (2026-10-27)
 
-"""The dashboard's sidebar entry and the one module behind it.
+"""The dashboard's sidebar entry and the one module behind it (rules
+DASH-01, DASH-14).
 
 Registered when Device Sentinel loads, removed when it unloads, admins
 only. The module's address carries a hash of its contents, because the
 frontend's service worker serves a stale copy of a file whose address
 has not changed, whatever query string is added.
 
-The hash is also told to the dashboard (0.25.4): a tab left open across
-an update runs the old file while Home Assistant hands it the new one,
-and the tab compares the two to offer a reload.
+The hash is also told to the dashboard: a tab left open across an
+update runs the old file while Home Assistant hands it the new one, and
+the tab compares the two to offer a reload.
 """
 
 from __future__ import annotations
@@ -38,7 +39,8 @@ MODULE = (
 
 
 # The real frontend and panel_custom, the dependencies the panel is
-# registered through (#721); the rest of the suite counts them loaded.
+# registered through (rule DASH-01); the rest of the suite counts them
+# loaded.
 pytestmark = pytest.mark.real_frontend
 
 def _panel(hass: HomeAssistant):
@@ -111,9 +113,9 @@ async def test_a_dashboard_that_cannot_be_served_stops_nothing(hass: HomeAssista
     from homeassistant.setup import async_setup_component
 
     await async_setup_component(hass, "http", {})
-    # The frontend serves its own files too, and since 0.27.0 is a
-    # dependency set up before Device Sentinel (#721), so it goes up
-    # first and only Device Sentinel's own file is refused.
+    # The frontend serves its own files too, and is a dependency set up
+    # before Device Sentinel (rule DASH-01), so it goes up first and only
+    # Device Sentinel's own file is refused.
     await async_setup_component(hass, "panel_custom", {})
 
     async def _boom(configs):
@@ -131,7 +133,7 @@ async def _ws(client, **message):
 
 
 async def test_the_status_names_the_file_served(hass: HomeAssistant, hass_ws_client):
-    """An open tab compares this with the file it runs (0.25.4)."""
+    """An open tab compares this with the file it runs (rule DASH-14)."""
     await setup_entry(hass)
     digest = hashlib.sha256(MODULE.read_bytes()).hexdigest()[:12]
     assert _panel(hass).config["_panel_custom"]["module_url"].endswith(f".{digest}.js")
@@ -143,7 +145,7 @@ async def test_the_status_names_the_file_served(hass: HomeAssistant, hass_ws_cli
 
 async def test_every_change_marker_names_the_file_served(hass: HomeAssistant, hass_ws_client):
     """The frontend subscribes again when it reconnects after a restart,
-    so the first marker after an update reaches an open tab (0.25.4)."""
+    so the first marker after an update reaches an open tab (rule DASH-14)."""
     entry = await setup_entry(hass)
     digest = hashlib.sha256(MODULE.read_bytes()).hexdigest()[:12]
     client = await hass_ws_client(hass)
@@ -170,7 +172,7 @@ async def test_a_reload_names_the_same_file(hass: HomeAssistant, hass_ws_client)
 
 async def test_a_changed_file_is_a_new_name(hass: HomeAssistant, tmp_path, hass_ws_client):
     """An update that changes the dashboard gives it a new address and a
-    new name, which is what tells an open tab (0.25.4). The file is
+    new name, which is what tells an open tab (rule DASH-14). The file is
     changed before setup, as an update does with its restart: Home
     Assistant 2026.5 refuses a new address once it has started."""
     from unittest.mock import patch
@@ -199,9 +201,9 @@ async def test_a_dashboard_never_served_names_no_file(hass: HomeAssistant, hass_
     from homeassistant.setup import async_setup_component
 
     await async_setup_component(hass, "http", {})
-    # The frontend serves its own files too, and since 0.27.0 is a
-    # dependency set up before Device Sentinel (#721), so it goes up
-    # first and only Device Sentinel's own file is refused.
+    # The frontend serves its own files too, and is a dependency set up
+    # before Device Sentinel (rule DASH-01), so it goes up first and only
+    # Device Sentinel's own file is refused.
     await async_setup_component(hass, "panel_custom", {})
 
     async def _boom(configs):
@@ -216,8 +218,8 @@ async def test_a_dashboard_never_served_names_no_file(hass: HomeAssistant, hass_
 
 
 def test_the_element_is_registered_once_per_tab():
-    """A second copy in a tab registers nothing and tells the page
-    (0.25.4); the behaviour is checked in check_stale_tab.js."""
+    """A second copy in a tab registers nothing and tells the page; the
+    behavior is checked in check_stale_tab.js (rule DASH-14)."""
     source = MODULE.read_text(encoding="utf-8")
     assert "if (!customElements.get(PANEL_ELEMENT))" in source
     assert source.count("customElements.define(") == 1
@@ -225,9 +227,9 @@ def test_the_element_is_registered_once_per_tab():
 
 async def test_the_panel_goes_through_panel_custom(hass: HomeAssistant):
     """Registered as a custom panel through panel_custom, with frontend
-    and panel_custom named as dependencies (#721, from the HACS review
-    reading of 21 October 2026). A setup that runs again with the panel
-    still there replaces it rather than raising."""
+    and panel_custom named as dependencies (rule DASH-01). A setup that
+    runs again with the panel still there replaces it rather than
+    raising."""
     import json
     from unittest.mock import patch
 

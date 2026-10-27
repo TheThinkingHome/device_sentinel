@@ -3,17 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_escalation_and_limits.py, Version: 0.27.10 (2026-10-27)
 
-"""A worse problem replacing a lesser one, and lines a person reads.
+"""A worse problem replacing a lesser one, and lines a person reads
+(rules LIST-07, NOTE-05).
 
-The reference rig's watering sensor moved from frozen to unavailable
-at the nightly reboot, and the brief called it a recovery "revived by
-a reboot" in the same second the device was declared gone. The push
-engine already knew better and said nothing; the knowledge never
-reached the record. Beside that, three limits: a push that named fifty
-devices in 2,160 characters, a duration that could not be printed, and
-a battery reading outside nothing-to-full drawn as a percentage.
+A sensor that moves from frozen to unavailable at the nightly reboot
+must not be called a recovery "revived by a reboot" in the same second
+the device is declared gone; what the push engine knows reaches the
+record. Beside that, three limits: a push must not name fifty devices
+in 2,160 characters, a duration must always print, and a battery
+reading outside nothing-to-full is not drawn as a percentage.
 """
 
 from __future__ import annotations
@@ -48,8 +48,8 @@ from custom_components.device_sentinel.records import _new_device_record
 
 from .helpers import settle_parked, register_device, setup_coordinator
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 HOUR = 3600.0
@@ -277,10 +277,9 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
     now = dt_util.utcnow().timestamp()
 
     def node_lines():
-        # Since 0.23.8 the controller has a line of its own; this test
-        # is about the node's.
-        # Since 0.23.9 the lines are rendered and appended to the file
-        # at the next tick; these are the rendered ones.
+        # The controller has a line of its own; this test is about the node's.
+        # The lines are rendered and appended to the file at the next tick;
+        # these are the rendered ones.
         from .helpers import probe_lines
 
         return probe_lines(coordinator, "7")
@@ -298,17 +297,17 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
     assert rows[-1]["was"] == "alive" and rows[-1]["now"] == "dead"
     assert "rssi -70" in rows[-1]["detail"]
 
-    # The lines reach the file at the next tick (0.23.9).
+    # The lines reach the file at the next tick.
     coordinator.probe_tick(now + 90)
-    # Written off the event loop as a background task, which is waited
-    # for only when asked (0.23.10).
+    # Written off the event loop as a background task, which is waited for
+    # only when asked (rule CODE-06).
     await hass.async_block_till_done(wait_background_tasks=True)
     text = open(
         hass.config.path("device_sentinel", REPORT_STACK_PROBE),
         encoding="utf-8",
     ).read()
-    # The DEVICE column (0.23.8) sits between NODE and WAS; this node
-    # has no device in the registry.
+    # The DEVICE column sits between NODE and WAS; this node has no device
+    # in the registry.
     assert "| zwave_js | 7 |  | alive | dead |" in text
     assert "Stack Probe" in text
 

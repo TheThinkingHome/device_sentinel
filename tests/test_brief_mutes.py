@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_mutes.py, Version: 0.26.8 (2026-10-20)
+# File: test_brief_mutes.py, Version: 0.27.10 (2026-10-27)
 
-"""The Daily Brief leaves out what a device is muted for (ruling #715).
+"""The Daily Brief leaves out what a device is muted for (rule BRIEF-08).
 
 Last 24 Hours and Repeat Offenders leave out a device's rows of the
 kinds its mutes cover, as the Problem List does: a freeze mute covers
 frozen and never reported, an unavailable mute covers unavailable,
 unknown and dropping out, the battery and signal mutes their own, and
 Mute everything covers every kind. The mute is read as it stands now,
-so a row that opened before the mute goes with it. Found on Tim Plas's
-house on 20 October 2026: D48, L20 and L21, muted for freeze or
-unavailable, stayed in both sections.
+so a row that opened before the mute goes with it.
 """
 
 from __future__ import annotations
@@ -114,12 +112,12 @@ async def test_repeat_offenders_leave_out_each_muted_kind(hass: HomeAssistant):
     assert {k for i, k in shown if i == d["unavailable"].id} == every - down_kinds
     assert {k for i, k in shown if i == d["battery"].id} == every - battery_kinds
     assert {k for i, k in shown if i == d["signal"].id} == every - {TODO_KIND_RAILED_SIGNAL}
-    # Mute everything had no filter here before 0.26.8.
+    # Mute everything is filtered here too.
     assert not {k for i, k in shown if i == d["everything"].id}
 
 
 async def test_last_24_hours_leaves_out_a_kind_muted_device(hass: HomeAssistant):
-    """Tim's case: a lamp muted for freeze, still in Last 24 Hours as frozen."""
+    """A lamp muted for freeze is not in Last 24 Hours as frozen."""
     coord, d = await _house(hass, lambda options: options)
     now = dt_util.utcnow().timestamp()
     coord.data[DATA_INCIDENTS] = [
@@ -189,7 +187,8 @@ async def test_the_brief_tab_says_what_the_file_says(hass: HomeAssistant):
 
 async def test_the_line_saying_a_device_was_muted_stays(hass: HomeAssistant):
     """Muting a frozen device for freeze leaves its "muted" line in Last 24
-    Hours, as before 0.26.8 (adversarial round of 0.26.8)."""
+    Hours.
+    """
     from custom_components.device_sentinel.const import ACTION_MUTED, INCIDENT_ACTION
 
     coord, d = await _house(hass, lambda options: options)

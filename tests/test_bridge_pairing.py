@@ -3,23 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.26.0 (2026-10-11)
+# File: test_bridge_pairing.py, Version: 0.27.10 (2026-10-27)
 
-"""Coordinator stacks, the Z2M bridge, and the pairing override.
+"""Coordinator stacks, the Z2M bridge, and the pairing override (rules
+STACK-01, STACK-03, FRZ-16).
 
 Which coordinator stacks a house runs is read from the registry, not
-asked: ZHA, Z-Wave, and Matter by their domain, Z2M only by the presence
-of its bridge device, never by the shared mqtt domain. The Z2M bridge
-reader turns two retained MQTT topics into one state (running, binding,
-down, or unknown), failing safe on a payload that will not parse or a
-pairing flag from a bridge not known to be online. A recovery that lands
-while the bridge is in binding is a pairing intervention, not a real
-self-recovery, so its gap is set aside rather than learned, and it must
-not widen the rhythm. Alongside pairing, the per-device taint debounce
-(a floor plus a share of the freeze window) decides whether an
-unavailable blip inside a silence is a hiccup to learn or downtime to
-discard. This file holds the stack detection, the bridge reader, the
-taint debounce, and the full-path pairing override.
+asked: ZHA, Z-Wave and Matter by their domain, Z2M only by its bridge
+device, never by the shared mqtt domain. The Z2M bridge reader turns
+two retained MQTT topics into one state (running, binding, down, or
+unknown), failing safe on a payload that will not parse or a pairing
+flag from a bridge not known to be online. A recovery that lands while
+the bridge is binding is a pairing intervention, not a self-recovery,
+so its gap is set aside rather than learned and does not widen the
+rhythm. The per-device taint debounce (a floor plus a share of the
+freeze window) decides whether an unavailable blip inside a silence is
+a hiccup to learn or downtime to discard.
 """
 
 import time
@@ -158,8 +157,8 @@ async def _silence(hass, freezer, eid, silent_hours, unavailable_seconds):
 
 def _learned_gap(record):
     """Return the largest gap the device has learned, live or rolled,
-    robust to a midnight rollover moving the live maximum into the
-    daily series."""
+    so a midnight rollover moving the live maximum into the daily
+    series changes nothing."""
     candidates = list(record[DEV_DAILY_MAX])
     if record[DEV_TODAY_MAX] is not None:
         candidates.append(record[DEV_TODAY_MAX])
@@ -238,7 +237,7 @@ async def test_zha_and_zwave_and_matter_are_told_by_domain(
 async def test_mqtt_without_a_bridge_is_not_z2m(hass: HomeAssistant):
     """The case that matters. A house full of MQTT devices with no
     Zigbee2MQTT bridge must not report Z2M, because the mqtt domain
-    alone cannot tell Z2M apart from any other MQTT device (#139)."""
+    alone cannot tell Z2M apart from any other MQTT device (rule STACK-01)."""
     _device(hass, "mqtt", "q1", "Some MQTT Sensor")
     _device(hass, "mqtt", "q2", "Another MQTT Thing")
     coord = await setup_coordinator(hass)
@@ -344,7 +343,7 @@ async def test_pairing_open_but_not_online_is_not_binding(
 ):
     """A guard that matters. If info says permit_join but the bridge
     has never confirmed it is online, the state is down, not binding:
-    pairing is only meaningful on a bridge we know is up, so a stale
+    pairing means something only on a bridge known to be up, so a stale
     info payload cannot fake a binding window."""
     r = _reader(hass)
     r._on_info(_msg('{"permit_join": true}'))
@@ -395,8 +394,8 @@ async def test_bridge_sensor_is_created_per_stack_and_enabled(
     hass: HomeAssistant,
 ):
     """A house with a Z2M bridge gets one bridge sensor, enabled by
-    default (ruling #239): its existence already proves the stack, so
-    there is no house where it arrives irrelevant."""
+    default, because its existence already proves the stack, so there
+    is no house where it arrives irrelevant (rule CFG-08)."""
     # A Z2M bridge device so stack detection reports z2m.
     src = MockConfigEntry(domain="mqtt")
     src.add_to_hass(hass)
@@ -505,9 +504,9 @@ async def test_a_fast_device_keeps_the_floor_against_a_two_second_blip(
 async def test_the_recorder_writes_the_tainting_duration(
     hass: HomeAssistant, freezer
 ):
-    """Step 4's recorder, proven. When a taint discards a gap, the
-    unavailable duration lands on the episode as taint_seconds, so
-    the rig can measure the real spread rather than a guess."""
+    """When a taint discards a gap, the unavailable duration lands on
+    the episode as taint_seconds, so a real house can measure the real
+    spread rather than a guess (rule FRZ-14)."""
     device, eid = _register(hass, "rec", "Recorder Sensor")
     coord = await _pinned_coordinator(hass, freezer)
     hass.states.async_set(eid, "1")
@@ -606,10 +605,8 @@ async def test_same_recovery_without_binding_is_learned(
     ep = _last_episode(coord, device.id)
     assert ep is not None
     # A 3h self-recovery on a 1h basis, brief unavailable: learned
-    # whole since 0.26.0 (ruling #638, retiring the cap of #166),
-    # because the device ended the silence itself. The contrast with
-    # the pairing case holds: a pairing gap is discarded, this one
-    # teaches.
+    # whole, because the device ended the silence itself. A pairing gap
+    # is discarded; this one teaches (rule FRZ-12).
     assert ep[EP_LEARNED] == "yes"
 
 
@@ -732,8 +729,8 @@ async def test_a_blip_to_unknown_does_not_lose_the_recovery(
 async def test_a_pairing_window_is_recorded_with_its_span(
     hass: HomeAssistant, freezer
 ):
-    """Pairing already discards gaps (#150); this says when and for
-    how long, so a discarded gap has a visible reason."""
+    """Pairing already discards gaps; this says when and for how long,
+    so a discarded gap has a visible reason (rule FRZ-16)."""
     coord = await setup_coordinator(hass)
     reader = _running_reader(hass)
     coord._bridge_readers[STACK_Z2M] = reader
@@ -751,20 +748,18 @@ async def test_a_pairing_window_is_recorded_with_its_span(
     assert closed[0]["duration"] >= 60
 
 
-# ------------------------------- the bridge hand-back and recovery, 0.21.8
+# ------------------------------------- the bridge hand-back and recovery
 
 
 async def test_a_bridge_gives_its_devices_time_to_rejoin(
     hass: HomeAssistant, freezer
 ):
-    """The fault #433 fixed for the network, applied to a bridge.
+    """A bridge gives its devices the rejoin window, as the network does.
 
-    A bridge claim ended the instant the bridge came back, so a
-    device still rejoining the mesh became its own problem, exactly
-    as five Motion Blinds did on 14 September when the network
-    returned twenty seconds ahead of them. A Zigbee device can take
-    longer to rejoin than a Wi-Fi device takes to reassociate, so if
-    anything the window matters more here (ruling #436).
+    A claim that ends the instant the bridge comes back makes a device
+    still rejoining the mesh its own problem. A Zigbee device can take
+    longer to rejoin than a Wi-Fi device takes to reassociate, so the
+    window matters more here (rule UP-08).
     """
     device = _device(hass, "mqtt", "bulb", "Bulb")
     coord = await setup_coordinator(hass)
@@ -794,25 +789,20 @@ async def test_a_bridge_gives_its_devices_time_to_rejoin(
     assert coord.upstream_down_since(device_id) is None
 
 
-# ------------------------------------------------ the MQTT wait, 0.21.9
+# ------------------------------------------------------- the MQTT wait
 
 
 async def test_the_z2m_reader_does_not_wait_for_absent_mqtt(
     hass: HomeAssistant,
 ):
-    """Found through a third fleet's diagnostics on 15 September.
+    """The bridge reader does not wait for an MQTT integration that is
+    not loaded.
 
-    The bridge reader called mqtt.async_wait_for_mqtt_client without
-    first asking whether the MQTT integration was loaded at all, and
-    Home Assistant answers that call by waiting its full timeout
-    before giving up. So any house with a Zigbee2MQTT bridge device in
-    its registry blocked Device Sentinel's setup for fifty seconds
-    whenever MQTT was not yet up, and this suite paid the same fifty
-    seconds on every bridge test without anyone noticing: the runs
-    passed, they were just slow.
-
-    The broker transport already guards against exactly this. The
-    reader now does the same.
+    Home Assistant answers mqtt.async_wait_for_mqtt_client by waiting
+    its full timeout before giving up, so a house with a Zigbee2MQTT
+    bridge device would block Device Sentinel's setup for fifty seconds
+    whenever MQTT was not yet up. The reader asks first whether MQTT is
+    loaded, as the broker transport does (rule CODE-09).
     """
     _device(hass, "mqtt", "b1", "SLZB-06M Zigbee2MQTT Bridge")
     started = time.monotonic()
@@ -822,7 +812,7 @@ async def test_the_z2m_reader_does_not_wait_for_absent_mqtt(
     assert elapsed < 10.0, f"setup took {elapsed:.1f}s waiting for MQTT"
 
 
-# A pairing window is stored with the recovery it brings (#535).
+# A pairing window is stored with the recovery it brings (rule FRZ-16).
 
 
 HOUR = 3600.0
@@ -843,7 +833,8 @@ def test_a_pairing_window_is_an_intervention_on_the_bus():
     assert resolved_by(RECOVERY_CAUSE_PAIRING) == RECOVERY_BY_INTERVENTION
 
 async def test_a_recovery_inside_a_pairing_window_stores_the_credit(hass: HomeAssistant):
-    """Switch Hall Living, 11:51 on 28 September."""
+    """A switch recovering inside a pairing window stores the pairing as
+    its cause (rule FRZ-16)."""
     coord, device, record = await _one(hass)
     now = dt_util.utcnow().timestamp()
     coord.data[DATA_SYSTEM_EVENTS] = [_event("pairing_open", STACK_Z2M, now - 15)]

@@ -3,13 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dead_node_outage_dates.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_dead_node_outage_dates.py, Version: 0.27.10 (2026-10-27)
 
 """When a dead node's outage starts and ends, and the device whose only
-enabled entity is its node status (rulings #670, #671, #647), from the
-adversarial rounds on 0.26.5 of 16 October 2026, regrouped by subject
-in 0.26.7 (#707). Each test failed on the build as it stood before its
-round's fixes.
+enabled entity is its node status (rules STACK-05, UNAV-04).
 """
 
 from __future__ import annotations
@@ -338,9 +335,10 @@ async def test_r6_stale_unavailable_start_does_not_date_the_next_death(
 async def test_r6_saved_start_from_0264_does_not_date_the_next_death(
     hass: HomeAssistant, freezer
 ):
-    """The same through the upgrade: 0.26.4 read the status sensor as a
-    reading and could save [moment, "unavailable"] for a status-only
-    device; 0.26.5 never clears it."""
+    """The same through the upgrade: a start saved by an older release,
+    which read the status sensor as a reading, can hold [moment,
+    "unavailable"] for a status-only device, and must not date the next
+    death."""
     freezer.move_to(PIN)
     coord, device, _switch, status, record = await _lonely(hass, freezer, 32)
     record[DEV_DOWN_SINCE] = [dt_util.utcnow().timestamp() - 6 * 3600, "unavailable"]

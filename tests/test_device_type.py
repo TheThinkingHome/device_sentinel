@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type.py, Version: 0.26.8 (2026-10-20)
+# File: tests/test_device_type.py, Version: 0.27.10 (2026-10-27)
 
-"""What each device is (0.25.1, Project__Device_Type.md).
+"""What each device is (rules DEV-10, DEV-11).
 
-The rules read a device's own entities, first match wins, in the order
-James approved on 8 October 2026 after they were run on the reference
-rig's 103 devices. The owner's answer wins and covers the model, as the
-Power row's does. Where it is stored is tested in test_answers_store.py.
+The rules read a device's own entities, first match wins, in a set
+order. The owner's answer wins and covers the model, as the Power row's
+does. Where it is stored is tested in test_answers_store.py.
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ def _e(domain, device_class=None, category=None, disabled=None):
 # ---------------------------------------------------------------- the rules
 
 @pytest.mark.parametrize(("entities", "expected"), [
-    # Seen on the reference rig, 8 October 2026.
+    # A camera with a switch and a motion sensor is a camera.
     ([_e("camera"), _e("switch"), _e("binary_sensor", "motion")], "Camera"),
     ([_e("assist_satellite"), _e("light"), _e("media_player", "speaker")], "Voice Assistant"),
     ([_e("cover", "shade"), _e("sensor", "signal_strength")], "Cover"),
@@ -63,16 +62,16 @@ def _e(domain, device_class=None, category=None, disabled=None):
     ([_e("binary_sensor", "carbon_monoxide")], "CO Alarm"),
     ([_e("switch"), _e("sensor", "power"), _e("sensor", "energy")], "Plug"),
     ([_e("switch"), _e("select", category=EntityCategory.CONFIG)], "Switch"),
-    # Bulbs and light strips are lights (James, 9 October 2026).
+    # Bulbs and light strips are lights.
     ([_e("light")], "Light"),
     ([_e("light"), _e("switch")], "Switch"),
-    # 0.25.2: a lock with a door contact, a thermostat that reports
+    # A lock with a door contact, a thermostat that reports
     # temperature, a valve with a leak probe.
     ([_e("lock"), _e("binary_sensor", "door")], "Lock"),
-    # #627, from Tim Plas's answers: a garage door opener has a cover
-    # and a lock for its remote lockout; a Broadlink blaster has a
-    # remote entity and a temperature probe; a television's remote
-    # entity sits beside its media player and makes no blaster.
+    # A garage door opener has a cover and a lock for its remote
+    # lockout; a Broadlink blaster has a remote entity and a temperature
+    # probe; a television's remote entity sits beside its media player
+    # and makes no blaster (rule DEV-11).
     ([_e("cover", "garage"), _e("lock"), _e("light")], "Cover"),
     ([_e("remote"), _e("sensor", "temperature"), _e("sensor", "humidity")], "IR Remote"),
     ([_e("remote")], "IR Remote"),
@@ -80,13 +79,12 @@ def _e(domain, device_class=None, category=None, disabled=None):
     ([_e("climate"), _e("sensor", "temperature")], "Thermostat"),
     ([_e("valve"), _e("binary_sensor", "moisture")], "Valve"),
     ([_e("fan"), _e("light")], "Fan"),
-    # #712, from Tim Plas's robot vacuum: its vacuum entity says it.
+    # A robot vacuum's vacuum entity says what it is (rule DEV-11).
     ([_e("vacuum"), _e("sensor", "battery", category=EntityCategory.DIAGNOSTIC), _e("select")], "Vacuum"),
-    # One that adds a camera for its map is still a vacuum (adversarial
-    # round of 0.26.8).
+    # One that adds a camera for its map is still a vacuum.
     ([_e("camera"), _e("vacuum")], "Vacuum"),
     # A 4-in-1 is a multi sensor; with only two of the three readings
-    # it is still a motion sensor (James, 9 October 2026).
+    # it is still a motion sensor.
     ([_e("binary_sensor", "occupancy"), _e("sensor", "temperature"), _e("sensor", "humidity"),
       _e("sensor", "illuminance")], "Multi Sensor"),
     ([_e("binary_sensor", "motion"), _e("sensor", "temperature"), _e("sensor", "illuminance")], "Motion Sensor"),
@@ -179,11 +177,11 @@ async def test_own_words_are_tidied_and_bad_answers_refused(hass: HomeAssistant,
     coord, client, _first, _second, _leak, radio = await _plugs(hass, hass_ws_client)
     reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Other", other="  Range   extender ")
     assert reply["success"], reply
-    # Words not on the list; "Zigbee router" now takes the list's name (#717).
+    # Words not on the list; "Zigbee router" takes the list's name (rule DEV-11).
     assert coord.type_words(radio.id) == "Range extender"
     for other, words in (("", "Type what the device is."), ("x" * 41, "Keep it to 40 characters."),
                          ("bad‮word", "That text holds characters that cannot be shown."),
-                         # The page's own words for no type (found by testing).
+                         # The page's own words for no type.
                          ("Not known", "Type what the device is."), ("  not   KNOWN ", "Type what the device is.")):
         reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Other", other=other)
         assert reply["error"]["code"] == "refused" and reply["error"]["message"] == words
@@ -229,14 +227,11 @@ def test_the_choices_are_the_approved_types_then_other():
         "Camera", "Voice Assistant", "Cover", "Leak Sensor", "Door/Window Sensor",
         "Vibration Sensor", "Motion Sensor", "Presence Sensor", "Smoke Alarm", "CO Alarm",
         "Switch", "Plug", "Soil Sensor", "Temperature Sensor", "Button",
-        # 0.25.2 (James, 9 October 2026).
         "Zigbee Coordinator (Zigbee2MQTT)", "Zigbee Coordinator (ZHA)", "Z-Wave Controller",
         "Thread Border Router", "Matter Bridge", "Zigbee Router", "Z-Wave Repeater", "Thread Router",
         "Hub", "Printer", "Dashboard", "Plant Waterer", "Multi Sensor", "Lock", "Thermostat", "Valve",
         "Siren", "Fan", "Light", "Bluetooth Proxy", "ESPHome Device",
-        # #627, from Tim Plas's answers under Other (James, 11 October 2026).
         "Appliance", "IR Remote", "Router", "NAS", "UPS",
-        # #712, from Tim Plas's robot vacuum (James, 20 October 2026).
         "Vacuum",
     }
     listed = list(device_type.TYPE_CHOICES[:-1])
@@ -244,8 +239,8 @@ def test_the_choices_are_the_approved_types_then_other():
 
 
 async def test_clearing_a_devices_own_answer_leaves_the_models(hass: HomeAssistant, hass_ws_client):
-    """An answer set before the device reported a model is its own; clearing
-    it cleared the model's answer for every device too (found by review)."""
+    """An answer set before the device reported a model is its own, so
+    clearing it leaves the model's answer for every other device."""
     coord, _client, first, second, _leak, radio = await _plugs(hass, hass_ws_client)
     coord.page_set_type(radio.id, "Other", "Range extender")
     coord._type_entries[first.id] = {"type": "Lamp", "set": None}
@@ -260,9 +255,9 @@ async def test_clearing_a_devices_own_answer_leaves_the_models(hass: HomeAssista
 
 
 async def test_lists_never_count_the_model_per_row(hass: HomeAssistant, hass_ws_client, monkeypatch):
-    """Each row with an owner answer counted every device of its model and
-    threw the count away: the square of the house per Devices tab, brief
-    and download (found by review). Only the device page counts."""
+    """Only the device page counts a model's devices; a row that counted
+    them would cost the square of the house per Devices tab, brief and
+    download."""
     coord, _client, first, *_ = await _plugs(hass, hass_ws_client)
     coord.page_set_type(first.id, "Plug")
     coord.page_set_power(first.id, "Mains Powered")

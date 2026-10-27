@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_dashboard_brief.py, Version: 0.27.10 (2026-10-27)
 
-"""The Daily Brief tab, and stepping back through the days.
+"""The Daily Brief tab, and stepping back through the days
+(rules BRIEF-07, BRIEF-10).
 
 The tab is the brief as a page, by calendar day: midnight to midnight
 for a day that has finished, midnight to now for today. It reads the
@@ -165,10 +166,10 @@ async def test_it_is_admin_only(hass: HomeAssistant, hass_ws_client, hass_read_o
 async def test_a_day_ends_at_the_next_midnight_across_a_clock_change(
     hass: HomeAssistant,
 ):
-    """The tab ended a finished day at midnight plus 24 hours. On the
-    25-hour day the clocks go back, 1 November in the second and fourth
-    fleets' time zone, that lost the last hour; on the 23-hour day they
-    go forward, 8 March, it repeated the next day's first hour."""
+    """A finished day ends at the next local midnight, not midnight plus 24
+    hours: that would lose the last hour of the 25-hour day the clocks go
+    back, and repeat the next day's first hour on the 23-hour day they go
+    forward."""
     await hass.config.async_set_time_zone("America/Chicago")
     coord = await setup_coordinator(hass)
     for day, hours in (
@@ -188,8 +189,9 @@ async def test_a_day_ends_at_the_next_midnight_across_a_clock_change(
 async def test_the_last_hour_of_a_long_day_is_shown_once(
     hass: HomeAssistant, freezer
 ):
-    """An event at 11:30 PM on 1 November belongs to 1 November, and an
-    event at the stroke of midnight belongs to the day it opens."""
+    """An event at 11:30 PM on the day the clocks go back belongs to that
+    day, and an event at the stroke of midnight belongs to the day it
+    opens."""
     await hass.config.async_set_time_zone("America/Chicago")
     freezer.move_to("2026-11-03T18:00:00+00:00")
     plug, _ = register_device(hass, "plug", name="Plug Living Room Router")
@@ -219,7 +221,8 @@ async def test_the_last_hour_of_a_long_day_is_shown_once(
     assert second["counts"]["resolved"] == 1
 
 
-# The dashboard's Daily Brief tab shows the repeat rows as rows, from Tim Plas's review of 0.22.25.
+# The dashboard's Daily Brief tab shows the repeat rows as rows
+# (rule BRIEF-09).
 
 
 @pytest.fixture

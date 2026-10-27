@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.26.7 (2026-10-19)
+# File: test_device_page.py, Version: 0.27.10 (2026-10-27)
 
-"""The device page a person actually reads, and its diagnostics journal.
+"""The device page a person actually reads, and its diagnostics journal
+(rules CFG-07, STOR-21).
 
 Home Assistant gives entities no helper text on the device page, so a
 name and its state are the whole explanation. Status answers its own
@@ -51,8 +52,8 @@ from custom_components.device_sentinel.diagnostics import async_get_config_entry
 
 from tests.helpers import registry_settled, setup_coordinator, setup_entry
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 DOMAIN = "device_sentinel"
@@ -136,8 +137,8 @@ async def test_status_keeps_the_setup_count_as_an_attribute(
 
 async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
     entry = await setup_entry(hass)
-    # The count sensors are disabled by default (ruling #239); enable
-    # them so their state exists to check.
+    # The count sensors are disabled by default (rule CFG-08); enable them
+    # so their state exists to check.
     reg = er.async_get(hass)
     for suffix in (
         "signal_rails",
@@ -237,12 +238,12 @@ async def test_journal_is_in_diagnostics(hass: HomeAssistant):
 
 
 # ---------------------------------------------------------------------
-# The device page's rows: no data, no row (0.25.5).
+# The device page's rows: no data, no row (rule DEV-13).
 #
-# A row with nothing to show is left out (James, 10 October 2026). The
-# server sends None for a registry field that is empty or only zeros,
-# Connects only for a device that does not report on the local network
-# as changes happen, and each address under the name of its kind.
+# A row with nothing to show is left out. The server sends None for a
+# registry field that is empty or only zeros, Connects only for a device
+# that does not report on the local network as changes happen, and each
+# address under the name of its kind.
 
 
 # ------------------------------------------------------------ shown
@@ -364,8 +365,8 @@ async def test_a_zigbee2mqtt_device_shows_its_address_on_the_page(hass: HomeAssi
 
 
 async def test_a_held_device_has_no_page(hass: HomeAssistant):
-    """Removed from Home Assistant, its record held (ruling #622): a
-    page would offer actions on a device that is not there."""
+    """Removed from Home Assistant, its record held: a page would offer
+    actions on a device that is not there (rule WATCH-07)."""
     device = _registered(hass, "test", "h1")
     coord = await setup_coordinator(hass)
     dr.async_get(hass).async_remove_device(device.id)

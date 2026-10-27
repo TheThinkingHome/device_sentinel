@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_dashboard_trends.py, Version: 0.27.10 (2026-10-27)
 
-"""The Battery Trends and Signal Trends tabs.
+"""The Battery Trends and Signal Trends tabs (rules BAT-18, SIG-12).
 
 Both are fleet views: they answer questions a single device's page
-cannot. Which of your models eat cells, and which days several
-devices had a bad signal at once. Every figure comes from the
-reports' own functions, worked out when asked.
+cannot. Which of your models eat cells, and which days several devices
+had a bad signal at once. Every figure comes from the reports' own
+functions, worked out when asked.
 """
 
 from __future__ import annotations
@@ -105,15 +105,16 @@ async def test_battery_trends_group_every_cell_by_model(hass: HomeAssistant, has
     assert aqara["lowest"] == 98.0
     assert aqara["typical"] == 99.0
     third = models["Third Reality Wireless motion sensor"]
-    # Points a week from weekly averages since 0.23.6: the cell loses
-    # 0.2 a day, 1.4 a week.
+    # Points a week from weekly averages: the cell loses 0.2 a day, 1.4 a
+    # week (rule BAT-11).
     assert round(third["rate"], 3) == -1.4
     assert page["models"][0]["maker"] == "Third Reality", "the fastest drain first"
 
 
 async def test_battery_trends_carry_the_reports_own_groups(hass: HomeAssistant, hass_ws_client):
-    # Judged only at or under three times the low threshold (#725): raised so
-    # the high cells here are judged too.
+    # Judged only at or under three times the low threshold, so the
+    # threshold is raised and the high cells here are judged too
+    # (rule BAT-10).
     coord, holding, falling, unreadable, _ = await _fleet(hass, {CONF_LOW_THRESHOLD: 49})
     client = await hass_ws_client(hass)
     page = (await _call(client, type="device_sentinel/battery_trends"))["result"]
@@ -159,10 +160,10 @@ async def test_signal_trends_measure_each_link_against_its_own_normal(hass: Home
 async def test_signal_trends_carry_the_two_middles_the_change_is_taken_between(
     hass: HomeAssistant, hass_ws_client
 ):
-    """A row adds up: the last seven days' middle less the whole
-    history's is the change. The tab showed the latest reading beside
-    it, so Temperature Living Room read 188 with a change of -44 from
-    174 and 218 (James's dashboard review, 24 October 2026)."""
+    """A row adds up: the last seven days' middle less the whole history's
+    is the change, so the latest reading is not shown beside it
+    (rule SIG-12).
+    """
     coord, _, falling, _, _ = await _fleet(hass)
     coord.data["devices"][falling.id][DEV_SIGNAL_VALUE] = 188.0
     client = await hass_ws_client(hass)

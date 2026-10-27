@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_page_firmware.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_device_page_firmware.py, Version: 0.27.10 (2026-10-27)
 
 """The dashboard's device page carries the device's firmware (rule DEV-15).
 
-Firmware was recorded correctly, but nothing on the page read it: it
-appeared only in the diagnostics download. Ruled a bug by James on 25
-October 2026: Advanced shows the current firmware with its recorded
-history beneath, beside Hardware version; Simple never shows it. The
-server sends it in both modes and the panel decides what is drawn
+Advanced shows the current firmware with its recorded history beneath,
+beside Hardware version; Simple never shows it. The server sends it in
+both modes and the panel decides what is drawn
 (tools/panel_checks/check_device_page_layout.js and
 check_simple_dashboard.js prove the drawing).
 """
@@ -43,8 +41,9 @@ async def test_the_page_carries_the_firmware_and_its_history(hass: HomeAssistant
 
 
 async def test_a_version_not_yet_recorded_is_still_shown(hass: HomeAssistant):
-    """A new version is recorded once it has held ten minutes (0.23.10);
-    the registry's version is the current one meanwhile."""
+    """A new version is recorded once it has held ten minutes; the
+    registry's version is the current one meanwhile (rule DEV-15).
+    """
     device, _ = register_device(hass, "fw2", name="Porch Plug")
     dr.async_get(hass).async_update_device(device.id, sw_version="2.0")
     coord = await setup_coordinator(hass)

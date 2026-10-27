@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dated_histories.py, Version: 0.26.1 (2026-10-13)
+# File: tests/test_dated_histories.py, Version: 0.27.10 (2026-10-27)
 
-"""The daily histories keep their calendar (0.24.4, issue #18).
+"""The daily histories keep their calendar (rules FRZ-02, STOR-16).
 
 The longest-gap, battery and signal histories hold one entry a day the
-device measured something. Until 0.24.4 nothing recorded which day: the
-gap and signal histories wrote nothing on a silent day, so every later
-entry read one day early, and the battery history wrote the last level
-again, inventing flat days and then a cliff.
+device measured something, each with its date. Without dates, the gap
+and signal histories would write nothing on a silent day, so every
+later entry would read one day early, and the battery history would
+write the last level again, inventing flat days and then a cliff.
 """
 
 from __future__ import annotations
@@ -215,9 +215,9 @@ async def test_the_retired_rhythm_shadow_file_is_removed(hass: HomeAssistant):
 # ------------------------------------- a history at its History days limit
 #
 # At the limit a fold adds one entry and trims one, so the length does
-# not change. Until 0.24.6 the length was all the fold read: the newest
-# date stopped on the day the limit was reached and every entry slid a
-# day earlier each night, in the gap, battery and signal histories.
+# not change. A fold that read only the length would stop the newest
+# date on the day the limit was reached and slide every entry a day
+# earlier each night (rule STOR-16).
 
 LIMIT = 90  # the default History days
 
@@ -284,9 +284,9 @@ async def test_a_full_battery_history_dates_each_night(hass: HomeAssistant, free
 
 
 def _rows(coord, monkeypatch, nights):
-    """The signal roll, one row a night it is told the device spoke,
-    trimmed at the limit as the real roll trims, and saying whether it
-    wrote, as the real roll does since 0.24.6."""
+    """The signal roll, one row a night it is told the device spoke, trimmed
+    at the limit as the real roll trims, and saying whether it wrote, as
+    the real roll does."""
     plan = iter(nights)
 
     def roll(bucket, fold_now, judged=True):
@@ -338,12 +338,11 @@ def _skipping_days(end, count):
 
 
 def test_a_scale_swap_carries_the_signal_dates_with_the_series():
-    """When RSSI arrives on a device whose primary is LQI, the two
-    scales trade places (ruling #285), and their dates must trade with
-    them (0.26.1). Before, the series moved and the dates stayed, so the
-    LQI history read the RSSI block's dates or none at all. The storage
-    split cuts each history by its entries and their dates, so a
-    history whose dates describe other entries would be split wrongly."""
+    """When RSSI arrives on a device whose primary is LQI, the two scales
+    trade places, and their dates trade with them (rule SIG-03). Otherwise
+    the LQI history would read the RSSI block's dates or none at all, and
+    the storage split, which cuts each history by its entries and their
+    dates, would split it wrongly."""
     from custom_components.device_sentinel.const import (
         DEV_SIGNAL_DAILY_P50,
         DEV_SIGNAL_SCALE,
@@ -376,10 +375,9 @@ async def test_a_mixed_signal_clear_at_load_drops_the_signal_dates(
     hass: HomeAssistant, hass_storage
 ):
     """A signal history holding two scales at once is cleared at load
-    (ruling #282). Its dates go with it (0.26.1), as they already do
-    when a removed device's signal history is forgotten (#622); before,
-    the cleared history kept the old dates and the next day's entry
-    was dated as the newest of many."""
+    (rule SIG-03). Its dates go with it, as they do when a removed device's
+    signal history is forgotten, so the next day's entry is not dated as
+    the newest of many."""
     from custom_components.device_sentinel.const import (
         DEV_SIGNAL_DAILY_P5,
         STATS_EPOCH,

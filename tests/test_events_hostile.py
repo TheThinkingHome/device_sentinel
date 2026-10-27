@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_events_hostile.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_events_hostile.py, Version: 0.27.10 (2026-10-27)
 
-"""The bus events under conditions that should not happen.
+"""The bus events under conditions that should not happen (rule NOTE-12).
 
 The suite beside this proves the events fire correctly. This proves
 they cannot take the sync down with them when something else is
@@ -35,8 +35,8 @@ from custom_components.device_sentinel.const import (
 )
 from tests.helpers import record_events, setup_entry
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 
@@ -144,10 +144,11 @@ async def test_the_area_reads_the_registry_when_there_is_one(
 
 
 async def test_a_masked_cascade_fires_nothing(hass: HomeAssistant):
-    """#264 suppresses the cascade at the problem list itself, so the
-    devices behind a downed coordinator never become rows and nothing
-    reaches the bus. The upstream row that stands in their place is
-    not a device and has no event (ruling #289)."""
+    """The cascade is suppressed at the Problem List itself, so the devices
+    behind a downed coordinator never become rows and nothing reaches the
+    bus (rule UP-05). The upstream row that stands in their place is not a
+    device and has no event (rule NOTE-12).
+    """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._grace_until = 0.0

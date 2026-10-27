@@ -3,25 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_stitching.py, Version: 0.26.6 (2026-10-17)
+# File: tests/test_brief_stitching.py, Version: 0.27.10 (2026-10-27)
 
-"""A silence the restarts segmented is told as one silence.
+"""A silence the restarts segmented is told as one silence (rule BRIEF-06).
 
-The reference case, from the live fleet: an SLZB-06 unplugged on 18
-August was told as twenty-one recoveries in a single morning brief,
-"silent for 19.9h in total" against a true span of three days,
-because each restart closed the open episode as an intervention
-(ruling #163) and the incident surface worded that administrative
-closure as "recovered". Ruling #308 stitches those fragments back
-into one sentence.
+Each restart closes the open episode as an intervention (rule FRZ-20),
+so a device unplugged for three days could be told as twenty-one
+recoveries in one morning brief, "silent for 19.9h in total". Those
+fragments are stitched back into one sentence.
 
 The fixtures here are built to the shape the real storage file
-carries, and that shape is the point. The first attempt at this rule
-read a cause field on the resolution rows and shipped inert: of 462
-real incident rows only ten carry any cause at all, and none of
-SLZB-06's twenty-one recoveries carried one. The witness that does
-survive the fragments is the standing verdict, which clears when a
-device truly recovers and never cleared once here.
+carries, and that shape is the point. Real resolution rows rarely carry
+a cause field at all, so a rule that reads one ships inert. The witness
+that does survive the fragments is the standing verdict, which clears
+when a device truly recovers.
 """
 
 from __future__ import annotations
@@ -249,16 +244,14 @@ async def test_the_table_drops_the_bookkeeping_rows(
 ):
     """The stitched sentence is not contradicted two sections down.
 
-    The rows behind it say a dead device recovered many times;
-    keeping them beside the sentence that corrects them would say
-    the wrong thing more often than the right one. The counts count
-    what the table shows (ruling #308).
+    The rows behind it say a dead device recovered many times; keeping
+    them beside the sentence that corrects them would say the wrong thing
+    more often than the right one. The counts count what the table shows
+    (rule BRIEF-06).
 
-    The clock is pinned (ruling #330). This test plants its rows at
-    fixed offsets after the window start, so run inside the first
-    half hour after the brief hour it planted them in the future and
-    failed on the wall clock alone. Found by the 0.17.3 gate at
-    08:06 local, having passed every earlier run that day.
+    The clock is pinned, because the rows sit at fixed offsets after the
+    window start, and run inside the first half hour after the brief hour
+    they would land in the future (rule CODE-13).
     """
     freezer.move_to("2026-08-24T20:00:00+00:00")
     device, _ = register_device(hass, "tb1", "SLZB-06")
@@ -296,15 +289,14 @@ async def test_the_table_drops_the_bookkeeping_rows(
 async def test_one_silence_split_across_kinds_is_one_sentence(
     hass: HomeAssistant, freezer
 ):
-    """The reference rig's brief of 27 September, from its real rows.
+    """A real brief's rows: one silence from 4:35 PM.
 
-    One silence from 4:35 PM. The bridge's outage at the 3:40 AM reboot
-    escalated frozen to unavailable, and at 3:47 AM, still silent, it
-    was frozen again. The unavailable piece carried the claimed
-    recovery and was stitched; the two frozen pieces carried none,
-    failed on their own, and were told as "went silent twice" beside
-    the stitched sentence. Judged as one pile per device, the three
-    are one sentence (ruled 27 September 2026, amending #308 and #335).
+    The bridge's outage at the 3:40 AM reboot escalated frozen to
+    unavailable, and at 3:47 AM, still silent, it was frozen again. The
+    unavailable piece carried the claimed recovery and is stitched; the
+    two frozen pieces carried none and must not be told as "went silent
+    twice" beside the stitched sentence. Judged as one pile per device,
+    the three are one sentence (rule BRIEF-06).
     """
     freezer.move_to("2026-09-27T11:02:30+00:00")
     device, _ = register_device(hass, "hall", "Hall Switch")
