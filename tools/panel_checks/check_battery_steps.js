@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.1 (2026-10-23)
+// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.7 (2026-10-27)
 // Panel checks: how a battery reports, on the device page and on Battery
 // Trends.
 // Written for 0.23.1; named by subject since 0.23.19.
@@ -94,7 +94,28 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
     });
     check("a device with no battery has no such row", !rows(root).some((cells) => cells[0] === "Battery steps"));
   }
+  // A coarse cell is judged by the low threshold alone, never read as
+  // steady (rule BAT-10, 0.27.7).
+  {
+    const coarse = { daily: [50, 50, 40, 40, 30], now: 30, threshold: 15, ceiling: 45, readable: true, short: false,
+      coarse: true, weeks: [50, 40, 30], reading: "", sentence: "", falling: false, left: null, forecasts: [] };
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (d) => ({ ...d, battery: coarse }) });
+    const said = text(root);
+    check("a coarse cell says Coarse", said.includes("Coarse: this battery reports its level in large steps"), said.slice(0, 400));
+    check("and never Steady", !said.includes("Steady: no week has fallen"));
+  }
   console.log("Battery Trends");
+  // The total counted from the same cells as its parts (rule BAT-18).
+  {
+    const { root } = await open(`${PREFIX}/battery-trends`, {
+      battery_trends: (b) => ({ ...b, cells: 1, steady: [
+        { device_id: DEVICE, name: "Old Cell", level: 90, rate: 0, days: 20, steps: "Smooth" },
+        { device_id: "new-cell", name: "New Cell", level: 100, rate: 0, days: 3, steps: "" },
+      ] }),
+    });
+    const said = text(root);
+    check("the total adds up to its parts", said.includes("2 cells report a level. 0 falling, 2 not falling or not yet judged."), said.slice(0, 600));
+  }
   {
     const { root } = await open(`${PREFIX}/battery-trends`, {
       battery_trends: (b) => ({ ...b, steady: [{ device_id: DEVICE, name: "Office Temp/Humid", level: 30, rate: -1.4, days: 14, steps: "Coarse" }] }),
