@@ -132,7 +132,7 @@
       },
       "signal": {
         "title": "Signal Strength",
-        "description": "Controls how the integration catches failing radio links. A bad signal day is a drop measured against the device's own recent normal, so a steady sensor and a jittery one are each judged by their own standard. [Signal Strength on the Wiki]({wiki_link})",
+        "description": "Controls how the integration catches failing radio links. A bad signal day is a drop measured against the device's own recent normal, so a steady sensor and a jittery one are each judged by their own standard. [Signal Strength on the wiki]({wiki_link})",
         "data": {
           "badday_drop_lqi": "Bad Day Drop, LQI",
           "badday_drop_rssi": "Bad Day Drop, RSSI",
@@ -164,7 +164,7 @@
       },
       "freeze": {
         "title": "Freeze and Unavailable Detection",
-        "description": "How long a device may go silent before it is called frozen, and which devices are muted for freeze or for unavailable. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze Detection on the wiki]({wiki_link}).",
+        "description": "How long a device may go silent before it is called frozen, and which devices are muted for freeze or for unavailable. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze and Unavailable Detection on the wiki]({wiki_link})",
         "data": {
           "freeze_delta_low": "Delta Low (Fast-Device Grace, Minutes)",
           "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)"
@@ -222,7 +222,7 @@
         "sections": {
           "data_trim": {
             "name": "Data Trim",
-            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing exclusions and mutes intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
+            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and each backup is deleted after 30 days, except the newest. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing exclusions and mutes intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
             "data": {
               "trim_integrations": "Trim Integration History",
               "trim_devices": "Trim Device History"
