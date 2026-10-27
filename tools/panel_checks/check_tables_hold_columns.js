@@ -1,6 +1,6 @@
+// File: tools/panel_checks/check_tables_hold_columns.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: every table keeps its columns still, whatever is filtered
 // or sorted, on the reference fleet's real contents.
-// Written for 0.22.17; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_tables_hold_columns.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands

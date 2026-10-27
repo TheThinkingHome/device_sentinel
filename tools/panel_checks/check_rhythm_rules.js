@@ -1,7 +1,7 @@
-// File: tools/panel_checks/check_rhythm_rules.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_rhythm_rules.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the rhythm chart shows both freeze rules, its marks follow the
 // pointer, the device page names the rule in use, and every chart legend
-// leads with a swatch (0.24.0). Since 0.27.3 the Use the 14-Day Trimmed
+// leads with a swatch (rule FRZ-22). The Use the 14-Day Trimmed
 // Maximum button shows only while the Log-Normal Percentile is in use.
 // Run with: LC_ALL=en_US.UTF-8 node check_rhythm_rules.js [path/to/panel.js]
 const fs = require("fs");
@@ -131,16 +131,16 @@ const withRules = {
   check("Rhythm: the set-aside day is crossed", cross && cross.getAttribute("opacity") === "1");
 
   const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Use the 14-Day Trimmed Maximum");
-  // In the Wait rule row since 0.24.9, beneath the rule it changes,
-  // with no helper text beside it (James, 4 October 2026).
+  // In the Wait rule row, beneath the rule it changes, with no helper
+  // text beside it.
   const waitRow = button && button.closest("tr");
   check("Identity: the button sits in the Wait rule row, beneath the rule",
     waitRow && waitRow.firstChild.textContent === "Wait rule" && button.previousSibling
       && /Log-Normal Percentile|Trimmed Maximum/.test(button.previousSibling.textContent),
     waitRow ? waitRow.textContent : null);
 
-  // With the Trimmed Maximum in use the button changed nothing to be
-  // seen and hid the 42-day chart for 28 days (0.27.3).
+  // With the Trimmed Maximum in use the button changes nothing to be
+  // seen and would hide the 42-day chart for 28 days.
   const trimmedInUse = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
     withRules.device(page);
     page.status.rule = "14-Day Trimmed Maximum";

@@ -1,7 +1,5 @@
-// Dated daily histories (0.24.4, issue #18): a skipped day breaks a line.
-// pointer, the device page names the rule in use, and every chart legend
-// leads with a swatch (0.24.0).
-// Dated daily histories (0.24.4, issue #18): a skipped day breaks a line.
+// File: tools/panel_checks/check_dated_histories.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: dated daily histories, where a skipped day breaks a line (rule STOR-16).
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 

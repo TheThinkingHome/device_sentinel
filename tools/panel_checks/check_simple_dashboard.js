@@ -1,5 +1,5 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.9 (2026-10-27)
-// Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
 // and its battery chart; Mute by label in Advanced.
@@ -118,7 +118,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("the switch moves the page to Advanced", tabs(root).length === 8, tabs(root));
   check("and shows Advanced pressed", modeButton(root, "Advanced").getAttribute("aria-pressed") === "true");
   // A tab hidden for five minutes: Home Assistant takes the dashboard
-  // out of the page and puts the same one back when it is shown (#716).
+  // out of the page and puts the same one back when it is shown (rule DASH-03).
   panel.remove();
   window.document.body.append(panel);
   await panel._refresh();
@@ -140,7 +140,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("Type, Area and Labels are read-only", !buttons(rowCell(root, "Type")).length
     && !buttons(rowCell(root, "Area")).length && !buttons(rowCell(root, "Labels")).length,
   [buttons(rowCell(root, "Type")), buttons(rowCell(root, "Area")), buttons(rowCell(root, "Labels"))]);
-  // "Not known", as Advanced says it (rules DEV-07, DEV-10, 0.27.4).
+  // "Not known", as Advanced says it (rules DEV-07, DEV-10).
   check("an empty type reads Not known", rowCell(root, "Type").textContent === "Not known", rowCell(root, "Type").textContent);
   check("an unanswered Power reads Not known", rowCell(root, "Power").textContent === "Not known", rowCell(root, "Power").textContent);
   check("labels still say what they do", rowCell(root, "Labels").textContent.includes("mutes battery and signal"));
@@ -150,7 +150,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
     buttons(rowCell(root, "Muted")));
   check("no Mute by label", !anyButton(root, "Mute by label"));
   check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !rowCell(root, "Wait rule"));
-  // A device its hub judges shows no gaps, as Advanced (0.27.9).
+  // A device its hub judges shows no gaps, as in Advanced (rule STACK-10).
   ({ root } = await open({ __mode: "simple" }, (p) => {
     p.status.category = "never_reported";
     p.status.judged_by = { how: "hub", hub_id: "hub1", hub_name: "Garage Smart Bridge", hub_page: false };
@@ -162,7 +162,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("the battery chart with its expected fall", !!root.querySelector(".futurechart polygon"));
   check("in words", text(root).includes("Expected empty in about 4 to 6 weeks."));
   check("and only once", text(root).split("about 4 to 6 weeks").length === 2, text(root).match(/.{0,30}about 4 to 6 weeks.{0,10}/g));
-  // Door 2nd Bedroom on 24 October 2026 (0.27.3): falling, not soon, and
+  // Door 2nd Bedroom: falling, not soon, and
   // no time left said anywhere in Simple.
   ({ root } = await open({ __mode: "simple" }, (p) => {
     withBattery(p); p.status.category = "reporting";
@@ -236,8 +236,8 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   const byName = calls.filter((c) => c.type === "device_sentinel/device_label_mute");
   check("and saves that label, not a new one", byName.length === 1 && byName[0].label_id === "garage" && !byName[0].name, byName);
 
-  // Rule DASH-04 (James, 25 October 2026): Simple asks for nothing more
-  // than it must. No Rename, no Use the 14-Day Trimmed Maximum, and no
+  // Simple asks for nothing more than it must (rule DASH-04). No
+  // Rename, no Use the 14-Day Trimmed Maximum, and no
   // turn-on buttons; those sensors are turned on from the
   // Recommendations cards. The Mute buttons stay.
   console.log("Simple's device page asks for nothing extra (rule DASH-04)");
@@ -276,7 +276,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   ({ root } = await open({ __mode: "advanced" }, frozenLognormal));
   check("Advanced keeps Use the 14-Day Trimmed Maximum", !!anyButton(root, "Use the 14-Day Trimmed Maximum"));
 
-  // Firmware in Advanced only (rule DEV-15, 0.27.4).
+  // Firmware in Advanced only (rule DEV-15).
   const withFirmware = (p) => { p.identity.hw_version = "2"; p.identity.firmware = { current: "9.8.7", history: [{ version: "9.8.7", since: "2025-10-20T22:40:00+00:00" }] }; };
   ({ root } = await open({ __mode: "simple" }, withFirmware));
   check("Simple: no Firmware row", !rowCell(root, "Firmware") && !text(root).includes("9.8.7"), labelsOf(root));

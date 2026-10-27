@@ -2,10 +2,10 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.26.1 (2026-10-13)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.27.10 (2026-10-27)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
-// dashboard (0.26.1, rulings #658 and #659). The Devices tab's name
+// dashboard (rules DASH-12, MUTE-03). The Devices tab's name
 // search, Area and Label filters; its Excluded list, read live, with
 // Cancel the exclusion for a device excluded on its own, a link to the
 // integration for one excluded with it, and Home Assistant's own page

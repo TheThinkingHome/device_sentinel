@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/panel_checks/capture_test_house.py, Version: 0.22.20 (2026-09-21)
+# File: tools/panel_checks/capture_test_house.py, Version: 0.27.10 (2026-10-27)
 
 """Capture the dashboard's replies from a three-device test house.
 
 Kept here rather than under tests/, so the suite never collects it.
 Copy it into tests/, run it with pytest in either harness, and delete
-the copy; it writes payloads.json beside the checks. Written 21 September 2026 for
-0.22.16's checks: a global mute, a freeze mute, a battery mute, a label
+the copy; it writes payloads.json beside the checks. It covers a
+global mute, a freeze mute, a battery mute, a label
 mute, and a battery reading that is not a percentage.
 """
 import json

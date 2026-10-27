@@ -1,7 +1,6 @@
-// File: tools/panel_checks/check_no_hardware_integrations.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_no_hardware_integrations.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: an integration with no hardware of its own, as Battery
 // Notes is, on the Integrations tab.
-// Written for 0.22.21; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_no_hardware_integrations.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -96,7 +95,7 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   const notes = rowOf(root, "Battery Notes");
   const cells = notes ? [...notes.cells].map((td) => td.textContent) : [];
   check("its STANDING reads No hardware", cells[1] === "No hardware", cells);
-  // 0.22.21 opened no page for it; 0.22.22 opens the devices it adds to.
+  // Its name opens a page of the devices it adds to.
   check("its name opens its page", notes && !!notes.cells[0].querySelector("a"), notes && notes.cells[0].innerHTML);
   check("it says how many devices carry its entities", cells[0] && cells[0].includes("on 3 devices"), cells[0]);
   const owner = rowOf(root, "test");
@@ -105,7 +104,7 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   check("a No hardware filter counts it", chip && chip.textContent === "No hardware 1", chip && chip.textContent);
   const summary = root.querySelector(".pane > p").textContent;
   check("the count of owners leaves it out", summary.includes(". 2 own devices"), summary);
-  // Led by the total the All chip shows (0.27.3).
+  // Led by the total the All chip shows.
   const allChip = [...root.querySelectorAll(".chips .chip")].find((c) => c.textContent.startsWith("All "));
   check("the summary opens with the All chip's total", !!allChip && summary.startsWith(`${allChip.textContent.slice(4)} integrations in all.`), [allChip && allChip.textContent, summary]);
   check("the summary names it as having no hardware",

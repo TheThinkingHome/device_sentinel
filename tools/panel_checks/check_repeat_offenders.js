@@ -1,7 +1,6 @@
-// File: tools/panel_checks/check_repeat_offenders.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_repeat_offenders.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Repeat Offenders table on the Daily Brief tab, and the
 // devices on MQTT's page that ride the broker.
-// Written for 0.23.0; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_repeat_offenders.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -107,7 +106,7 @@ const DEVICE = payloads._ids.bravo;
         muted: "", set_aside: "", problem: "", acknowledged: false }] }),
   });
   const mqttText = mqtt.root.querySelector(".pane").textContent;
-  // Headings in Title Case, book-title style (rule GEN-06, 0.27.4).
+  // Headings in Title Case, book-title style (rule GEN-06).
   check("lists the devices on the broker", mqttText.includes("Also on the Broker") && mqttText.includes("Stove Vent Relays"), mqttText.slice(-300));
   check("its outages heading reads Outages, Last 14 Days", mqttText.includes("Outages, Last 14 Days") && !mqttText.includes("Outages, last 14 days"), mqttText.slice(0, 600));
   check("naming the integration that owns each", mqttText.includes("Tasmota"), null);

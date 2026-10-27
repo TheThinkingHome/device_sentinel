@@ -1,10 +1,10 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.9 (2026-10-27)
-// Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
-// and dark, the library icon's link, the pencil's choices, Save, the
-// report button after a save, and Use the library. Since 0.26.7 the
-// Battery Last Replaced row beside it (rulings #701, #702). Since
-// 0.27.9 the shield on a device covered by an answer set on another
-// device of its model names that device (rule DEV-07).
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the Power row. Words, the source icon in light and
+// dark, the library icon's link, the pencil's choices, Save, the
+// report button after a save, and Use the library; the Battery Last
+// Replaced row beside it (rule BAT-07); and the shield on a device
+// covered by an answer set on another device of its model, which names
+// that device (rule DEV-07).
 // Run with: LC_ALL=en_US.UTF-8 node check_power_row.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -162,7 +162,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_power");
   check("Save sends the choice, the text and the quantity", sent && sent.choice === "Other" && sent.other === "9V" && sent.quantity === 2, sent);
-  // Where it was set, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
   check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   cell = rowCell(root, "Power");
   const report = [...cell.querySelectorAll("a.chip")].find((a) => a.textContent === "Send to Battery Notes");
@@ -179,7 +179,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Use the library clears the entry, from the device page", cleared && cleared.choice === null && cleared.source === "device_page", cleared);
   check("No report after going back to the library", !rowCell(root, "Power").querySelector("a.chip"));
 
-  // 0.25.1: a device's own entry, under a model with an answer of its own.
+  // A device's own entry, under a model with an answer of its own.
   ({ root } = await open({}, Object.assign({}, OWNER, { model_answer: "2× AAA" })));
   await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));
   check("Clearing its own entry names the model's answer it goes back to",
@@ -217,7 +217,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Never seen replaced reads so, with a pencil", !!bcell && /No battery replacement yet/.test(bcell.textContent)
     && !!bcell.querySelector("button.edit"), bcell && bcell.textContent);
   // With no replacement on record, the day the device was first seen
-  // (James, 23 October 2026).
+  // (rule BAT-07).
   const firstPage = await open({}, LIBRARY, false, { words: WORDS, first_seen: "2026-08-12", day: null, how: null, waiting: false });
   const firstCell = rowCell(firstPage.root, "Battery Last Replaced");
   check("No replacement yet says when the device was first detected",

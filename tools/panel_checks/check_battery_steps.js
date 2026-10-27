@@ -1,7 +1,6 @@
-// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.7 (2026-10-27)
+// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: how a battery reports, on the device page and on Battery
 // Trends.
-// Written for 0.23.1; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_steps.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -95,7 +94,7 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
     check("a device with no battery has no such row", !rows(root).some((cells) => cells[0] === "Battery steps"));
   }
   // A coarse cell is judged by the low threshold alone, never read as
-  // steady (rule BAT-10, 0.27.7).
+  // steady (rule BAT-10).
   {
     const coarse = { daily: [50, 50, 40, 40, 30], now: 30, threshold: 15, ceiling: 45, readable: true, short: false,
       coarse: true, weeks: [50, 40, 30], reading: "", sentence: "", falling: false, left: null, forecasts: [] };
@@ -123,7 +122,7 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
     const heads = [...root.querySelectorAll("th")].map((th) => th.textContent);
     check("the steady table has a STEPS column", heads.includes("STEPS"), heads);
     const row = rows(root).find((cells) => cells[0] === "Office Temp/Humid");
-    // STEPS is followed by CELL and MODEL, A WEEK since 0.27.1 (#736, #738).
+    // STEPS is followed by CELL and MODEL, A WEEK (rule BAT-16).
     const table = [...root.querySelectorAll("table")].find((t) => [...t.querySelectorAll("th")].some((th) => th.textContent === "STEPS"));
     const own = table ? [...table.querySelectorAll("th")].map((th) => th.textContent) : [];
     check("the coarse cell says so", row && row[own.indexOf("STEPS")] === "Coarse", row);

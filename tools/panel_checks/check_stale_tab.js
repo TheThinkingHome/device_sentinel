@@ -1,12 +1,13 @@
-// Panel checks: a dashboard tab left open across an update (0.25.4).
+// File: tools/panel_checks/check_stale_tab.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: a dashboard tab left open across an update (rule DASH-14).
 // Home Assistant hands an open tab the new dashboard file after an
 // update, while the old one still runs. The new copy must register
 // nothing and raise no error, and the running page must say it is out
 // of date and offer a reload, whether it learns it from the new copy or
-// from the server. Found in James's log of 9 October 2026: "the name
+// from the server. Otherwise the new copy fails with "the name
 // device-sentinel-panel has already been used with this registry".
-// Since 0.25.6 the banner glows three times when it appears, then holds
-// still, and not at all for a viewer who asked for less motion (#623).
+// The banner glows three times when it appears, then holds still, and
+// not at all for a viewer who asked for less motion.
 // Run with: LC_ALL=en_US.UTF-8 node check_stale_tab.js [path/to/panel.js]
 const fs = require("fs");
 const path = require("path");

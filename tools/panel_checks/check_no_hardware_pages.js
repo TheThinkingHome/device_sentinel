@@ -1,8 +1,7 @@
-// File: tools/panel_checks/check_no_hardware_pages.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_no_hardware_pages.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: each integration with no hardware of its own, and each
 // helper linked to a device, opens a page naming the devices it adds
 // entities to, and each entity opens Home Assistant's own window.
-// Written for 0.22.22; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_no_hardware_pages.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -116,7 +115,7 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   check("a Helper filter counts it", chip && chip.textContent === "Helper 1", chip && chip.textContent);
   const summary = root.querySelector(".pane > p").textContent;
   check("the count of owners leaves both out", summary.startsWith("4 integrations in all. 2 own devices"), summary);
-  // 0.22.24 made the singular read "to a device".
+  // The singular reads "to a device".
   check("the summary names the helper", summary.includes("1 is a helper you linked to a device."), summary);
   check("the key says what a helper is",
     text(root).includes("Helper: A Home Assistant helper you linked to a device."), text(root).slice(-500));

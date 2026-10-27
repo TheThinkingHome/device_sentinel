@@ -1,10 +1,10 @@
-// File: tools/panel_checks/check_node_status.js, Version: 0.27.9 (2026-10-27)
-// Panel checks: the Z-Wave status row (ruling #671, 0.26.5). A Z-Wave
+// File: tools/panel_checks/check_node_status.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the Z-Wave status row (rule STACK-05). A Z-Wave
 // device's page shows what Z-Wave says of the node, in red when it is
 // dead, and a switched-off sensor with the button that turns it on; a
-// device of any other stack shows no row. Since 0.27.9 any reading
-// other than the six it has words for reads "not known yet" (rule
-// STACK-05): a reload showed "unavailable".
+// device of any other stack shows no row. Any reading other than the
+// six it has words for reads "not known yet", because a reload can
+// show "unavailable".
 // Run with: LC_ALL=en_US.UTF-8 node check_node_status.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -94,7 +94,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -174,7 +174,7 @@ const rowCell = (root, label) => {
     const sent = view.calls.filter((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "node_status");
     check("Turn it on asks to switch on the Z-Wave status alone (ruling #698)",
       sent.length === 1 && sent[0].device_id === DEVICE, sent);
-    // Where it was pressed (rules BRIEF-07, DEV-07, 0.27.4).
+    // Where it was pressed (rules BRIEF-07, DEV-07).
     check("It says it was pressed on the device page", sent.length === 1 && sent[0].source === "device_page", sent);
   }
 

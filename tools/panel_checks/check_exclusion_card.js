@@ -1,7 +1,7 @@
-// File: tools/panel_checks/check_exclusion_card.js, Version: 0.27.7 (2026-10-27)
+// File: tools/panel_checks/check_exclusion_card.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Recommendations tab card that recommends excluding an
 // integration seen for the first time on a house that already exists
-// (Ruled Change 70, rule MUTE-02), and Send to Battery Notes offered
+// (rule MUTE-02), and Send to Battery Notes offered
 // after a battery type is saved from the Power Not Set card (rule DEV-09).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
@@ -77,7 +77,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };

@@ -1,6 +1,5 @@
-// File: tools/panel_checks/check_connects_line.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_connects_line.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Connects line on a device's page.
-// Written for 0.23.9; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_connects_line.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -70,7 +69,7 @@ const backLink = (root) => {
 const text = (root) => root.querySelector(".pane").textContent;
 const DEVICE = payloads._ids ? payloads._ids.alpha : null;
 
-// Tim Plas's S63 of 24 September: steady, then speeding up.
+// S63: steady, then speeding up.
 const S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
   74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
   68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,

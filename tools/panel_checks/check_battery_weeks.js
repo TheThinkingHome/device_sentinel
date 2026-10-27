@@ -1,11 +1,9 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.9 (2026-10-27)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
-// Since 0.27.9: a model's pace is the slowest to the fastest of the
-// other cells of its model (Ruled Change 26, rule BAT-16).
-// Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
-// subject since 0.23.19. The knee went in 0.27.0, and a cell above twice
-// the threshold is not judged (ruling #725).
+// A model's pace is the slowest to the fastest of the other cells of
+// its model (rule BAT-16). A cell above twice the threshold is not
+// judged (rule BAT-10).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_weeks.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -75,7 +73,7 @@ const backLink = (root) => {
 const text = (root) => root.querySelector(".pane").textContent;
 const DEVICE = payloads._ids ? payloads._ids.alpha : null;
 
-// Tim Plas's S63 of 24 September: steady, then speeding up.
+// S63: steady, then speeding up.
 const S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
   74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
   68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
@@ -219,8 +217,8 @@ const trends = {
       return page;
     },
   });
-  // Each known battery named, and one nobody has set says so (James,
-  // 23 October 2026: one blank meant two things).
+  // Each known battery named, and one nobody has set says so, because
+  // one blank would mean two things.
   const mixed = (page) => {
     page.steady = [
       { device_id: "aaa1", name: "Door Kitchen", type: null, level: 80, steps: "Smooth", days: 60, month_drop: 1,
@@ -260,9 +258,8 @@ const trends = {
   check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest"));
   check("a range whose ends agree reads one number in the column",
     rowCells(cellTab.root, "Door Kitchen").some((td) => td.textContent === "0.4"), rowCells(cellTab.root, "Door Kitchen").map((td) => td.textContent));
-  // The summary's three parts add up to the cells (0.27.3): the rig's
-  // 54 on 24 October read 2 falling and 51 not falling, and Soil
-  // Irrigation, at 0% and not falling, was in neither.
+  // The summary's three parts add up to the cells, so a cell at 0% and
+  // not falling, like Soil Irrigation, is counted in one (rule BAT-18).
   const counted = await open(`${PREFIX}/battery-trends`, {
     battery_trends: (page) => {
       trends.battery_trends(page);

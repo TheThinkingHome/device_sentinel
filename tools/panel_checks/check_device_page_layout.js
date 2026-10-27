@@ -1,9 +1,9 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the device page's top half and the Recommendations tab's
-// device cards (0.24.9). The Identity section's order and groups, live
-// values, sensor links, both rule charts, Previous and Next, and setting
-// a device right from a card. Since 0.27.4: the Firmware row (rule
-// DEV-15) and the section headings in Title Case (rule GEN-06).
+// device cards. The Identity section's order and groups (rule DASH-08),
+// live values, sensor links, both rule charts, Previous and Next,
+// setting a device right from a card, the Firmware row (rule DEV-15)
+// and the section headings in Title Case (rule GEN-06).
 // Run with: LC_ALL=en_US.UTF-8 node check_device_page_layout.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -93,7 +93,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -129,13 +129,13 @@ const rowCell = (root, label) => {
   console.log("\nThe device page's Identity section (0.24.9)");
   let { window, root, events, hass, panel } = await open();
   const order = labelsOf(root);
-  // Type follows Name since 0.25.1 (Project__Device_Type.md).
-  // A row with nothing to show is left out (0.25.5): this test device
+  // Type follows Name (rule DASH-08).
+  // A row with nothing to show is left out: this test device
   // reports no manufacturer, model, hardware version or address.
   const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration",
     "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
     "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted",
-    // Excluded, with its button, last (0.25.6).
+    // Excluded, with its button, last.
     "Excluded"];
   const shown = order.filter((l) => l !== "Connects" && l !== "Battery steps");
   check("Rows in the approved order, in three groups", JSON.stringify(shown) === JSON.stringify(want), shown);
@@ -234,7 +234,7 @@ const rowCell = (root, label) => {
   await settle();
   const sent = calls.find((c) => c.type === "device_sentinel/device_power");
   check("Power is set from the list", sent && sent.device_id === ROWS[1].device_id && sent.choice === "AAA" && sent.quantity === 2, sent);
-  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07).
   check("Power set from the list says so", sent && sent.source === "recommendations", sent);
   ({ root, calls } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   [...root.querySelectorAll("article.rec")[1].querySelectorAll("button")].find((b) => b.textContent === "Turn on its Last Seen").click();
@@ -264,9 +264,8 @@ const rowCell = (root, label) => {
   const level = rowCell(root, "Battery level").textContent;
   check("A time that cannot be read prints no NaN", !/NaN/.test(level) && level.startsWith("19.5%"), level);
 
-  // A cell on Zigbee's raw 0 to 200 scale (ruling #545): LUX Outdoors on
-  // the reference house read "182%" on its page while Device Sentinel
-  // used 91 (0.25.0).
+  // A cell on Zigbee's raw 0 to 200 scale reads half its state, so a
+  // state of "182" with a % unit is 91%, never "182%" (rule BAT-02).
   const rawStates = { ...STATES, "sensor.bravo_battery": { state: "182", attributes: { unit_of_measurement: "%" }, last_changed: new Date().toISOString() } };
   ({ root } = await open({ states: rawStates, tweak: (p) => { p.readings[0].raw_scale = true; } }));
   const raw = rowCell(root, "Battery level").textContent;
@@ -279,9 +278,8 @@ const rowCell = (root, label) => {
   const plain = rowCell(root, "Battery level").textContent;
   check("A battery not marked raw reads as before", plain.startsWith("182%"), plain);
 
-  // The firmware (rule DEV-15, 0.27.4): recorded all along, shown
-  // nowhere but the diagnostics download. Advanced shows the version
-  // now beside Hardware version, with its recorded history beneath.
+  // The firmware (rule DEV-15). Advanced shows the version beside
+  // Hardware version, with its recorded history beneath.
   console.log("\nThe Firmware row (rule DEV-15)");
   const FIRMWARE = { current: "9.8.7-rc42", history: [
     { version: "1.2.3-old55", since: "2025-10-09T08:53:20+00:00" },
@@ -304,7 +302,7 @@ const rowCell = (root, label) => {
   ({ root } = await open({ tweak: (p) => { p.identity.firmware = null; } }));
   check("No firmware known: no row", rowCell(root, "Firmware") === null, labelsOf(root));
 
-  // Headings in Title Case, book-title style (rule GEN-06, 0.27.4).
+  // Headings in Title Case, book-title style (rule GEN-06).
   console.log("\nSection headings (rule GEN-06)");
   ({ root } = await open());
   const heads = [...root.querySelectorAll("h3.section")].map((h) => h.textContent);

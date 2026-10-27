@@ -1,5 +1,6 @@
+// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: names, Last seen and mutes on the device page and the
-// Problem List (0.24.11), from Tim Plas's review of 6 October. The Last
+// Problem List (rule MUTE-09). The Last
 // seen fallback is checked on real_device.json, a real mains plug's page
 // built by the server, which has no Last seen sensor.
 // Run with: LC_ALL=en_US.UTF-8 node check_names_and_mutes.js [path/to/panel.js]
@@ -91,7 +92,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };

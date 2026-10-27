@@ -1,6 +1,6 @@
+// File: tools/panel_checks/check_back_links.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: each page leads back to the page it came from, and Print
 // sits beside the gear.
-// Written for 0.22.15; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_back_links.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands

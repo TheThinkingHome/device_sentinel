@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_release_line.js, Version: 0.27.0 (2026-10-22)
-// Panel checks: the release line at the foot of the dashboard (ruling
-// #723, from Tim Plas, 21 October 2026). It reads "Device Sentinel"
+// File: tools/panel_checks/check_release_line.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the release line at the foot of the dashboard (rule
+// DASH-15). It reads "Device Sentinel"
 // and the version running, in Simple and Advanced alike, on every tab
 // and page, and links to that release's notes in a new tab. A link the
 // server did not give, or one to anywhere but the notes, is not drawn.

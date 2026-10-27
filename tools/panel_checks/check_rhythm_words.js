@@ -1,5 +1,5 @@
-// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.4 (2026-10-25)
-// Panel checks: how a device's rhythm and gaps are worded (0.27.3). A
+// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: how a device's rhythm and gaps are worded. A
 // window still being learned reads "learning" on the Devices tab; a
 // device judged by its connection says it has no rhythm to learn and
 // shows no gaps; the device page says "gap", not "silence"; one day
@@ -99,7 +99,7 @@ const pane = (root) => root.querySelector(".pane").textContent;
   } }));
   text = pane(root);
   check("Called frozen after a gap of 64m", text.includes("Called frozen after a gap of 64m."), text.match(/Called frozen.{0,40}/));
-  // In Title Case since 0.27.4 (rule GEN-06).
+  // In Title Case (rule GEN-06).
   check("Its section is Gaps, Last 14 Days", text.includes("Gaps, Last 14 Days") && !/silence/i.test(text.replace(/its silence cannot be judged/g, "")),
     text.match(/.{0,30}[Ss]ilen.{0,30}/g));
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {

@@ -1,6 +1,5 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.27.1 (2026-10-23)
-// Panel checks: the device page's Future view (rulings #703 to #705, #713).
-// Written for 0.26.7 (2026-10-19); the chart James reviewed on 19 October in 0.26.8.
+// File: tools/panel_checks/check_battery_future.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the device page's Future view (rules BAT-13, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -59,7 +58,7 @@ async function open(address, extra) {
 const text = (root) => root.querySelector(".pane").textContent;
 const DEVICE = payloads._ids ? payloads._ids.alpha : null;
 
-// Door 2nd Bedroom on the reference rig, 19 October 2026.
+// Door 2nd Bedroom, a real cell's daily levels.
 const DOOR = [24.5, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 24.5, 24.0, 24.5, 24.5, 24.0, 24.5, 24.5, 24.5, 24.0, 24.0, 24.0, 24.5, 24.0, 23.5, 23.0, 23.0, 23.0, 22.5, 23.0, 23.5, 23.0, 23.0, 23.0, 22.0, 23.0, 22.0, 23.5, 22.5, 23.5, 23.0, 22.0, 22.5, 23.0, 21.0, 21.5, 22.5, 21.5, 21.0, 21.0, 20.5, 20.5, 20.0, 19.5, 19.0, 19.0, 17.0, 19.5, 19.0, 17.0, 17.5, 15.0, 15.0, 18.0, 18.0, 17.5, 16.5];
 const DOOR_PROJECTION = { curved: true, level: 16.5, near: 26.9, far: 35.2, centre: 30.2,
   near_path: [-0.44848, -0.0061018], far_path: [-0.34119, -0.003637] };
@@ -99,7 +98,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("every kept day as a light dot", a.root.querySelectorAll(".futurechart circle").length === DOOR.length);
   check("the low battery line, since the range reaches it", lowLine(a.root));
   check("the range in words", text(a.root).includes("Expected empty in about 4 to 5 weeks."));
-  // James's review of 19 October (#713).
+  // Today's line on the Future chart (rule BAT-17).
   const today = a.root.querySelector(".futurechart line[stroke='var(--secondary-text-color)']");
   const history = [...a.root.querySelectorAll(".futurechart polyline")].find((l) => !l.classList.contains("futureline"));
   const lastPoint = history.getAttribute("points").split(" ").pop().split(",").map(Number);
@@ -165,7 +164,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("titled with its count", (lg.root.querySelector("details.forecasts summary") || {}).textContent === "Earlier Forecasts (3)");
   const none = await open(`${PREFIX}/device/${DEVICE}`, toLow);
   check("no list when nothing was forecast", !none.root.querySelector("details.forecasts"));
-  // Forecasts to empty after a first low (#735).
+  // Forecasts to empty after a first low (rule BAT-13).
   const toEmpty = withBattery({ ...JSON.parse(JSON.stringify(toLow.device({}).battery)), forecasts: [
     { day: "2026-12-10", level: 9, accelerating: true, target: 0, left: "about 2 to 3 weeks", outcome: "inside", arrived: "2026-12-28" },
     { day: "2026-12-01", level: 12, accelerating: true, target: 0, left: "about 1 to 2 weeks", outcome: "later", arrived: null },

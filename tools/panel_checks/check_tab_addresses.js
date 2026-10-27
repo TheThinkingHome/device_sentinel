@@ -1,6 +1,5 @@
-// File: tools/panel_checks/check_tab_addresses.js, Version: 0.26.7 (2026-10-19)
+// File: tools/panel_checks/check_tab_addresses.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: every tab has its own address.
-// Written for 0.22.14; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_tab_addresses.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -63,7 +62,7 @@ const selected = (root) => {
   const tab = root.querySelector('.tab[aria-selected="true"]');
   return tab ? tab.textContent : null;
 };
-// A tab's label may carry its count, "Recommendations (2)" (ruling #700).
+// A tab's label may carry its count, "Recommendations (2)" (rule DASH-16).
 const clickTab = (root, name) => [...root.querySelectorAll(".tab")].find((b) => b.textContent === name || b.textContent.startsWith(`${name} (`)).click();
 const where = (window) => window.location.pathname + window.location.search;
 const backLink = (root) => {

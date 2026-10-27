@@ -1,6 +1,5 @@
-// File: tools/panel_checks/check_device_not_speaking.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_device_not_speaking.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: what a device page says when the device is not speaking.
-// Written for 0.22.24; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_not_speaking.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands

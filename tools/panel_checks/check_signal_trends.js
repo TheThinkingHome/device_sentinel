@@ -1,8 +1,7 @@
-// File: tools/panel_checks/check_signal_trends.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_signal_trends.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Signal Trends tab. Each row adds up: THIS WEEK
-// less BEFORE THIS WEEK is CHANGE, and no sign reads "+0" or "-0.0"
-// (0.27.3). Since 0.27.4 the columns and the caption are in James's
-// words (rule SIG-12).
+// less BEFORE THIS WEEK is CHANGE, no sign reads "+0" or "-0.0", and
+// the columns and the caption name what they show (rule SIG-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_signal_trends.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -62,7 +61,7 @@ const row = (over) => ({
   device_id: "x", name: "Device", scale: "lqi", now: 100, normal: 100, line: 60,
   week: 100, usual: 100, change: 0, spreads: 0, bad_days: 0, readings_a_day: 24, days: 60, ...over,
 });
-// The rig's Temperature Living Room on 24 October 2026: the last seven
+// A real Temperature Living Room row: the last seven
 // days' middle 174, the days before them 218, its normal 138.
 const ROWS = [
   row({ device_id: "t", name: "Temperature Living Room", now: 188, normal: 138, line: 98,

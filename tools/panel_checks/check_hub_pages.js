@@ -1,7 +1,7 @@
-// File: check_hub_pages.js, Version: 0.27.4 (2026-10-25)
-// Panel checks: judged by its hub (0.26.3, rulings #663 to #665). A hub's
-// page and the pages of the devices it controls, in the words James approved
-// on 14 October 2026, and the Classification tick.
+// File: check_hub_pages.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: a device judged by its hub (rule STACK-10). A hub's
+// page, the pages of the devices it controls, and the Classification
+// tick.
 // Run with: LC_ALL=en_US.UTF-8 node check_hub_pages.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -91,7 +91,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -194,11 +194,10 @@ const hubPage = (tweak) => (m) => {
   r = await open({ answers: { device: hubPage(() => {}) } });
   check("Any other device keeps its rhythm section", r.root.textContent.includes("Its Rhythm"));
 
-  // Found by the adversarial round of 14 October 2026.
   r = await open({ answers: { device: hubPage((p) => { p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB }; p.status.category = "frozen"; }) } });
   text = r.root.textContent;
   check("A light with a verdict of its own still shows it", !text.includes("Judged by its hub") && /frozen/i.test(r.root.querySelector(".devstatus").textContent));
-  // A hub's mute covers its devices (James, 14 October 2026).
+  // A hub's mute covers its devices (rule STACK-10).
   r = await open({ answers: { device: hubPage((p) => {
     p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB };
     p.identity.actions = { area_id: null, name_by_user: null, integration_name: null, labels: [], last_seen_off: false,

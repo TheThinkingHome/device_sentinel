@@ -1,6 +1,6 @@
+// File: tools/panel_checks/check_classification_sources.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: Classification's sources, the gear, and the date beside
 // "As of", driven with real WebSocket replies captured from the integration.
-// Written for 0.22.13; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_classification_sources.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -93,7 +93,7 @@ async function tab(root, name) {
 
   console.log("The printout's heading");
   ({ window, root } = await open("en-US"));
-  // The Print button until 0.22.14, the printer icon beside the gear from 0.22.15.
+  // The printer icon beside the gear, or a Print button.
   const print = root.querySelector(".toolbar .print") || [...root.querySelectorAll("button")].find((b) => b.textContent === "Print");
   print.click();
   const frame = window.document.querySelector("iframe");
@@ -114,7 +114,7 @@ async function tab(root, name) {
     return row ? row.cells[heads.indexOf(column)].textContent : null;
   };
   check("MUTED lists every mute with its source", cell("Alpha Panel", "MUTED") === "Global (device); battery (device)", cell("Alpha Panel", "MUTED"));
-  // Bravo carries a freeze mute as well since the 0.22.16 fixture, in the order ruled then.
+  // Bravo carries a freeze mute as well, named freeze before battery (rule MUTE-10).
   check("the family mutes show, freeze before battery", cell("Bravo Phone", "MUTED") === "freeze (device); battery (device)", cell("Bravo Phone", "MUTED"));
   check("a label is named by its name", cell("Charlie Plug", "MUTED") === "Global (label: Garage spares)", cell("Charlie Plug", "MUTED"));
   const keyText = pane.lastElementChild.textContent;

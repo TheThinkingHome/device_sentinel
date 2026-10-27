@@ -2,11 +2,11 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.26.8 (2026-10-20)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.10 (2026-10-27)
 //
-// Panel checks: the device page reads at one size (0.26.1). Secondary
-// text such as "heard by Device Sentinel 9m ago" and "heartbeat: when ZHA
-// last heard it" dropped to 11 and 12px in many rows (James, 13 October).
+// Panel checks: the device page reads at one size (rule DASH-06).
+// Secondary text such as "heard by Device Sentinel 9m ago" and
+// "heartbeat: when ZHA last heard it" must not drop to 11 or 12px.
 // Headings, column headings, the big figures, buttons, chips and the
 // charts' own labels keep their sizes; every other text on the page reads 14px, the heartbeat
 // line is plain grey text and a sensor's name is in the page's own font.
@@ -105,7 +105,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -246,15 +246,15 @@ const PAGES = [
     check("Other tabs keep their sizes (the Integrations tab's small text reads 12px)",
       small && sizeOf(window, small) === "12px", small && [small.textContent.slice(0, 40), sizeOf(window, small)]);
   }
-  // A device judged by its connection alone (James, 17 October 2026,
-  // 0.26.6): one line, no window bar, no "still learning".
+  // A device judged by its connection alone: one line, no window bar,
+  // no "still learning".
   for (const [word, expected] of [["connected", "Judged by its connection: connected."], ["dropped", "Judged by its connection: dropped."]]) {
     const { root } = await open({ tweak: (p) => { p.status.connection = word; p.status.window = null; } });
     const line = root.querySelector(".statusline .muted");
     check(`A connection-only device reads "${expected}"`, line && line.textContent === expected, line && line.textContent);
     check(`A connection-only device ${word} has no window bar`, !root.querySelector(".devstatus .bar"));
   }
-  // A Matter device with no battery (#710; adversarial round of 0.26.8):
+  // A Matter device with no battery (rule STACK-06):
   // its page says how it is judged, with no window bar or wait rule.
   {
     const { root } = await open({ tweak: (p) => { p.status.available_rule = true; p.status.window = 7200; } });

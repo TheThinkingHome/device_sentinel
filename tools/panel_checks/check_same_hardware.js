@@ -1,4 +1,5 @@
-// Panel checks: the Same hardware row and the Type row's clear label (0.25.2).
+// File: tools/panel_checks/check_same_hardware.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the Same hardware row (rule WATCH-06) and the Type row's clear label.
 // Run with: LC_ALL=en_US.UTF-8 node check_same_hardware.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");

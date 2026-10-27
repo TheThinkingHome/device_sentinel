@@ -1,6 +1,6 @@
+// File: tools/panel_checks/check_dropping_out.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: a device that keeps dropping out, on its page and on Signal
-// Trends.
-// Written for 0.23.2; named by subject since 0.23.19.
+// Trends (rule UNAV-06).
 // Run with: LC_ALL=en_US.UTF-8 node check_dropping_out.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands

@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.9 (2026-10-27)
-// Panel checks: a device never judged for freezing (James, 27 October
-// 2026). One rule for the whole page: no freeze window, no wait rule
+// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: a device never judged for freezing. One rule for the
+// whole page: no freeze window, no wait rule
 // and no learning line, and in their place one sentence, "Judged by its
 // hub, Garage Smart Bridge" with the hub's name a link to its page here,
 // or Home Assistant's when the hub is not watched, or "Judged by its
@@ -95,7 +95,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };

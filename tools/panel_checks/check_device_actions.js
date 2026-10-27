@@ -1,11 +1,11 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.4 (2026-10-25)
-// Panel checks: the device page's actions (0.24.5). Rename with its
+// File: tools/panel_checks/check_device_actions.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
-// its row, Open in Home Assistant, and no helper text. Since 0.25.6 the
-// Excluded row, which excludes one device from its page (#625). Since
-// 0.26.0 that row shows only its button until pressed, and the Muted row
-// draws each mute that is on filled with a check mark (#645, #646).
+// its row, Open in Home Assistant, and no helper text. The Excluded row
+// excludes one device from its page and shows only its button until
+// pressed (rule MUTE-03), and the Muted row draws each mute that is on
+// filled with a check mark (rule MUTE-09).
 // Run with: LC_ALL=en_US.UTF-8 node check_device_actions.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -119,15 +119,15 @@ const excludedPage = (excluded) => (p) => {
   check("Labels: the remove mark takes the label off the device", removal && removal.label_id === "bedside" && removal.add === false, removal);
 
   ({ root, calls } = await open({}));
-  // In the Last seen group since 0.24.9, where the Heartbeat row was.
+  // The chip sits in the Last seen group.
   await click(buttonIn(rowCell(root, "Last seen sensor"), "Turn on its Last Seen"));
-  // Each turn-on says where it was pressed (rules BRIEF-07, DEV-07, 0.27.4).
+  // Each turn-on says where it was pressed (rules BRIEF-07, DEV-07).
   check("Last seen sensor: the chip switches on this device's Last Seen, from the device page", calls.some((c) => c.type === "device_sentinel/device_turn_on"
     && c.kind === "last_seen" && c.device_id === DEVICE && c.source === "device_page"), calls.filter((c) => c.type === "device_sentinel/device_turn_on"));
 
-  // A Battery or Signal sensor switched off (0.26.7): the row says so
+  // A Battery or Signal sensor switched off: the row says so
   // and Turn it on asks for this device's own sensor of that kind
-  // (rulings #696, #698).
+  // (rules REC-05, DASH-09).
   for (const [label, kind] of [["Battery sensor", "battery"], ["Signal sensor", "signal"]]) {
     ({ root, calls } = await open({}, (page) => {
       page.readings = (page.readings || []).filter((r) => r.kind !== kind);
@@ -145,8 +145,8 @@ const excludedPage = (excluded) => (p) => {
   const battery = buttonIn(muted, "\u2713 Mute battery");
   check("Muted: a mute from a label shows lit and fixed",
     battery && battery.getAttribute("aria-pressed") === "true" && battery.getAttribute("aria-disabled") === "true");
-  // Ruling #646: the row says nothing in words; each mute that is on is
-  // filled with a check mark, and one that is off is plain.
+  // The row says nothing in words; each mute that is on is filled
+  // with a check mark, and one that is off is plain (rule MUTE-09).
   check("Muted: no word before the buttons, not even 'nothing'",
     !!muted && muted.querySelector(".actcol").firstChild.classList.contains("actrow")
     && !/nothing/.test(muted.textContent), muted && muted.innerHTML.slice(0, 80));
@@ -163,7 +163,7 @@ const excludedPage = (excluded) => (p) => {
   check("Muted: confirming sends the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true));
 
   // Mute everything on: the other three show on too, filled, and cannot
-  // be pressed (ruling #646).
+  // be pressed (rule MUTE-09).
   ({ root, calls } = await open({}, (p) => {
     p.identity.actions.mutes = {
       everything: { on: true, source: null, here: true },
@@ -174,7 +174,7 @@ const excludedPage = (excluded) => (p) => {
   }));
   const all = rowCell(root, "Muted");
   const lit = [...all.querySelectorAll("button")].filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-  // Mute unavailable joined the row in 0.26.6 (James, 17 October 2026).
+  // The row holds Mute unavailable as well (rule MUTE-06).
   check("Muted: with Mute everything on, all five are filled and checked",
     lit.join() === "\u2713 Mute freeze,\u2713 Mute unavailable,\u2713 Mute battery,\u2713 Mute signal,\u2713 Mute everything", lit);
   check("Muted: the four it covers cannot be pressed",
@@ -184,7 +184,7 @@ const excludedPage = (excluded) => (p) => {
   const lift = calls.filter((c) => c.type === "device_sentinel/device_mute");
   check("Muted: pressing Mute everything again lifts it", lift.length === 1 && lift[0].kind === "everything" && lift[0].on === false, lift);
 
-  // Each mute its own kind (James, 18 October 2026): Mute unavailable
+  // Each mute is its own kind (rule MUTE-06): Mute unavailable
   // on leaves Mute freeze plain and pressable, and a label's unavailable
   // mute names its section.
   ({ root, calls } = await open({}, (p) => {

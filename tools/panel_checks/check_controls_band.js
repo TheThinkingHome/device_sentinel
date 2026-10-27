@@ -1,6 +1,6 @@
+// File: tools/panel_checks/check_controls_band.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the controls in a band of their own above the tabs, and
-// tabs that read as tabs (from Tim Plas).
-// Written for 0.23.10; named by subject since 0.23.19.
+// tabs that read as tabs (rule DASH-02).
 // Run with: LC_ALL=en_US.UTF-8 node check_controls_band.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");

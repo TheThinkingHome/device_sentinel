@@ -1,19 +1,13 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.9 (2026-10-27)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Recommendations tab. Its opening line counts the
-// recommendations, says they help Device Sentinel run better, and says
-// none of them is required; no card is singled out (#626, 0.25.6).
-// Since 0.26.0 it also draws the Slow Reporting Devices card (#637).
-// Since 0.26.7: the switched-off cards' Turn on chips (#696, #698), a
-// tick on each row and each written line (#699), and the count on the
-// tab, the highlighted top-band button and the Daily Brief tab (#700).
-// Since 0.26.8: a card stays open, and the page stays put, after a
-// tick or an answer (#714).
-// Since 0.27.0: each card's title counts its rows not ticked, with no
-// number at zero or on a written line (#724).
-// Since 0.27.3: the Battery Voltage Switched Off card's Turn on chip.
-// Since 0.27.9: the opening line counts the rows and lines not ticked,
-// as the tab and the button do, and reads "Nothing to recommend right
-// now." at zero (Ruled Change 27, rule REC-01).
+// rows and lines not ticked, as the tab and the button do, says they
+// help Device Sentinel run better and that none is required, singles
+// out no card, and reads "Nothing to recommend right now." at zero
+// (rule REC-01). It also checks the Slow Reporting Devices card (rule
+// REC-06), the switched-off cards' Turn on chips (rule REC-05), a tick
+// on each row and each written line (rule REC-07), the counts on the
+// tab, the top-band button and each card's title (rule REC-08), and a
+// card and the page staying put after a tick or an answer (rule REC-11).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -88,7 +82,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
         // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they blanked both charts (0.24.9).
+        // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -123,9 +117,9 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     !!first && first.textContent === `${count} ${word} to help Device Sentinel run better. None of them is required.`, first && first.textContent);
   check("Nothing says one matters more than another", !/most important/.test(root.textContent));
 
-  // Slow Reporting Devices (ruling #637, 0.26.0): the card in James's
-  // words, each device with a Mute freeze chip that calls the same
-  // mute the device page does, and the list refreshed afterwards.
+  // Slow Reporting Devices (rule REC-06): each device with a Mute
+  // freeze chip that calls the same mute the device page does, and the
+  // list refreshed afterwards.
   console.log("\nThe Slow Reporting Devices card (ruling #637)");
   const SLOW = {
     kind: "slow", title: "Slow Reporting Devices",
@@ -169,7 +163,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("The opening line counts the new card", slow.root.querySelector("p").textContent.startsWith(`${count2} recommendations`),
     slow.root.querySelector("p").textContent);
 
-  // Acknowledgement and the count (rulings #696 to #700).
+  // Acknowledgment and the count (rules REC-07, REC-08).
   console.log("\nTicks, the count and the Active Recommendations button (rulings #696 to #700)");
   let ticks = { line: false, [ROWS[0].device_id]: false };
   const OFF = {
@@ -241,7 +235,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("And the card's title counts it again", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
 
   console.log("\nBattery Voltage Switched Off (0.27.3)");
-  // In Simple too since 0.27.4 (rule REC-09, SIMPLE_CARDS).
+  // Shown in Simple too (rule REC-09, SIMPLE_CARDS).
   const VOLT = { kind: "voltage_off", title: "Battery Voltage Switched Off", simple: true, active: 1,
     body: "1 device has a battery voltage sensor that is switched off.",
     devices: [{ device_id: ROWS[0].device_id, name: "Hall Motion", area: "Hall", acknowledged: false }] };
@@ -318,7 +312,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   const quiet = await open({ path: PREFIX, answers: { recommendations: recs } });
   check("With nothing active it says nothing", quiet.root.querySelector("p.recline") === null);
 
-  // The opening line, the tab and the button agree (REC-01): one card
+  // The opening line, the tab and the button agree (rule REC-01): one card
   // of five devices read "1 recommendation" under "Recommendations (5)".
   console.log("\nThe opening line counts what the tab counts (REC-01)");
   const FIVE = {

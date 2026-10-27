@@ -1,8 +1,8 @@
-// File: tools/panel_checks/check_problem_list.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_problem_list.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: the Problem List tab's SINCE column. A device that has
 // never reported has no moment it stopped: its time is when it was
 // discovered, and the tab says so, as the Daily Brief does ("discovered
-// 3:47 PM", rule LIST-10, James, 25 October 2026). Every other problem
+// 3:47 PM", rule LIST-10). Every other problem
 // keeps its bare time.
 // Run with: LC_ALL=en_US.UTF-8 node check_problem_list.js [path/to/panel.js]
 const fs = require("fs");

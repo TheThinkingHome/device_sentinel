@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_device_type.js, Version: 0.27.9 (2026-10-27)
-// Panel checks: the Type row and the Devices tab's Type column and filter (0.25.1).
-// Since 0.27.4 a type set or cleared here says it came from the device page.
+// File: tools/panel_checks/check_device_type.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the Type row and the Devices tab's Type column and filter (rule DEV-10).
+// A type set or cleared here says it came from the device page.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_type.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -124,7 +124,7 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_type");
   check("Save sends the choice and the words", sent && sent.choice === "Other" && sent.other === "Zigbee router", sent);
-  // Where it was set, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
   check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   check("After the save the row reads the owner's words", rowCell(root, "Type").textContent.startsWith("Zigbee router"));
 

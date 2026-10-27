@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_integration_names.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_integration_names.js, Version: 0.27.10 (2026-10-27)
 // Panel checks: an integration is named as Home Assistant shows it, the
-// way the Daily Brief names it (rule GEN-07, James, 25 October 2026).
+// way the Daily Brief names it (rule GEN-07).
 // The Classification tab's INTEGRATION column drew and sorted the id
 // ("zwave_js"), though the server sends integration_name ("Z-Wave").
 // The column now shows and sorts by the name; the link keeps the id.

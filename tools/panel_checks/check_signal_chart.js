@@ -1,9 +1,8 @@
-// File: tools/panel_checks/check_signal_chart.js, Version: 0.27.4 (2026-10-25)
-// Panel checks: the Signal chart on a device's page (0.27.3). Its card
-// names RSSI as RSSI, its legend explains the rings drawn on days with
-// railed readings, and "recording began" sits inside the chart's width.
-// Since 0.27.4 it sits above the plot area, clear of every data line
-// (it lay across the lines on James's FJ40 sensor).
+// File: tools/panel_checks/check_signal_chart.js, Version: 0.27.10 (2026-10-27)
+// Panel checks: the Signal chart on a device's page. Its card names
+// RSSI as RSSI, its legend explains the rings drawn on days with
+// railed readings, and "recording began" sits inside the chart's
+// width, above the plot area and clear of every data line.
 // Run with: LC_ALL=en_US.UTF-8 node check_signal_chart.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -117,7 +116,7 @@ const withSignal = (scale, railedOn, reports = 2 * DAYS) => ({
   const baseline = began ? Number(began.getAttribute("y")) : NaN;
   check("It sits above the plot area, inside the drawing", baseline > 10 && baseline <= 16, began && began.getAttribute("y"));
   check("Every data line, ring and band lies below it", marks.length > 0 && Math.min(...marks) >= 20, { lowest: Math.min(...marks), count: marks.length });
-  // Master Park Shades on 24 October 2026: its signal began a few days
+  // A device whose signal began a few days
   // after its reports, so the first day sits by the axis.
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, withSignal("lqi", [], 22)));
   card = signalCard(root);
