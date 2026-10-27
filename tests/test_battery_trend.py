@@ -3,24 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_trend.py, Version: 0.27.10 (2026-10-27)
 
-"""The battery trend by the week (0.23.6), and accelerating on a curve
-(ruling #725, 0.27.0).
+"""The battery trend by the week, and accelerating on a curve
+(rules BAT-10, BAT-11, BAT-12).
 
-The seven-day slope called a cell falling at 0.05 points a day, smaller
-than the half-point steps most cells report in. On the reference rig
-seven cells near full were listed as falling, several as
-accelerating, each "over a year", while their weekly averages moved by
-a few tenths. The owner ruled on 25 September: a cell is falling when
-its last week averages a point below the week before. Accelerating
-was two fitted lines joined at a knee until 0.27.0; since then it is
-the six-week curve the time left reads, guarded (#725), and the knee
-is gone.
+A seven-day slope calls a cell falling at 0.05 points a day, smaller
+than the half-point steps most cells report in, so cells near full read
+as falling, and some as accelerating, while their weekly averages move
+by a few tenths. A cell is falling when its last week averages a point
+below the week before. Accelerating is the six-week curve the time left
+reads, guarded, with no knee.
 
-Every series here is real: the reference rig's of 25 September and
-Tim Plas's of 24 September, where S63 sped up and S71 did not, and
-the reference rig's Door 2nd Bedroom and Tim's s26 of October.
+Every series here comes from a real house.
 """
 
 from __future__ import annotations
@@ -35,29 +30,29 @@ from custom_components.device_sentinel.report_battery import (
     battery_weeks,
 )
 
-# Tim Plas's S63: steady for two weeks, then down 2.5, 5.2, 6.4 a week.
+# S63: steady for two weeks, then down 2.5, 5.2, 6.4 a week.
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
        58.0, 57.5, 57.5]
-# Tim Plas's S71: about four points a week throughout, with one pause.
+# S71: about four points a week throughout, with one pause.
 S71 = [81.5, 82.0, 81.0, 80.5, 81.0, 80.0, 79.0, 78.5, 77.0, 76.5, 76.0, 75.5,
        75.0, 75.0, 73.5, 73.0, 72.5, 71.5, 72.0, 72.5, 73.0, 72.0, 72.5, 72.5,
        71.5, 70.0, 69.0, 68.0, 66.0, 64.5, 65.5, 66.0, 66.5, 66.5, 66.5, 64.0,
        62.5, 61.5, 61.0]
-# Tim Plas's S91: one point a week, as even as a cell gets.
+# S91: one point a week, as even as a cell gets.
 S91 = [96.0, 96.0, 96.0, 95.0, 95.0, 95.0, 95.0, 95.0, 95.0, 95.0, 95.0, 94.0,
        94.0, 94.0, 94.0, 94.0, 94.0, 94.0, 94.0, 93.0, 93.0, 93.0, 93.0, 93.0,
        92.0, 92.0, 92.0, 92.0, 92.0, 92.0, 92.0, 92.0, 91.0, 91.0, 91.0, 91.0,
        90.0, 90.0, 90.0]
-# The reference rig's Door Master Shower, which today's page called
-# "just started falling" while its weekly averages rose.
+# Door Master Shower, which a slope would call "just started falling"
+# while its weekly averages rose.
 DOOR_MASTER_SHOWER = [76.5, 75.0, 76.0, 76.0, 76.0, 77.5, 76.0, 74.5, 76.0,
                       75.5, 77.0, 76.5, 77.0, 77.0, 77.0, 77.0, 77.0, 75.5,
                       75.0, 74.0, 75.0, 75.5, 75.0, 75.5, 75.0, 77.0, 76.5,
                       76.5, 76.5, 76.0, 76.5, 76.5, 76.5, 76.0, 77.5, 77.0,
                       77.5, 77.5, 77.5, 77.0, 77.0, 76.5]
-# The reference rig's Temperature Master Shower, called accelerating.
+# Temperature Master Shower, which a slope would call accelerating.
 TEMPERATURE_MASTER_SHOWER = [99.5, 99.5, 99.0, 99.0, 98.5, 99.0, 99.5, 98.0,
                              98.0, 98.0, 99.0, 98.5, 97.0, 97.5, 98.5, 98.5,
                              98.0, 97.0, 98.0, 98.0, 98.0, 97.5, 97.0, 96.0,
@@ -76,7 +71,7 @@ def test_weeks_are_whole_and_counted_back_from_the_newest_day():
 
 
 def test_a_wobbling_cell_is_not_falling():
-    """The fault 0.23.6 exists for, on the rig's own cells."""
+    """A cell that wobbles by tenths is not falling (rule BAT-11)."""
     for series, level in ((DOOR_MASTER_SHOWER, 76.0), (TEMPERATURE_MASTER_SHOWER, 96.0)):
         trend = battery_trend(series, level, True)
         assert trend["reading"] == "", series[-7:]
@@ -84,9 +79,9 @@ def test_a_wobbling_cell_is_not_falling():
 
 
 def test_a_week_a_point_below_the_last_is_falling():
-    # Four weeks heard, the least judged since 0.27.1 (#733), so the
-    # six-week line always takes part: 0.15 a day is 1.05 a week, 0.14
-    # is 0.98, under the point.
+    # Four weeks heard, the least judged, so the six-week line always
+    # takes part: 0.15 a day is 1.05 a week, 0.14 is 0.98, under the
+    # point (rules BAT-10, BAT-11).
     falling = [round(80.0 - 0.15 * day, 2) for day in range(28)]
     assert battery_trend(falling, falling[-1], True)["reading"] == "falling"
     nearly = [round(80.0 - 0.14 * day, 2) for day in range(28)]
@@ -94,8 +89,8 @@ def test_a_week_a_point_below_the_last_is_falling():
 
 
 def test_a_history_under_four_weeks_is_not_judged():
-    """Ruling #733: 27 heard days of the last 42 is too few, 28 is
-    enough; the weeks are shown either way."""
+    """27 heard days of the last 42 is too few, 28 is enough; the weeks
+    are shown either way (rule BAT-10)."""
     falling = [round(80.0 - 0.3 * day, 2) for day in range(28)]
     short = battery_trend(falling[1:], falling[-1], True)
     assert short["reading"] == "" and short["pace"] is None and len(short["weeks"]) == 3
@@ -107,7 +102,7 @@ def test_a_history_under_four_weeks_is_not_judged():
 
 def test_the_cell_that_sped_up_is_accelerating_at_its_pace_today():
     """S63: the curve's fall today is its pace, and no straight line is
-    kept for it (ruling #725)."""
+    kept for it (rule BAT-12)."""
     trend = battery_trend(S63, 57.0, True)
     assert trend["reading"] == "accelerating"
     assert trend["fit"] is None
@@ -115,18 +110,18 @@ def test_the_cell_that_sped_up_is_accelerating_at_its_pace_today():
     assert trend["pace"] == accelerating_pace(S63)
 
 
-# The reference rig's Door 2nd Bedroom, the six weeks to 21 October
-# 2026: a gradual bend, not a corner. The knee rule read it as nothing
-# at all at 14.5 percent; the curve reads it accelerating, at about 2.7
-# points a week today, the pace its time left is drawn on.
+# Door 2nd Bedroom, six weeks: a gradual bend, not a corner. A knee
+# rule reads it as nothing at all at 14.5 percent; the curve reads it
+# accelerating, at about 2.7 points a week today, the pace its time
+# left is drawn on (rule BAT-12).
 DOOR_2ND_BEDROOM = [22.5, 23.0, 23.5, 23.0, 23.0, 23.0, 22.0, 23.0, 22.0, 23.5,
                     22.5, 23.5, 23.0, 22.0, 22.5, 23.0, 21.0, 21.5, 22.5, 21.5,
                     21.0, 21.0, 20.5, 20.5, 20.0, 19.5, 19.0, 19.0, 17.0, 19.5,
                     19.0, 17.0, 17.5, 15.0, 15.0, 18.0, 18.0, 17.5, 16.5, 17.0,
                     15.0, 14.5]
-# Tim Plas's s26, the six weeks to 1 October 2026: a door sensor that
-# reads 77 and 73 by turns and settles at 73. Without the drops guard
-# its single step read accelerating for seven days.
+# s26, six weeks: a door sensor that reads 77 and 73 by turns and
+# settles at 73. Without the drops guard its single step would read
+# accelerating for seven days (rule BAT-12).
 S26 = [73.0, 77.0, 77.0, 77.0, 77.0, 73.0, 73.0, 73.0, 77.0, 77.0, 77.0, 77.0,
        77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 73.0,
        73.0, 77.0, 77.0, 77.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0]
@@ -183,8 +178,8 @@ def test_nothing_is_fitted_before_four_weeks():
 
 
 def test_a_coarse_cell_and_an_empty_cell_are_not_judged():
-    """Guard: coarse steps are judged against the low threshold alone
-    (0.23.1), and a cell at nothing has nothing left to lose."""
+    """Guard: coarse steps are judged against the low threshold alone,
+    and a cell at nothing has nothing left to lose (rule BAT-09)."""
     assert battery_trend(S63, 57.0, False)["reading"] == ""
     assert battery_trend([5.0] * 7 + [0.0] * 7, 0.0, True)["reading"] == ""
 
@@ -210,11 +205,11 @@ def test_a_singular_fit_returns_nothing():
     assert _least_squares([[0.0] * 5, [0.0] * 5], [1.0] * 5) is None
 
 
-# Tim Plas's S57: flat, then one two-point step, and a day at 34 added
-# as the forward simulation's fold added it.
+# S57: flat, then one two-point step, and a day at 34 added as the
+# forward simulation's fold adds it.
 S57 = [38.0, 38.0] + [37.0] * 24 + [36.0] * 11 + [34.0, 34.0, 34.0]
-# Tim Plas's B01, a button that reads 84 and 80.5 by turns, with a day
-# at 80.5 added.
+# B01, a button that reads 84 and 80.5 by turns, with a day at 80.5
+# added.
 B01 = [80.5, 80.5, 80.5, 80.5, 80.5, 84.0, 80.5, 84.0, 80.5, 80.5, 80.5, 80.5,
        80.5, 80.5, 80.5, 80.5, 80.5, 84.0, 84.0, 84.0, 84.0, 80.5, 80.5, 80.5,
        80.5, 84.0, 84.0, 84.0, 80.5, 80.5, 80.5, 80.5, 84.0, 80.5, 80.5, 84.0,
@@ -250,7 +245,7 @@ from custom_components.device_sentinel.diagnostics import (  # noqa: E402
 from .helpers import registry_settled, register_device, setup_coordinator  # noqa: E402
 
 # S63's shape carried down to 21.5 percent, so it is projected empty
-# inside a month: the case the owner ruled belongs on the Problem List.
+# inside a month, which belongs on the Problem List (rule BAT-14).
 S63_LOW = [round(level - 36.0, 1) for level in S63]
 
 
@@ -272,7 +267,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     _seed(coord, wobble.id, DOOR_MASTER_SHOWER)
 
     # Radar Presence, at 90 percent, is above three times the threshold of 15
-    # and not judged (#725); Garage Door, at 21.5, is.
+    # and not judged; Garage Door, at 21.5, is (rule BAT-10).
     rows = {row["name"]: row for row in coord._battery_rows()["falling"]}
     assert set(rows) == {"Garage Door"}
     assert rows["Garage Door"]["reading"] == "accelerating"
@@ -304,7 +299,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     assert steady_row["month_drop"] < 0, "its weekly averages rose"
 
     # The Battery: Falling sensor names the accelerating cell inside
-    # the horizon, and the Problem List carries it (ruled 25 September).
+    # the horizon, and the Problem List carries it (rule BAT-14).
     assert [row["name"] for row in coord.battery_falling_list] == ["Garage Door"]
     coord._sync_problem_list()
     item = next(item for item in coord.todo_items if item["device_id"] == fast.id)
@@ -324,8 +319,8 @@ async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):
 
 
 async def test_the_diagnostics_download_carries_a_week_with_no_average(hass: HomeAssistant):
-    # A week the device was never heard has no average (0.24.4), and
-    # rounding it failed the whole download (0.24.6).
+    # A week the device was never heard has no average, so rounding it
+    # must not fail the whole download (rule BAT-18).
     from datetime import timedelta
 
     from homeassistant.util import dt as dt_util

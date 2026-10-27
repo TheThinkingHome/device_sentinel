@@ -3,18 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_battery.py, Version: 0.27.10 (2026-10-27)
 
-"""Battery detection: the low verdict and the discharge recorder.
+"""Battery detection: the low verdict and the daily recorder
+(rules BAT-01, BAT-02, BAT-03, BAT-06).
 
 A device's battery is judged by value, not a binary flag, preferring a
 percentage entity when one exists: flagged at or below the threshold,
 cleared only once it climbs past the threshold plus a margin, so a cell
-hovering at the line does not flap. The since it was first low survives
-a reload. Alongside the verdict, a recorder samples one level per day
-into a bounded ninety-day series, so a later release can read the rate
-of drop and catch a lithium cliff the flat threshold would miss; it
-records only, the velocity flag waits on the soak.
+hovering at the line does not flap. The time it was first low survives
+a reload. Alongside the verdict, a recorder keeps one level per day in
+a bounded ninety-day series, so the rate of drop can be read and a
+lithium cliff the flat threshold would miss can be caught.
 """
 
 import homeassistant.util.dt as dt_util
@@ -102,8 +102,8 @@ async def test_binary_fallback_and_on_is_low(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 2, percentage=False, binary=True)
     coord = await setup_coordinator(hass)
-    # Threshold mechanics, not restart behaviour: the startup
-    # window the harness opens is shut so flags apply at once (#346).
+    # Threshold mechanics, not restart behavior: the startup
+    # window the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(eids["bin"], "on")
@@ -120,15 +120,15 @@ async def test_threshold_and_hysteresis(hass: HomeAssistant):
     """Flag at or below 20; clear only above 22 (threshold + 2).
 
     The threshold is set here rather than taken from the default,
-    which is fifteen since 0.20.11. What is under test is the
-    hysteresis, so the number it hinges on is stated (ruling #394).
+    because the hysteresis is under test, so the number it hinges on
+    is stated (rule BAT-03).
     """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 3)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 20})
-    # Threshold mechanics, not restart behaviour: the startup
-    # window the harness opens is shut so flags apply at once (#346).
+    # Threshold mechanics, not restart behavior: the startup
+    # window the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
     rec = coord.data[DATA_DEVICES][device.id]
 
@@ -167,8 +167,8 @@ async def test_unavailable_battery_holds_verdict(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 4)
     coord = await setup_coordinator(hass)
-    # Threshold mechanics, not restart behaviour: the startup
-    # window the harness opens is shut so flags apply at once (#346).
+    # Threshold mechanics, not restart behavior: the startup
+    # window the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
     rec = coord.data[DATA_DEVICES][device.id]
 
@@ -223,7 +223,7 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     await hass.async_block_till_done()
     coord = entry.runtime_data
     # The reload built a fresh coordinator with a fresh window; shut
-    # the second one, since this test is about list shape (#346).
+    # the second one, since this test is about list shape (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(e1["pct"], "10")
@@ -243,10 +243,9 @@ async def test_list_shape_and_order(hass: HomeAssistant):
         "Battery Device 6", "Battery Device 7",
     ]
     row = rows[0]
-    # The kind field the blueprint's row contract carried was written
-    # here and read nowhere, so it went with the rename that gave the
-    # problem kinds one vocabulary (ruling #299). Asserted absent so
-    # nothing puts it back for the shape's sake.
+    # The problem kinds share one vocabulary, so the old kind field,
+    # written here and read nowhere, is gone. Asserted absent so
+    # nothing puts it back for the shape's sake (rule LIST-02).
     assert "kind" not in row
     assert row["level"] == 10.0
     assert row["since"] is not None
@@ -282,16 +281,16 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 9)
     coord = await setup_coordinator(hass)
-    # Threshold mechanics, not restart behaviour: the startup
-    # window the harness opens is shut so flags apply at once (#346).
+    # Threshold mechanics, not restart behavior: the startup
+    # window the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
 
     hass.states.async_set(eids["pct"], "32")
     await hass.async_block_till_done()
     assert coord.battery_low_count == 0
 
-    # The dashboard slider was retired with the number platform in
-    # 0.11.10 (ruling #209), so the options dialog is the one door.
+    # There is no dashboard slider, so the options dialog is the one
+    # door (rule BAT-14).
     hass.config_entries.async_update_entry(
         coord.entry,
         options={**coord.entry.options, CONF_LOW_THRESHOLD: 35},
@@ -320,7 +319,7 @@ async def test_the_retired_slider_is_swept_from_the_registry(
     )
 
 
-# ---------------------------------------- the discharge recorder (#62)
+# ------------------------------------- the daily recorder (rules BAT-05, BAT-11)
 
 async def test_rollover_appends_the_daily_level(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
@@ -353,11 +352,11 @@ async def test_a_device_without_a_battery_records_nothing(
 
 
 async def test_series_is_bounded(hass: HomeAssistant):
-    """Bounded at ninety days rather than fourteen (0.8.6).
+    """Bounded at ninety days rather than fourteen.
 
-    A fortnight is right for a rhythm and wrong for a battery: on a
-    real fleet nothing measurably discharges in two weeks, so the
-    fortnight window threw away the only thing worth measuring.
+    A fortnight is right for a rhythm and wrong for a battery: nothing
+    measurably discharges in two weeks, so a fortnight window would
+    throw away the only thing worth measuring (rule BAT-05).
     """
     coord = await setup_coordinator(hass)
     record = _record()
@@ -468,13 +467,13 @@ def _entry(entity_id, device_class="battery", name=None, unique=None):
 
 
 def test_a_name_no_longer_decides_a_battery(hass: HomeAssistant):
-    """The name filter of ruling #248 was deleted, and this is why.
+    """The recognizer has no name filter.
 
-    It named entities by what somebody had called them, which is not
-    a property of the measurement. Every entity it refused arrives on
-    an integration the ignore list now refuses whole, so the
-    recognizer is back to the one question it can answer from the
-    registry: is this a battery on a device we watch.
+    A name says what somebody called an entity, which is not a property
+    of the measurement. Every entity a name filter would refuse arrives
+    on an integration the ignore list refuses whole, so the recognizer
+    asks the one question it can answer from the registry: is this a
+    battery on a device Device Sentinel watches (rule BAT-01).
     """
     for eid in (
         "sensor.james_s24_car_battery",
@@ -492,14 +491,13 @@ def test_a_name_no_longer_decides_a_battery(hass: HomeAssistant):
 
 
 def test_an_esphome_wifi_signal_is_recognized(hass: HomeAssistant):
-    """The regression the name filter caused, now fixed.
+    """A sensor's name does not decide whether it is read.
 
-    An ESPHome node calls its own RSSI sensor WiFi Signal, and the
-    refused-terms list contained "wifi", so three nodes on the
-    reference fleet recorded nothing for weeks while motion blinds
-    calling the same measurement RSSI recorded fine. Two Wi-Fi
-    devices, opposite outcomes, decided by the manufacturer's choice
-    of word.
+    An ESPHome node calls its own RSSI sensor WiFi Signal, and a
+    refused-terms list holding "wifi" would leave such nodes recording
+    nothing while motion blinds calling the same measurement RSSI
+    record fine: two Wi-Fi devices, opposite outcomes, decided by the
+    manufacturer's choice of word.
     """
     for eid in (
         "sensor.voice_assistant_kitchen_wifi_signal",
@@ -516,10 +514,9 @@ def test_an_esphome_wifi_signal_is_recognized(hass: HomeAssistant):
     )
 
 
-# 0.18.3 (ruling #346): a restart transient is not a low battery, and
-# a sentence composed after recovery does not claim a fall. Reported
-# from Tim Plas's fleet: "battery fell to 100% and recovered 0s
-# later" led his brief on 26 August, twice per restart.
+# A restart transient is not a low battery, and a sentence composed
+# after recovery does not claim a fall, so the brief never leads with
+# "battery fell to 100% and recovered 0s later" (rule BAT-03).
 
 
 async def test_a_low_reading_inside_grace_is_held(hass: HomeAssistant):
@@ -585,7 +582,7 @@ async def test_the_phrase_never_calls_a_recovery_a_fall(
     record[DEV_BATTERY_VALUE] = 100.0
     said = coord._battery_phrase(device.id, False)
     # Near full reads as replaced or recharged, with no level that
-    # could be taken for the low reading (fourth fleet, 0.22.4).
+    # could be taken for the low reading (rule BAT-06).
     assert said == "battery read low, since replaced or recharged"
     assert "fell" not in said
 
@@ -599,11 +596,11 @@ async def test_the_phrase_never_calls_a_recovery_a_fall(
 
 
 async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
-    """Infinity and NaN parse as floats and are not levels (#347).
+    """Infinity and NaN parse as floats and are not levels (rule BAT-02).
 
-    A cell reporting -inf sits below every threshold, so it flagged
-    low, reached the notification card, and the card's int(level)
-    raised OverflowError. Found by the 0.18.3 adversarial round.
+    A cell reporting -inf sits below every threshold, so it would flag
+    low, reach the notification card, and make the card's int(level)
+    raise OverflowError.
     """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -631,7 +628,7 @@ async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
     await hass.async_block_till_done()
 
 
-# ---------------------------------- a replacement starts day one (#397)
+# ------------------------------- a replacement starts day one (rule BAT-06)
 
 
 def _roll_levels(coord, record, levels):
@@ -646,10 +643,10 @@ async def test_a_large_rise_is_a_replacement(hass: HomeAssistant):
     record = _record()
     _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0, 100.0])
 
-    # Ruling #405: the rise is confirmed by a second sample, and the
-    # day it appeared is the new cell's first day, so it moves into
-    # the fresh series rather than staying with a history it does not
-    # belong to.
+    # The rise is confirmed by a second sample, and the day it appeared
+    # is the new cell's first day, so it moves into the fresh series
+    # rather than staying with a history it does not belong to
+    # (rule BAT-06).
     assert record[DEV_BATTERY_DAILY] == [100.0, 100.0]
     assert record[DEV_BATTERY_DAILY_PREVIOUS] == [40.0, 38.0, 36.0]
     assert record[DEV_BATTERY_REPLACED_AT] is not None
@@ -673,9 +670,8 @@ async def test_a_smaller_rise_that_lands_full_is_a_replacement(
 async def test_the_largest_natural_rise_on_record_is_not_a_replacement(
     hass: HomeAssistant,
 ):
-    """Door 2nd Bedroom on the reference fleet: a sag to 12 and a
-    recovery to 23.5 the next day. A rise of 11.5 that lands nowhere
-    near full."""
+    """Door 2nd Bedroom: a sag to 12 and a recovery to 23.5 the next
+    day. A rise of 11.5 that lands nowhere near full (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     record = _record()
     _roll_levels(coord, record, [21.0, 12.0, 23.5, 24.0])
@@ -686,8 +682,8 @@ async def test_the_largest_natural_rise_on_record_is_not_a_replacement(
 
 
 async def test_a_drift_up_near_full_is_not_a_replacement(hass: HomeAssistant):
-    """Motion Hall on the reference fleet went 94 to 99.5 on its own.
-    Landing above 95 only counts from at or below 90."""
+    """Motion Hall went 94 to 99.5 on its own. Landing above 95 only
+    counts from at or below 90 (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     record = _record()
     _roll_levels(coord, record, [95.0, 94.0, 99.5])
@@ -710,10 +706,9 @@ async def test_the_crossing_boundaries_are_inclusive(hass: HomeAssistant):
 
 
 async def test_a_lone_spike_does_not_erase_a_history(hass: HomeAssistant):
-    """Ruling #405. The second fleet's own brief records the shape:
-    "S68 Soil Moisture Sensor battery fell to 100% and recovered 0s
-    later, revived by a restart". One transient sample taken at the
-    rollover must not wipe weeks of learning."""
+    """One transient sample taken at the rollover, such as "battery
+    fell to 100% and recovered 0s later, revived by a restart", must
+    not wipe weeks of learning (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     record = _record()
     _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0, 34.0])
@@ -767,12 +762,12 @@ async def test_a_replacement_clears_a_standing_low(hass: HomeAssistant):
     assert record[DEV_BATTERY_SINCE] is None
 
 
-# A battery reading outside 0 to 100% is ignored (#540, amended).
+# A battery reading outside 0 to 100% is ignored (rule BAT-02).
 
 
 @pytest.mark.parametrize("reading", ["1e308", "-1e308", "150", "-5", "100.5"])
 async def test_an_impossible_battery_reading_is_ignored(hass: HomeAssistant, caplog, reading):
-    """#540 amended: a battery reports a percentage."""
+    """A battery reports a percentage (rule BAT-02)."""
     device, (value, battery) = register_device(hass, "b", name="Remote", entity_count=2)
     er.async_get(hass).async_update_entity(battery, original_device_class="battery")
     entry = await setup_entry(hass)
@@ -800,7 +795,7 @@ async def test_the_edges_of_the_battery_scale_are_levels(hass: HomeAssistant):
         assert coord.data[DATA_DEVICES][device.id]["battery_value"] == float(reading), reading
 
 
-# Zigbee's raw battery scale (ruling #545), marked conservatively.
+# Zigbee's raw battery scale, marked conservatively (rule BAT-02).
 
 
 async def _raw_house(hass):
@@ -865,8 +860,8 @@ def test_stored_raw_history_needs_two_days_to_convert():
 
 
 async def test_a_battery_change_measures_the_scale_again(hass, freezer):
-    """The raw mark lasts until the next battery change (ruling #545,
-    amended): the new cell proves its scale afresh."""
+    """The raw mark lasts until the next battery change, because the
+    new cell proves its scale afresh (rule BAT-02)."""
     freezer.move_to("2026-09-29 15:00:00+00:00")
     coord, device, battery = await _raw_house(hass)
     record = coord.data["devices"][device.id]

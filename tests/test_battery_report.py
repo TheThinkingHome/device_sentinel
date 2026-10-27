@@ -3,20 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.27.1 (2026-10-23)
+# File: test_battery_report.py, Version: 0.27.10 (2026-10-27)
 
-"""Which cells are going to be low (ruling #194).
+"""Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
 A threshold answers which cells are low; the battery rows answer which
-are going to be. The shapes below are taken from the reference fleet
-on 2026-08-03, including the cell that motivated it: ten days flat at
-32 percent, then a ten point drop and an eight and a half point
-rebound on consecutive days, then a fall to 21.
+are going to be. The shapes below come from a real house, including a
+cell that sat ten days flat at 32 percent, then dropped ten points and
+rebounded eight and a half on consecutive days, then fell to 21.
 
-The battery report page retired with the www folder in 0.23.5 (#470).
-The rows it drew are what Battery Trends, the Battery: Falling sensor,
-the Problem List and the brief read, so they are asserted here
-directly, and the brief's own line beside them.
+The rows are what Battery Trends, the Battery: Falling sensor, the
+Problem List and the brief read, so they are asserted here directly,
+and the brief's own line beside them.
 """
 
 from __future__ import annotations
@@ -52,7 +50,7 @@ DYING = [
 # A healthy cell drifting down at half a point a day.
 HEALTHY = [91.0, 92.0, 92.5, 92.0, 91.5, 92.0, 91.5, 91.0,
            91.0, 91.0, 89.5, 88.5, 87.0, 86.0, 84.0, 82.5]
-# Tim Plas's S63 carried down to 21.5 percent: steady, then speeding up.
+# S63 carried down to 21.5 percent: steady, then speeding up.
 SPEEDING = [round(level - 36.0, 1) for level in [
     73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
     74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
@@ -67,9 +65,9 @@ TWO_WEEKS = [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
 
 def _held(series):
     """Two more weeks in front, carrying on the history's own first week
-    backwards: since 0.27.1 a cell is judged only with 28 heard days of
-    the last 42 (#733), and these histories are sixteen days long. A
-    flat fortnight in front would make each fall a bend, which is
+    backwards: a cell is judged only with 28 heard days of the last 42
+    (rule BAT-10), and these histories are sixteen days long. A flat
+    fortnight in front would make each fall a bend, which is
     accelerating, and these tests are about the steady kind."""
     first = list(series[:7])
     per_day = (first[0] - first[-1]) / 6
@@ -104,15 +102,11 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     averaged 6.6 points below the week before, about two weeks left;
     the other is at 82 percent and fell 4.7, about four months. Their
     paces are within two points a week of each other, and time
-    remaining still tells them apart.
-
-    Before 0.23.6 the dying cell's pace came from a seven-day slope,
-    1.75 a day; it comes from the weekly averages now, since sixteen
-    days is too few for a six-week fit.
+    remaining still tells them apart (rule BAT-13).
     """
     coord = await setup_coordinator(hass)
-    # Judged only at or under three times the low threshold (#725): raised so
-    # the high cells here are judged too.
+    # Judged only at or under three times the low threshold (rule BAT-10):
+    # raised so the high cells here are judged too.
     hass.config_entries.async_update_entry(
         coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
     )
@@ -125,17 +119,17 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 
     falling = coord._battery_rows()["falling"]
     assert _names(falling) == ["Door 2nd Bedroom", "Soil Moisture"]
-    # The six-week line's pace since 0.27.1, four weeks being always
-    # held (#733); the weekly averages gave 0.939 on sixteen days.
+    # The six-week line's pace, four weeks being always held
+    # (rule BAT-10).
     assert round(falling[0]["slope"], 3) == -1.031
     assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
-    # Flat, the sag, then the fall: a bend, called accelerating once the
-    # two-point floor went (#734).
+    # Flat, the sag, then the fall: a bend, called accelerating
+    # (rule BAT-12).
     assert falling[0]["reading"] == "accelerating"
-    # The healthy cell's time left runs to the 49 percent threshold
-    # (#730); the dying one, under it, runs to empty.
-    # About a month since 0.27.1: four weeks held, the line reads the
-    # healthy cell's last fortnight of falling too (#733).
+    # The healthy cell's time left runs to the 49 percent threshold;
+    # the dying one, under it, runs to empty (rule BAT-13).
+    # About a month: four weeks held, the line reads the healthy cell's
+    # last fortnight of falling too.
     assert coord.battery_time_left(falling[1]["days"]) == "about a month"
     assert falling[1]["target"] == 49.0 and falling[0]["target"] == 0.0
 
@@ -159,9 +153,9 @@ async def test_the_sag_and_rebound_do_not_move_the_slope(
 async def test_a_falling_cell_raises_nothing(
     hass: HomeAssistant,
 ):
-    """Ruling #194: writing the reports over a falling cell raises
-    nothing. The Problem List's forecast item is its own rule (#213,
-    #471) and is asserted where it is built.
+    """Writing the reports over a falling cell raises nothing. The
+    Problem List's forecast item is its own rule and is asserted where
+    it is built (rule BAT-14).
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bat6", "Door 2nd Bedroom")
@@ -177,11 +171,10 @@ async def test_a_falling_cell_raises_nothing(
 async def test_time_left_is_said_in_words_that_widen_with_distance(
     hass: HomeAssistant,
 ):
-    """Ruling #197. The band a projection lands in has to be wider
-    the further out it reaches, because the error grows with it: the
-    proving cell moved forty percent in one afternoon, which on a
-    reading of 1122 days is a true value somewhere between 670 and
-    1570.
+    """The band a projection lands in widens the further out it
+    reaches, because the error grows with it: a cell can move forty
+    percent in one afternoon, which on a reading of 1122 days is a true
+    value somewhere between 670 and 1570 (rule BAT-13).
     """
     coord = await setup_coordinator(hass)
     said = coord.battery_time_left
@@ -198,14 +191,14 @@ async def test_time_left_is_said_in_words_that_widen_with_distance(
 async def test_the_falling_sensor_is_a_different_set_from_low(
     hass: HomeAssistant,
 ):
-    """Ruling #209. Low is a level that has been crossed; falling is
-    one that is going to be, and the two rarely name the same device.
+    """Low is a level that has been crossed; falling is one that is
+    going to be, and the two rarely name the same device (rule BAT-14).
 
     The dying cell is at 12 percent and is counted low. The healthy
     faller is at 82 and is counted by neither, being two months out.
     A third at 21.5 percent speeding up is the case that belongs in
-    falling and nowhere else. Since 0.27.0 a cell falling at a steady
-    pace is a battery to watch, not on the sensor (#731).
+    falling and nowhere else. A cell falling at a steady pace is a
+    battery to watch, not on the sensor.
     """
     coord = await setup_coordinator(hass)
     low, _ = register_device(hass, "fs1", "Already Low")
@@ -228,10 +221,10 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
 
 
 async def test_a_steady_fall_is_watched_not_counted(hass: HomeAssistant):
-    """20 percent falling 1.5 a day: a week-against-week pace (0.23.6)
-    of about ten points, where the old seven-day slope was flattened by
-    the last three days' 20.5, 20 and 20. Sixteen days is too short to
-    call it speeding up, so it is a battery to watch (#731)."""
+    """20 percent falling 1.5 a day: a week-against-week pace of about
+    ten points, where a seven-day slope would be flattened by the last
+    three days' 20.5, 20 and 20. Sixteen days is too short to call it
+    speeding up, so it is a battery to watch (rule BAT-14)."""
     coord = await setup_coordinator(hass)
     soon, _ = register_device(hass, "fs2", "Nearly Out")
     await registry_settled(hass)
@@ -281,10 +274,9 @@ async def test_a_steady_cell_is_not_projected(hass: HomeAssistant):
 
 
 async def test_a_reading_above_100_is_called_unreadable(hass: HomeAssistant):
-    """Seen on the fleet: an MQTT device reporting around 196 every
-    day, a raw scale rather than a percentage. It can never cross the
-    low threshold, and counted as a level it would look healthier than
-    anything else.
+    """An MQTT device reporting around 196 every day is on a raw scale,
+    not a percentage. It can never cross the low threshold, and counted
+    as a level it would look healthier than anything else (rule BAT-02).
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bat4", "LUX Outdoors")
@@ -312,9 +304,8 @@ async def test_a_device_with_no_battery_is_counted_not_listed_as_zero(
 
 
 async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
-    """Ruling #195. The brief names what is close, and since the
-    battery report retired (0.23.5) it sends the reader to Battery
-    Trends on the dashboard rather than to a page anyone could open.
+    """The brief names what is close and sends the reader to Battery
+    Trends on the dashboard (rules BAT-14, BAT-18).
     """
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
@@ -338,13 +329,13 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
 
 async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
     """A cell a season away belongs on Battery Trends and not in a
-    document that arrives whether it was wanted or not. On the
-    reference fleet the unfiltered list was sixteen devices.
+    document that arrives whether it was wanted or not, where an
+    unfiltered list can run to sixteen devices (rule BAT-14).
     """
     coord = await setup_coordinator(hass)
-    # Judged only at or under three times the low threshold (#725): raised
-    # to 28 so the 82 percent cell is judged, and its time left to 28 is
-    # still months.
+    # Judged only at or under three times the low threshold (rule BAT-10):
+    # raised to 28 so the 82 percent cell is judged, and its time left to
+    # 28 is still months.
     hass.config_entries.async_update_entry(
         coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 28}
     )
@@ -388,8 +379,8 @@ async def test_a_quiet_fleet_adds_no_line(hass: HomeAssistant):
 
 
 async def test_the_horizon_is_the_persons_to_set(hass: HomeAssistant):
-    """Days Till Empty, 7 to 30 (ruling #197). A cell two weeks out
-    is named at thirty and silent at seven.
+    """Days Till Low Warning, 7 to 30 (rule BAT-14). A cell two weeks
+    out is named at thirty and silent at seven.
     """
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "hz1", "Two Weeks Out")
@@ -410,9 +401,9 @@ async def test_the_horizon_is_the_persons_to_set(hass: HomeAssistant):
 
 
 async def test_a_short_history_is_shown_and_not_judged(hass: HomeAssistant):
-    """Ruling #733: sixteen days falling ten points a week, at 20
-    percent. No reading, no time left, on no list; its weeks are shown
-    and its page says it is short."""
+    """Sixteen days falling ten points a week, at 20 percent: no
+    reading, no time left, on no list; its weeks are shown and its page
+    says it is short (rule BAT-10)."""
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     soon, _ = register_device(hass, "sh1", "Nearly Out")
     await registry_settled(hass)

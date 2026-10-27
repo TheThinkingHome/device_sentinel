@@ -3,16 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_trends_cell.py, Version: 0.27.2 (2026-10-23)
+# File: test_battery_trends_cell.py, Version: 0.27.10 (2026-10-27)
 
-"""Battery Trends' CELL column names the battery each device takes.
+"""Battery Trends' CELL column names the battery each device takes
+(rules BAT-16, BAT-18).
 
-Until 0.27.2 it named only a lithium cell (#736) and was blank both for
-a battery known not to be lithium, such as the AAA cells of a Third
-Reality door sensor, and for one nobody had set. One blank meant two
-things (James, 23 October 2026). Each row now carries the words its
-Power row shows, from the owner's answer or the Battery Notes library,
-or None when neither knows, which the panel shows as "Not set".
+A column that named only a lithium cell was blank both for a battery
+known not to be lithium, such as the AAA cells of a Third Reality door
+sensor, and for one nobody had set: one blank meant two things. Each
+row carries the words its Power row shows, from the owner's answer or
+the Battery Notes library, or None when neither knows, which the panel
+shows as "Not set".
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ async def test_the_library_names_a_battery_nobody_set(hass: HomeAssistant):
 
 
 async def test_one_answer_names_every_device_of_the_model(hass: HomeAssistant):
-    """The pencil on one device answers for its model (0.24.8)."""
+    """The pencil on one device answers for its model (rule DEV-08)."""
     coord = await setup_coordinator(hass)
     first, _ = register_device(hass, "m1", "Leak Sink")
     second, _ = register_device(hass, "m2", "Leak Bath")

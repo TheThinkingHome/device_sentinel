@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_forecasts.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_forecasts.py, Version: 0.27.10 (2026-10-27)
 
-"""The forecast log (ruling #732): each battery forecast kept at the
-midnight fold, and scored when the battery reaches its threshold.
+"""The forecast log: each battery forecast kept at the midnight fold, and
+scored when the battery reaches its threshold (rule BAT-15).
 
-James, 22 October 2026: if Device Sentinel says a battery will last
-until somewhere between June 14 and August 28, and it lasts until
-November 28, it should be possible to look back and see what was said.
+If Device Sentinel says a battery will last until some range of dates,
+and it lasts three months past the far end, a person can look back and
+see what was said.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from custom_components.device_sentinel.normalise import check_records
 
 from .helpers import register_device, registry_settled, setup_coordinator
 
-# Tim Plas's S63 carried down to 21.5 percent: steady, then speeding up.
+# A real S63 cell carried down to 21.5 percent: steady, then speeding up.
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,

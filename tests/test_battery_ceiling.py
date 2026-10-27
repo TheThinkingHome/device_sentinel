@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_ceiling.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_ceiling.py, Version: 0.27.10 (2026-10-27)
 
 """A cell is judged falling only at or under three times the low
-threshold (ruling #725, James, 22 October 2026).
+threshold (rule BAT-10).
 
-No battery on either house had yet been watched from new to replaced,
-and every method tried missed a far-off date. So a cell above three
-times the threshold keeps its weekly history and is judged nothing:
-not falling, not accelerating, no time left, nothing on the Problem
-List or the Battery: Falling sensor. At or under it, the warning days
-setting decides what is reported, as before.
+No method tried could place a far-off date, so a cell above three
+times the threshold keeps its weekly history and is judged nothing: not
+falling, not accelerating, no time left, nothing on the Problem List or
+the Battery: Falling sensor. At or under it, the warning days setting
+decides what is reported.
 """
 
 from __future__ import annotations

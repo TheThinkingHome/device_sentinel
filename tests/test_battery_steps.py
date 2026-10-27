@@ -3,21 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_steps.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_steps.py, Version: 0.27.10 (2026-10-27)
 
-"""A battery that reports in coarse steps is not forecast.
+"""A battery that reports in coarse steps is not forecast (rule BAT-09).
 
-The second fleet's S02 Office Temp/Humid reports its battery in
-10-point steps. It sat at 40 for nine days, dropped once to 30, and
-the seven-day trend read the single step as a steep fall, listing the
-cell as empty in about a month. The owner ruled on 24 September: a
-fall of 5 points or more from one day to the next is a coarse drop;
-two with no smaller change in the retained history make the cell
-coarse, judged by the low threshold alone; the forecast is withheld
-from the first; any smaller change returns it to smooth; a cell that
-never changed is not coarse; the count is stored, so a second step
-after the first has aged out still counts. The tests that are not
-guards fail on 0.23.0.
+A battery reporting in 10-point steps that sits at 40 for nine days
+and drops once to 30 would read as a steep fall. A fall of 5 points or
+more from one day to the next is a coarse step; two with no smaller
+change in the kept history make the cell coarse, judged by the low
+threshold alone; the forecast is withheld from the first; any smaller
+change returns it to smooth; a cell that never changed is not coarse;
+the count is stored, so a second step after the first has aged out
+still counts.
 """
 
 from __future__ import annotations
@@ -35,9 +32,9 @@ from .helpers import register_device, setup_coordinator
 
 S02 = [40.0] * 9 + [30.0] * 5
 TWO_STEPS = [50.0] * 6 + [40.0] * 6 + [30.0] * 5
-# Two weeks of a smooth fall: since 0.23.6 a fall is judged week
-# against week, so a cell needs two whole weeks before it is forecast.
-# Four weeks of it, the least judged since 0.27.1 (#733).
+# A fall is judged week against week, so a cell needs whole weeks before
+# it is forecast: four weeks of a smooth fall, the least judged
+# (rule BAT-10).
 SMOOTH_FALL = [round(82.0 - 1.5 * day, 1) for day in range(14)] + [
     61.0, 59.5, 58.0, 56.5, 55.0, 53.5, 52.0, 50.0, 48.5, 47.0, 45.0, 43.5, 42.0, 40.0]
 SAG_LAST = [60.0, 59.5, 59.0, 58.0, 57.5, 57.0, 47.0]
@@ -65,10 +62,11 @@ async def test_two_steps_make_it_coarse(hass: HomeAssistant):
 
 
 async def test_a_smooth_fall_is_still_forecast(hass: HomeAssistant):
-    """Guard: the forecast Tim's steady cells earned stays."""
+    """Guard: the forecast a steady cell earns stays."""
     coord, _device, record = await _cell(hass, SMOOTH_FALL)
-    # Judged only at or under three times the low threshold (#725): raised so
-    # the high cells here are judged too.
+    # Judged only at or under three times the low threshold, so the
+    # threshold is raised and the high cells here are judged too
+    # (rule BAT-10).
     hass.config_entries.async_update_entry(
         coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
     )

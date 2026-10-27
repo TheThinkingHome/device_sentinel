@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_battery_wording.py, Version: 0.27.10 (2026-10-27)
 
-"""What the brief says when a battery level jumps.
+"""What the brief says when a battery level jumps (rule BAT-06).
 
-The rule that finds a new cell sees one reading a day, so a charge
-and a replacement look the same to it: a device charged from 54 to
-87 percent on issue #11's house passes the same test a fresh cell
-does. Resetting the history is right either way, since a charged
-cell starts a new discharge. Saying "replaced" is not, so every
-surface names both and claims neither.
+The rule that finds a new cell sees one reading a day, so a charge and
+a replacement look the same to it: a device charged from 54 to 87
+percent passes the same test a fresh cell does. Resetting the history
+is right either way, since a charged cell starts a new discharge.
+Saying "replaced" is not, so every surface names both and claims
+neither.
 """
 
 from __future__ import annotations
@@ -89,10 +89,11 @@ async def test_the_written_brief_never_claims_a_replacement(hass: HomeAssistant)
 
 
 async def test_the_change_is_told_on_the_devices_own_line(hass: HomeAssistant):
-    """Tim Plas, 6 October: "The system | battery replaced or recharged
-    (17% to 100%)" named no device. A battery change is a hand on the
-    device, so the Last 24 Hours table and the dashboard's Daily Brief tab
-    put it on the device's own line (0.24.11, option A)."""
+    """A battery change is a hand on the device, so the Last 24 Hours
+    table and the dashboard's Daily Brief tab put it on the device's own
+    line, never as "The system | battery replaced or recharged"
+    (rule BRIEF-07).
+    """
     device, _ = register_device(hass, "curtain", name="Living Room Curtain")
     coord = await setup_coordinator(hass)
     row = _row(device.id)

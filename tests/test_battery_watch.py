@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_watch.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_watch.py, Version: 0.27.10 (2026-10-27)
 
-"""Two warning levels for a falling battery (ruling #731), and a time
-left that runs to the low threshold (#730).
+"""Two warning levels for a falling battery, and a time left that runs to
+the low threshold (rules BAT-14, BAT-13).
 
-Measured on both houses on 22 October 2026, a warning on a cell
-falling at a steady pace came true about half the time and one on a
-cell speeding up 85 percent. So only an accelerating cell gets the full
-warning: the Problem List, the phone, the brief and the Battery:
-Falling sensor. A steady one inside Days Till Low Warning is listed as
-a battery to watch, with no push.
+A warning on a cell falling at a steady pace comes true about half the
+time, and one on a cell speeding up about 85 percent. So only an
+accelerating cell gets the full warning: the Problem List, the phone,
+the brief and the Battery: Falling sensor. A steady one inside Days
+Till Low Warning is listed as a battery to watch, with no push.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from .helpers import register_device, registry_settled, setup_coordinator
 
 # A straight half point a day for six weeks, ending at 40.
 STEADY = [round(61.0 - 0.5 * day, 1) for day in range(43)]
-# Tim Plas's S63, carried down to 21.5 percent: steady, then speeding up.
+# A real S63 cell carried down to 21.5 percent: steady, then speeding up.
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,

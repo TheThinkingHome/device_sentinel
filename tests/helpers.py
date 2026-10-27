@@ -3,23 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.27.7 (2026-10-27)
+# File: helpers.py, Version: 0.27.10 (2026-10-27)
 
-"""Shared test helpers, one canonical version of each.
+"""Shared test helpers, one version of each (rule CODE-12).
 
-The suite grew a separate copy of these in almost every file, and the
-copies drifted: ten spellings of setting up the integration, nine of
-registering a device. That made a test's behaviour depend on which
-copy its file happened to hold, which is the opposite of what a test
-should be. These are the reconciled versions, each a superset of the
-copies it replaces: the extra parameters default to the simplest case,
-so a caller that wants the plain behaviour writes nothing extra, and a
-caller that wants a variant asks for it by name.
+One copy of each helper, so a test's behavior never depends on which
+copy its file holds. Each extra parameter defaults to the simplest
+case, so a caller that wants the plain behavior writes nothing extra,
+and a caller that wants a variant asks for it by name.
 
 Every helper here is a plain function, imported, not a fixture, so a
-call site reads the same as it always did (`await setup_entry(hass)`),
-only the import changes. Fixtures that every test shares stay in
-conftest.py; these are the building blocks a test calls directly.
+call site reads `await setup_entry(hass)`. Fixtures that every test
+shares stay in conftest.py; these are the building blocks a test calls
+directly.
 """
 
 from __future__ import annotations
@@ -64,8 +60,8 @@ async def setup_entry(
         options=options or {},
         # A fresh install is created at the current version and runs
         # no migration, which is what a test writing today's option
-        # names is describing. Left at the default, every entry here
-        # would arrive looking like a 0.16.3 upgrade and the chain
+        # names describes. Left at the default, every entry here would
+        # arrive looking like an old upgrade and the migration chain
         # would rename the names the test just wrote.
         version=1,
         minor_version=OPTIONS_MINOR_VERSION,
@@ -74,8 +70,8 @@ async def setup_entry(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     # Device Sentinel's own setup registers its entities, which opens a
-    # registry cooldown (0.24.2). On a real server time passes before
-    # anything else happens, so the view is let catch up here.
+    # registry cooldown. On a real server time passes before anything
+    # else happens, so the view catches up here (rule WATCH-11).
     await registry_settled(hass)
     return entry
 
@@ -115,9 +111,9 @@ def register_device(
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
     # A device in a running house sits behind an integration that has
-    # loaded, and ruling #449 asks the entry for that. Left unloaded,
-    # every fixture device would read as one whose integration is
-    # still starting.
+    # loaded, and Device Sentinel asks the entry for that. Left unloaded,
+    # every fixture device would read as one whose integration is still
+    # starting (rule UP-04).
     source.mock_state(hass, ConfigEntryState.LOADED)
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
@@ -161,8 +157,8 @@ def register_fleet(
         )
         # The entity's platform is the integration that made it, as in
         # Home Assistant: a device of `poller` whose entity said `test`
-        # was, to the registry, another integration's entity on it,
-        # and since 0.22.21 such an entity is not the device speaking.
+        # was, to the registry, another integration's entity on it, and
+        # such an entity is not the device speaking (rule WATCH-02).
         entry = er.async_get(hass).async_get_or_create(
             "sensor",
             source.domain,
@@ -177,12 +173,11 @@ def register_fleet(
 def flat_schema(schema) -> dict:
     """Return a form's fields with section nesting removed.
 
-    Ruling #314 moved every exclude picker into a section, so a test
-    reading `result["data_schema"].schema` now meets a `section`
-    object where it used to meet a selector. The nesting is a way of
-    drawing the screen and not a change to what is stored, so a test
-    asking what a picker offers should not have to know which section
-    holds it.
+    Every exclude picker sits in a section, so a test reading
+    `result["data_schema"].schema` meets a `section` object, not a
+    selector. The nesting only draws the screen and changes nothing
+    stored, so a test asking what a picker offers should not have to
+    know which section holds it (rule CFG-02).
     """
     from homeassistant.data_entry_flow import section as _section
 
@@ -198,9 +193,9 @@ def flat_schema(schema) -> dict:
 def nest_for(step: str, payload: dict) -> dict:
     """Return a submit payload with the excludes under their section.
 
-    The four sectioned steps take their exclude picks nested (ruling
-    #314) and store them flat. A test that knows the flat keys can
-    hand them here rather than restating the section layout.
+    The four sectioned steps take their exclude picks nested and store
+    them flat (rule CFG-02). A test that knows the flat keys can hand
+    them here rather than restating the section layout.
     """
     sections = {
         "battery": ("battery_muting", "battery_excluded_"),
@@ -216,7 +211,7 @@ def nest_for(step: str, payload: dict) -> dict:
         if key.startswith(prefix):
             nested[key] = value
         elif step == "freeze" and key.startswith("unavailable_muted_"):
-            # Its own section on the same screen (0.26.6).
+            # Its own section on the same screen (rule MUTE-06).
             unavailable[key] = value
         else:
             loose[key] = value
@@ -292,11 +287,12 @@ def record_labelled(hass: HomeAssistant, labels: dict[str, str]) -> list:
 
 
 def probe_lines(coord, node=None):
-    """The probe lines written this session, as dicts (0.23.9).
+    """The probe lines written this session, as dicts.
 
-    Since 0.23.9 the probe renders each line at once and appends it to
+    The probe renders each line at once and appends it to
     stack_probe.md at the next tick, so a test reads the rendered
-    lines, keyed as the stored rows once were; DEVICE is the name.
+    lines, keyed as the stored rows once were; DEVICE is the name
+    (rule STACK-12).
     """
     from custom_components.device_sentinel.const import (
         PROBE_AGREES,
@@ -325,8 +321,8 @@ def card_message(hass):
     """The state card's message as Home Assistant holds it, or None.
 
     The card is raised through Home Assistant's own persistent
-    notification helpers since 0.23.19, not a service call, so a test
-    reads it from where it lives rather than from a mocked service.
+    notification helpers, not a service call, so a test reads it from
+    where it lives rather than from a mocked service (rule NOTE-11).
     """
     from homeassistant.components.persistent_notification import (
         _async_get_or_create_notifications,
@@ -342,13 +338,12 @@ def card_message(hass):
 async def registry_settled(hass: HomeAssistant) -> None:
     """Let Device Sentinel's view of the registry catch up, as 2 seconds would.
 
-    Since 0.24.2 a registry change rebuilds the view at once only when no
-    rebuild ran in the last cooldown, and otherwise when the cooldown ends.
-    A test that changes the registry and then reads the view calls this
-    between the two. It runs any rebuild the debouncer is holding and
-    clears the cooldown, which is what happens on a real server once the
-    cooldown passes, without moving Home Assistant's clock, so no other
-    timer fires.
+    A registry change rebuilds the view at once only when no rebuild ran
+    in the last cooldown, and otherwise when the cooldown ends. A test
+    that changes the registry and then reads the view calls this between
+    the two. It runs any rebuild the debouncer is holding and clears the
+    cooldown, as a real server does once the cooldown passes, without
+    moving Home Assistant's clock, so no other timer fires (rule WATCH-11).
     """
     await hass.async_block_till_done()
     for entry in hass.config_entries.async_entries("device_sentinel"):
@@ -364,10 +359,10 @@ async def registry_settled(hass: HomeAssistant) -> None:
 
 
 async def settle_parked(hass, coordinator) -> None:
-    """A minute passes for the items whose last problem cleared (rule
-    LIST-06, 0.27.7): each waits 60 seconds before it leaves and its
-    recovery is told, dated when it cleared. For tests that do not move
-    the clock, the list is synced as it would be a minute on."""
+    """A minute passes for the items whose last problem cleared: each
+    waits 60 seconds before it leaves and its recovery is told, dated
+    when it cleared. For tests that do not move the clock, the list is
+    synced as it would be a minute on (rule LIST-06)."""
     from datetime import timedelta
     from unittest.mock import patch
 

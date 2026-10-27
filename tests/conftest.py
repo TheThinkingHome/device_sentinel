@@ -3,17 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.27.0 (2026-10-22)
+# File: conftest.py, Version: 0.27.10 (2026-10-27)
 
-"""Shared test fixtures.
+"""Shared test fixtures: clean report folders, the fleets, and a failure
+on any deprecation Home Assistant reports (rules REL-03, CODE-16).
 
-The harness gives every test the same config directory, a fixed path
-inside the installed package rather than a temporary one, so any file
-a test writes survives into the next test and into later runs. A
-daily brief written by an older version was still being read days
-afterwards, which failed a correct change and could as easily have
-passed an incorrect one. Every test now starts from an empty report
-directory.
+The harness keeps one config directory inside the installed package, so
+a file one test writes is still there for the next test and the next
+run. Each test starts from empty report folders, so an old brief cannot
+pass or fail a later test.
 """
 
 import importlib.util
@@ -35,11 +33,10 @@ WWW_DIRECTORY = os.path.join(get_test_config_dir(), "www", "device_sentinel")
 
 @pytest.fixture(autouse=True)
 def clean_report_directory():
-    """Give each test empty report directories, before and after.
+    """Give each test empty report folders, before and after.
 
-    The www folder too, though nothing writes there since 0.23.5: a
-    test planting an old installation's files there must not leave
-    them for the next test to find.
+    The www folder too, though nothing writes there now, so a test that
+    plants an old installation's files there leaves nothing behind.
     """
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
     shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
@@ -61,9 +58,9 @@ def frontend_loaded(request):
     """Count the frontend and panel_custom as set up, as every Home
     Assistant has them, unless a test asks for the real ones.
 
-    0.27.0 names both as dependencies (#721). Setting up Home
-    Assistant's real frontend for each of the suite's thousands of
-    setups made it 75 percent slower; the dashboard's registration needs
+    Device Sentinel names both as dependencies (rule DASH-01). Setting up
+    the real frontend for each of the suite's thousands of setups makes
+    the suite 75 percent slower, and the dashboard's registration needs
     only the panel table, which this leaves as Home Assistant keeps it.
     A test marked `real_frontend` sets both up for real.
     """
@@ -82,14 +79,13 @@ def frontend_loaded(request):
 def unmark_mocked_entries(request):
     """Leave no entry marked loaded for an integration never set up.
 
-    A fleet case marks a real domain's entry, mqtt among them, as
-    loaded so the house looks up before anything falls. The harness
-    unloads every loaded entry after the test, and for an integration
-    that was never set up Home Assistant 2026.5 and later log an error
-    for each one: seventeen per run on 16 September. Marking those
-    entries not loaded first leaves the harness nothing to unload. An
-    integration that really loaded, this one included, is untouched,
-    so its own unload is still exercised.
+    A fleet case marks a real domain's entry, mqtt among them, as loaded
+    so the house looks up before anything falls. The harness unloads
+    every loaded entry after the test, and Home Assistant 2026.5 and
+    later log an error for each one whose integration was never set up.
+    Marking those entries not loaded first leaves the harness nothing to
+    unload. An integration that really loaded, this one included, is
+    untouched, so its own unload is still exercised.
     """
     if "hass" not in request.fixturenames:
         yield
@@ -113,16 +109,13 @@ def unmark_mocked_entries(request):
 # --------------------------------------------- the deprecation guard
 
 # Home Assistant logs this when a custom integration uses something it
-# has deprecated. Issue #10 arrived from a user's log on 15 September
-# because nothing here was looking; from 16 September any such line
-# fails the test that caused it.
+# has deprecated. Any such line fails the test that caused it, because
+# a deprecation nobody sees reaches users first (rule REL-03).
 DEPRECATION_PREFIX = "Detected that custom integration 'device_sentinel'"
 
 # Deprecations already known and scheduled, each matched by every
 # fragment it lists so a second use of the same API elsewhere is still
-# caught. Remove an entry in the release that fixes it. Empty since the
-# release that fixed issue #10, the one entry this list has held
-# (ruling #439).
+# caught. Remove an entry in the release that fixes it.
 KNOWN_DEPRECATIONS: tuple[tuple[str, ...], ...] = ()
 
 
@@ -181,17 +174,14 @@ def no_new_deprecations():
 
 @pytest.fixture
 def read_brief():
-    """Return a reader for the brief that was written.
-
-    One file since 0.23.5, daily_brief.html in the reports folder.
-    """
+    """Return a reader for the brief that was written, the one file
+    daily_brief.html in the reports folder."""
 
     def _read(hass):
-        # The file on disk is the rendered page (0.10.18); the one-
-        # file naming discipline is still asserted on it, and the
-        # composed text is returned, because it is the message field
-        # and the source the page renders from, so its prose is the
-        # prose these tests examine.
+        # The file on disk is the rendered page; the one-file naming is
+        # still asserted on it, and the composed text is returned,
+        # because it is the message field the page renders from, so its
+        # prose is the prose these tests examine.
         written = os.path.join(
             hass.config.path("device_sentinel"), "daily_brief.html"
         )
@@ -209,12 +199,12 @@ def read_brief():
 # The fleets are real houses' storage, anonymized and committed under
 # tests/fleets/ by tools/anonymise_fleet.py: reference/, second/ and
 # fourth/, a folder for each tester after them, and under upgrade/ the
-# first two houses as they stood on 0.25, before the history file. They are the set the
-# Test Baseline counts, and the set continuous integration runs. Point
-# DEVICE_SENTINEL_FLEET_DIR at another directory laid out the same way,
-# such as the private archive's real files, to run the fleet cases on
-# it instead, or at an empty one to run without fleets. One place since
-# 0.19.11, so no test can hardcode a path the others do not share.
+# first two houses as they stood before the history file. They are the
+# set the Test Baseline counts, and the set continuous integration runs.
+# Point DEVICE_SENTINEL_FLEET_DIR at another directory laid out the same
+# way, such as the private archive's real files, to run the fleet cases
+# on it instead, or at an empty one to run without fleets. One place, so
+# no test can hardcode a path the others do not share (rule CODE-16).
 FLEET_DIR = Path(
     os.environ.get(
         "DEVICE_SENTINEL_FLEET_DIR", str(Path(__file__).parent / "fleets")
@@ -228,8 +218,8 @@ def fleet_path(*parts: str) -> Path:
     return FLEET_DIR.joinpath(*parts)
 
 
-# A house on 0.26.2 or later keeps every day older than its main file's
-# thirty in a history file beside it, under the storage file's spelling.
+# A house with a history file keeps every day older than its main file's
+# thirty there, beside it, under the storage file's spelling (rule STOR-03).
 HISTORY_FOR = {
     "device_sentinel.storage": "device_sentinel.history",
     "device_sentinel_storage.json": "device_sentinel_history.json",
@@ -239,14 +229,13 @@ HISTORY_FOR = {
 def fleet_document(path: Path) -> dict:
     """A fleet's storage document, with its history joined back in.
 
-    The committed houses of 21 October 2026 are on 0.26.8, so their main
-    file holds thirty days and the rest stands in the history file. A
-    test that reads a house reads all of it: the older part goes back in
-    front of each series and table, as the load does, and the two keys
-    that tie the main file to a history file are dropped, so what a test
-    seats is one whole file, as a house before 0.26.2 wrote it and as
-    the upgrade fixtures under `upgrade/` still are. A house with no
-    history file is returned as it stands.
+    The committed houses keep thirty days in the main file and the rest
+    in the history file. A test that reads a house reads all of it: the
+    older part goes back in front of each series and table, as the load
+    does, and the two keys that tie the main file to a history file are
+    dropped, so what a test seats is one whole file, as a house without
+    a history file wrote it and as the upgrade fixtures under `upgrade/`
+    still are. A house with no history file is returned as it stands.
     """
     from custom_components.device_sentinel import history_file
     from custom_components.device_sentinel.const import (

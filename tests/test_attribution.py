@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.26.6 (2026-10-17)
+# File: tests/test_attribution.py, Version: 0.27.10 (2026-10-27)
 
-"""What explains an incident, and what a flood reads as.
+"""What explains an incident, and what a flood reads as
+(rules BRIEF-05, UP-17, UP-06, BRIEF-04).
 
-The shape replayed here is the one the reference fleet produced on
-2026-08-06: a sixteen-minute broker outage took 74 devices, they
-recovered inside 8.5 seconds, and the brief gave four different
-explanations for one event, with devices resolving in the same
-millisecond disagreeing. The cause was borrowed from each device's
-most recent silence episode, whenever that was (ruling #228).
+The shape replayed here is a sixteen-minute broker outage that took 74
+devices, which recovered inside 8.5 seconds. Borrowing each device's
+cause from its most recent silence episode, whenever that was, gives
+four explanations for one event, with devices resolving in the same
+millisecond disagreeing.
 """
 
 from __future__ import annotations
@@ -150,9 +150,8 @@ def test_a_restart_reaches_everything():
 def test_the_earliest_thing_under_way_wins():
     """Where two were in effect, the outer one is the cause.
 
-    Narrowness was the old rule and it was wrong: an outage produces
-    the burst that follows it, so the narrower record is the
-    consequence (ruling #229).
+    An outage produces the burst that follows it, so the narrower
+    record is the consequence (rule BRIEF-05).
     """
     spans = attribution.windows(
         [
@@ -216,8 +215,8 @@ async def test_the_flood_collapses_to_one_sentence(hass: HomeAssistant):
     told = coord._tell_episodes(pairs, BROKER_OUTAGE)
     assert len(told) == 1
     assert told[0].startswith("74 devices became unavailable at ")
-    # #535: an outage revives nothing; the group is told as recovering
-    # during it, never as revived by it.
+    # An outage revives nothing; the group is told as recovering
+    # during it, never as revived by it (rule BRIEF-05).
     assert told[0].endswith(
         "during the MQTT broker going down and coming back, and recovered."
     )
@@ -257,7 +256,7 @@ async def test_one_device_keeps_its_own_sentence(hass: HomeAssistant):
     told = coord._tell_episodes([(opened, closed)], BROKER_OUTAGE)
     assert len(told) == 1
     assert told[0].startswith("Door 2nd Bedroom became unavailable at ")
-    # #535: one device matched to an outage recovers plainly.
+    # One device matched to an outage recovers plainly (rule BRIEF-05).
     assert "revived by" not in told[0]
     assert "reboot" not in told[0]
 
@@ -279,8 +278,7 @@ async def test_unrelated_devices_are_not_swept_in(hass: HomeAssistant):
     assert any(line.startswith("HomeKit One") for line in told)
 
 
-# The two shapes the reference fleet produces every night, and the
-# ones that were wrong until 0.12.6 (ruling #229).
+# The two shapes a house produces every night (rule BRIEF-05).
 STORM_AFTER_BROKER = BROKER_OUTAGE + [
     _event(SYS_STORM_OPEN, "mqtt", T0 + 1024),
     _event(SYS_STORM_CLOSED, "mqtt", T0 + 1032, duration=8.0),
@@ -367,12 +365,11 @@ async def test_a_grace_storm_writes_no_event(hass: HomeAssistant):
 
 
 async def test_a_grace_storm_records_neither_half(hass: HomeAssistant):
-    """Suppressing the opening alone left an orphan in the brief.
+    """The closing is not told without its opening.
 
-    0.12.6 stopped writing the opening inside startup grace and went
-    on writing the closing, so the live brief carried a sentence
-    saying an integration had settled when nothing was ever said to
-    have started (ruling #230).
+    An opening held back inside the startup grace while its closing
+    is written leaves a sentence saying an integration settled when
+    nothing was ever said to have started (rule BRIEF-04).
     """
     from custom_components.device_sentinel.const import (
         DATA_STORMS,
@@ -398,13 +395,12 @@ async def test_a_grace_storm_records_neither_half(hass: HomeAssistant):
 async def test_an_exempted_storm_is_closed_not_abandoned(
     hass: HomeAssistant,
 ):
-    """The row must not be left open by the early return.
+    """The row is not left open by the early return.
 
     Once an integration is read as a poller, its feed is never
     sampled again, so nothing would ever finish the storm that was
-    open when the verdict landed. The live fleet left eleven of
-    twenty storms unclosed that way, and the exemption went on
-    counting rows it could no longer update (ruling #230).
+    open when the verdict landed, and the exemption would go on
+    counting rows it could no longer update (rule UP-17).
     """
     from custom_components.device_sentinel.const import (
         DATA_STORMS,
@@ -509,9 +505,9 @@ async def test_one_storm_keeps_its_own_two_sentences(hass: HomeAssistant):
 async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
     """Even beside a real storm on the same integration.
 
-    Counting openings per scope was not enough: the live fleet had a
-    genuine mqtt storm and an orphan mqtt closing in the same window,
-    and the orphan was spoken anyway.
+    Counting openings per scope is not enough: a genuine mqtt storm and
+    an orphan mqtt closing can share a window, and the orphan must still
+    not be spoken (rule BRIEF-04).
     """
     from custom_components.device_sentinel.const import (
         SYS_DEVICES,
@@ -535,11 +531,11 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
 async def test_a_corrupt_storm_row_cannot_break_the_listener(
     hass: HomeAssistant,
 ):
-    """One malformed row would have stopped event processing.
+    """One malformed row does not stop event processing.
 
     The exemption is read inside the event listener, so an
     AttributeError there breaks the device that triggered it. The
-    restore path beside it has always checked shape (ruling #231).
+    restore path beside it checks shape too.
     """
     from custom_components.device_sentinel.const import DATA_STORMS
 
@@ -575,17 +571,16 @@ def test_an_absurd_uptime_is_refused():
 async def test_a_poller_is_recognized_once_and_stays_recognized(
     hass: HomeAssistant,
 ):
-    """The loop the reference fleet ran for four hours.
+    """A poller stays a poller while it keeps storming (rule UP-17).
 
-    An integration read as a poller was never fed again, so its
-    history stopped accruing, its rows aged out of the hour, the
-    verdict lapsed, and it stormed ten more times. The fleet's own
-    log shows exactly ten storms an hour for four hours, which is the
-    exemption threshold rather than anything the router was doing
-    (ruling #232).
+    An integration read as a poller and never fed again stops
+    accruing history, its rows age out of the hour, the verdict
+    lapses, and it storms ten more times: exactly ten storms an hour,
+    which is the exemption threshold rather than anything the router
+    is doing.
 
-    Four hours of a burst every 36 seconds, which is the reference
-    integration's own cadence.
+    Four hours of a burst every 36 seconds, the integration's own
+    cadence.
     """
     from custom_components.device_sentinel.const import (
         DATA_STORMS,
@@ -654,8 +649,8 @@ async def test_an_integration_that_settles_stops_being_a_poller(
 async def test_a_poller_stamps_no_episode(hass: HomeAssistant):
     """Its devices learn their poll cadence as rhythm.
 
-    That is the whole point of recognising a poller, and it is the
-    half that must survive the fix (ruling #232).
+    That is the point of recognizing a poller, and the half that must
+    survive (rule UP-17).
     """
     from custom_components.device_sentinel.const import (
         STORM_DEVICE_THRESHOLD,
@@ -685,15 +680,14 @@ async def test_a_poller_stamps_no_episode(hass: HomeAssistant):
 async def test_a_poller_says_nothing_in_the_log(
     hass: HomeAssistant, caplog
 ):
-    """The fourth surface a poller is silent on (ruling #232).
+    """The debug line is the fourth surface a poller is silent on
+    (rule UP-17).
 
-    #232 named three, the opening event, the closing event and the
-    episode stamp, and the debug line was gated on the report count
-    instead. On 17 August the reference fleet wrote 742 of them in
-    seven and a half hours, 379 after tplink_router had been
-    reclassified, in a log a person reads to find out what is wrong.
-    An integration whose bursts are its own polling cadence is
-    behaving normally, and normal behaviour is not information.
+    The opening event, the closing event and the episode stamp are
+    the other three. A poller can write hundreds of debug lines in a
+    few hours, in a log a person reads to find out what is wrong. An
+    integration whose bursts are its own polling cadence is behaving
+    normally, and normal behavior is not information.
     """
     from custom_components.device_sentinel.const import (
         STORM_DEVICE_THRESHOLD,
@@ -740,10 +734,9 @@ async def test_a_real_storm_still_says_so_and_no_longer_claims_an_exclusion(
 ):
     """The half that must survive the gate.
 
-    A hub reconnecting is not normal and stays in the log. What
-    changed is the wording: a storm excludes nothing from learning
-    and has not since taint became the only surviving exclusion
-    (rulings #124 and #125), so the count is named for what it is.
+    A hub reconnecting is not normal and stays in the log. A storm
+    excludes nothing from learning, since taint is the only exclusion
+    left, so the count is named for what it is (rule FRZ-12).
     """
     from custom_components.device_sentinel.const import (
         STORM_DEVICE_THRESHOLD,
@@ -768,8 +761,7 @@ async def test_a_real_storm_still_says_so_and_no_longer_claims_an_exclusion(
 
 async def test_storm_rows_are_trimmed_at_one_hour(hass: HomeAssistant):
     """Nothing reads them past an hour, so nothing keeps them past
-    one (ruling #320, amending #232). The daily record moved to the
-    storm tally."""
+    one. The daily record is the storm tally (rule UP-17)."""
     from custom_components.device_sentinel.const import (
         DATA_STORMS,
         STORM_KEEP_SECONDS,
@@ -786,12 +778,12 @@ async def test_storm_rows_are_trimmed_at_one_hour(hass: HomeAssistant):
 
 
 def test_an_unclosed_window_does_not_stay_open_forever():
-    """The 17 August fault: a bridge outage from the 2nd was still
-    explaining recoveries on the 17th (ruling #287).
+    """A bridge outage from weeks ago does not explain today's
+    recoveries (rule STOR-18).
 
-    An opening whose closing was never written stayed open with no
+    An opening whose closing was never written would stay open with no
     upper bound, and attribute() prefers the earliest window, so an
-    ancient orphan beat every real candidate.
+    ancient orphan would beat every real candidate.
     """
     events = [
         {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
@@ -878,7 +870,7 @@ def test_a_device_silenced_at_the_moment_it_opened_keeps_its_cause():
 # ------------------------- a closing lands on the window it closes
 
 def test_a_closing_count_lands_on_the_window_it_closes() -> None:
-    """The fault this release nearly shipped.
+    """A closing's count goes to the window it closes.
 
     A bridge goes down with no count, comes back carrying one, and a
     second bridge goes down afterwards. The count belongs to the
@@ -942,19 +934,18 @@ def test_a_closing_with_no_open_window_changes_nothing() -> None:
     assert orphan.end is None
 
 
-# ------------------------- corrupted rows are skipped (ruling #363)
+# ---------------------------------------------- corrupted rows are skipped
 
 
 def test_a_type_corrupted_row_is_skipped_not_fatal() -> None:
-    """A log row storage corruption gave the wrong types.
+    """A log row that storage damage gave the wrong types.
 
-    Found by the rebuilt attack rig on 29 August 2026, three shapes
-    reproduced: a string timestamp crashed the sort, a string
-    duration crashed the restart arithmetic, and a list kind crashed
-    the pairing lookup. The shape check names such damage but
-    removes nothing, so the builder must survive it: the row is
-    skipped, one attribution is lost, and everything readable still
-    builds.
+    Three shapes: a string timestamp crashes the sort, a string
+    duration crashes the restart arithmetic, and a list kind crashes
+    the pairing lookup. The shape check names such damage but removes
+    nothing, so the builder must survive it: the row is skipped, one
+    attribution is lost, and everything readable still builds
+    (rule STOR-12).
     """
     log = [
         _row(SYS_BRIDGE_DOWN, "z2m", T0),
@@ -973,7 +964,7 @@ def test_a_type_corrupted_row_is_skipped_not_fatal() -> None:
 
 def test_a_timestamp_that_is_not_a_moment_is_skipped() -> None:
     """The same real-moment test the outage onset uses: a number,
-    not a bool, greater than zero (ruling #363)."""
+    not a bool, greater than zero."""
     for stamp in (True, False, 0, -5.0, None, "yesterday", [T0]):
         found = attribution.windows(
             [{SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m",
@@ -984,7 +975,7 @@ def test_a_timestamp_that_is_not_a_moment_is_skipped() -> None:
 
 def test_a_wrong_typed_duration_reads_as_zero() -> None:
     """The restart window then covers the restart moment itself,
-    exactly as a missing duration does (ruling #363)."""
+    exactly as a missing duration does."""
     with_junk = attribution.windows(
         [{SYS_KIND: SYS_RESTART, SYS_SCOPE: "", SYS_WHEN: T0,
           SYS_DURATION: {"deep": 1}}]
@@ -998,7 +989,7 @@ def test_a_wrong_typed_duration_reads_as_zero() -> None:
 # Whole-stack outages, on the coordinators that report their own
 # liveness. Both cases assert the same thing from opposite ends: an
 # opening a stack outage explains is not a mystery, and never reaches
-# the repeat-offender table (#305, #374).
+# the repeat-offender table (rule BRIEF-09).
 
 
 def _stack_fleet(hass, count, prefix, domain, z2m=False):
@@ -1112,13 +1103,12 @@ async def test_a_bridge_flapping_all_night_explains_its_devices(
 async def test_a_wifi_outage_explains_the_devices_it_took_down(
     hass: HomeAssistant,
 ):
-    """Found on the reference fleet, in the brief itself.
+    """A Wi-Fi outage explains the devices it took down (rule BRIEF-05).
 
-    A Wi-Fi outage was announced four lines above a Repeat Offenders
-    table listing three presence sensors that failed during it, each
-    correlated with the other two, under a paragraph promising that
-    the usual causes had been ruled out. The outage was recorded in
-    0.20.3 and never registered here, so it explained nothing.
+    An outage that is recorded but not matched explains nothing, so a
+    Repeat Offenders table can list three presence sensors that failed
+    during it, each correlated with the other two, four lines below
+    the outage itself.
 
     A network outage reaches every integration, because what failed
     is the transport under all of them rather than any one stack.
@@ -1146,7 +1136,7 @@ async def test_a_wifi_outage_explains_the_devices_it_took_down(
 async def test_an_integration_outage_explains_its_own_devices_only(
     hass: HomeAssistant,
 ):
-    """The same omission, shipped one release earlier (0.20.1).
+    """An integration outage explains its own devices (rule BRIEF-05).
 
     Scoped to its own domain, unlike the network: an integration
     falling says nothing about a device belonging to another one, and
@@ -1180,8 +1170,8 @@ async def test_an_integration_outage_explains_its_own_devices_only(
 
 def test_both_outages_build_a_window() -> None:
     """The unit beneath both cases: a pair that is not in the map
-    builds nothing at all, which is how two shipped outages came to
-    explain nothing."""
+    builds nothing at all, so an outage missing from it explains
+    nothing (rule BRIEF-05)."""
     for down, up, scope in (
         (SYS_WIFI_DOWN, SYS_WIFI_UP, "wifi"),
         (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP, "zwave_js"),

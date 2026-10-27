@@ -3,13 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_model_pace.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_battery_model_pace.py, Version: 0.27.10 (2026-10-27)
 
-"""How fast the others of a battery's model fall, as context (#738).
+"""How fast the others of a battery's model fall, shown as context
+(rule BAT-16).
 
-Measured on both houses on 23 October 2026: a battery given its sisters'
-pace missed its own by about as much as the pace, so the pace is shown
-beside a battery and never sets its time left.
+A battery given its sisters' pace misses its own by about as much as
+the pace itself, so the pace is shown beside a battery and never sets
+its time left.
 """
 
 from __future__ import annotations

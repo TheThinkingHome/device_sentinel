@@ -3,10 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: outage_helpers.py, Version: 0.27.5 (2026-10-26)
+# File: outage_helpers.py, Version: 0.27.10 (2026-10-27)
 
-"""Helpers for the outage and unwatched-time tests (rulings #647 and #648):
-a device armed with a dated rhythm, minute walks, reloads and restarts."""
+"""Helpers for the outage and unwatched-time tests (rules UNAV-04, WATCH-08): a
+device armed with a dated rhythm,
+minute walks, reloads and restarts.
+"""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -117,7 +119,7 @@ def _take_states(hass):
     A real start begins with an empty state machine: Device Sentinel can
     set up before the integrations it watches, and a router integration
     may answer minutes later. Device Sentinel's own entities are left to
-    its unload and setup (0.27.5, 2026-10-26).
+    its unload and setup.
     """
     registry = er.async_get(hass)
     taken = []
@@ -146,14 +148,14 @@ async def restart(
     that event: Home Assistant's "unavailable" placeholder comes first.
     `keep_states=True` keeps the state machine as it stood, for a test
     that needs states present at setup. States are taken after
-    `before_setup`, so one it removes stays away (0.27.5, 2026-10-26).
+    `before_setup`, so one it removes stays away.
 
     Home Assistant does not unload an integration when it stops: it
     fires its stop event, Device Sentinel's stop handler saves, and the
     process ends. So the real stop handler runs and its save is the
     last write; the old coordinator is then torn down with every later
     write silenced, as a process that has ended writes nothing, and a
-    fresh one starts from the stored files (0.27.5, 2026-10-26).
+    fresh one starts from the stored files.
 
     `unload=True` is the other door: an entry reloaded or disabled from
     the Integrations page, whose unload writes as it always has.

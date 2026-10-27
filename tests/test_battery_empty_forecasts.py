@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_empty_forecasts.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_empty_forecasts.py, Version: 0.27.10 (2026-10-27)
 
-"""Forecasts to empty after a cell's first low (ruling #735).
+"""Forecasts to empty after a cell's first low (rules BAT-13, BAT-15).
 
-James, 23 October 2026: when a battery crosses the threshold the first
-time it may recover over it, but from then on the forecast runs to
-empty, and those forecasts are kept and scored apart. Few devices are
-seen reading 0 percent, so one that went silent before its battery was
-replaced ran out on the day it was last heard.
+A battery that crosses the threshold the first time may recover over
+it, but from then on the forecast runs to empty, and those forecasts
+are kept and scored apart. Few devices are seen reading 0 percent, so
+one that went silent before its battery was replaced ran out on the
+day it was last heard.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from custom_components.device_sentinel.report_battery import battery_latched
 from .helpers import register_device, registry_settled, setup_coordinator
 from .test_falling_surfaces import _battery_device
 
-# Tim Plas's S63 carried down: steady, then speeding up.
+# A real S63 cell carried down: steady, then speeding up.
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,

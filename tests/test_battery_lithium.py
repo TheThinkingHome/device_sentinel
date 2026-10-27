@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_lithium.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_lithium.py, Version: 0.27.10 (2026-10-27)
 
-"""A lithium cell is said to be one (#736).
+"""A lithium cell is said to be one (rule BAT-16).
 
-James's 11 Aqara coin cells on Zigbee2MQTT read exactly 100% on all 85
-days of 23 October 2026: a lithium cell's percentage holds near full
-until its end, so a steady reading says little about time left.
+A lithium cell's percentage holds near full until its end, so a steady
+reading says little about its time left. Coin cells on Zigbee2MQTT
+read exactly 100% for months on end.
 """
 
 from __future__ import annotations

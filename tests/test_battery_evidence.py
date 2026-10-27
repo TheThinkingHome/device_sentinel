@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_evidence.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_evidence.py, Version: 0.27.10 (2026-10-27)
 
-"""Each battery device's day kept for a better forecast later (#737).
+"""Each battery device's day kept for a better forecast later
+(rule BAT-16).
 
-James, 23 October 2026: "anything we can do so that in the future, we
-can build it more accurate." The voltage moves while a lithium cell's
-percentage holds at 100; the device's own temperature and its count of
-messages are kept beside it. Nothing reads them yet.
+The voltage moves while a lithium cell's percentage holds at 100, so
+the voltage is kept, with the device's own temperature and its count
+of messages beside it. Nothing reads them yet.
 """
 
 from __future__ import annotations

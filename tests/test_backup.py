@@ -3,23 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_backup.py, Version: 0.12.13 (2026-08-07)
+# File: test_backup.py, Version: 0.27.10 (2026-10-27)
 
-"""The copy taken before a release removes what it cannot put back.
+"""The copy taken before a release removes what it cannot put back
+(rule STOR-19).
 
-#130 amended the split's original plan of one backup for four phases.
-Rollback is free at every step while the main file goes on carrying
-the clock fields unused, because an older version loads a complete
-record and loses nothing. The phase that strips those fields closes
-that window: afterwards, stepping back loads a file whose clocks
-stopped at the moment of the strip.
-
-This ships with no caller. The mechanism that did the job for the
-earlier phases was removed in 0.10.1 once its copies had been taken,
-which left the requirement with nothing behind it, and rebuilding it
-inside the release that also strips would mean its first exercise is
-the one run that matters. So it is built and proven here, and the
-strip release adds only the call.
+Rollback is free while the main file carries the clock fields unused,
+because an older version loads a complete record and loses nothing.
+Stripping those fields closes that window: afterwards, stepping back
+loads a file whose clocks stopped at the moment of the strip. So a
+copy is taken first.
 
 The behaviour that matters most is the failure path: a caller about to
 remove data must be able to tell that the copy did not happen, because
@@ -111,8 +104,8 @@ async def test_both_files_are_copied(hass: HomeAssistant):
 async def test_the_copy_sits_beside_the_original(hass: HomeAssistant):
     """The original is untouched, and named backups do not collide.
 
-    #130 asks for a name of its own so this copy sits beside the
-    pre-split backup rather than replacing it.
+    This copy has a name of its own so it sits beside the pre-split
+    backup rather than replacing it.
     """
     _write(hass, STORAGE_KEY, '{"main": 1}')
     _write(hass, STORAGE_CLOCKS_KEY, '{"clocks": 1}')
@@ -181,12 +174,11 @@ async def test_the_retired_marker_is_pruned_from_storage(
 ):
     """The pre-strip backup is gone and takes its marker with it.
 
-    Nothing takes that copy any more (ruling #241): every install writes
-    both files in the split shape, so the transition it guarded
-    cannot occur. A marker left by an older version is dropped on
-    load rather than carried in every save from now on, while an
-    epoch marker beside it survives, because #204 still uses the
-    mechanism.
+    Every install writes both files in the split shape, so the transition
+    the copy guarded cannot occur (rule STOR-01). A marker left by an older
+    version is dropped on load rather than carried in every save, while an
+    epoch marker beside it survives, because the epoch still uses the
+    mechanism (rule STOR-19).
     """
     hass_storage[STORAGE_KEY] = {
         "version": 1,

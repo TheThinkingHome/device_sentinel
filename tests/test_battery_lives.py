@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_lives.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_lives.py, Version: 0.27.10 (2026-10-27)
 
-"""Each battery replaced leaves a row for the battery that ended (#739).
+"""Each battery replaced leaves a row for the battery that ended
+(rule BAT-08).
 
-These are the finished lives a survival model learns from: no battery on
-either house had been watched from new to replaced when 0.27.1 was built.
-A battery's start is the replacement on record, or else the day the
-device was first seen, never the first day its trimmed history keeps:
-the History setting keeps 90 days by default and a coin cell lasts
-years (James, 23 October 2026).
+These are the finished lives a survival model learns from. A
+battery's start is the replacement on record, or else the day the
+device was first seen, never the first day its trimmed history keeps,
+because the History setting keeps 90 days by default and a coin cell
+lasts years.
 """
 
 from __future__ import annotations
@@ -122,9 +122,10 @@ async def test_a_day_given_with_nothing_detected_adds_a_row_from_first_seen(hass
 
 async def test_a_day_given_before_the_rise_is_one_battery(hass: HomeAssistant):
     """The person gives the day the evening they swap the cell; the rise
-    confirmed nights later is that same replacement (#701), so the battery
-    that ended keeps one row, ending on the person's day, and runs to the
-    old cell's last heard level."""
+    confirmed nights later is that same replacement (rule BAT-07), so the
+    battery that ended keeps one row, ending on the person's day, and runs
+    to the old cell's last heard level.
+    """
     _entry, coord, device, record = await _house(hass)
     _fold(coord, record, device.id, [40, 39, 38], _start())
     given = (_start() + timedelta(days=3)).isoformat()

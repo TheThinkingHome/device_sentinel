@@ -3,19 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_absence_is_the_device.py, Version: 0.24.8 (2026-10-05)
+# File: tests/test_absence_is_the_device.py, Version: 0.27.10 (2026-10-27)
 
-"""An absence belongs to the device, not to one of its entities.
+"""An absence belongs to the device, not to one of its entities
+(rules GEN-03, UNAV-01).
 
 When an entity goes unavailable or unknown, Device Sentinel notes when,
 and if the absence outlasts the device's tolerance the device's next
-gap is not learned. Until 0.24.3 the absence was kept per entity and
-measured only when that entity came back, so a device heard all the
-while through its other entities was tainted anyway. On the reference
-rig on 3 October, Button Randy Night Table's action entity sat at
-unknown from the 15:04 restart until a press at 23:58, 8.9 hours, while
-the button was heard through its other entities; the press tainted it
-and its next gap was forgotten. And an event entity reads unknown after
+gap is not learned. An absence kept per entity and measured only when
+that entity came back would taint a device heard all the while through
+its other entities: a button's action entity sits at unknown from a
+restart until the next press, hours later, while the button is heard
+through its other entities. And an event entity reads unknown after
 every restart until its next event, which is no absence at all.
 """
 
@@ -41,13 +40,11 @@ HOUR = 3600.0
 
 @pytest.fixture(autouse=True)
 def _one_day(freezer):
-    """Every test here starts at a fixed moment (0.24.8).
+    """Every test here starts at a fixed moment (rule CODE-13).
 
-    The runs span up to fourteen hours. Started from the real clock,
-    they crossed the harness's local midnight on some evenings, and the
-    fold then filed what a test reads into the day before: one test
-    failed from 22:15 to 00:45 UTC on 4 October, a second on 5 October.
-    Pinned in 0.24.6 one test at a time; the whole file is pinned here.
+    The runs span up to fourteen hours. Started from the real clock, they
+    cross the harness's local midnight on some evenings, and the fold then
+    files what a test reads into the day before.
     """
     freezer.move_to("2026-10-01 12:00:00+00:00")
 
@@ -92,7 +89,9 @@ async def _report(hass, freezer, after, *entity_values):
 
 
 async def test_a_device_heard_through_another_entity_was_not_absent(hass, freezer):
-    """Button Randy Night Table, 3 October."""
+    """A button heard through its other entities while its action entity
+    reads unknown.
+    """
     coord, record, main, seen = await _button(hass, freezer)
     hass.states.async_set(main, "unavailable")
     hass.states.async_set(main, "unknown")
@@ -100,7 +99,7 @@ async def test_a_device_heard_through_another_entity_was_not_absent(hass, freeze
     for hours in (1, 2, 3):
         await _report(hass, freezer, hours * HOUR, (seen, None))
     # The press: Zigbee2MQTT's one message updates Last seen first, then
-    # the action, as at 23:58 on 3 October.
+    # the action.
     await _report(hass, freezer, 2.9 * HOUR, (seen, None), (main, None))
     record[DEV_TODAY_MAX] = None
     await _report(hass, freezer, 5 * HOUR, (seen, None))

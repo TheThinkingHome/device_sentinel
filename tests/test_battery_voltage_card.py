@@ -3,17 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_voltage_card.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_battery_voltage_card.py, Version: 0.27.10 (2026-10-27)
 
-"""The Battery Voltage Switched Off card (0.27.3).
+"""The Battery Voltage Switched Off card (rules REC-05, REC-09, REC-10).
 
-Each night keeps a battery device's voltage (#737), but Zigbee2MQTT
-ships its voltage sensor switched off, and turning on the battery
-sensor turns on the percentage only. James ruled a card of its own on
-24 October 2026: built as the other switched-off cards (#698, #699),
-counted in the emailed Brief, and listing only a device with a battery
-reading whose voltage nothing else reports. Shown in Simple as well
-since 0.27.4 (rule REC-09).
+Each night keeps a battery device's voltage (rule BAT-16), but
+Zigbee2MQTT ships its voltage sensor switched off, and turning on the
+battery sensor turns on the percentage only. So the card is built as
+the other switched-off cards are, counted in the emailed Brief, shown
+in Simple too, and lists only a device with a battery reading whose
+voltage nothing else reports.
 """
 
 from __future__ import annotations
@@ -56,9 +55,10 @@ async def _coord(hass):
 
 
 async def test_a_battery_device_with_its_voltage_off_is_listed_in_simple_and_advanced(hass: HomeAssistant):
-    """Listed, and counted in the emailed Brief (#700). Shown in Simple as
-    well (rule REC-09, James 25 October 2026): Simple's device page no
-    longer offers to turn a sensor on, so the card is where it is done."""
+    """Listed, and counted in the emailed Brief (rule REC-10). Shown in
+    Simple as well, because Simple's device page does not offer to turn a
+    sensor on, so the card is where it is done (rule REC-09).
+    """
     door, _ = _device(hass, "d1", "Door Hall")
     coord = await _coord(hass)
     card = _card(coord)
@@ -66,7 +66,7 @@ async def test_a_battery_device_with_its_voltage_off_is_listed_in_simple_and_adv
     assert [row["device_id"] for row in card["devices"]] == [door.id]
     assert card["simple"] is True and card["active"] == 1
     assert "Battery Voltage Switched Off (1): " in "\n".join(coord._recommendations_section())
-    # James's words, 24 October 2026.
+    # The card's body, word for word as agreed (rule REC-05).
     assert "This device has a battery voltage entity which can be used for more accurate battery reporting and forecasting." in card["body"]
 
 
@@ -92,7 +92,8 @@ async def test_a_device_with_no_battery_reading_is_not_listed(hass: HomeAssistan
 
 async def test_a_wired_device_is_not_listed(hass: HomeAssistant):
     """A device on mains with a backup battery reading: its voltage
-    sensor reads the supply, not a battery (adversarial round)."""
+    sensor reads the supply, not a battery.
+    """
     siren, _ = _device(hass, "s1", "Siren Hall")
     coord = await _coord(hass)
     coord.page_set_power(siren.id, "Mains Powered")
@@ -123,7 +124,7 @@ async def test_its_row_turns_on_the_voltage_sensor_only(hass: HomeAssistant):
 
 
 async def test_a_tick_leaves_the_brief(hass: HomeAssistant):
-    """Ticked as the other switched-off cards are (#699)."""
+    """Ticked as the other switched-off cards are (rule REC-07)."""
     door, _ = _device(hass, "d4", "Door Hall")
     coord = await _coord(hass)
     coord.set_recommendation_ack(True, kind="voltage_off", device_id=door.id)

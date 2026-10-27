@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_level_text.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_level_text.py, Version: 0.27.10 (2026-10-27)
 
-"""One battery level, said the same way everywhere (0.27.1).
+"""One battery level, said the same way everywhere (rule BAT-03).
 
-James, 23 October 2026: Door 2nd Bedroom read 15.5% in the Daily Brief
-and on the Simple dashboard and 16% on the Advanced device page; the
-phone's summary cut it to 15%. The level is said as reported, one
-decimal at most.
+The Daily Brief, both dashboards and the phone's summary once rounded
+the same reading three ways: 15.5%, 16% and 15%. The level is said as
+reported, one decimal at most.
 """
 
 from __future__ import annotations

@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_last_replaced.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_battery_last_replaced.py, Version: 0.27.10 (2026-10-27)
 
-"""Battery Last Replaced and a person's answer to a detected one.
+"""Battery Last Replaced and a person's answer to a detected one
+(rules BAT-06, BAT-07).
 
-Rulings #701 and #702: a battery device's page shows the day, a
-detected replacement waits on a Confirm Battery Replacement card and a
-Brief line until someone confirms it, cancels it or gives the right
-day, and the battery history follows the answer. One entry per device
-in the answers file holds what the row says, written by the latest
-event (the design of 19 October 2026, after four review rounds).
+A battery device's page shows the day. A detected replacement waits on
+a Confirm Battery Replacement card and a Brief line until someone
+confirms it, cancels it or gives the right day, and the battery history
+follows the answer. One entry per device in the answers file holds what
+the row says, written by the latest event (rule STOR-20).
 """
 
 from __future__ import annotations
@@ -92,8 +92,8 @@ def _card(coord):
 
 
 async def test_a_detected_replacement_waits_for_a_person(hass: HomeAssistant):
-    """Used at once, as before, and waiting on a card in Simple and a
-    Brief line naming the device and the day (ruling #701)."""
+    """Used at once, and waiting on a card in Simple and a Brief line
+    naming the device and the day (rule BAT-06)."""
     _entry, coord, device, record = await _detected(hass)
     assert record[DEV_BATTERY_DAILY_PREVIOUS] == [40.0, 39.0, 38.0, 37.0]
     assert record[DEV_LOGNORMAL_DAYS] == 0
@@ -119,7 +119,7 @@ async def test_confirm_keeps_the_detected_day(hass: HomeAssistant, hass_storage)
 
 async def test_confirm_is_refused_when_nothing_waits(hass: HomeAssistant):
     """A card left open in a second browser cannot overwrite a day the
-    person entered (found by review)."""
+    person entered (rule BAT-07)."""
     _entry, coord, device, _record = await _detected(hass)
     given = (_start() + timedelta(days=3)).isoformat()
     coord.battery_answer(device.id, "date", given)
@@ -129,9 +129,9 @@ async def test_confirm_is_refused_when_nothing_waits(hass: HomeAssistant):
 
 
 async def test_cancel_joins_the_history_and_leaves_the_count(hass: HomeAssistant):
-    """Ruling #702: the cell was never changed, so its history is one
-    again. Ruling #709: the freeze rule's day count is left as it
-    stands, and regrows as after any detection."""
+    """The cell was never changed, so its history is one again, and the
+    freeze rule's day count stands as it is and regrows as after any
+    detection (rule BAT-07)."""
     _entry, coord, device, record = await _detected(hass)
     record[DEV_LOGNORMAL_DAYS] = 2
     coord.battery_answer(device.id, "cancel")
@@ -146,7 +146,7 @@ async def test_cancel_joins_the_history_and_leaves_the_count(hass: HomeAssistant
 
 async def test_cancelling_a_second_detection_keeps_the_first(hass: HomeAssistant):
     """Cancel returns the row to the replacement before, not to none
-    (found by review)."""
+    (rule BAT-07)."""
     _entry, coord, device, record = await _detected(hass)
     coord.battery_answer(device.id, "confirm")
     first = coord.battery_replacement_view(device.id)["day"]
@@ -160,8 +160,8 @@ async def test_cancelling_a_second_detection_keeps_the_first(hass: HomeAssistant
 
 
 async def test_a_day_given_splits_the_history_there(hass: HomeAssistant):
-    """Change date (#702): the entries on and after the day belong to
-    the cell in the device, and the answer is the person's own."""
+    """Change date: the entries on and after the day belong to the cell
+    in the device, and the answer is the person's own (rule BAT-07)."""
     _entry, coord, device, record = await _house(hass)
     today = dt_util.now().date()
     days = [today - timedelta(days=6 - i) for i in range(6)]
@@ -181,8 +181,8 @@ async def test_a_day_given_splits_the_history_there(hass: HomeAssistant):
 
 
 async def test_a_day_given_stands_however_old(hass: HomeAssistant):
-    """A day entered long before the detected one is the row's day
-    (found by review): the latest event wins, nothing is compared."""
+    """A day entered long before the detected one is the row's day:
+    the latest event wins, nothing is compared (rule BAT-07)."""
     _entry, coord, device, _record = await _detected(hass)
     given = (dt_util.now().date() - timedelta(days=200)).isoformat()
     coord.battery_answer(device.id, "date", given)
@@ -194,7 +194,7 @@ async def test_a_day_given_stands_however_old(hass: HomeAssistant):
 async def test_a_day_given_while_a_rise_waits_ends_it(hass: HomeAssistant):
     """A day given the morning after a cell is swapped, its rise still
     waiting for a second night: the next midnight confirms nothing over
-    the person's answer and the run does not stop (found by review)."""
+    the person's answer and the run does not stop (rule BAT-06)."""
     _entry, coord, device, record = await _house(hass)
     record[DEV_LOGNORMAL_DAYS] = 20
     _fold(coord, record, device.id, [40, 39, 38, 100], _start())
@@ -212,7 +212,7 @@ async def test_a_day_entered_before_the_new_level_stands(hass: HomeAssistant):
     """The person gives the day the evening they swap the cell; the
     device reports the new level later and the rise is confirmed two
     nights on. That is the same replacement: no card, and the row keeps
-    the person's day (found by review)."""
+    the person's day (rule BAT-07)."""
     _entry, coord, device, record = await _house(hass)
     _fold(coord, record, device.id, [40, 39, 38], _start())
     given = (_start() + timedelta(days=2)).isoformat()
@@ -225,8 +225,8 @@ async def test_a_day_entered_before_the_new_level_stands(hass: HomeAssistant):
 
 
 async def test_a_confirmed_day_does_not_move_after_the_history_days(hass: HomeAssistant):
-    """Once stored, the day is never worked out again (found by review):
-    a cell that outlasts the History days keeps its day."""
+    """Once stored, the day is never worked out again, so a cell that
+    outlasts the History days keeps its day (rule BAT-07)."""
     _entry, coord, device, record = await _detected(hass)
     coord.battery_answer(device.id, "confirm")
     record[DEV_BATTERY_DAILY] = [90.0] * coord.retention_days
@@ -234,8 +234,8 @@ async def test_a_confirmed_day_does_not_move_after_the_history_days(hass: HomeAs
 
 
 async def test_a_replacement_detected_before_0_26_7_counts_as_confirmed(hass: HomeAssistant):
-    """No card at the upgrade (#701); the day is the new cell's first
-    kept day, stored once at the start."""
+    """No card at the upgrade; the day is the new cell's first kept day,
+    stored once at the start (rule BAT-07)."""
     _entry, coord, device, record = await _house(hass)
     today = dt_util.now().date()
     days = [today - timedelta(days=4 - i) for i in range(4)]
@@ -252,8 +252,8 @@ async def test_a_replacement_detected_before_0_26_7_counts_as_confirmed(hass: Ho
 
 
 async def test_a_detection_by_0_26_6_after_a_downgrade_is_dated_once(hass: HomeAssistant):
-    """A stamp no entry carries, written by 0.26.6, replaces an older
-    answer with the new cell's first day (found by review)."""
+    """A stamp no entry carries, written by an older release, replaces an
+    older answer with the new cell's first day (rule STOR-19)."""
     _entry, coord, device, record = await _house(hass)
     old = (dt_util.now().date() - timedelta(days=90)).isoformat()
     coord._battery_answers()[device.id] = {"day": old, "how": "confirmed", "stamp": "2026-07-01T05:00:00+00:00",
@@ -269,7 +269,7 @@ async def test_a_detection_by_0_26_6_after_a_downgrade_is_dated_once(hass: HomeA
 
 async def test_a_wired_device_never_waits_on_the_card(hass: HomeAssistant):
     """A device answered as wired that still reports a rising level is
-    not listed: there is no row to answer it from (found by review)."""
+    not listed, because there is no row to answer it from (rule BAT-07)."""
     _entry, coord, device, _record = await _detected(hass)
     coord.page_set_power(device.id, "Mains Powered", None)
     assert _card(coord) is None
@@ -326,7 +326,7 @@ async def test_the_ws_command_is_admin_only(
 
 async def test_two_cancels_go_back_through_the_history(hass: HomeAssistant):
     """A confirmed replacement, then two false rises left unanswered:
-    two Cancels come back to the confirmed one (found by review)."""
+    two Cancels come back to the confirmed one (rule BAT-07)."""
     _entry, coord, device, record = await _detected(hass)
     coord.battery_answer(device.id, "confirm")
     first = coord.battery_replacement_view(device.id)["day"]
@@ -341,8 +341,8 @@ async def test_two_cancels_go_back_through_the_history(hass: HomeAssistant):
 
 async def test_an_entry_goes_with_its_device(hass: HomeAssistant):
     """An excluded device's record goes at the fold; its entry goes at
-    the next start or midnight, as power and type answers do (found by
-    review)."""
+    the next start or midnight, as power and type answers do
+    (rule STOR-20)."""
     _entry, coord, device, _record = await _detected(hass)
     del coord.data[DATA_DEVICES][device.id]
     coord._settle_battery_entries()
@@ -352,7 +352,7 @@ async def test_an_entry_goes_with_its_device(hass: HomeAssistant):
 async def test_a_main_file_older_than_the_entry_shows_no_card(hass: HomeAssistant):
     """The main file restored from a copy made before the detection: the
     record knows no replacement, so nothing waits and the replacement
-    before stands (found by review)."""
+    before stands (rule STOR-20)."""
     _entry, coord, device, record = await _detected(hass)
     record[DEV_BATTERY_REPLACED_AT] = None
     assert _card(coord) is None
@@ -363,7 +363,7 @@ async def test_a_main_file_older_than_the_entry_shows_no_card(hass: HomeAssistan
 
 async def test_nothing_is_taken_while_stopping(hass: HomeAssistant):
     """A click as Home Assistant stops would reach the answers file and
-    not the main file (found by review)."""
+    not the main file, so nothing is taken (rule STOR-20)."""
     _entry, coord, device, _record = await _detected(hass)
     coord._stopped = True
     try:
@@ -375,8 +375,8 @@ async def test_nothing_is_taken_while_stopping(hass: HomeAssistant):
 
 async def test_an_old_detection_whose_cell_outlasts_the_history_reads_the_old_cells_end(hass: HomeAssistant):
     """The new cell's first entry trimmed away: the day after the old
-    cell's last dated entry, not the confirming stamp minus a day (found
-    by review)."""
+    cell's last dated entry, not the confirming stamp minus a day
+    (rule BAT-07)."""
     _entry, coord, device, record = await _house(hass)
     keep = coord.retention_days
     today = dt_util.now().date()
@@ -395,7 +395,7 @@ async def test_an_old_detection_whose_cell_outlasts_the_history_reads_the_old_ce
 async def test_a_day_entered_before_the_new_level_keeps_the_old_cells_history(hass: HomeAssistant):
     """The person's day set the old cell's history aside; the rise
     confirmed after it is the same replacement and adds to that history
-    rather than replacing it (found by review)."""
+    rather than replacing it (rule BAT-08)."""
     _entry, coord, device, record = await _house(hass)
     _fold(coord, record, device.id, [40, 39, 38], _start())
     coord.battery_answer(device.id, "date", (_start() + timedelta(days=3)).isoformat())
@@ -408,8 +408,7 @@ async def test_a_day_entered_before_the_new_level_keeps_the_old_cells_history(ha
 
 async def test_a_trimmed_device_starts_with_no_replacement(hass: HomeAssistant):
     """A trim deletes the device's history; its entry goes with it, so a
-    fresh record reads no replacement, not an earlier one (found by
-    review)."""
+    fresh record reads no replacement, not an earlier one (rule CFG-10)."""
     _entry, coord, device, record = await _detected(hass)
     coord.battery_answer(device.id, "confirm")
     await coord._apply_trim_selection({**coord.entry.options, CONF_TRIM_DEVICES: [device.id]})

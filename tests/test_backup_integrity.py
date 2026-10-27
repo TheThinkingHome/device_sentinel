@@ -3,15 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_backup_integrity.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_backup_integrity.py, Version: 0.27.10 (2026-10-27)
 
-# Tests for 0.18.0 and 0.18.1.
-#
-# The subjects: the withheld refresh (#339), the Status latch (#341),
-# the banking repair (#338), the evidence copies (#340), the action
-# record (#342), retention pruning (#343), and the addressable fault
-# identity (#338). Each test breaks the code's input, not its
-# internals, and reads the outcome a person would read.
+"""Storage damage is repaired, recorded and copied, and old copies are
+pruned (rules STOR-04, STOR-09, STOR-11, STOR-12, STOR-13).
+
+The subjects: the last-good copy, the Status latch, the repair where
+the damage is found, the evidence copies, the action record, retention
+pruning, and the fault identity. Each test breaks the code's input,
+not its internals, and reads the outcome a person would read.
+"""
 
 import os
 import time
@@ -72,10 +73,10 @@ def _write_live_files(hass):
 async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
     hass: HomeAssistant,
 ):
-    """The rotation follows the save (ruling #370): a clean save
-    renames live to last-good, a save that repaired writes without
-    rotating, and the save after that rotates the repaired file in,
-    because a clean save is what proves it."""
+    """The rotation follows the save: a clean save renames live to
+    last-good, a save that repaired writes without rotating, and the
+    save after that rotates the repaired file in, because a clean save
+    is what proves it (rule STOR-04)."""
     coord = await setup_coordinator(hass)
     assert not coord.storage_load_faulty
     _write_live_files(hass)
@@ -94,9 +95,9 @@ async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
     device, _ = register_device(hass, "wf", name="WF")
     coord._rebuild_registry_view()
     record = coord.data[DATA_DEVICES].setdefault(device.id, {})
-    # A field of the wrong type. An unknown field is no longer damage:
-    # it is a newer version's, kept untouched (#189, amended 28
-    # September 2026), so the fault here is a known field's type.
+    # A field of the wrong type. An unknown field is not damage: it is
+    # a newer version's, kept untouched (rule STOR-19), so the fault here
+    # is a known field's type.
     record[DEV_EVENT_COUNT] = "not a number"
     await coord._save_main()
     assert coord.storage_load_faulty
@@ -113,8 +114,8 @@ async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
 async def test_the_repair_restarts_a_damaged_clock(
     hass: HomeAssistant,
 ):
-    """A damaged activity clock is restarted, recorded, and stands (#338,
-    #342)."""
+    """A damaged activity clock is restarted, recorded, and stands
+    (rules STOR-09, STOR-12)."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bank", name="BANK")
     coord._rebuild_registry_view()
@@ -146,15 +147,15 @@ async def test_the_repair_restarts_a_damaged_clock(
 
 
 async def test_evidence_copies_all_four_files(hass: HomeAssistant):
-    """The copy is raw bytes of whatever exists, stamped (#340)."""
+    """The copy is raw bytes of whatever exists, stamped (rule STOR-11)."""
     coord = await setup_coordinator(hass)
     _write_live_files(hass)
     coord._rotation_armed = True
     await coord._save_main()  # rotates the last-good copy into place
     _write_live_files(hass)
     stamp, copied = await async_copy_evidence(hass)
-    # The copier now reports what it wrote (ruling #349). Three
-    # files since #370: the clocks last-good is retired.
+    # The copier reports what it wrote (rule STOR-11). Three files,
+    # because the clocks file keeps no last-good copy.
     assert copied == [
         "the storage file",
         "the clocks file",
@@ -187,7 +188,7 @@ async def test_evidence_copies_all_four_files(hass: HomeAssistant):
 async def test_two_evidence_copies_in_one_second_both_survive(
     hass: HomeAssistant,
 ):
-    """The stamp collision rule trim learned the hard way (#340)."""
+    """Two copies stamped in the same second both survive (rule STOR-11)."""
     await setup_coordinator(hass)
     _write_live_files(hass)
     first, _ = await async_copy_evidence(hass)
@@ -199,7 +200,7 @@ async def test_pruning_respects_the_window_and_names(
     hass: HomeAssistant,
 ):
     """Old files go, young files stay, foreign files are never
-    touched (#343)."""
+    touched (rule STOR-13)."""
     await setup_coordinator(hass)
     directory = hass.config.path(TRIM_BACKUP_DIR)
     os.makedirs(directory, exist_ok=True)
@@ -220,7 +221,7 @@ async def test_pruning_respects_the_window_and_names(
 
 
 async def test_fault_ids_name_the_right_file(hass: HomeAssistant):
-    """The identity derives its file from the field (#338)."""
+    """The identity derives its file from the field (rule STOR-09)."""
     assert fault_id(("abc", "last_activity", "x")) == (
         "clocks:abc:last_activity"
     )
@@ -232,8 +233,8 @@ async def test_fault_ids_name_the_right_file(hass: HomeAssistant):
     )
 
 
-# The signal census (ruling #344) was a routine count, taken out of the
-# log with the rest (rule GEN-10, 27 October 2026).
+# The signal census was a routine count, kept out of the log
+# (rule GEN-10).
 
 
 async def test_the_signal_census_is_not_logged(hass: HomeAssistant, caplog):

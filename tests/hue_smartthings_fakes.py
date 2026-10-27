@@ -3,18 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/hue_smartthings_fakes.py, Version: 0.26.4 (2026-10-15)
+# File: tests/hue_smartthings_fakes.py, Version: 0.27.10 (2026-10-27)
 
-"""A Hue bridge and a SmartThings location built from the real libraries.
+"""A Hue bridge and a SmartThings location built from the real libraries
+(rule STACK-11).
 
 The Hue side is aiohue's own HueBridgeV2, filled through its own
 full-state path from the resource list a bridge returns, so every
-controller, model and event stream is the library's (aiohue 4.9.0 on
-Home Assistant 2026.10, 4.8.1 on 2026.5). Nothing reaches a network:
-the one request is answered here, and the event stream's tasks are
-never started. The SmartThings side is pysmartthings' own client and
-Device models, held in Home Assistant's own SmartThingsData and
-FullDevice (pysmartthings 4.0.3 on 2026.10, 3.7.3 on 2026.5).
+controller, model and event stream is the library's, on both Home
+Assistant releases the suite runs on. Nothing reaches a network: the
+one request is answered here, and the event stream's tasks are never
+started. The SmartThings side is pysmartthings' own client and Device
+models, held in Home Assistant's own SmartThingsData and FullDevice.
 """
 
 from __future__ import annotations

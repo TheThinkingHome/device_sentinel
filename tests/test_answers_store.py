@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.26.8 (2026-10-20)
+# File: tests/test_answers_store.py, Version: 0.27.10 (2026-10-27)
 
-"""The one file of pencil answers (0.25.1).
+"""The one file of pencil answers, its last-good copy, and the move
+from the old power file (rules STOR-20, STOR-01, WATCH-07).
 
 What powers a device and what a device is live in device_sentinel.answers,
-with a last-good copy taken before each save. The first start of 0.25.1
-moves the power answers out of device_sentinel.power, reads the new file
-back, and only then deletes the old file and its copy (James, 8 October
-2026). Answers for devices Device Sentinel does not watch are kept and
-listed in the diagnostics in one place.
+with a last-good copy taken before each save. The move from
+device_sentinel.power reads the new file back before it deletes the old
+file and its copy, so a failed write loses nothing. Answers for devices
+Device Sentinel does not watch are kept and listed in the diagnostics.
 
 The harness keeps storage in memory, so the files on disk (last-good
 copies, and the old power file's copy) are written by hand here, as
@@ -100,7 +100,7 @@ def _model_device(hass, uid="a1", name="Button Doorbell"):
 
 
 def _legacy_0_25_0(device_id):
-    """A power file as 0.25.0 wrote it: the model entry, and its copy for 0.24.7."""
+    """A power file in the old shape: the model entry, and its per-device copy."""
     return _doc(LEGACY_POWER_KEY, {
         "models": {KEY: _power("AAA", 2, device_id)},
         "devices": {device_id: {"kind": "battery", "type": "AAA", "quantity": 2, "set": SET, "model": KEY}},
@@ -226,7 +226,7 @@ async def test_power_and_type_answers_share_the_file_and_survive_a_restart(hass:
 
 async def test_a_save_keeps_the_previous_file_as_last_good(hass: HomeAssistant, hass_storage, _no_files):
     """Before each save the file about to be replaced becomes last-good
-    (ruling #370's rule)."""
+    (rule STOR-04)."""
     device = _model_device(hass)
     coord = await setup_coordinator(hass)
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
@@ -357,9 +357,9 @@ async def test_an_excluded_device_keeps_its_answers_for_when_it_is_watched_again
 
 
 async def test_deleting_a_device_deletes_its_answers(hass: HomeAssistant, hass_storage, _no_files):
-    """Deletes need no saving (James, 8 October 2026). Since 0.25.5 the
-    answers wait with the device's record for 30 days in case it comes
-    back (ruling #622), and go with the record."""
+    """Deletes need no saving. The answers wait with the device's record
+    for 30 days in case the device comes back, and go with the record
+    (rule WATCH-07)."""
     lonely, _ = register_device(hass, "n1", "No Maker")
     coord = await setup_coordinator(hass)
     coord.page_set_type(lonely.id, "Other", "Hub")
@@ -377,7 +377,7 @@ async def test_deleting_a_device_deletes_its_answers(hass: HomeAssistant, hass_s
 
 
 async def test_uninstall_removes_the_answers_file_and_the_old_power_file(hass: HomeAssistant, hass_storage, _no_files):
-    """0.24.7 to 0.25.0 left the power file behind on uninstall."""
+    """Uninstall also removes the old power file (rule STOR-24)."""
     entry = await setup_entry(hass)
     for key in (ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
         for suffix in ("", "last-good"):
@@ -389,7 +389,7 @@ async def test_uninstall_removes_the_answers_file_and_the_old_power_file(hass: H
             assert not os.path.exists(_disk(hass, key, suffix)), (key, suffix)
 
 
-# ------------------------------------------------- on real files (0.25.1 testing)
+# ------------------------------------------------------------ on real files
 #
 # The harness keeps storage in memory and never runs Home Assistant's
 # own reading code, which is where a wrong-shaped file fails. These run
@@ -464,8 +464,8 @@ WRONG_SHAPES = [
 
 @pytest.mark.parametrize("text", WRONG_SHAPES)
 async def test_disk_an_answers_file_of_the_wrong_shape_never_stops_a_start(hass: HomeAssistant, real_disk, text):
-    """Valid text in the wrong shape made Home Assistant raise a KeyError or
-    TypeError, and Device Sentinel did not start (found by testing)."""
+    """Valid text in the wrong shape makes Home Assistant raise a KeyError
+    or TypeError, so it must not stop Device Sentinel starting."""
     device = _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), text)
     _write(_disk(hass, ANSWERS_STORE_KEY, "last-good"), _doc(ANSWERS_STORE_KEY, {
@@ -491,9 +491,8 @@ async def test_disk_an_old_power_file_of_the_wrong_shape_never_stops_a_start(has
 
 
 async def test_disk_a_restart_inside_the_save_second_keeps_the_answers(hass: HomeAssistant, real_disk):
-    """Only the unload wrote an answer still inside its one-second wait,
-    and Home Assistant does not unload integrations when it stops
-    (found by testing; power had it since 0.24.9)."""
+    """An answer still inside its one-second wait is written at stop,
+    because Home Assistant does not unload integrations when it stops."""
     device = _model_device(hass)
     await real_disk()
     coord = await setup_coordinator(hass)
@@ -514,10 +513,9 @@ LATER = "2026-10-09T12:00:00+00:00"
 
 
 async def test_disk_coming_back_after_a_rollback_keeps_what_was_set_there(hass: HomeAssistant, real_disk, caplog):
-    """0.25.1 moved the answers; the owner went back to 0.25.0, which started
-    with no power answers, set a battery there, which wrote
-    device_sentinel.power again, and came back. That answer is taken, and
-    every other answer here stays (found by testing and review)."""
+    """After the move, a return to an older release that wrote
+    device_sentinel.power again, and an upgrade back: the answer set
+    there is taken, and every other answer here stays (rule STOR-19)."""
     device = _model_device(hass)
     other_key = json.dumps(["Other Maker", "Other Model", ""])
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
@@ -541,8 +539,8 @@ async def test_disk_coming_back_after_a_rollback_keeps_what_was_set_there(hass: 
 
 
 async def test_disk_a_backup_copied_back_by_hand_never_overrides_newer_answers(hass: HomeAssistant, real_disk):
-    """A copied file gets a new file time; the answers' own set times decide
-    (found by review)."""
+    """A copied file gets a new file time, so the answers' own set times
+    decide."""
     device = _model_device(hass)
     new_key = json.dumps(["Other Maker", "Other Model", ""])
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
@@ -575,7 +573,7 @@ async def test_disk_an_older_leftover_changes_nothing_and_is_deleted(hass: HomeA
     assert _read(_disk(hass, ANSWERS_STORE_KEY)) == answers, "an unchanged file was rewritten"
 
 
-# ------------------------------------------------------- found by testing
+# ---------------------------------------------- writes, flushes and restarts
 
 
 async def test_a_flush_waits_for_a_write_already_running(hass: HomeAssistant, hass_storage, _no_files):
@@ -670,9 +668,9 @@ async def test_disk_a_damaged_newer_old_file_leaves_the_answers_in_charge(hass: 
 
 async def test_a_devices_own_answer_stays_its_own_across_a_restart(hass: HomeAssistant, hass_storage, _no_files):
     """Set before the device reported a model, a power answer is the
-    device's own. A restart after the model arrived turned it into the
-    whole model's answer, or dropped it when the model had one (found by
-    testing)."""
+    device's own. A restart after the model arrives keeps it the
+    device's own, neither turning it into the whole model's answer nor
+    dropping it when the model has one."""
     first, _ = register_device(hass, "o1", "First")
     second = _model_device(hass, "o2", "Second")
     third, _ = register_device(hass, "o3", "Third")
@@ -694,9 +692,9 @@ async def test_a_devices_own_answer_stays_its_own_across_a_restart(hass: HomeAss
 
 
 async def test_the_move_keeps_an_old_per_device_entry_whose_model_is_answered(hass: HomeAssistant, hass_storage, _no_files):
-    """A 0.24.7-style entry on a device whose model already has an answer
-    was dropped without a word, and the move then deleted the file (found
-    by review). It stays the device's own."""
+    """An old per-device entry on a device whose model already has an
+    answer stays the device's own, so the move does not drop it and then
+    delete the file."""
     first = _model_device(hass, "k1", "First")
     second = _model_device(hass, "k2", "Second")
     hass_storage[LEGACY_POWER_KEY] = _doc(LEGACY_POWER_KEY, {
@@ -712,7 +710,7 @@ async def test_the_page_names_the_models_answer_and_counts_only_devices_it_cover
 ):
     """A device with its own answer is not covered by the model's, and its
     clear button names the model's answer, which is what clearing puts in
-    place (found by review)."""
+    place."""
     first = _model_device(hass, "v1", "First")
     second = _model_device(hass, "v2", "Second")
     third = _model_device(hass, "v3", "Third")
@@ -735,10 +733,10 @@ async def test_the_page_names_the_models_answer_and_counts_only_devices_it_cover
     assert third.id
 
 
-# ------------------------------------------- evidence and the brief (0.25.2)
+# ---------------------------------------------------- evidence and the brief
 # Before a repair writes over the answers file, the files as they were
 # are copied to trim_backups, and the events log the brief reads says
-# what happened (#340's and #342's rules given to the answers file).
+# what happened (rules STOR-11, STOR-12).
 
 
 def _evidence(hass):
@@ -763,8 +761,8 @@ def _no_evidence(hass):
 
 async def test_disk_a_corrupt_file_with_no_backup_is_kept_and_reported(hass: HomeAssistant, real_disk, _no_evidence):
     """Home Assistant moves a file it cannot parse aside before Device
-    Sentinel looks, so the file seemed missing and the empty start went
-    unreported (0.25.2, found by testing)."""
+    Sentinel looks, so the file seems missing; the empty start is still
+    reported (rule STOR-12)."""
     _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
     await real_disk()
@@ -843,8 +841,8 @@ async def test_disk_a_failed_evidence_copy_never_stops_a_start(hass: HomeAssista
 async def test_disk_an_evidence_copy_is_dated_today_so_the_pruning_keeps_it(
     hass: HomeAssistant, real_disk, _no_evidence
 ):
-    """Found by review: a copy kept the answers file's own time, months
-    old, and the nightly pruning took it."""
+    """A copy is dated today, not with the answers file's own old time,
+    so the nightly pruning keeps it (rule STOR-11)."""
     _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
     old = 1_600_000_000
@@ -859,8 +857,8 @@ async def test_disk_an_evidence_copy_is_dated_today_so_the_pruning_keeps_it(
 async def test_disk_a_damaged_file_beside_an_old_power_file_is_kept_and_reported(
     hass: HomeAssistant, real_disk, _no_evidence
 ):
-    """Found by review: the old power file was taken first and the
-    damaged answers file went without a copy or a word."""
+    """A damaged answers file beside an old power file still gets its
+    copy and its notice, so taking the old file first loses nothing."""
     device = _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
     _write(_disk(hass, LEGACY_POWER_KEY), _legacy_0_25_0(device.id))
@@ -881,8 +879,9 @@ async def test_disk_a_damaged_file_beside_an_old_power_file_is_kept_and_reported
 async def test_disk_a_table_that_is_not_a_table_is_reported_and_kept(
     hass: HomeAssistant, real_disk, _no_evidence, data, part
 ):
-    """Found by testing: a whole table of the wrong shape read as empty,
-    with no word, no copy, and the next save rotated over last-good."""
+    """A whole table of the wrong shape is not read as empty without a
+    word: it gets a copy and a notice, and the next save does not
+    rotate over last-good (rule STOR-12)."""
     _model_device(hass)
     original = _doc(ANSWERS_STORE_KEY, data)
     _write(_disk(hass, ANSWERS_STORE_KEY), original)
@@ -908,8 +907,8 @@ async def test_disk_an_old_power_file_with_a_table_of_the_wrong_shape_is_reporte
 async def test_disk_a_damaged_file_with_no_backup_is_never_made_last_good(
     hass: HomeAssistant, real_disk, _no_evidence
 ):
-    """Found by review: a file of the wrong shape is not moved aside by
-    Home Assistant, and the first save rotated it into last-good."""
+    """Home Assistant does not move a file of the wrong shape aside, so
+    the first save must not rotate it into last-good (rule STOR-20)."""
     device = _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), json.dumps({"version": 1, "minor_version": 1, "key": "x", "data": []}))
     await real_disk()
@@ -923,8 +922,8 @@ async def test_disk_a_damaged_file_with_no_backup_is_never_made_last_good(
 
 
 async def test_disk_a_repair_is_written_back_and_not_repeated(hass: HomeAssistant, real_disk, _no_evidence):
-    """Found by review: a load repair was never saved, so every start
-    found the same damage, copied it again and said so again."""
+    """A load repair is saved, so the next start does not find the same
+    damage, copy it again and say so again (rule STOR-09)."""
     device = _model_device(hass)
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
         "power": {"models": {KEY: _power("CR2450", 1, device.id), "not a key": 7}, "devices": {}},
@@ -956,8 +955,8 @@ async def test_disk_a_missing_file_restored_from_backup_says_missing(hass: HomeA
 
 
 async def test_disk_a_repair_after_a_rollback_move_never_rotates_over_last_good(hass: HomeAssistant, real_disk, _no_evidence):
-    """Found by review: the move from the old power file armed rotation,
-    and the repair save a second later rotated over the clean copy."""
+    """The move from the old power file does not arm rotation, so the
+    repair save a second later cannot rotate over the clean copy."""
     device = _model_device(hass)
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
         "power": {"models": {KEY: _power("AAA", 2, device.id), "not a key": 7}, "devices": {}},

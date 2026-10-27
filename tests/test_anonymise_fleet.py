@@ -3,28 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_anonymise_fleet.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_anonymise_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The anonymizer, the power file and the answers file.
+"""The anonymizer, the power file and the answers file (rule CODE-17).
 
-The committed houses now carry each house's power file. Its model keys
-are written by the device's own integration, and an ESPHome device's
-maker is often a name its owner chose, as one of the second fleet's
-was. So a model key is replaced like a name: by a stand-in of the same
-shape, the same in every place it stands and from one refresh to the
-next, with an empty part left empty so the suite can still give a
-device the maker and model its entry names.
+Model keys are written by the device's own integration, and an ESPHome
+device's maker is often a name its owner chose. So a model key is
+replaced like a name: by a stand-in of the same shape, the same in
+every place it stands and from one refresh to the next, with an empty
+part left empty so the suite can still give a device the maker and
+model its entry names.
 
-Since 0.25.1 a house keeps every pencil answer in the answers file,
-what powers a device and what it is, and the refresh of 11 October
-2026 was the first with houses on 0.25. Its two parts carry model keys
-of the same kind, and both are replaced the same way.
+A house keeps every pencil answer in the answers file, what powers a
+device and what it is. Its two parts carry model keys of the same
+kind, and both are replaced the same way (rule STOR-20).
 
-Since 0.26.2 every day older than the main file's thirty lives in the
-history file beside it, keyed by the same device ids and carrying rows
-that can name devices. The refresh of 21 October 2026 was the first
-with houses on 0.26, so the history file is anonymized like the
-storage file, and a name that stands only in it is still caught.
+Every day older than the main file's thirty lives in the history file
+beside it, keyed by the same device ids and carrying rows that can
+name devices. So the history file is anonymized like the storage file,
+and a name that stands only in it is still caught (rule STOR-03).
 """
 
 from __future__ import annotations
