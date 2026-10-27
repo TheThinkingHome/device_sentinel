@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.27.0 (2026-10-22)
+# File: __init__.py, Version: 0.27.8 (2026-10-27)
 
 """The Device Sentinel integration.
 
@@ -218,7 +218,7 @@ def _migrate_muting_names(options: dict[str, Any]) -> dict[str, Any]:
             "Options migration step 2, muting names: %s", "; ".join(moved)
         )
     else:
-        LOGGER.info(
+        LOGGER.debug(
             "Options migration step 2, muting names: nothing stored to move"
         )
     return options
@@ -278,7 +278,7 @@ def _migrate_ignore_name(options: dict[str, Any]) -> dict[str, Any]:
             "Options migration step 3, the exclude list: %s", "; ".join(moved)
         )
     else:
-        LOGGER.info(
+        LOGGER.debug(
             "Options migration step 3, the exclude list: nothing stored to move"
         )
     return options

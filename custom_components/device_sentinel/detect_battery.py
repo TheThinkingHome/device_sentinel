@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.27.7 (2026-10-27)
+# File: detect_battery.py, Version: 0.27.8 (2026-10-27)
 
 """Battery: the level threshold and what is tracked.
 
@@ -540,7 +540,7 @@ class BatteryMixin:
                 # Finite, and still not a percentage: ignored, never
                 # brought into range, and the last verdict holds
                 # (#540, amended 29 September 2026).
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: %s reported %s, which is outside "
                     "0 to 100%%; ignored",
                     battery_entity_id,

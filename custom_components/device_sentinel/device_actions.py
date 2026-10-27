@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.7 (2026-10-27)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.8 (2026-10-27)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -524,7 +524,7 @@ class DeviceActionsMixin:
             registry.async_update_entity(ent.entity_id, disabled_by=None)
             enabled += 1
         if enabled:
-            LOGGER.info(
+            LOGGER.debug(
                 "Turned on %d %s entities on %s, from Device Sentinel's dashboard",
                 enabled, kind, self._device_name(device_id),  # type: ignore[attr-defined]
             )

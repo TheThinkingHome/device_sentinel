@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.27.7 (2026-10-27)
+# File: store.py, Version: 0.27.8 (2026-10-27)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -668,19 +668,13 @@ class StorageMixin:
         self._rotation_armed = clean
 
     async def _save_routine_main(self) -> None:
-        """The routine window's main-file write (0.26.2).
-
-        A routine write does not rotate, so a history change reaching
-        it would leave the main file's last-good copy older than both
-        history copies. When the older part has changed, the write
-        goes through the full seam instead, which rotates in the same
-        save the history file is written (ruling #660).
-        """
-        _view, part = history_file.split(self.data)
-        if history_file.digest(part) != self._history_digest:  # type: ignore[attr-defined]
-            await self._save_main()
-            return
-        await self._write_main_files(clean=False)
+        """The routine window's main-file write (0.26.2), since 0.27.8
+        the same checked, rotating save as any other (rule STOR-04)."""
+        # Through the one seam, checked and rotating like any other
+        # save (rules STOR-04, STOR-06): a row changed in place reached
+        # disk unchecked here, and last-good went stale between the
+        # saves that carry a judgment.
+        await self._save_main()
 
     async def _write_main_files(self, *, clean: bool) -> None:
         """Write the main file as a view, and the history file if it changed.
@@ -909,7 +903,7 @@ class StorageMixin:
                     "last-good copy of the same generation was joined",
                     "; ".join(reasons),
                 )
-            LOGGER.info(
+            LOGGER.debug(
                 "History joined from the %s file, generation %d: %d "
                 "entries on %d device(s), %d row(s)",
                 which,
@@ -922,6 +916,17 @@ class StorageMixin:
         stamp, _copied = await async_copy_evidence(hass)
         state["reason"] = "; ".join(reasons)
         loaded.pop(DATA_HISTORY_GENERATION, None)
+        # Told in the events log and counted once the start has its
+        # log (rule STOR-12).
+        self._history_drop_note: str | None = (
+            f"no history file matched the storage file ({state['reason']}), "
+            f"so Device Sentinel started with the {HISTORY_KEEP_ENTRIES} days "
+            f"the storage file holds; copies were kept in {TRIM_BACKUP_DIR}"
+            + (f" under {stamp}" if stamp else "")
+        )
+        # A repair at load: set here, before the rotation is armed, so
+        # the first save keeps the last good copy as it is.
+        self._load_faulty = True
         LOGGER.warning(
             "No history file matches the storage file (generation %d; "
             "%s). Device Sentinel starts with the %d days the storage "

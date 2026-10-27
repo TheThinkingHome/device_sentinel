@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_lutron.py, Version: 0.22.26 (2026-09-23)
+# File: study_lutron.py, Version: 0.27.8 (2026-10-27)
 
 """What a Lutron house can tell us, for a detector we cannot yet build.
 
@@ -21,7 +21,8 @@ a bus event.
 What the probe could not settle is whether any of that is visible from
 a surface an integration may use. It added a TCP check against the
 hub's port 8081 to answer that, and the campaign to prove it was never
-run. So this gathers the evidence instead, from any Lutron house that
+run. Since 0.27.8 nothing is sent to the hub (rules STACK-11, STACK-13):
+its session says whether it is connected. So this gathers the evidence, from any Lutron house that
 turns Extended Diagnostics on (0.22.26):
 
 - each hub's config entry, its state, host and port, and how many
@@ -30,8 +31,6 @@ turns Extended Diagnostics on (0.22.26):
   object is reachable at all, what `is_connected()` says, and whether
   a session handle exists and is truthy, each read defensively and
   never assumed present;
-- one TCP connect to the hub, with how long it took or the error it
-  gave, which is what the probe's 1.1 would have measured;
 - the entity picture per hub: how many entities are enabled, how many
   disabled, and which devices have none, the Pico case behind issue
   #14.
@@ -42,8 +41,6 @@ after the deprecation, and this is the evidence it will be built on.
 
 from __future__ import annotations
 
-import asyncio
-import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -55,9 +52,6 @@ from .const import LOGGER
 LUTRON_DOMAIN = "lutron_caseta"
 # The Caseta LEAP port, which is what the hub answers on.
 LUTRON_PORT = 8081
-# A hub on the same network answers in milliseconds. This is a
-# diagnostic, taken once per download, so it waits briefly and moves on.
-CONNECT_TIMEOUT = 2.0
 # The names a bridge object has carried. Read by trying each, so a
 # library that renames one is recorded as absent rather than crashing.
 SESSION_NAMES = ("_leap", "leap", "_session", "session")
@@ -94,34 +88,12 @@ def _bridge_of(entry_data: Any) -> tuple[str | None, Any]:
     return _look(entry_data, BRIDGE_NAMES)
 
 
-async def _tcp_check(host: str | None, port: int) -> dict[str, Any]:
-    """One connection to the hub: how long, or what went wrong."""
-    if not host:
-        return {"tried": False}
-    started = time.monotonic()
-    try:
-        _reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port), CONNECT_TIMEOUT
-        )
-    except TimeoutError:
-        return {"tried": True, "answered": False, "error": "timed out"}
-    except OSError as err:
-        return {"tried": True, "answered": False, "error": str(err)[:120]}
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
-    return {
-        "tried": True,
-        "answered": True,
-        "milliseconds": round((time.monotonic() - started) * 1000, 1),
-    }
-
-
 async def lutron_study(hass: HomeAssistant) -> dict[str, Any]:
     """The Lutron evidence, or an empty dict where there is no Lutron."""
-    entries = hass.config_entries.async_entries(LUTRON_DOMAIN)
+    # An entry the person ignored or disabled is not a hub this house has.
+    entries = hass.config_entries.async_entries(
+        LUTRON_DOMAIN, include_ignore=False, include_disabled=False
+    )
     if not entries:
         return {}
     devices = dr.async_get(hass)
@@ -177,6 +149,7 @@ async def lutron_study(hass: HomeAssistant) -> dict[str, Any]:
             "session_attribute": session_name,
             "session_present": session is not None,
             "session_truthy": bool(session) if session is not None else None,
-            "tcp": await _tcp_check(host, LUTRON_PORT),
+            # Nothing is sent to the hub: its session already says
+            # whether it is connected (rules STACK-11, STACK-13).
         })
     return {"hubs": hubs}

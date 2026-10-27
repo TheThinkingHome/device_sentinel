@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.7 (2026-10-27)
+# File: coordinator.py, Version: 0.27.8 (2026-10-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -300,7 +300,7 @@ from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
 from .detect_freeze import FreezeMixin
-from .detect_signal import SignalMixin, _entity_unit, _is_percentage
+from .detect_signal import SignalMixin
 from .device_fields import child_devices, device_field
 from .events import EventMixin
 from .hubs import HUB_BUTTON_EVENTS, HUB_READERS, HubMixin
@@ -984,15 +984,13 @@ class DeviceSentinelCoordinator(
         self._handled_at: dict[str, float] = {}
         self._repairs_at_load: int = 0
         self._last_good_taken: float | None = None
-        # The signal census is a fact about the fleet, not an event
-        # (ruling #344): held so it is said only when it changes.
-        self._signal_census_said: tuple | None = None
         # Restore (ruling #345): the copy's timestamp and the evidence
         # stamp, held until grace close so the notice can be sent when
         # the notify platform actually exists.
         self._restored_from: float | None = None
         self._restore_evidence: str | None = None
         self._restore_told: str | None = None
+        self._restore_told_at: float | None = None
         # Why the load came back empty (ruling #348): corrupt,
         # missing, or unreadable. Carried into the notice so a person
         # is told which of the three happened to them.
@@ -1080,6 +1078,8 @@ class DeviceSentinelCoordinator(
                 # opens, and the copy this came from is never
                 # overwritten by the file it produced (#339).
                 self._load_faulty = True
+                # A restore is a repair the load made (rule STOR-12).
+                self._repairs_at_load += 1
             else:
                 LOGGER.error(
                     "Device Sentinel cannot read %s and will not start: "
@@ -1142,6 +1142,7 @@ class DeviceSentinelCoordinator(
                     self._restore_corrupt_names = corrupt
                     self._restore_reason = reason
                     self._load_faulty = True
+                    self._repairs_at_load += 1
                 else:
                     # The copy could not be used after all. Fall
                     # through to first install, which is what would
@@ -1154,6 +1155,7 @@ class DeviceSentinelCoordinator(
                         STORAGE_KEY,
                     )
                     self._load_faulty = True
+                    self._repairs_at_load += 1
         if loaded is None:
             LOGGER.info(
                 "Device Sentinel v%s: no existing storage, creating %s",
@@ -1238,6 +1240,7 @@ class DeviceSentinelCoordinator(
                         self._restore_copied = copied
                         self._restore_reason = "damaged"
                         self._load_faulty = True
+                        self._repairs_at_load += 1
                         gate_restored = True
                         continue
                     LOGGER.warning(
@@ -1504,13 +1507,16 @@ class DeviceSentinelCoordinator(
                 # install sets the epoch with no devices to reset, which
                 # is an install rather than an event.
                 self._pending_epoch_wipe = wiped or None
-                LOGGER.info(
-                    "Statistics epoch %s: the learned rhythm reset for %d "
-                    "devices so it is relearned under the final rule set; "
-                    "clocks, identity, signal and battery history kept",
-                    STATS_EPOCH,
-                    wiped,
-                )
+                # Logged only when learned data went, which is when a
+                # fault report needs it (rule GEN-10).
+                if wiped:
+                    LOGGER.info(
+                        "Statistics epoch %s: the learned rhythm reset for %d "
+                        "devices so it is relearned under the final rule set; "
+                        "clocks, identity, signal and battery history kept",
+                        STATS_EPOCH,
+                        wiped,
+                    )
             # Reconcile every stored record against the schema, both
             # directions. There used to be a prune here and a
             # hand-maintained list of setdefault calls above it, so a
@@ -1685,6 +1691,10 @@ class DeviceSentinelCoordinator(
                     ),
                 )
                 self._load_faulty = True
+                # Counted once: after a restore the load runs again and
+                # finds the same clocks file (rule STOR-12).
+                if not gate_restored:
+                    self._repairs_at_load += 1
             if not gate_faults:
                 break
             self._load_faulty = True
@@ -1735,6 +1745,7 @@ class DeviceSentinelCoordinator(
                     self._restore_evidence = stamp
                     self._restore_copied = copied
                     self._restore_reason = "damaged"
+                    self._repairs_at_load += 1
                     gate_restored = True
                     continue
                 LOGGER.warning(
@@ -1801,7 +1812,10 @@ class DeviceSentinelCoordinator(
         self._version_changed = (
             loaded.get(DATA_LAST_VERSION) != self.version
         )
-        if self._version_changed:
+        # A first start has no earlier version to name (rule GEN-10).
+        if self._version_changed and (
+            loaded.get(DATA_LAST_VERSION) or loaded.get(DATA_DEVICES)
+        ):
             LOGGER.info(
                 "Device Sentinel is running %s where storage was last "
                 "written by %s",
@@ -2064,9 +2078,22 @@ class DeviceSentinelCoordinator(
         # Answers set on device pages that were left out or restored at
         # load (0.25.2), read before the events log existed this session.
         notes = self.answers_notes()
+        # The history file that matched nothing, so the start used the
+        # storage file's own days (rule STOR-12): a repair, told and
+        # counted as one.
+        dropped = getattr(self, "_history_drop_note", None)
+        if dropped:
+            self._history_drop_note = None
+            self._record_system_event(SYS_STORAGE_REPAIR, detail=dropped)
+            self._load_faulty = True
+            self._repairs_at_load += 1
         for note in notes:
             self._record_system_event(SYS_STORAGE_REPAIR, detail=note)
         if notes:
+            # A restore or repair of the answers is a repair at the
+            # start too: Status reads Problem (rule STOR-12).
+            self._load_faulty = True
+            self._repairs_at_load += len(notes)
             # The repair is written back once, so the next start does
             # not find the same damage, copy it again and say so again
             # (found by review). Rotation is off after a repair, so the
@@ -2076,7 +2103,7 @@ class DeviceSentinelCoordinator(
             self._answers_rotation_armed = False
             self._answers_save()
 
-        LOGGER.info(
+        LOGGER.debug(
             "Device Sentinel v%s setup complete: setup_count=%s, "
             "first_installed=%s, watching %d of %d devices "
             "(%d set aside), %d deviceless entities",
@@ -2150,6 +2177,15 @@ class DeviceSentinelCoordinator(
         start resumes it whole (rule UP-04).
         """
         self._remember_wifi_outage()
+        # A broker that restarted since the last minute check is told
+        # now, while the last message before it is still known (rule
+        # UP-02): the next start would see only its start time move,
+        # and give the restart no length.
+        if getattr(self, "_broker_reader", None) is not None:
+            try:
+                self._sample_broker(dt_util.utcnow().timestamp())
+            except Exception:  # noqa: BLE001 - the stop's save comes first
+                LOGGER.exception("Device Sentinel could not check the broker as Home Assistant stopped")
         await super()._on_hass_stop(_event)
 
     async def async_shutdown(self) -> None:
@@ -2580,9 +2616,6 @@ class DeviceSentinelCoordinator(
         node_status_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
-        signal_units: Counter[str] = Counter()
-        per_device_signals: Counter[str] = Counter()
-        refused_signals: list[str] = []
         signal_devices: set[str] = set()
         battery_entity: dict[str, tuple[str, bool]] = {}
         # Which readings came from the device's own integration
@@ -2711,16 +2744,8 @@ class DeviceSentinelCoordinator(
                 if ent.disabled_by is None:
                     signal_entities.add(ent.entity_id)
                     signal_devices.add(ent.device_id)
-                    signal_units[_entity_unit(ent) or "(none)"] += 1
-                    per_device_signals[ent.device_id] += 1
                     if own:
                         signal_own_entities.add(ent.entity_id)
-            elif ent.disabled_by is None and _is_percentage(ent):
-                # Refused by #283, and counted rather than dropped in
-                # silence: a refusal nobody can see is the same
-                # mistake as a check that only reports when it is
-                # quiet.
-                refused_signals.append(ent.entity_id)
             if ent.disabled_by is None and self._is_battery(ent):
                 is_binary = ent.entity_id.startswith("binary_sensor.")
                 current = battery_entity.get(ent.device_id)
@@ -2872,9 +2897,6 @@ class DeviceSentinelCoordinator(
         self._node_status_ids = set(node_status_entity.values()) | stack_words
         self._device_entries = device_entries
         self._signal_entities = signal_entities
-        self._log_signal_census(
-            signal_units, per_device_signals, refused_signals
-        )
         self._signal_devices = signal_devices
         self._battery_entity = battery_entity
         # Kept so the diagnostics can say which reading each device
@@ -3051,17 +3073,6 @@ class DeviceSentinelCoordinator(
             # disabled one is a person's choice and a device with
             # nothing enabled may be an accident, and a person
             # looking for a missing device needs to tell them apart.
-            counts: dict[str, int] = {}
-            for _name, _domain, reason in set_aside.values():
-                counts[reason] = counts.get(reason, 0) + 1
-            LOGGER.info(
-                "Set aside %d device(s) from judgment: %s",
-                len(set_aside),
-                ", ".join(
-                    f"{count} {reason}"
-                    for reason, count in sorted(counts.items())
-                ),
-            )
             LOGGER.debug(
                 "Devices set aside: %s",
                 "; ".join(
@@ -3233,6 +3244,9 @@ class DeviceSentinelCoordinator(
         options = self.entry.options
         if not any(device_id in options.get(key, []) for key in keys):
             return
+        # Kept in the log: nothing else keeps a removed device's name,
+        # so it is the only trace when a muting is asked about later
+        # (rules WATCH-11, GEN-10).
         if held:
             LOGGER.info(
                 "%s (%s) has been removed from Home Assistant and carried a "
@@ -4234,7 +4248,7 @@ class DeviceSentinelCoordinator(
                 # that is not a finite number is not a reading
                 # (ruling #407, the rule #347 already applies to a
                 # battery level).
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: %s reported %s, which is not a "
                     "signal reading; ignored",
                     entity_id,
@@ -4246,7 +4260,7 @@ class DeviceSentinelCoordinator(
             ):
                 # Finite, and still not a reading: no radio reports
                 # it (ruling #540). Ignored, never brought into range.
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: %s reported %s, which is outside "
                     "any signal scale; ignored",
                     entity_id,
@@ -4897,6 +4911,13 @@ class DeviceSentinelCoordinator(
         )
         self._repair_notice = {"moment": moment, "what": what, "where": where}
         self._load_faulty = True
+        if moment == "load":
+            # Each repair the load made, not only restarted clocks, and
+            # none made at a save (rule STOR-12).
+            self._repairs_at_load += max(
+                1,
+                sum(dropped_rows.values()) + len(dropped_records) + banked + len(reset_fields),
+            )
 
     async def _repair_containers_at_load(
         self,
@@ -4948,6 +4969,8 @@ class DeviceSentinelCoordinator(
         )
         self._container_notice = {"what": what, "where": where}
         self._load_faulty = True
+        # A repair the load made (rule STOR-12).
+        self._repairs_at_load += max(1, len(faults))
 
     def _repair_records(self) -> tuple[list[str], list[tuple[str, str]]]:
         """Repair the device records in place, by the two rules.
@@ -5157,7 +5180,8 @@ class DeviceSentinelCoordinator(
                 ),
             )
         if repaired:
-            self._repairs_at_load += repaired
+            # Counted by the repair that called this, at load only
+            # (rule STOR-12).
             LOGGER.warning(
                 "Storage repair: %d damaged activity clock(s) "
                 "restarted by banking",
@@ -5552,7 +5576,7 @@ class DeviceSentinelCoordinator(
                     record[DEV_DAILY_MAX], lognormal_days(record), found.get("fit")
                 ):
                     record[DEV_LOGNORMAL_DAYS] = 0
-                    LOGGER.info(
+                    LOGGER.debug(
                         "%s has reported more slowly for %d days in a row; "
                         "its wait follows the %s until it has 28 new days",
                         self._device_name(device_id),
@@ -5611,6 +5635,9 @@ class DeviceSentinelCoordinator(
             dt_util.utcnow() - timedelta(minutes=1)
         ).date()
         self._fold_storm_days(ended.isoformat())
+        # The house events and signal stress rows held to the history
+        # length here, not on each write (rule STOR-14).
+        self._trim_house_tables(now)
         self.rule_counts_fold(now)
         # Each battery forecast scored, and today's written (#732), once
         # every battery history holds the day just closed.
@@ -5643,7 +5670,7 @@ class DeviceSentinelCoordinator(
             ),
         )
         if pruned:
-            LOGGER.info(
+            LOGGER.debug(
                 "Trim backups: pruned %d file(s) past the retention "
                 "window",
                 pruned,
@@ -6071,6 +6098,9 @@ class DeviceSentinelCoordinator(
             detail=f"restored from the last-good backup, {loss_embedded}",
         )
         self._restore_told = f"{headline} {loss}"
+        # When, so only the brief whose window holds it says so (rule
+        # BRIEF-02).
+        self._restore_told_at = dt_util.utcnow().timestamp()
         # Home Assistant's own critical issue, if it raised one, tells
         # a person to repair the file by hand or restore the whole
         # system from a backup. Both are wrong now (ruling #350).
@@ -6433,72 +6463,6 @@ class DeviceSentinelCoordinator(
         """
         return dt_util.utcnow().timestamp() < self._grace_until
 
-    def _log_signal_census(
-        self,
-        units: Counter,
-        per_device: Counter,
-        refused: list[str],
-    ) -> None:
-        """Say what signal units this fleet actually publishes.
-
-        Written when the two scales were still to be classified apart
-        (#284, #285), and kept because nothing else records what unit a
-        Zigbee2MQTT linkquality entity carries or a ZHA LQI sensor
-        carries. Guessing was the alternative and #283 rejected it.
-
-        The second line is the count that matters more: a device with
-        more than one accepted signal entity is a device whose series
-        is a mixture of two measurements (ruling #282). On a
-        Zigbee2MQTT fleet it is zero, which is why the fault was
-        invisible for the life of the project.
-
-        Once per session, and only when the census changes
-        (ruling #344). The docstring said one line per start and the
-        call site said otherwise: this runs on every registry
-        rebuild, so the reference fleet's log carried 133 copies of
-        both lines on 26 August, 38 of them inside one second, each
-        with a 1.5 KB entity list attached. A census is a fact about
-        the fleet, not an event, so it is said when it is new.
-
-        The lists themselves are debug. A person reading an info log
-        wants the counts; a person hunting a specific entity turns
-        debug on and gets the whole list rather than the first
-        twenty.
-        """
-        if not units:
-            return
-        spread = ", ".join(
-            f"{unit} x{count}" for unit, count in sorted(units.items())
-        )
-        doubled = sorted(
-            device for device, count in per_device.items() if count > 1
-        )
-        census = (spread, tuple(doubled), len(refused))
-        if census == self._signal_census_said:
-            return
-        self._signal_census_said = census
-        LOGGER.info("Signal units in use: %s", spread)
-        if doubled:
-            LOGGER.info(
-                "%d device(s) report more than one signal entity, so "
-                "their signal series mixes two measurements",
-                len(doubled),
-            )
-            LOGGER.debug(
-                "Devices with more than one signal entity: %s",
-                ", ".join(self._device_name(d) for d in doubled),
-            )
-        if refused:
-            LOGGER.info(
-                "%d signal entity(s) refused as a percentage rather "
-                "than a measurement",
-                len(refused),
-            )
-            LOGGER.debug(
-                "Signal entities refused as a percentage: %s",
-                ", ".join(sorted(refused)),
-            )
-
     async def async_regenerate_reports(self) -> dict[str, int]:
         """Judge every device now, then rewrite every report.
 
@@ -6567,7 +6531,7 @@ class DeviceSentinelCoordinator(
             detail=f"{minutes} minute window",
             when=now,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "Maintenance mode opened for %d minutes; recoveries in "
             "this window are attributed to the person and not learned",
             minutes,
@@ -6588,7 +6552,7 @@ class DeviceSentinelCoordinator(
             duration=duration,
             when=when,
         )
-        LOGGER.info("Maintenance mode closed (%s)", detail)
+        LOGGER.debug("Maintenance mode closed (%s)", detail)
 
     def _expire_maintenance(self, now: float) -> None:
         """Close a window whose declared end has passed.
@@ -6629,7 +6593,7 @@ class DeviceSentinelCoordinator(
             detail="ended by restart",
             when=restart_at,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "A maintenance window was open at the last stop; its "
             "closing row is recorded at this restart"
         )

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.26.7 (2026-10-19)
+# File: repairs.py, Version: 0.27.8 (2026-10-27)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -497,6 +497,41 @@ class RemoveDeadTargetsFlow(_SentinelRepairFlow):
         return self.async_create_entry(data={})
 
 
+class AcknowledgeStorageFlow(ConfirmRepairFlow):
+    """Submit on a storage repair card puts it down for good (rules
+    STOR-09, REP-04, REP-06): the coordinator's notice is cleared with
+    it, so the next brief does not raise the card again. A new repair
+    raises a new one."""
+
+    def __init__(self, entry_id: str, notice: str) -> None:
+        super().__init__()
+        self._entry_id = entry_id
+        self._notice = notice
+        self._shown: Any = None
+
+    def _coordinator(self) -> Any:
+        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        return getattr(entry, "runtime_data", None) if entry else None
+
+    async def async_step_confirm(
+        self, user_input: dict[str, str] | None = None
+    ) -> Any:
+        coordinator = self._coordinator()
+        if user_input is None:
+            # The notice the card was opened on: a newer repair made
+            # while the card stood open is not put down with it.
+            self._shown = getattr(coordinator, self._notice, None)
+        result = await super().async_step_confirm(user_input)
+        if (
+            user_input is not None
+            and coordinator is not None
+            and self._shown is not None
+            and getattr(coordinator, self._notice, None) is self._shown
+        ):
+            setattr(coordinator, self._notice, None)
+        return result
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant,
     issue_id: str,
@@ -520,12 +555,14 @@ async def async_create_fix_flow(
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
     if issue_id == REPAIR_CONTAINERS_REPAIRED:
-        # The repair already ran (ruling #371); acknowledgement only.
-        return ConfirmRepairFlow()
+        # The repair already ran (ruling #371); acknowledgement, which
+        # puts the card down until a new repair (rule REP-04).
+        return AcknowledgeStorageFlow(entry_id, "_container_notice")
     if issue_id == REPAIR_STORAGE_REPAIRED:
         # The repair already ran (ruling #370); the flow is
-        # acknowledgement alone, the same as the restored card.
-        return ConfirmRepairFlow()
+        # acknowledgement, the same as the restored card, and puts the
+        # card down until a new repair (rule REP-04).
+        return AcknowledgeStorageFlow(entry_id, "_repair_notice")
     if issue_id == REPAIR_STORAGE_RESTORED:
         # Nothing left to repair, so the flow is acknowledgement
         # (ruling #350). Home Assistant's own ConfirmRepairFlow shows

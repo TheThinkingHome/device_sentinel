@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.27.6 (2026-10-26)
+# File: diagnostics.py, Version: 0.27.8 (2026-10-27)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -85,7 +85,7 @@ from .const import (
     TRIM_TOP_K,
 )
 from .study import studied_domains
-from .study_lutron import lutron_study
+from .study_lutron import LUTRON_DOMAIN as LUTRON_STUDY_DOMAIN, lutron_study
 from .study_stacks import (
     HUE_DOMAIN,
     MATTER_DOMAIN,
@@ -615,13 +615,12 @@ async def async_get_config_entry_diagnostics(
             "study": coordinator.study_diagnostics,
             # Stacks whose own words could carry a detector, for
             # detectors that cannot be built yet (0.22.26). Each is
-            # gathered only while Extended Diagnostics is on, Lutron
-            # with the setting itself and the other two behind their
-            # own toggles, and each is empty where the stack is not
+            # gathered only behind its own Extended Diagnostics switch
+            # (rule STACK-11), and each is empty where the stack is not
             # in the house.
             "lutron": (
                 await _studied(lambda: lutron_study(hass))
-                if entry.options.get(CONF_STUDY_HARDWARE)
+                if LUTRON_STUDY_DOMAIN in studied_domains(entry.options)
                 else {}
             ),
             "zwave": (

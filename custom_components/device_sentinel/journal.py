@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.7 (2026-10-27)
+# File: journal.py, Version: 0.27.8 (2026-10-27)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -389,11 +389,7 @@ class JournalMixin:
                 EP_SIGNAL: episode.get(EP_SIGNAL),
             },
         )
-        rows = self.data.setdefault(DATA_SIGNAL_STRESS, [])
-        cutoff = now - self.retention_days * 86400.0
-        self.data[DATA_SIGNAL_STRESS] = [
-            row for row in rows if (row.get(EP_SINCE) or now) >= cutoff
-        ]
+        # Trimmed at the midnight run (rule STOR-14).
 
     def _stamp_intervention(
         self, cause: str, now: float, entry_id: str | None = None
@@ -685,22 +681,9 @@ class JournalMixin:
                 **({SYS_DEVICE_ID: device_id} if device_id is not None else {}),
             },
         )
-        events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
-        cutoff = (
-            dt_util.utcnow().timestamp()
-            - self.retention_days * 86400.0
-        )
-        # A damaged row is kept for the repair to drop and count: the
-        # clock repair writes its event before the rows are repaired,
-        # and reading a junk row here raised and failed the save
-        # (0.25.5, found by the convergence fuzz).
-        self.data[DATA_SYSTEM_EVENTS] = [
-            row for row in events
-            if not isinstance(row, dict)
-            or not isinstance(row.get(SYS_WHEN), (int, float))
-            or isinstance(row.get(SYS_WHEN), bool)
-            or row[SYS_WHEN] >= cutoff
-        ]
+        # Trimmed to the history length at the midnight run, not here:
+        # a lower setting saved by mistake cuts nothing until then, so
+        # it can be taken back (rule STOR-14).
         self._mark_cold_dirty()
         # Something happened to the house: the dashboard's Refresh has
         # something new to show. Guarded, because some tests build this
@@ -708,6 +691,36 @@ class JournalMixin:
         mark = getattr(self, "_mark_changed", None)
         if mark is not None:
             mark()
+
+    def _trim_house_tables(self, now: float) -> None:
+        """Hold the house events and the signal stress rows to the
+        history length, at the midnight run only (rule STOR-14): a lower
+        setting takes effect at the next midnight, as it does for the
+        daily histories, so a mistake saved by hand can be undone."""
+        cutoff = now - self.retention_days * 86400.0
+        events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
+        # A damaged row is kept for the repair to drop and count: the
+        # clock repair writes its event before the rows are repaired,
+        # and reading a junk row here raised and failed the save
+        # (0.25.5, found by the convergence fuzz).
+        kept = [
+            row for row in events
+            if not isinstance(row, dict)
+            or not isinstance(row.get(SYS_WHEN), (int, float))
+            or isinstance(row.get(SYS_WHEN), bool)
+            or row[SYS_WHEN] >= cutoff
+        ]
+        rows = self.data.setdefault(DATA_SIGNAL_STRESS, [])
+        stress = [
+            row for row in rows
+            if not isinstance(row, dict)
+            or not isinstance(row.get(EP_SINCE) or now, (int, float))
+            or (row.get(EP_SINCE) or now) >= cutoff
+        ]
+        if len(kept) != len(events) or len(stress) != len(rows):
+            self.data[DATA_SYSTEM_EVENTS] = kept
+            self.data[DATA_SIGNAL_STRESS] = stress
+            self._mark_cold_dirty()
 
     def _incident_opened_at(
         self, device_id: str, kind: str

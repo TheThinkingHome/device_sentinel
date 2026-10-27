@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.6 (2026-10-26)
+# File: interventions.py, Version: 0.27.8 (2026-10-27)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -342,7 +342,7 @@ class InterventionMixin:
             scope=self._device_stack(device_id) or "",
             detail=f"{device_id} {kind}",
         )
-        LOGGER.info(
+        LOGGER.debug(
             "A person handled %s (%s); its next recovery will be "
             "attributed to that rather than learned",
             self._device_name(device_id),

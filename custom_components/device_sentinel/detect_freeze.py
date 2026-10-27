@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.6 (2026-10-26)
+# File: detect_freeze.py, Version: 0.27.8 (2026-10-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -621,6 +621,8 @@ class FreezeMixin:
         record[DEV_LOGNORMAL_DAYS] = 0
         self._mark_cold_dirty()
         self._mark_changed()
+        # Kept in the log: the learned day count is gone for good, and
+        # this line is its only trace (rule GEN-10).
         LOGGER.info(
             "%s set to the %s by hand, until it has 28 new days",
             self._device_name(device_id),

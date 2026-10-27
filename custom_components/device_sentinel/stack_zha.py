@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.27.0 (2026-10-22)
+# File: stack_zha.py, Version: 0.27.8 (2026-10-27)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -392,7 +392,7 @@ class ZhaJoinObserver:
             )
         except Exception as err:  # noqa: BLE001 - an instrument never breaks setup
             LOGGER.debug("ZHA join observer could not watch zha.permit: %s", err)
-        LOGGER.info(
+        LOGGER.debug(
             "ZHA join observer listening on %s; joins will be logged "
             "and nothing else",
             ZHA_GATEWAY_SIGNAL,
@@ -501,7 +501,7 @@ class ZhaJoinObserver:
                 # A device that changed its own network address joins
                 # again with nobody near it (adversarial round of
                 # 0.27.0). Without pairing open it is not a person's.
-                LOGGER.info(
+                LOGGER.debug(
                     "ZHA says a device joined with pairing closed: ieee=%s; "
                     "a device moving on its own, not counted as handled",
                     ieee,
@@ -516,7 +516,7 @@ class ZhaJoinObserver:
             # back, with nobody near them (#719). Logged, and nothing
             # is filed: a person did not handle it, its rhythm count
             # stands, and the report that follows teaches as any other.
-            LOGGER.info(
+            LOGGER.debug(
                 "ZHA set up a device again on its own (%s): ieee=%s reg=%s "
                 "name=%s; not counted as handled",
                 kind,
@@ -525,7 +525,7 @@ class ZhaJoinObserver:
                 info.get("user_given_name") or info.get("name"),
             )
             return
-        LOGGER.info(
+        LOGGER.debug(
             "ZHA says a device was handled (%s): ieee=%s reg=%s "
             "status=%s name=%s",
             kind,

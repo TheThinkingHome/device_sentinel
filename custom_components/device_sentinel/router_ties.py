@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.7 (2026-10-27)
+# File: router_ties.py, Version: 0.27.8 (2026-10-27)
 
 """Router ties: which watched devices a router says have left.
 
@@ -554,7 +554,7 @@ class RouterTiesMixin:
             for entry in registry.entities.values()
         )
         if changed:
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: wifi ties rebuilt, %d watched "
                 "device(s) tied to a router tracker",
                 len(ties),
@@ -796,7 +796,7 @@ class RouterTiesMixin:
         self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
         if write:
             if adding:
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: integration(s) %s seen for the "
                     "first time and excluded from watching; unexclude on the "
                     "Configure screen to watch them",
@@ -954,7 +954,7 @@ class RouterTiesMixin:
             ):
                 self._wifi_hold_since = now
                 self._wifi_first_fall = self._wifi_burst[0]
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: wifi burst, %d tied tracker(s) "
                     "not_home inside %ds against a threshold of %d "
                     "on %d tied, holding %ds before any verdict",
@@ -1009,7 +1009,7 @@ class RouterTiesMixin:
             if state is None or state.state != STATE_HOME:
                 continue
             if tracker_medium(state.attributes) != "wired":
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: %s is home and no longer reads "
                     "wired, rebuilding wifi ties",
                     entity_id,
@@ -1084,7 +1084,7 @@ class RouterTiesMixin:
         if still_gone >= self._wifi_burst_needed():
             self._wifi_declare(now, still_gone)
         else:
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: wifi flap cleared inside the hold "
                 "(%d tracker(s) still not_home), nothing reported",
                 still_gone,
@@ -1110,7 +1110,7 @@ class RouterTiesMixin:
         self._wifi_backdate()
         confirmed = self._wifi_confirmed_count()
         seen = self.wifi_confirmation()
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage declared by scan (%s), "
             "%d tied device(s), %d away by the router, %d already "
             "unavailable",
@@ -1169,7 +1169,7 @@ class RouterTiesMixin:
             # UP-16).
             self._wifi_restore(now)
             return
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi scan hears the network again, "
             "%d of %d fallen tracker(s) home; the settle decides "
             "when the outage ends",
@@ -1243,7 +1243,7 @@ class RouterTiesMixin:
                         SYS_WIFI_RECOVERING, scope=WIFI_KEY, when=now
                     )
                     self._notify()
-                LOGGER.info(
+                LOGGER.debug(
                     "device_sentinel: wifi recovery announced, %d of "
                     "%d returned, settling",
                     back,
@@ -1252,7 +1252,7 @@ class RouterTiesMixin:
             return
 
         if self._wifi_settle_losses >= WIFI_BURST_FLOOR:
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: wifi recovery withdrawn, %d of the "
                 "returned went away again during the settle",
                 self._wifi_settle_losses,
@@ -1317,7 +1317,7 @@ class RouterTiesMixin:
         self._seed_wifi_fallen(since)
         self._wifi_backdate()
         confirmed = self._wifi_confirmed_count()
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage declared, %d tied "
             "tracker(s) not_home, %d claimed device(s) already "
             "unavailable at declaration",
@@ -1545,7 +1545,7 @@ class RouterTiesMixin:
                 gone.append(tracker)
         if not gone:
             return
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: %d fallen wifi tracker(s) removed or "
             "without a usable state for %d hours were let go: %s",
             len(gone),
@@ -1634,7 +1634,7 @@ class RouterTiesMixin:
         if stored[WIFI_OUTAGE_PUSHED]:
             self._upstream_announced[WIFI_KEY] = devices
             self._upstream_phase[WIFI_KEY] = "down"
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage open since %s resumed after "
             "the restart",
             dt_util.utc_from_timestamp(since).isoformat(),
@@ -1674,7 +1674,7 @@ class RouterTiesMixin:
         self._wifi_announced = False
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage over after %.0fs, %d "
             "device(s) still away and handed back to per-device "
             "detection",
@@ -1854,7 +1854,7 @@ class RouterTiesMixin:
             if began is not None and floor <= began < earliest:
                 earliest = float(began)
         if earliest < down_at:
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: wifi outage dated back %.0fs to the "
                 "first device that noticed it",
                 down_at - earliest,

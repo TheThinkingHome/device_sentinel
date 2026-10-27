@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.26.7 (2026-10-19)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.27.8 (2026-10-27)
 
 """The one file that holds what the owner set with a pencil (0.25.1).
 
@@ -529,8 +529,9 @@ class AnswersMixin:
     # ------------------------------------------------------- diagnostics
 
     def answers_diagnostics(self) -> dict[str, Any]:
-        """How many answers the file holds, and the ones held for devices
-        Device Sentinel does not watch (0.25.1).
+        """How many answers the file holds, the ones held for devices
+        Device Sentinel does not watch (0.25.1), and the ticks and battery
+        replacement days the file keeps (rule STOR-21).
 
         An answer stays when its device is excluded or set aside, so it
         is back on the page if the device is watched again. Those are
@@ -544,6 +545,11 @@ class AnswersMixin:
             "type_models": len(self._type_models),  # type: ignore[attr-defined]
             "type_devices": len(self._type_entries),  # type: ignore[attr-defined]
             "held": self.answers_held(),
+            # The rest of the answers file (rule STOR-21): the
+            # recommendation ticks, and the battery replacement days a
+            # person gave or confirmed.
+            "acknowledged": self._acks_payload(),  # type: ignore[attr-defined]
+            "battery": self._battery_answers_payload(),  # type: ignore[attr-defined]
         }
 
     def answers_held(self) -> list[dict[str, Any]]:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.26.6 (2026-10-17)
+# File: study.py, Version: 0.27.8 (2026-10-27)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -316,7 +316,7 @@ class StudyMixin:
             if len(shapes) >= STUDY_SHAPE_CAP:
                 if not self._study_capped.get(integration):
                     self._study_capped[integration] = True
-                    LOGGER.info(
+                    LOGGER.debug(
                         "device_sentinel: study of %s reached %d shapes, "
                         "no further kinds recorded",
                         integration,
@@ -1129,7 +1129,7 @@ class StudyMixin:
         for name in gone:
             self._study_shapes.pop(name, None)
             self._study_capped.pop(name, None)
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: study of %s ended, its readings are "
                 "removed",
                 name,

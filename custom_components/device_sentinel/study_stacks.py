@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.26.4 (2026-10-15)
+# File: study_stacks.py, Version: 0.27.8 (2026-10-27)
 
 """What six stacks say about their devices, gathered so their support
 can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
@@ -214,7 +214,8 @@ _CONTROLLER_STATISTICS = (
 
 def zwave_study(hass: HomeAssistant) -> dict[str, Any]:
     """What this house's Z-Wave network says about itself."""
-    entries = hass.config_entries.async_entries(ZWAVE_DOMAIN)
+    # Only entries set up to run (rule STACK-12).
+    entries = live_entries(hass, ZWAVE_DOMAIN)
     if not entries:
         return {}
     networks: list[dict[str, Any]] = []
@@ -267,7 +268,8 @@ def zwave_study(hass: HomeAssistant) -> dict[str, Any]:
 
 async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
     """What this house's Matter fabric says, and its Thread network."""
-    entries = hass.config_entries.async_entries(MATTER_DOMAIN)
+    # Only entries set up to run (rule STACK-12).
+    entries = live_entries(hass, MATTER_DOMAIN)
     if not entries:
         return {}
     fabrics: list[dict[str, Any]] = []
@@ -328,7 +330,7 @@ def _thread_network(hass: HomeAssistant) -> dict[str, Any]:
     return {
         "integration_loaded": "thread" in hass.config.components,
         "border_router_loaded": "otbr" in hass.config.components,
-        "border_routers": len(hass.config_entries.async_entries("otbr")),
+        "border_routers": len(live_entries(hass, "otbr")),
     }
 
 

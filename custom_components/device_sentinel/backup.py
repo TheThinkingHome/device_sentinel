@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.26.2 (2026-10-13)
+# File: backup.py, Version: 0.27.8 (2026-10-27)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,10 @@ from .const import (
     TRIM_BACKUP_DIR,
     TRIM_BACKUP_KEEP_DAYS,
 )
+
+# A stamp as the copies are named, with the suffix a second copy in
+# the same second takes (rule STOR-13).
+_STAMP_SHAPE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6}(?:_\d+)?")
 
 
 def _storage_path(hass: HomeAssistant, key: str) -> Path:
@@ -380,23 +385,34 @@ async def async_prune_backups(
     short = now - TRIM_BACKUP_KEEP_DAYS * 86400.0
     long = now - max(retention_days, TRIM_BACKUP_KEEP_DAYS) * 86400.0
 
-    def _stamp_of(name: str) -> str:
-        rest = name[len("device_sentinel_"):]
-        return rest.split(".", 1)[0]
+    def _stamp_of(name: str) -> str | None:
+        if name.startswith("device_sentinel_"):
+            rest = name[len("device_sentinel_"):]
+            return rest.split(".", 1)[0]
+        # Home Assistant's own corrupt file, copied aside under the same
+        # stamp as "<stamp>-device_sentinel...": one copy with the files
+        # its moment wrote, pruned with them (rule STOR-13).
+        # Only a stamp of ours, so a file of the person's own that
+        # happens to hold the name is never pruned.
+        if "-device_sentinel" in name:
+            stamp = name.split("-device_sentinel", 1)[0]
+            return stamp if _STAMP_SHAPE.fullmatch(stamp) else None
+        return None
 
     def _prune() -> int:
         if not os.path.isdir(directory):
             return 0
         copies: dict[str, list[tuple[str, float]]] = {}
         for name in os.listdir(directory):
-            if not name.startswith("device_sentinel_"):
+            stamp = _stamp_of(name)
+            if not stamp:
                 continue
             path = os.path.join(directory, name)
             try:
                 taken = os.path.getmtime(path)
             except OSError:
                 continue
-            copies.setdefault(_stamp_of(name), []).append((path, taken))
+            copies.setdefault(stamp, []).append((path, taken))
         if not copies:
             return 0
         newest = max(
@@ -620,7 +636,10 @@ async def async_copy_corrupt_evidence(
         os.makedirs(target, exist_ok=True)
         for name in names:
             try:
-                shutil.copy2(
+                # copyfile, not copy2: the copy is dated when it was
+                # taken, so it is pruned 30 days after that (rule
+                # STOR-13), not by the damaged file's own age.
+                shutil.copyfile(
                     os.path.join(directory, name),
                     os.path.join(target, f"{stamp}-{name}"),
                 )

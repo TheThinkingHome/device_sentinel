@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.7 (2026-10-27)
+# File: report_brief.py, Version: 0.27.8 (2026-10-27)
 
 """The daily brief: the one report written for a person.
 
@@ -2580,6 +2580,7 @@ class BriefMixin:
         now_rows: list[tuple[str, str, float, str, str]],
         window_start: float,
         sys_events: list[dict[str, Any]] | None = None,
+        window_end: float | None = None,
     ) -> list[str]:
         """Return the brief's opening prose.
 
@@ -2619,7 +2620,16 @@ class BriefMixin:
         # (ruling #345). Nothing else in this brief matters as much
         # as the fact that the file the rest of it came from had to
         # be replaced, and how much of it is missing.
-        if self.restore_told:
+        # Only in the brief whose window holds the restore (rule
+        # BRIEF-02): it led every brief until a restart before.
+        restored_at = getattr(self, "_restore_told_at", None)
+        if self.restore_told and (
+            restored_at is None
+            or (
+                restored_at >= window_start
+                and (window_end is None or restored_at <= window_end)
+            )
+        ):
             lines += [self.restore_told, ""]
         if house:
             lines += [" ".join(house), ""]
@@ -2731,7 +2741,7 @@ class BriefMixin:
             "",
         ]
         lines += self._brief_prose(
-            incidents, now_rows, window_start, sys_events
+            incidents, now_rows, window_start, sys_events, window_end=window_end
         )
         lines += ["## Now", ""]
         if not now_rows:

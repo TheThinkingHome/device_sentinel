@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.23.19 (2026-09-30)
+# File: wifi.py, Version: 0.27.8 (2026-10-27)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -210,7 +210,7 @@ class WifiScanMixin:
             # The moment it went, kept so the outage can be dated from
             # here rather than from the end of the delay.
             self._wifi_scan_gone_at = now
-            LOGGER.info(
+            LOGGER.debug(
                 "device_sentinel: %s not heard, holding %ds before "
                 "reporting",
                 ", ".join(missing),
@@ -224,7 +224,7 @@ class WifiScanMixin:
 
     def _wifi_scan_declare(self, since: float, missing: list[str]) -> None:
         self._wifi_scan_down_at = since
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage, %s not heard since %s",
             ", ".join(missing),
             dt_util.utc_from_timestamp(since).isoformat(),
@@ -234,7 +234,7 @@ class WifiScanMixin:
     def _wifi_scan_restore(self, now: float) -> None:
         since = self._wifi_scan_down_at
         self._wifi_scan_down_at = None
-        LOGGER.info(
+        LOGGER.debug(
             "device_sentinel: wifi outage over after %.0fs",
             max(0.0, now - (since or now)),
         )

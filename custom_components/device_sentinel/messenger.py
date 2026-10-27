@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.27.4 (2026-10-25)
+# File: messenger.py, Version: 0.27.8 (2026-10-27)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -269,5 +269,5 @@ class MessengerMixin:
         # survives a restart, and carries a severity. Posting both put
         # one event on five surfaces with the most durable one in the
         # place things are dismissed by reflex.
-        LOGGER.warning("Restore notice sent to %d surface(s)", sent)
+        LOGGER.debug("Restore notice sent to %d surface(s)", sent)
         return sent
