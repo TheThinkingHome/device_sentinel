@@ -3,21 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_answers.py, Version: 0.26.8 (2026-10-20)
+# File: tests/test_fleet_answers.py, Version: 0.27.10 (2026-10-27)
 
-"""Real houses' answers files through the Power and Type rows.
+"""Real houses' answers files through the Power and Type rows
+(rules DEV-06, STOR-20).
 
 The answers file holds the only things in storage a person types by
 hand: what powers each device and what each device is. The suite reads
 it from the houses as they saved it. One device is registered for every
 model answer, made by the stand-in maker, model and model ID the
 anonymizer gave that answer, so the answer finds its device exactly as
-it does in the house.
-
-Before the fleet refresh of 11 October 2026 the houses carried the
-power file of 0.24.7, and this file proved its move into the answers
-file. The move itself is proven on made-up entries in
-test_answers_store.py.
+it does in the house. The move from the older power file is proven on
+made-up entries in test_answers_store.py.
 
 Three claims per house:
 1. every answer loads, and none is left out;
@@ -25,10 +22,9 @@ Three claims per house:
    person reads on the page;
 3. a pencil save that changes nothing writes back every answer as it
    was loaded, power and type alike, so a save can never lose another
-   device's answer. As loaded rather than as stored: the reference
-   house's Zooz stick was typed "USB Direct to Server" under Other on
-   9 October, hours before that became a choice, and it loads as the
-   choice (#618).
+   device's answer. As loaded rather than as stored: an answer typed
+   under Other in the words of a choice added later loads as that
+   choice (rule DEV-08).
 """
 
 from __future__ import annotations
@@ -104,7 +100,7 @@ async def test_a_real_answers_file_loads_whole_and_answers_every_device(
         if kind is not None:
             known = coord.type_of(device_id)
             assert known["source"] == SOURCE_OWNER, f"{key}: type from {known['source']}"
-            # Words naming a listed type read as its name (#717).
+            # Words naming a listed type read as its name (rule DEV-11).
             assert known["words"] == list_name(kind["type"]), key
 
 
@@ -115,8 +111,8 @@ async def test_an_unchanged_pencil_save_writes_every_answer_back(
     document, seated = _seat(hass, hass_storage, path)
     coord = await setup_coordinator(hass)
     # As loaded, which is not always byte for byte as stored: an answer
-    # typed under Other in the words of a choice that came later reads
-    # as that choice (#618), as the reference house's Zooz stick does.
+    # typed under Other in the words of a choice that came later reads as
+    # that choice (rule DEV-08).
     loaded = coord._answers_payload()
     before = {part: _kept(loaded[part]) for part in ("power", "types")}
     for part in before:

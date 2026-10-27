@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_infrastructure.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_infrastructure.py, Version: 0.27.10 (2026-10-27)
 
-"""Diagnostics says what the plumbing is, not only how it behaved.
+"""Diagnostics says what the plumbing is, not only how it behaved
+(rule DEV-16).
 
-A report about a coordinator misbehaving could not be matched
-against that hardware's documentation, because nothing recorded
-what the hardware was. Two additions answer it: identity on every
-device record, and one block naming the stacks, the broker and any
-router integration the house runs (ruling #398).
+A report about a coordinator misbehaving can be matched against that
+hardware's documentation only if something records what the hardware
+is. So each device record carries its identity, and one block names
+the stacks, the broker and any router integration the house runs.
 """
 
 from __future__ import annotations

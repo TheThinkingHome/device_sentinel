@@ -3,19 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_foreign_entities.py, Version: 0.27.10 (2026-10-27)
 
-"""Another integration's entity on a device is not the device speaking.
+"""Another integration's entity on a device is not the device speaking
+(rules GEN-03, WATCH-02, BAT-01).
 
-Battery Notes adds a battery entity to devices other integrations own,
-and on the second fleet it refreshed them about every 26 minutes. On 65
-devices with no Last Seen clock each refresh stamped the device as
-heard, so a dead sensor could be kept looking alive, and each refresh
-was counted as Battery Notes republishing its whole fleet. Since
-0.22.21 a foreign entity still supplies a reading the device publishes
-nowhere else (ruling #404) and does nothing else: it stamps no clock,
-feeds no burst, ties the device to none of its reloads, and holds no
-device up that is down.
+Battery Notes adds a battery entity to devices other integrations own
+and refreshes them every half hour or so. If each refresh stamped the
+device as heard, a dead sensor with no Last Seen clock would be kept
+looking alive, and each refresh would count as Battery Notes
+republishing its whole fleet. So a foreign entity supplies a reading
+the device publishes nowhere else (rule BAT-01) and does nothing else:
+it stamps no clock, feeds no burst, ties the device to none of its
+reloads, and holds no device up that is down.
 """
 
 from __future__ import annotations
@@ -65,8 +65,8 @@ def _house(hass: HomeAssistant, *, own: bool = True):
     """A ZHA door sensor carrying a Battery Notes battery entity."""
     zha = MockConfigEntry(domain="zha", title="ZHA")
     zha.add_to_hass(hass)
-    # Loaded, as in a running house: a device whose integration is
-    # still starting is given the startup window (ruling #367).
+    # Loaded, as in a running house: a device whose integration is still
+    # starting is given the startup window (rule WATCH-10).
     zha.mock_state(hass, ConfigEntryState.LOADED)
     notes = MockConfigEntry(domain="battery_notes", title="Battery Notes")
     notes.add_to_hass(hass)
@@ -197,9 +197,9 @@ async def test_an_excluded_integration_with_no_hardware_reads_excluded(
 
 
 async def test_the_brief_never_advises_excluding_it(hass: HomeAssistant):
-    """Bursts Battery Notes logged before 0.22.21 would keep the advice
-    alive for the whole window; it owns no device, so excluding it
-    could do nothing."""
+    """Bursts Battery Notes logged in the past must not keep the advice
+    alive for the whole window; it owns no device, so excluding it could
+    do nothing (rule UP-18)."""
     _house(hass)
     coord = await setup_coordinator(hass)
     today = dt_util.now().date()
@@ -232,12 +232,12 @@ def test_the_standing_key_is_one_text():
 
 
 # ==================================================================
-# A page for each, and helpers told apart (0.22.22).
+# A page for each, and helpers told apart.
 # ==================================================================
 
 
 async def test_its_page_names_the_devices_and_their_entities(hass: HomeAssistant):
-    """Before 0.22.22 the row said "on 1 device" and opened nothing."""
+    """The row opens the helper's page, not a bare "on 1 device"."""
     device, _contact, note = _house(hass)
     area = ar.async_get(hass).async_create("Hall")
     dr.async_get(hass).async_update_device(device.id, area_id=area.id)
@@ -272,6 +272,6 @@ async def test_a_linked_helper_stands_as_a_helper(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = Path(hass.config.path("device_sentinel", "classification.md")).read_text()
     assert "## Integrations With No Hardware (2)" in text
-    # By its name, as Home Assistant shows it (rule GEN-07, 0.27.4).
+    # By its name, as Home Assistant shows it (rule GEN-07).
     assert "| Derivative | Helper | 1 |" in text
     assert "Helper: A Home Assistant helper you linked to a device." in text

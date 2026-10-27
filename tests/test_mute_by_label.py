@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_mute_by_label.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_mute_by_label.py, Version: 0.27.10 (2026-10-27)
 
-"""Mute by label from the device page (ruling #706, Advanced).
+"""Mute by label from the device page, in Advanced (rule MUTE-09).
 
 The label goes on the device and onto the kind's label list, the list
 Settings writes, so every device carrying it is muted for that kind;

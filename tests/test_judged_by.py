@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_judged_by.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_judged_by.py, Version: 0.27.10 (2026-10-27)
 
-"""How a device never judged for freezing is judged (James, 27 October 2026).
+"""How a device never judged for freezing is judged (rules FRZ-07, STACK-10).
 
 A device a hub controls, a hub itself, and an ESPHome device judged by
 its connection alone are never judged for freezing. Its page and its

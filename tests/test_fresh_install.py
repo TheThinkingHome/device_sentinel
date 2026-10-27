@@ -1,7 +1,7 @@
-"""What a stranger gets: an empty install, driven end to end.
+"""What a stranger gets: an empty install, driven end to end (rule CFG-07).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_fresh_install.py, Version: 0.26.7 (2026-10-19)
+# File: test_fresh_install.py, Version: 0.27.10 (2026-10-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -29,9 +29,10 @@ from .helpers import register_device, setup_coordinator
 async def test_a_fresh_install_writes_its_reports_at_once(
     hass: HomeAssistant,
 ):
-    """The files exist from the first boot, so a person who installs
-    and immediately looks finds them. Since 0.23.5 the brief sits with
-    the other reports, and nothing is written under www."""
+    """The files exist from the first boot, so a person who installs and
+    immediately looks finds them. The brief sits with the other reports,
+    and nothing is written under www (rule BRIEF-14).
+    """
     register_device(hass, "fi1", "First Device")
     coord = await setup_coordinator(hass)
 
@@ -66,10 +67,9 @@ async def test_a_fresh_install_claims_nothing_it_has_not_learned(
 async def test_the_first_readings_do_not_produce_a_verdict(
     hass: HomeAssistant,
 ):
-    """Arming takes seven days (ruling #172 and the freeze arming
-    window), so a device that reports on day one is observed and not
-    judged. A verdict here would be the worst kind: a stranger's
-    first impression of the integration is a false alarm.
+    """Arming takes seven days, so a device that reports on day one is
+    observed and not judged. A verdict here would be the worst kind: a
+    stranger's first impression of the integration is a false alarm.
     """
     device, (entity_id,) = register_device(hass, "fi3", "Talkative Device")
     coord = await setup_coordinator(hass)
@@ -106,9 +106,10 @@ async def test_the_first_midnight_records_a_day(hass: HomeAssistant):
 async def test_a_fresh_install_status_carries_no_enable_counts(
     hass: HomeAssistant,
 ):
-    """A fresh install's Status sensor reads a state, and carries no
-    awaiting-enable counts: they went with the Enable buttons (ruling
-    #696). A switched-off sensor is a Recommendations card now."""
+    """A fresh install's Status sensor reads a state and carries no
+    awaiting-enable counts, because a switched-off sensor is a
+    Recommendations card (rule REC-05).
+    """
     await setup_coordinator(hass)
 
     status = hass.states.get("sensor.device_sentinel_status")

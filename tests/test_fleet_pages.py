@@ -3,27 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_pages.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_fleet_pages.py, Version: 0.27.10 (2026-10-27)
 
-"""Every device of a real house through the server's device page.
+"""Every device of a real house through the server's device page
+(rules FRZ-05, FRZ-22).
 
-The replay that proved 0.24.10 and 0.24.11 on the owner's house, run
-by hand from the private archive since 6 October, made permanent on
-the committed houses (fleet refresh, 8 October 2026). Each device is
-seated with its own daily gaps and their dates, ``lognormal_days``,
-``first_observed``, and from the clocks its ``event_count`` and
-``last_activity``, and the clock stands where the house saved its
-clocks. Its page is then built by ``dashboard_device``.
+Each device is seated with its own daily gaps and their dates,
+``lognormal_days``, ``first_observed``, and from the clocks its
+``event_count`` and ``last_activity``, and the clock stands where the
+house saved its clocks. Its page is then built by ``dashboard_device``.
 
 For each device with a window:
 1. the rhythm on the status bar is a real number shorter than its
-   window, since the bar shows the rhythm of the rule in use (0.24.10);
+   window, since the bar shows the rhythm of the rule in use;
 2. the Trimmed Maximum chart has a real number, and the Log-Normal
    Percentile chart has one whenever the page names its days.
 
-It failed on 0.24.9, whose bar showed the 14-day rhythm and whose rule
-figures were lists, and it caught the blank charts real data drew that
-hand-made samples did not.
+Real data catches blank charts that hand-made samples do not draw.
 """
 
 from __future__ import annotations
@@ -50,9 +46,9 @@ HOUSES = [
     fleet_param("second", "device_sentinel_storage.json", id="second",
                 clocks=("second", "device_sentinel_clocks.json")),
 ]
-# The fourth fleet is left out: its records are of 0.22.3, before each
-# day kept its date (0.24.4), and this test seats records as the page
-# reads them, past the load that would date them.
+# The fourth fleet is left out: its records predate each day keeping
+# its date, and this test seats records as the page reads them, past the
+# load that would date them.
 
 
 def _real(value) -> bool:

@@ -3,40 +3,35 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_matter_awake.py, Version: 0.27.2 (2026-10-23)
+# File: test_matter_awake.py, Version: 0.27.10 (2026-10-27)
 
 """A Matter device of a type that reports only on use is judged by being
-available (ruling #710, narrowed by #718 to those types).
+available (rule STACK-06).
 
-Tim Plas's test of 19 October 2026: his Matter lamp L20 and plug P22,
-unplugged, were marked away by the Matter server and unavailable by
-Home Assistant in the same second, about five minutes after they were
-last heard. So a quiet Matter device with no battery that stays
-available is plugged in and well, and is never newly judged frozen, as
-an awake ESPHome device is (#636). Unavailable is judged as before. A
-Matter device with a battery entity may sleep, and keeps the freeze
-rule; a frozen verdict already standing stays until the device
-reports (#529); and the Slow Reporting Devices card leaves the device
-off, since a freeze mute would change nothing for it.
+A Matter lamp and plug, unplugged, are marked away by the Matter server
+and unavailable by Home Assistant in the same second, about five minutes
+after they were last heard. So a quiet Matter device of such a type that
+stays available is plugged in and well, and is never newly judged
+frozen, as an awake ESPHome device is (rule STACK-07). Unavailable is
+judged as before. A frozen verdict already standing stays until the
+device reports (rule LIST-08), and the Slow Reporting Devices card
+leaves the device off, since a freeze mute would change nothing for it.
 
-#718 decides by type rather than by power. Tim's button B13 lost its
-battery on 21 October 2026 and was marked away about fourteen minutes
-after it was last heard, so a Matter button, light, plug or switch is
-spared whatever powers it, and so is a cover, fan, valve, lock, siren,
-appliance, vacuum or Matter Bridge. His sensor S87 went silent on 13
-October while Matter still called it available, so a sensor, and any
-type that reports on a schedule, keeps the freeze rule whatever powers
-it, as does a device that measures something whatever its entities
-call it.
+The type decides, not what powers the device. A Matter button that
+loses its battery is marked away about fourteen minutes after it was
+last heard, so a button, light, plug or switch is spared whatever
+powers it, and so is a cover, fan, valve, lock, siren, appliance, vacuum
+or Matter Bridge. A sensor can go silent while Matter still calls it
+available, so a sensor, and any type that reports on a schedule, keeps
+the freeze rule whatever powers it, as does a device that measures
+something whatever its entities call it.
 
-0.27.0 missed one shape: a Matter button whose buttons have never been
-pressed. Its main entities are event entities, which read unknown until
-the first press, and its only values are diagnostic ones such as its
-battery. Tim's B13 to B15 were called frozen on 0.26.8 and would have
-been on 0.27.1 too (23 October 2026). Since 0.27.2 an entity of its own
-holding a value shows it available; one whose entities read nothing at
-all keeps the freeze rule, and an entity another integration added never
-counts.
+A Matter button whose buttons have never been pressed has event
+entities as its main entities, which read unknown until the first
+press, and its only values are diagnostic ones such as its battery. An
+entity of its own holding a value shows it available; one whose
+entities read nothing at all keeps the freeze rule, and an entity
+another integration added never counts (rule WATCH-02).
 """
 
 from __future__ import annotations
@@ -105,7 +100,7 @@ def _silent_past_window(coord, device_id, frozen=False):
 
 
 async def test_an_available_matter_lamp_is_never_frozen(hass: HomeAssistant):
-    """L20 and L21, quiet for a day while plugged in (Tim, 11 October)."""
+    """L20 and L21, quiet for a day while plugged in."""
     lamp, light = _device(hass, "matter", "l20")
     other, other_light = _device(hass, "test", "plain")
     coord = await setup_coordinator(hass)
@@ -122,7 +117,7 @@ async def test_an_available_matter_lamp_is_never_frozen(hass: HomeAssistant):
 
 
 async def test_an_unplugged_matter_lamp_is_unavailable(hass: HomeAssistant):
-    """Tim's test: unplugged, every entity reads unavailable."""
+    """Unplugged, every entity reads unavailable."""
     lamp, light = _device(hass, "matter", "unplugged")
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, STATE_UNAVAILABLE)
@@ -132,8 +127,8 @@ async def test_an_unplugged_matter_lamp_is_unavailable(hass: HomeAssistant):
 
 
 async def test_a_matter_lamp_with_a_battery_is_spared_too(hass: HomeAssistant):
-    """What powers it no longer decides (#718): a light, plug, switch or
-    button is judged by being available on a battery as on mains."""
+    """What powers it does not decide (rule STACK-06): a light, plug,
+    switch or button is judged by being available on a battery as on mains."""
     lamp, light = _device(hass, "matter", "b13", battery=True)
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, "off")
@@ -145,8 +140,8 @@ async def test_a_matter_lamp_with_a_battery_is_spared_too(hass: HomeAssistant):
 
 
 async def test_a_matter_sensor_keeps_the_freeze_rule(hass: HomeAssistant):
-    """S87, 13 October: a sensor silent while Matter called it available,
-    caught only by its frozen verdict. On a battery and on mains alike."""
+    """S87: a sensor silent while Matter called it available, caught only
+    by its frozen verdict. On a battery and on mains alike."""
     sensors = {
         uid: _device(hass, "matter", uid, battery=battery, sensor=True)
         for uid, battery in (("s87", True), ("mains", False))
@@ -164,7 +159,7 @@ async def test_a_matter_sensor_keeps_the_freeze_rule(hass: HomeAssistant):
 
 async def test_the_owner_type_decides_in_any_spelling(hass: HomeAssistant):
     """A type set with the pencil counts in the list's name or the
-    owner's own spelling of it (#717); a type that reports on a
+    owner's own spelling of it (rule DEV-11); a type that reports on a
     schedule keeps the rule, such as a thermostat."""
     lamp, light = _device(hass, "matter", "owner")
     coord = await setup_coordinator(hass)
@@ -180,9 +175,8 @@ async def test_the_owner_type_decides_in_any_spelling(hass: HomeAssistant):
 
 async def test_a_cover_on_mains_is_spared_as_in_0_26_8(hass: HomeAssistant):
     """A cover, fan, valve, lock, siren, appliance, vacuum or Matter
-    Bridge reports when used, and 0.26.8 spared it on mains: 0.27.0
-    must not call it frozen on the upgrade (adversarial round of
-    0.27.0)."""
+    Bridge reports when used, so a device of these types spared before
+    on mains is not called frozen on the upgrade (rule STACK-06)."""
     blind, entity = _device(hass, "matter", "blind", main="cover")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity, "open")
@@ -198,8 +192,8 @@ async def test_a_cover_on_mains_is_spared_as_in_0_26_8(hass: HomeAssistant):
 
 async def test_a_sensor_with_a_switch_keeps_the_freeze_rule(hass: HomeAssistant):
     """Its entities read Switch, but it measures a temperature, and a
-    silent sensor is what S87 was (adversarial round of 0.27.0). The
-    owner's own type is trusted."""
+    silent sensor is what S87 was. The owner's own type is trusted
+    (rule STACK-06)."""
     sensor, entity = _device(hass, "matter", "s87switch", sensor=True)
     switch = er.async_get(hass).async_get_or_create(
         "switch", "matter", "s87switch_switch", device_id=sensor.id,
@@ -220,8 +214,8 @@ async def test_a_sensor_with_a_switch_keeps_the_freeze_rule(hass: HomeAssistant)
 
 
 async def test_a_standing_frozen_verdict_stays_until_it_reports(hass: HomeAssistant):
-    """A lamp frozen when 0.26.8 starts is not told as recovered by a
-    rule changing (#529)."""
+    """A lamp frozen at the start is not told as recovered because a
+    rule changed (rule LIST-08)."""
     lamp, light = _device(hass, "matter", "standing")
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, "off")
@@ -256,8 +250,8 @@ async def test_the_slow_card_leaves_an_available_matter_lamp_off(hass: HomeAssis
 
 
 async def test_a_device_behind_a_matter_bridge_keeps_the_freeze_rule(hass: HomeAssistant):
-    """A bridge may keep a dead sensor reachable, and nothing tested that
-    (adversarial round of 0.26.8)."""
+    """A bridge may keep a dead sensor reachable, so a device behind a
+    bridge keeps the freeze rule (rule STACK-06)."""
     bridge, _ = _device(hass, "matter", "bridge")
     sensor, light = _device(hass, "matter", "bridged")
     dr.async_get(hass).async_update_device(sensor.id, via_device_id=bridge.id)
@@ -271,7 +265,7 @@ async def test_a_device_behind_a_matter_bridge_keeps_the_freeze_rule(hass: HomeA
 
 async def test_the_page_says_how_it_is_judged(hass: HomeAssistant):
     """No window on the Devices tab, and the device page's flag, while no
-    frozen verdict stands (adversarial round of 0.26.8)."""
+    frozen verdict stands."""
     lamp, light = _device(hass, "matter", "page")
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, "off")
@@ -287,8 +281,7 @@ async def test_the_page_says_how_it_is_judged(hass: HomeAssistant):
 
 async def test_nothing_but_unknown_is_not_said_spared(hass: HomeAssistant):
     """The page and the card follow the rule: a lamp reading only unknown
-    can still be called frozen, so neither says it is spared (second
-    adversarial round of 0.26.8)."""
+    can still be called frozen, so neither says it is spared."""
     lamp, light = _device(hass, "matter", "quiet")
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, STATE_UNKNOWN)
@@ -338,8 +331,8 @@ def _button(hass, uid, battery="100", foreign_battery=None):
 
 
 async def test_a_button_never_pressed_is_not_frozen(hass: HomeAssistant):
-    """Tim's B13 to B15, 23 October 2026: buttons that read unknown and
-    a battery at 100%, silent past their window, on Matter over Thread."""
+    """B13 to B15: buttons that read unknown and a battery at 100%,
+    silent past their window, on Matter over Thread."""
     button = _button(hass, "b13")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()
@@ -363,7 +356,7 @@ async def test_a_button_never_pressed_is_said_spared(hass: HomeAssistant):
 
 
 async def test_a_button_frozen_before_stays_frozen_until_it_reports(hass: HomeAssistant):
-    """A verdict standing at the upgrade is not told as a recovery (#529)."""
+    """A verdict standing at the upgrade is not told as a recovery (rule LIST-08)."""
     button = _button(hass, "b15")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()
@@ -384,8 +377,8 @@ async def test_a_button_showing_nothing_keeps_the_freeze_rule(hass: HomeAssistan
 
 
 async def test_another_integrations_battery_does_not_count(hass: HomeAssistant):
-    """Battery Notes adds a battery to Tim's buttons; its value is not the
-    device showing itself available (#463)."""
+    """Battery Notes adds a battery to the buttons; its value is not the
+    device showing itself available (rule WATCH-02)."""
     button = _button(hass, "notes", battery=STATE_UNKNOWN, foreign_battery="100")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()

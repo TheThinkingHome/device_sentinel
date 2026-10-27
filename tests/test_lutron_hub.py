@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_hub.py, Version: 0.27.7 (2026-10-27)
+# File: test_lutron_hub.py, Version: 0.27.10 (2026-10-27)
 
-"""Lutron: judged by its hub (rulings #663 to #665).
+"""Lutron: judged by its hub (rules STACK-09, STACK-10).
 
 A Lutron hub is up or down from its library's session, which the
 library clears when the hub stops answering its minute check. The
 devices it controls, registered "via" it, are never judged frozen or
 "never reported"; a Pico press counts as the Pico reporting. Shaped on
-Christopher Robert's house: a Basement hub with dimmers and Picos, and
-a Garage hub with two switches, each its own config entry.
+a real house: a Basement hub with dimmers and Picos, and a Garage hub
+with two switches, each its own config entry.
 """
 
 from __future__ import annotations
@@ -327,7 +327,8 @@ async def test_diagnostics_carry_each_hub(hass: HomeAssistant, freezer):
 async def test_the_reader_follows_the_library_through_a_drop(hass: HomeAssistant):
     """pylutron-caseta, as Home Assistant 2026.10 pins it, run through its own
     connect and drop: the session is set while the connection runs and
-    cleared when it ends, while is_connected() is not to be trusted (#663)."""
+    cleared when it ends, while is_connected() is not to be trusted
+    (rule STACK-08)."""
     import asyncio
     from unittest.mock import patch
 
@@ -374,12 +375,12 @@ async def test_the_reader_follows_the_library_through_a_drop(hass: HomeAssistant
     assert HUB_READERS[DOMAIN](entry) is False
 
 
-# Found by the adversarial round of 14 October 2026.
+# Mutes on a hub.
 
 
 async def test_a_hub_muted_for_unavailable_is_silent_down_and_back(hass: HomeAssistant, freezer):
-    """A mute is a mute (James, 14 October 2026). From 17 October 2026 it
-    is the unavailable mute that silences a hub going down."""
+    """A mute is a mute: the unavailable mute silences a hub going down
+    and coming back (rule MUTE-06)."""
     h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     faults = record_events(hass, EVENT_FAULT)
     recovered = record_events(hass, EVENT_RECOVERED)
@@ -393,9 +394,9 @@ async def test_a_hub_muted_for_unavailable_is_silent_down_and_back(hass: HomeAss
 
 
 async def test_a_freeze_muted_hub_that_goes_down_is_reported(hass: HomeAssistant, freezer):
-    """A freeze mute silences only judgments made from silence (James, 17
-    October 2026, reversing the 14 October amendment to #664): a hub
-    muted for freeze that goes down is one row, and back is told."""
+    """A freeze mute silences only judgments made from silence, so a hub
+    muted for freeze that goes down is one row, and back is told
+    (rule MUTE-06)."""
     h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
     faults = record_events(hass, EVENT_FAULT)
     recovered = record_events(hass, EVENT_RECOVERED)
@@ -417,9 +418,9 @@ async def test_a_hub_with_no_entity_still_speaks_for_its_devices(hass: HomeAssis
     await _past_grace(hass, freezer)
     await _tick(hass, freezer, step=3600, n=60)
     assert _item(h.coord, h.pico.id) is None
-    # With no watched hub, the integration rule covers its devices as in
-    # 0.26.2 (James, 14 October 2026): a Lutron that cannot start is
-    # reported as the integration, its light counted under it.
+    # With no watched hub, the integration rule covers its devices: a
+    # Lutron that cannot start is reported as the integration, its light
+    # counted under it (rule UP-05).
     h.basement.runtime_data.bridge._leap = None
     h.basement.mock_state(hass, ConfigEntryState.SETUP_RETRY)
     hass.states.async_set(h.kitchen_eid, "unavailable")
@@ -495,7 +496,7 @@ async def test_a_device_behind_a_hub_that_cannot_speak_has_an_ordinary_page(hass
     assert h.coord.hub_view(h.kitchen.id, dt_util.utcnow().timestamp()) is None
 
 
-# Found by the fourth adversarial round of 14 October 2026.
+# A hub that cannot start.
 
 
 def _kinds(coord, kind):
@@ -526,7 +527,7 @@ async def _mute_garage(hass, h, muted):
 
 
 async def test_a_muted_hub_that_cannot_start_is_silent_and_keeps_its_entry(hass: HomeAssistant, freezer):
-    """A hub's mute covers its devices (James, 14 October 2026)."""
+    """A hub's mute covers its devices (rule STACK-09)."""
     h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     c = h.coord
     await _past_grace(hass, freezer)
@@ -584,7 +585,8 @@ async def test_an_outage_from_before_the_upgrade_still_down_waits_for_the_integr
 
 
 async def test_unmuting_a_cut_off_hub_does_not_list_its_lights(hass: HomeAssistant, freezer):
-    """The case the fifth and sixth review rounds found (14 October 2026)."""
+    """Unmuting a hub that is cut off does not list its lights
+    (rule STACK-09)."""
     h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     c = h.coord
     await _past_grace(hass, freezer)
@@ -632,8 +634,8 @@ async def test_a_hub_muted_from_everything_mutes_its_devices(hass: HomeAssistant
     assert h.flood.id not in c._muted_devices
 
 
-# A hub's mute covers its devices, and James's wording rulings, of
-# 14 October 2026.
+# A hub's mute covers its devices, and the words its rows use
+# (rules STACK-09, STACK-10).
 
 
 async def test_a_light_still_down_when_its_hub_is_back_is_listed(hass: HomeAssistant, freezer):
@@ -675,7 +677,7 @@ async def test_the_card_and_the_brief_say_hub_down(hass: HomeAssistant, freezer)
     assert "Garage Lutron Caseta became unavailable" not in text
 
 
-# Found by the seventh adversarial round of 14 October 2026.
+# A hub that is not watched.
 
 
 async def test_a_hub_that_is_not_watched_mutes_nothing(hass: HomeAssistant, freezer):
@@ -689,15 +691,12 @@ async def test_a_hub_that_is_not_watched_mutes_nothing(hass: HomeAssistant, free
     assert c.page_mutes(h.kitchen.id)["everything"]["on"] is False
 
 
-# ------------------------- unknown on a device a hub controls (0.26.6)
+# ------------------------------------ unknown on a device a hub controls
 
 
-# R2-2. hubs.py 385-391: the hub path has no all-unknown hold. A device a
-# hub controls with an unknown verdict standing from 0.26.5, its entity
-# still unknown, gets None on the first sweep (detect_freeze.py 670-674
-# returns _hub_category directly), the item retires and a recovery is
-# fired though the device said nothing. Round one added the hold only
-# to the non-hub branch (detect_freeze.py 794-795).
+# A device a hub controls with an unknown verdict standing, its entity
+# still unknown, is held, not retired with a recovery, because the
+# device said nothing (rules UNAV-02, LIST-08).
 async def test_a_hub_controlled_device_with_a_standing_unknown_is_not_told_recovered(
     hass: HomeAssistant, freezer
 ):
@@ -719,9 +718,9 @@ async def test_a_hub_controlled_device_with_a_standing_unknown_is_not_told_recov
     assert _item(c, h.kitchen.id) is not None
 
 
-# R2-2b. The same hole reached live: a controlled light unavailable (its
-# hub up) whose entity passes to unknown is cleared by _hub_category and
-# told recovered, though nothing was heard. 0.26.5 held it as unknown.
+# A controlled light unavailable (its hub up) whose entity passes to
+# unknown is held, not told recovered, because nothing was heard
+# (rule UNAV-02).
 async def test_a_hub_controlled_device_going_from_unavailable_to_unknown_is_not_recovered(
     hass: HomeAssistant, freezer
 ):

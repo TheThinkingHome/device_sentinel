@@ -3,16 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_long_durations.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_long_durations.py, Version: 0.27.10 (2026-10-27)
 
-"""Figures a person can read: long spans, a running silence, a scale.
+"""Figures a person can read: long spans, a running silence, a scale
+(rules GEN-09, FRZ-13).
 
-Hours carried past the point of meaning. A battery flat since July
-read 1485.3h in one report and 61.9d in another. A silence truncated
-by the nightly reboot showed 8.22h and 11.13h in two columns and its
-real 19.3h in none. A vibration sensor that left the house for six
-weeks gave its rhythm chart an axis of 1032 hours, against a rhythm of
-1.6, so every ordinary day lay flat on the floor.
+Hours carried past the point of meaning are unreadable: a battery flat
+for months reading 1485.3h in one report and 61.9d in another, a
+silence cut by the nightly reboot showing 8.22h and 11.13h in two
+columns and its real 19.3h in none, a rhythm chart with an axis of
+1032 hours against a rhythm of 1.6, so every ordinary day lies flat on
+the floor.
 """
 
 from __future__ import annotations
@@ -53,7 +54,7 @@ DAY = 86400.0
         (72, "3 days"),
         (240, "10 days"),
         (252, "a week and a half"),  # ten and a half days, where weeks begin
-        (264, "a week and a half"),  # rounded down, the owner's rule
+        (264, "a week and a half"),  # rounded down (rule GEN-09)
         (336, "2 weeks"),
         (432, "2 and a half weeks"),
         (1032, "6 weeks"),           # the vibration sensor's absence
@@ -143,10 +144,10 @@ async def test_a_rhythm_chart_is_scaled_to_what_can_be_read(hass: HomeAssistant)
 
 
 async def test_a_long_day_neither_rule_reads_leaves_the_scale(hass: HomeAssistant):
-    """The rig's SLZB-06 on 24 October 2026: a day of 238.6 hours in
-    August, older than both rules read, drew every rhythm chart 240
-    hours high (James's dashboard review). The scale is taken from the
-    days the two rules read, less the days they set aside (0.27.3)."""
+    """A day of 238.6 hours, older than both rules read, must not draw every
+    rhythm chart 240 hours high. The scale is taken from the days the two
+    rules read, less the days they set aside (rule FRZ-22).
+    """
     device, _entities = register_device(hass, "slzb", name="SLZB-06")
     coord = await setup_coordinator(hass)
     record = coord.data["devices"][device.id]
@@ -167,8 +168,9 @@ def test_the_chart_draws_a_day_beyond_the_scale_at_the_top():
 
 
 def test_the_compact_format_at_every_boundary():
-    """Ruling #546: seconds below ninety, minutes below ninety, hours
-    below two days, days below two weeks, then weeks."""
+    """Seconds below ninety, minutes below ninety, hours below two days,
+    days below two weeks, then weeks (rule GEN-09).
+    """
     from custom_components.device_sentinel.durations import compact_span
 
     assert compact_span(0) == "0s"
@@ -184,9 +186,10 @@ def test_the_compact_format_at_every_boundary():
 
 
 def test_the_one_compact_format_at_its_boundaries():
-    """Ruling #546: seconds below ninety, then minutes below ninety,
-    hours below two days, days below two weeks, then weeks; "more than"
-    at a cap; unknown for what is not a number."""
+    """Seconds below ninety, then minutes below ninety, hours below two
+    days, days below two weeks, then weeks; "more than" at a cap; unknown
+    for what is not a number (rule GEN-09).
+    """
     from custom_components.device_sentinel.durations import compact_span
 
     cases = {

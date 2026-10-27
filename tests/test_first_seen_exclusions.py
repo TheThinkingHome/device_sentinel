@@ -3,20 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_first_seen_exclusions.py, Version: 0.27.7 (2026-10-27)
+# File: test_first_seen_exclusions.py, Version: 0.27.10 (2026-10-27)
 
 """Music Assistant, the television integrations, Alexa Media Player and
-Google Cast, excluded when first seen on a new install (ruling #711,
-Ruled Change 69, rule MUTE-02).
+Google Cast, excluded when first seen on a new install (rule MUTE-02).
 
 A new install starts with them on its exclusion list, and in its first
-run one seen is added once, as a router integration is (#420); a person
-who takes one off keeps it off. Each test here is a house in its first
-run (setup count 1). A house that already exists gets a recommendation
-instead (Ruled Change 70): test_exclusion_recommendations.py. On the reference rig, 19 October 2026, Music Assistant's player
-for the LG television brought back a television excluded through
-webostv, and opened an unavailable incident each time it was switched
-off.
+run one seen is added once, as a router integration is; a person who
+takes one off keeps it off. Each test here is a house in its first run
+(setup count 1). A house that already exists gets a recommendation
+instead: test_exclusion_recommendations.py. A media player for a
+television can bring back a television excluded through its own
+integration, and open an unavailable incident each time the television
+is switched off.
 """
 
 from __future__ import annotations
@@ -68,7 +67,8 @@ def _player(hass, domain="music_assistant", uid="kitchen"):
 async def _existing_house(hass, saved):
     """A house in its first run with its own saved list, nothing seen."""
     coord = await setup_coordinator(hass)
-    # As if the setup just run were 0.26.7's: nothing seen, nothing told.
+    # As if the setup just run were an older release's: nothing seen,
+    # nothing told.
     coord.data["routers_seen"] = []
     coord.data["system_events"] = []
     hass.config_entries.async_update_entry(
@@ -79,7 +79,7 @@ async def _existing_house(hass, saved):
 
 
 async def test_an_existing_house_gets_music_assistant_excluded_once(hass: HomeAssistant):
-    """The reference rig's list, as it stands on 0.26.7."""
+    """A house's real list, before Music Assistant joined the default."""
     player = _player(hass)
     rig = ["fully_kiosk", "spook", "ping", "androidtv", "webostv", "mobile_app", "tplink_router"]
     coord = await _existing_house(hass, rig)
@@ -91,8 +91,7 @@ async def test_an_existing_house_gets_music_assistant_excluded_once(hass: HomeAs
     excluded = coord.entry.options[CONF_EXCLUDED_INTEGRATIONS]
     assert excluded == [*rig, "music_assistant"]
     assert "music_assistant" in coord.data["routers_seen"]
-    # Set aside at once, with no registry change to rebuild it (third
-    # adversarial round of 0.26.8).
+    # Set aside at once, with no registry change to rebuild it.
     assert player.id not in coord._watched
 
 
@@ -129,7 +128,7 @@ async def test_one_the_house_does_not_have_is_not_added(hass: HomeAssistant):
 
 
 async def test_one_already_excluded_writes_nothing(hass: HomeAssistant):
-    """Tim Plas's house already excludes samsungtv, apple_tv and dlna_dmr."""
+    """A house that already excludes samsungtv, apple_tv and dlna_dmr."""
     for domain in ("samsungtv", "apple_tv", "dlna_dmr"):
         _player(hass, domain, uid=f"{domain}_tim")
     tim = ["fully_kiosk", "spook", "ping", "samsungtv", "apple_tv", "dlna_dmr", "unifi", "mobile_app"]
@@ -153,7 +152,7 @@ async def test_a_new_install_has_them_from_the_start(hass: HomeAssistant):
 
 async def test_an_ignored_or_disabled_entry_is_not_seen(hass: HomeAssistant):
     """A discovered television a person clicked Ignore on is not one the
-    house has (adversarial round of 0.26.8)."""
+    house has."""
     from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler
 
     MockConfigEntry(domain="samsungtv", source=SOURCE_IGNORE).add_to_hass(hass)
@@ -164,8 +163,7 @@ async def test_an_ignored_or_disabled_entry_is_not_seen(hass: HomeAssistant):
 
 
 async def test_each_one_added_is_told_in_the_brief(hass: HomeAssistant):
-    """A person who watched it on purpose sees it was excluded
-    (adversarial round of 0.26.8)."""
+    """A person who watched it on purpose sees it was excluded."""
     from custom_components.device_sentinel.const import DATA_SYSTEM_EVENTS, SYS_FIRST_SEEN_EXCLUDED, SYS_KIND, SYS_SCOPE
 
     _player(hass)
@@ -183,7 +181,7 @@ async def test_each_one_added_is_told_in_the_brief(hass: HomeAssistant):
 
 async def test_a_list_never_saved_is_told_too(hass: HomeAssistant):
     """A house that never submitted its Configure screen has the default,
-    which already holds the seven: still told (second adversarial round)."""
+    which already holds the seven: still told."""
     from custom_components.device_sentinel.const import DATA_SYSTEM_EVENTS, SYS_FIRST_SEEN_EXCLUDED, SYS_KIND, SYS_SCOPE
 
     _player(hass)
@@ -199,8 +197,7 @@ async def test_a_list_never_saved_is_told_too(hass: HomeAssistant):
 
 async def test_the_next_settings_change_does_not_name_the_list(hass: HomeAssistant):
     """The exclusion is written before the update listener exists; the
-    snapshot a later change is compared with must hold it (second
-    adversarial round of 0.26.8)."""
+    snapshot a later change is compared with must hold it."""
     _player(hass)
     coord = await _existing_house(hass, ["mobile_app"])
     coord._options_seen = dict(coord.entry.options)
@@ -211,8 +208,7 @@ async def test_the_next_settings_change_does_not_name_the_list(hass: HomeAssista
 async def test_a_restart_across_midnight_keeps_the_history_until_the_next(hass: HomeAssistant, hass_storage):
     """Updated in the evening, restarted after midnight: the catch-up fold
     runs before the sighting, so the newly excluded player's record is
-    kept until the next midnight, as the brief says (fourth adversarial
-    round of 0.26.8). And nothing crashes."""
+    kept until the next midnight, as the brief says. And nothing crashes."""
     import datetime
 
     from homeassistant.util import dt as dt_util
@@ -260,8 +256,8 @@ async def test_a_restart_across_midnight_keeps_the_history_until_the_next(hass: 
 
 
 async def test_one_added_while_running_is_excluded_within_the_debounce(hass: HomeAssistant):
-    """James, 20 October 2026: a new LG TV integration on a house that
-    rarely restarts is excluded when it appears, before a false alarm."""
+    """A new LG TV integration on a house that rarely restarts is excluded
+    when it appears, before a false alarm."""
     from datetime import timedelta
 
     from homeassistant.util import dt as dt_util
@@ -286,7 +282,7 @@ async def test_one_added_while_running_is_excluded_within_the_debounce(hass: Hom
 @pytest.mark.parametrize("how", ["integration", "device_freeze", "device_unavailable", "device_everything", "excluded_device"])
 async def test_a_choice_already_made_stands(hass: HomeAssistant, how):
     """A television the person already muted, or one of whose devices they
-    muted or excluded, is left as they chose (James, 20 October 2026)."""
+    muted or excluded, is left as they chose."""
     from custom_components.device_sentinel.const import (
         CONF_EXCLUDED_DEVICES,
         CONF_FREEZE_MUTED_DEVICES,
@@ -319,9 +315,8 @@ async def test_a_choice_already_made_stands(hass: HomeAssistant, how):
 
 @pytest.mark.parametrize("router", ["unifi", "fritz"])
 async def test_a_router_on_a_list_never_saved_is_excluded_and_told(hass: HomeAssistant, router):
-    """Fifth and sixth adversarial rounds of 0.26.8: one the default holds
-    is told; one it lacks, such as a FRITZ!Box, is added and told, as
-    0.26.7 added it."""
+    """One the default holds is told; one it lacks, such as a FRITZ!Box,
+    is added and told."""
     from custom_components.device_sentinel.const import DATA_SYSTEM_EVENTS, SYS_FIRST_SEEN_EXCLUDED, SYS_KIND, SYS_SCOPE
 
     _player(hass, router, uid="ap")
@@ -342,9 +337,8 @@ async def test_a_router_on_a_list_never_saved_is_excluded_and_told(hass: HomeAss
 
 @pytest.mark.parametrize("damaged", ["webostv", {"a": 1}])
 async def test_a_damaged_list_does_not_stop_the_start(hass: HomeAssistant, damaged):
-    """Fifth adversarial round of 0.26.8: a list hand-edited into
-    something else is read as empty. (A number there fails elsewhere
-    first, as in 0.26.7.)"""
+    """A list hand-edited into something else is read as empty. (A number
+    there fails elsewhere first.)"""
     _player(hass)
     coord = await _existing_house(hass, [])
     hass.config_entries.async_update_entry(
@@ -360,8 +354,7 @@ async def test_a_damaged_list_does_not_stop_the_start(hass: HomeAssistant, damag
 
 async def test_on_a_list_never_saved_a_choice_made_is_kept(hass: HomeAssistant):
     """A house that never saved its list, watching its LG TV with one of
-    its devices muted for freeze: the new default does not overrule that
-    (sixth adversarial round of 0.26.8)."""
+    its devices muted for freeze: the new default does not overrule that."""
     from custom_components.device_sentinel.const import CONF_FREEZE_MUTED_DEVICES
 
     tv = _player(hass, "webostv", uid="kept")
@@ -381,8 +374,8 @@ async def test_on_a_list_never_saved_a_choice_made_is_kept(hass: HomeAssistant):
 
 
 async def test_a_change_made_while_a_sighting_saves_is_not_written_over(hass: HomeAssistant):
-    """The list is read and written with no wait between (sixth adversarial
-    round of 0.26.8): a person's change made while the file saves stands."""
+    """The list is read and written with no wait between, so a person's
+    change made while the file saves stands."""
     _player(hass)
     coord = await _existing_house(hass, ["mobile_app"])
     real_save = coord._save_now
@@ -407,7 +400,7 @@ async def test_a_change_made_while_a_sighting_saves_is_not_written_over(hass: Ho
 
 
 async def test_a_sighting_after_the_stop_saves_nothing(hass: HomeAssistant):
-    """Sixth adversarial round of 0.26.8: a stopped coordinator is left alone."""
+    """A stopped coordinator is left alone."""
     _player(hass)
     coord = await _existing_house(hass, ["mobile_app"])
     coord._stopped = True
@@ -419,10 +412,9 @@ async def test_a_sighting_after_the_stop_saves_nothing(hass: HomeAssistant):
 
 @pytest.mark.parametrize("how", ["everything", "label"])
 async def test_on_a_list_never_saved_a_full_or_label_mute_is_kept(hass: HomeAssistant, how):
-    """Seventh adversarial round of 0.26.8: the TV a house muted for
-    everything, or through a label, is set aside by the new default
-    before the sighting, so the choice is read from the settings and the
-    registry, not from what is watched."""
+    """The TV a house muted for everything, or through a label, is set
+    aside by the new default before the sighting, so the choice is read
+    from the settings and the registry, not from what is watched."""
     from homeassistant.helpers import label_registry as lr
 
     from custom_components.device_sentinel.const import CONF_MUTED_DEVICES, CONF_UNAVAILABLE_MUTED_LABELS
@@ -445,8 +437,8 @@ async def test_on_a_list_never_saved_a_full_or_label_mute_is_kept(hass: HomeAssi
 
 
 async def test_a_router_is_excluded_whatever_was_muted(hass: HomeAssistant):
-    """Routers keep #420 as it was: excluded when first seen, whatever the
-    person muted (seventh adversarial round of 0.26.8)."""
+    """Routers are excluded when first seen, whatever the person muted
+    (rule MUTE-02)."""
     from custom_components.device_sentinel.const import CONF_MUTED_INTEGRATIONS
 
     _player(hass, "fritz", uid="box")

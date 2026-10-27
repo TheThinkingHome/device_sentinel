@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_outage_fleet_james.py, Version: 0.23.12 (2026-09-27)
+# File: tests/test_integration_outage_fleet_james.py, Version: 0.27.10 (2026-10-27)
 
-"""The integration outage, driven against the reference fleet.
+"""The integration outage, driven against the reference fleet
+(rule UP-05).
 
 Not a unit test. Each case loads the fleet's own record into a live
 coordinator, plants its devices across the integrations the fleet
@@ -13,9 +14,9 @@ actually runs, and puts them through the shapes a house produces.
 The second fleet's cases live in their own file; the split is by
 fleet because every case pays that fleet's full registry build.
 
-Two questions are asked throughout. Does the new rung report the
-integration where nothing else can, and does it leave alone
-everything that worked before it existed.
+Two questions are asked throughout. Does the integration rung report
+the integration where nothing else can, and does it leave alone
+everything that works without it.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 """
@@ -154,7 +155,7 @@ async def test_the_zigbee_stack_still_answers_for_itself(
 async def test_the_broker_still_outranks_everything(
     hass: HomeAssistant,
 ):
-    """Order is broker, then bridge, then integration (ruling #264)."""
+    """Order is broker, then bridge, then integration (rule UP-01)."""
     coord, entries, behind, now = await _fleet(hass, JAMES, JAMES_SHAPE)
 
     entries["blinds_hub"].mock_state(hass, ConfigEntryState.SETUP_RETRY)
@@ -166,8 +167,8 @@ async def test_the_broker_still_outranks_everything(
     assert coord.upstream_down_since(device.id)[0] == "blinds_hub"
 
     coord._broker_down_at = now
-    # Since 0.23.12 the broker outranks only for the devices that ride
-    # it; a device on another integration keeps its own upstream.
+    # The broker outranks only for the devices that ride it; a device on
+    # another integration keeps its own upstream (rule UP-01).
     for domain, members in behind.items():
         for member, _ in members:
             found = coord.upstream_down_since(member.id)

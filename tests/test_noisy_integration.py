@@ -3,17 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_noisy_integration.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_noisy_integration.py, Version: 0.27.10 (2026-10-27)
 
-"""Which integrations are worth excluding for their noise (ruling #457).
+"""Which integrations are worth excluding for their noise (rule UP-18).
 
-The second fleet's brief advised excluding zha, the house's own
-Zigbee stack, because it republished its whole fleet twice in a day.
-Both times the coordinator had just been pulled for a test. A storm
-inside an outage, a maintenance window or a restart is the house
-recovering, not an integration polling, so it stays out of the
-tally, and the advice waits for three unexplained storms a day on
-two days of the last seven.
+A storm inside an outage, a maintenance window or a restart is the
+house recovering, not an integration polling, so it stays out of the
+tally (rule UP-17). Otherwise a coordinator pulled for a test would get
+the house's own Zigbee stack advised for exclusion. The advice waits
+for three unexplained storms a day on two days of the last seven.
 """
 
 from __future__ import annotations
@@ -127,7 +125,7 @@ async def test_one_bad_day_is_not_advised(hass: HomeAssistant):
 
 
 async def test_two_a_day_is_not_advised(hass: HomeAssistant):
-    """The second fleet's zha pair of 16 September, on two days."""
+    """A zha storm pair on two days."""
     coord = await setup_coordinator(hass)
     coord.data[DATA_STORM_DAYS] = [_row("zha", 4, 2), _row("zha", 1, 2)]
     assert coord._noisy_integration_advice() == []

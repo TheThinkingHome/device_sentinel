@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_outage_fleet_tim.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_integration_outage_fleet_tim.py, Version: 0.27.10 (2026-10-27)
 
-"""The integration outage, driven against the second fleet.
+"""The integration outage, driven against the second fleet (rule UP-05).
 
 Not a unit test. Each case loads the fleet's own record into a live
 coordinator, plants its devices across the integrations the fleet
@@ -70,8 +70,8 @@ async def test_a_controller_falls_on_the_second_fleet(
     assert [word for word, _ in seen] == ["down", "restored"]
     assert seen[1][1]["for_seconds"] > 800.0
     assert seen[1][1]["devices"] == seen[0][1]["devices"]
-    # Theirs again once the returning controller's window has passed,
-    # and not before (ruling #441).
+    # Theirs again once the returning controller's window has passed, and
+    # not before (rule UP-08).
     for device, _ in behind["controller_hub"]:
         assert coord.upstream_down_since(device.id) is not None
     freezer.tick(BRIDGE_HANDBACK_SECONDS + 10)

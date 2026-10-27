@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_campaign.py, Version: 0.26.2 (2026-10-13)
+# File: tests/test_history_file_campaign.py, Version: 0.27.10 (2026-10-27)
 
-"""Random sequences against the history file (ruling #661).
+"""Random sequences against the history file (rules STOR-03, STOR-14).
 
 Folds, days added, rows written either side of the line, trims from
 Advanced, retention changes, saves, clean restarts, damaged main files,
@@ -13,9 +13,9 @@ damaged history files and stops between the four steps, in random
 order, on real files.
 
 The reference is a single-file run: the same record saved whole, as a
-release before 0.26.2 wrote it, and loaded through the same load path.
-The load itself changes some things on purpose (a row past the
-retention, a gap longer than a new device's watch), so a start is
+release before the history file wrote it, and loaded through the same
+load path. The load itself changes some things on purpose (a row past
+the retention, a gap longer than a new device's watch), so a start is
 compared with the start of the whole file, never with memory. A clean
 restart must equal the single-file start of the newest save; a restore
 or a stop must equal the single-file start of one of the saves, never a
@@ -69,7 +69,7 @@ def comparable(coord) -> dict:
 
 
 def whole_file(coord) -> bytes:
-    """The record as a release before 0.26.2 would write it."""
+    """The record as a release before the history file would write it."""
     return json.dumps(
         {"version": 1, "minor_version": 1, "key": LIVE, "data": coord._trim_backup_storage()}
     ).encode()

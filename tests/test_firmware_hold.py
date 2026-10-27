@@ -3,19 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_firmware_hold.py, Version: 0.23.10 (2026-09-26)
+# File: tests/test_firmware_hold.py, Version: 0.27.10 (2026-10-27)
 
-"""A firmware version is recorded only once it has held.
+"""A firmware version is recorded only once it has held ten minutes
+(rule DEV-15).
 
-At the 5:19 PM restart of 25 September four buttons on the reference
-rig each recorded an older firmware and their current one again within
-the same second. 0.23.9 tied the record to the midnight fold with an
-hour's hold. A restart forgets what is held, so a house restarting in
-the hour before midnight, or rebooting across it (#406), never
-recorded an update; the owner ruled on 26 September that a version is
-recorded on the minute tick once it has held ten minutes, after the
-startup grace (0.23.10). The histories pinned below are the four
-buttons' real ones.
+At a restart a device can report an older firmware and its current one
+again within the same second, so a version is recorded on the minute
+tick once it has held ten minutes, after the startup grace. A hold tied
+to the midnight fold would never record an update in a house that
+restarts in the hour before midnight or reboots across it, because a
+restart forgets what is held. The histories pinned below are four real
+buttons'.
 """
 
 from __future__ import annotations
@@ -39,9 +38,8 @@ from custom_components.device_sentinel.model_groups import unflicker_firmware
 
 from .helpers import setup_entry
 
-# Button Doorbell, Button Terrace Dining, Button Master Shower and
-# Button James Night Table, exactly as the reference rig's storage
-# recorded them on 25 September.
+# Four buttons, exactly as a real house's storage recorded them after
+# a restart.
 FLICKERED = {
     "Button Doorbell": [["v1.00.47", 1790350744.679463], ["v1.00.28", 1790374750.066726], ["v1.00.47", 1790374750.851958]],
     "Button Terrace Dining": [["v1.00.47", 1790350744.679463], ["v1.00.35", 1790374750.094984], ["v1.00.47", 1790374750.866176]],
@@ -160,7 +158,7 @@ async def test_a_downgrade_that_holds_is_recorded(hass: HomeAssistant):
     assert [v for v, _ in _history(entry, panel)] == ["3.4.0", "3.1.0"]
 
 
-# ---------------------------------------------- restart schedules, 0.23.10
+# ------------------------------------------------------ restart schedules
 
 _BASE = datetime(2026, 10, 1)
 
@@ -195,7 +193,8 @@ async def _ticks(hass, entry, freezer, until: datetime) -> None:
 
 
 async def test_a_house_that_restarts_every_night_at_23_30(hass: HomeAssistant, freezer):
-    """0.23.9 held a week of folds and never recorded the update."""
+    """A house that restarts every night at 23:30 still records the
+    update (rule DEV-15)."""
     entry, panel = await _a_day_later_update(hass, freezer)
     await _ticks(hass, entry, freezer, _local(2, 14, 30))
     for day in range(2, 5):
@@ -207,9 +206,8 @@ async def test_a_house_that_restarts_every_night_at_23_30(hass: HomeAssistant, f
 
 
 async def test_a_house_that_reboots_across_midnight(hass: HomeAssistant, freezer):
-    """Down at 23:58, back at 00:03, so the fold runs at start (#406).
-    0.23.9 held a week of folds and never recorded the update; the
-    update is recorded the afternoon it lands."""
+    """Down at 23:58, back at 00:03, so the fold runs at start
+    (rule STOR-17). The update is recorded the afternoon it lands."""
     entry, panel = await _a_day_later_update(hass, freezer)
     for day in range(2, 5):
         await _ticks(hass, entry, freezer, _local(day, 23, 55))

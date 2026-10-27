@@ -3,17 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_disk.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_history_file_disk.py, Version: 0.27.10 (2026-10-27)
 
 """The history file on disk: the four steps, a stop between any two,
-the restores, the evidence, the backups and the uninstall (ruling #660).
+the restores, the evidence, the backups and the uninstall
+(rules STOR-03, STOR-04).
 
 Real files through Home Assistant's own storage code (the real_disk
 fixture). A stop is a save that raises at a chosen step: the files on
 disk at that moment are kept, the integration is stopped, the files are
 put back as the stop left them, and the next start must join a whole
-history with no day doubled or lost. The rig's and Tim's houses are
-split and joined day for day at the end.
+history with no day doubled or lost. Both reference houses are split
+and joined day for day at the end.
 """
 
 from __future__ import annotations
@@ -252,8 +253,8 @@ async def test_uninstall_removes_the_history_files(hass: HomeAssistant, real_dis
 async def test_backup_copies_go_after_thirty_days_except_the_newest(
     hass: HomeAssistant,
 ):
-    """Every copy, all its files alike, after thirty days; the newest
-    for the full retention (ruling #634)."""
+    """Every copy, all its files alike, after thirty days; the newest for
+    the full retention (rule STOR-13)."""
     folder = hass.config.path(TRIM_BACKUP_DIR)
     os.makedirs(folder, exist_ok=True)
     for name in os.listdir(folder):
@@ -293,10 +294,11 @@ async def test_backup_copies_go_after_thirty_days_except_the_newest(
 def test_a_real_house_splits_and_joins_day_for_day(path):
     """Every device's series and every row come back identical.
 
-    The houses on 0.26.8 are read whole, their history file joined back
-    in, so the split has their full history to cut; the upgrade houses,
-    written before the history file existed, are one whole file as they
-    stand, which is the split an upgrade makes at its first save."""
+    The houses with a history file are read whole, their history file
+    joined back in, so the split has their full history to cut; the
+    upgrade houses, written before the history file existed, are one
+    whole file as they stand, which is the split an upgrade makes at its
+    first save."""
     data = fleet_data(path)
     data.setdefault(DATA_HISTORY_LINE, history_file.fold_line())
     original = copy.deepcopy(data)
@@ -331,11 +333,10 @@ async def test_nothing_older_removes_both_history_files_on_disk(
 async def test_a_damaged_main_file_after_the_history_file_went_restores_thirty_days(
     hass: HomeAssistant, real_disk
 ):
-    """Retention down to thirty removes both history files; the main
-    file's last-good is then the main file of that save, so a damaged
-    main file restores the thirty days rather than a copy that asks for
-    a history file no longer there (found by the second campaign, seed
-    150, 14 October)."""
+    """Retention down to thirty removes both history files; the main file's
+    last-good is then the main file of that save, so a damaged main file
+    restores the thirty days rather than a copy that asks for a history
+    file no longer there (rule STOR-23)."""
     entry, coord, ids = await house(hass)
     for device_id in ids:
         for field in SERIES_FIELDS:

@@ -3,23 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.25.6 (2026-10-11)
+# File: test_learning_rhythm.py, Version: 0.27.10 (2026-10-27)
 
-"""How the integration learns each device's reporting rhythm.
+"""How Device Sentinel learns each device's reporting rhythm (rules
+FRZ-01, FRZ-03, FRZ-12, FRZ-14).
 
 The window a device is judged against is learned from its own gaps: a
 trimmed maximum over a rolling fortnight, with a synchronized-poller
 fleet exempted from the storm brake so it can still learn, and an
 outage past the debounce floor set aside as a taint rather than
-inflating the rhythm. This file holds the rhythm engine's behaviour:
+inflating the rhythm. This file holds the rhythm engine's behavior:
 the storm exemption, the trimmed maximum and how it renders, the taint
-debounce, the daily epoch rollover, the signal recording that
-rides alongside the same clock, and the contact clock that reads a
-device's own last-contact entity every time rather than stamping the
-moment a payload arrived. It also holds the passive recorder beneath
-all of that: how a raw state event becomes a completed gap, how the
-startup grace and the taint debounce decide what feeds learning, and
-how today's maxima roll into the bounded daily set at midnight.
+debounce, the daily rollover, the signal recording that rides alongside
+the same clock, and the contact clock that reads a device's own
+last-contact entity every time rather than stamping the moment a
+payload arrived. It also holds the passive recorder beneath all of
+that: how a raw state event becomes a completed gap, how the startup
+grace and the taint debounce decide what feeds learning, and how
+today's maxima roll into the bounded daily set at midnight.
 """
 
 from datetime import timedelta
@@ -96,7 +97,7 @@ async def test_synchronized_poller_exempted(
 
     # Read from the stored series rather than a remembered flag, so
     # the answer survives a restart and can change back when the
-    # evidence does (ruling #227).
+    # evidence does (rule UP-17).
     assert coord._is_polling_integration(
         source.entry_id, dt_util.utcnow().timestamp()
     )
@@ -122,10 +123,10 @@ async def test_rare_storm_still_storms_without_excluding(
     hass: HomeAssistant, freezer
 ):
     """A single reconnect-style burst still storms and is still not
-    exempt from the duty cycle. Since 0.8.0 it no longer discards the
-    gaps it completes (#124, #125): a device with a last-contact
-    entity is protected by the timestamp, which a republish carries
-    unchanged, and a device without one has nothing else to go on."""
+    exempt from the duty cycle, and it does not discard the gaps it
+    completes: a device with a last-contact entity is protected by the
+    timestamp, which a republish carries unchanged, and a device without
+    one has nothing else to go on (rule FRZ-12)."""
     source = MockConfigEntry(domain="zigbee_like")
     source.add_to_hass(hass)
     fleet = register_fleet(hass, source, STORM_DEVICE_THRESHOLD + 2)
@@ -200,11 +201,10 @@ async def test_markdown_render_marks_trim(hass: HomeAssistant):
     row = next(line for line in text.splitlines() if "Markdown Device" in line)
     assert "~~2.5h~~" in row          # the 9000 s spike, set aside
     assert "**10m**" in row           # the operative rhythm, bold
-    # WINDOW BASIS was dropped at 0.4.4: the operative rhythm now
-    # shows only as the bold value inside the GAPS series.
-    # Newest first: the newest value (560 s) leads and the oldest
-    # (500 s) ends the cell. Read as a list since 0.23.19, when both
-    # became whole minutes and "9m" occurs more than once.
+    # The operative rhythm shows only as the bold value inside the GAPS
+    # series. Newest first: the newest value (560 s) leads and the
+    # oldest (500 s) ends the cell. Read as a list, because both are
+    # whole minutes and "9m" occurs more than once.
     gaps = [g.strip() for g in row.split(" | ")[2].split(",")]
     assert gaps[0] == "9m" and gaps[-1] == "8m", gaps
 
@@ -251,7 +251,7 @@ async def test_long_outage_taints_short_blip_does_not(
 
     # Long outage: past the debounce floor -> taint applies, gap
     # excluded. This device is unarmed (no learned window), so its
-    # debounce is the floor alone (#137); the outage must exceed it.
+    # debounce is the floor alone; the outage must exceed it (rule FRZ-14).
     floor = TAINT_FLOOR_MINUTES * 60
     freezer.tick(timedelta(seconds=20))
     hass.states.async_set(eid, "unavailable")
@@ -402,8 +402,8 @@ async def test_signal_recording_and_rollover(hass: HomeAssistant, freezer):
     freezer.move_to(nxt + timedelta(seconds=1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    # The daily-minimum series is erased (ruling #322); the fold
-    # still resets today's minimum for the new day.
+    # No daily-minimum series is kept (rule SIG-05); the fold still
+    # resets today's minimum for the new day.
     assert rec[DEV_SIGNAL_TODAY_MIN] is None
 
 
@@ -599,8 +599,8 @@ async def test_events_are_still_counted_when_nothing_advances(
 async def test_without_a_contact_entity_arrival_time_counts(
     hass: HomeAssistant, freezer
 ):
-    """#125: the reboot stamp is a report, because it is the only
-    evidence there is."""
+    """The reboot stamp is a report, because it is the only evidence
+    there is (rule FRZ-12)."""
     device, entity_id, _none, _src = _contact_device(
         hass, "n1", "HomeKit Like", with_contact=False
     )
@@ -643,9 +643,9 @@ async def test_a_gap_completed_inside_grace_is_learned(
 async def test_the_legacy_cause_wording_is_migrated(
     hass: HomeAssistant,
 ):
-    """0.7.6 renamed a stored value without rewriting what was
-    already stored, and the composer then wrote "revived by a on its
-    own" into a live brief."""
+    """A stored value under its old name is rewritten, so the composer
+    never writes "revived by a on its own" into a live brief
+    (rule STOR-19)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
 
@@ -721,11 +721,11 @@ async def test_grace_now_learns_its_gaps(hass: HomeAssistant, freezer):
     hass.states.async_set(eid, "2")
     await hass.async_block_till_done()
 
-    # 0.8.0 (#125) reverses this. The nightly restart is a permanent
-    # feature of a home, not contamination, and discarding the gaps
-    # it completes left the quiet devices with baselines describing
-    # half a night. A device with no protocol clock has nothing but
-    # the moment we heard it, so that moment counts.
+    # The nightly restart is a permanent feature of a home, not
+    # contamination, and discarding the gaps it completes would leave
+    # the quiet devices with baselines describing half a night. A device
+    # with no protocol clock has nothing but the moment Device Sentinel
+    # heard it, so that moment counts (rule FRZ-12).
     assert rec[DEV_LAST_ACTIVITY] is not None
     assert rec[DEV_TODAY_MAX] == 60.0
     assert rec[DEV_EVENT_COUNT] == 2
@@ -757,10 +757,9 @@ async def test_gap_learning_after_grace(hass: HomeAssistant, freezer):
 
 async def test_taint_excludes_outage_gap(hass: HomeAssistant, freezer):
     """A gap spanning unavailability never feeds learning."""
-    # Pinned to a morning (#330, #198): run within about an hour of a
-    # Pacific midnight, the test's own ticks crossed it and the midnight
-    # save or fold changed what it counts (second gate of 11 October
-    # 2026, 06:00 to 06:45 UTC).
+    # Pinned to a morning, because near a Pacific midnight the test's
+    # own ticks cross it and the midnight save or fold changes what it
+    # counts (rule CODE-13).
     freezer.move_to("2026-10-07 15:00:00+00:00")
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -796,8 +795,8 @@ async def test_storm_is_detected_but_no_longer_excludes(
 ):
     """A many-device burst on one entry is still a storm, and the
     detector still matters: it names an intervention on the episode
-    record and exempts the duty cycle. What it no longer does is
-    discard the gaps it completes (#124, #125)."""
+    record and exempts the duty cycle. It does not discard the gaps it
+    completes (rules UP-17, FRZ-12)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     devices = [
@@ -827,10 +826,10 @@ async def test_storm_is_detected_but_no_longer_excludes(
         coord.data[DATA_DEVICES][dev.id][DEV_TODAY_MAX]
         for dev, _ in devices[STORM_DEVICE_THRESHOLD - 1 :]
     ]
-    # These devices publish no last-contact entity, so the moment we
-    # heard them is the only evidence there is and it counts (#125).
-    # A device that does publish one is protected by the timestamp
-    # itself rather than by this rule.
+    # These devices publish no last-contact entity, so the moment
+    # Device Sentinel heard them is the only evidence there is and it
+    # counts (rule FRZ-12). A device that does publish one is protected
+    # by the timestamp itself rather than by this rule.
     assert all(v is not None for v in learned)
 
     # Quiet releases the storm; the next organic gap learns again.
@@ -912,11 +911,9 @@ async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
     """A boot blip inside the grace sets no taint, and learning goes on
     from the device's own reports.
 
-    Before #535 the value coming back inside the grace was a report
-    (#125) and the first gap was measured from it. #535 reversed that:
-    a value the stack republishes through a restart is not the device
+    A value the stack republishes through a restart is not the device
     speaking, so the first report after the grace starts the clock and
-    the gap after it is the first one learned."""
+    the gap after it is the first one learned (rule FRZ-11)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -958,7 +955,8 @@ async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
     )
 
 
-# A gap is learned minus the time Device Sentinel was stopped (#541).
+# A gap is learned minus the time Device Sentinel was stopped
+# (rule UP-06).
 
 
 HOUR = 3600.0
@@ -967,8 +965,8 @@ def _restart(when: float, downtime: float) -> dict:
     return {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system", SYS_WHEN: when, "detail": None, SYS_DURATION: downtime}
 
 async def test_a_gap_is_learned_minus_the_time_stopped(hass: HomeAssistant, freezer):
-    """24 September on the reference rig: a 16.5-minute clean stop,
-    learned as 25 devices' longest gap of the day."""
+    """A 16.5-minute clean stop is not learned as every device's longest
+    gap of the day (rule UP-06)."""
     coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
     now = dt_util.utcnow()
     record = coord.data[DATA_DEVICES][device.id]
@@ -1025,12 +1023,12 @@ async def test_a_gap_with_no_stop_inside_is_learned_whole(hass: HomeAssistant, f
     assert abs(record[DEV_TODAY_MAX] - 2 * HOUR) < 2, record[DEV_TODAY_MAX]
 
 
-# A gap is learned at most as long as the retention (ruling #543).
+# A gap is learned at most as long as the retention (rule FRZ-13).
 
 
 async def test_a_gap_longer_than_the_retention_is_learned_as_the_retention(hass, freezer):
-    """The FJ40 on the reference rig sat 42.9 days. On a house keeping
-    30, that day is learned as 30 and reported as more than 30."""
+    """A real device sat silent 42.9 days. On a house keeping 30, that
+    day is learned as 30 and reported as more than 30."""
     coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
     from homeassistant.util import dt as dt_util
 
@@ -1069,7 +1067,7 @@ async def test_stored_gaps_past_the_retention_are_held_at_load(hass, hass_storag
     entry = await setup_entry(hass, {"history_days": 30})
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
-    # Watched since January, so the watched-time bound (#403) is not
+    # Watched for months, so the watched-time bound (rule FRZ-13) is not
     # what limits it: only the retention is.
     record["first_observed"] = "2026-01-01T00:00:00+00:00"
     record["daily_max"] = [600.0] * 10 + [42.9 * 86400.0]

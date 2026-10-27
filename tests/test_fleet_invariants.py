@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_invariants.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_fleet_invariants.py, Version: 0.27.10 (2026-10-27)
 
-"""Pre-stable campaign: the changed paths stay consistent, and every
-report still renders.
+"""The changed paths stay consistent, and every report still renders
+(rule DEV-01).
 
-0.19.7 changed the retire path, the verdict lifecycle, the grace
-rules and the incident log. This campaign drives randomized days
-against both fleets and, after every step, checks invariants that
-tie those pieces together:
+The retire path, the verdict lifecycle, the grace rules and the
+incident log meet in many places. This campaign drives randomized days
+against both fleets and, after every step, checks invariants that tie
+those pieces together:
 
   1  a recovery event fires only for a device in the watched set
   2  every to-do item belongs to a device that currently has a
@@ -23,9 +23,9 @@ tie those pieces together:
   5  a device outside the watched set carries no freeze verdict
   6  a device with no entities is never on the list
 
-And at the end of every round it regenerates every report, so a
-row the renderers have not learned cannot reach a real system as a
-crash or as a sentence that is untrue.
+And at the end of every round it regenerates every report, so a row
+the renderers have not learned cannot reach a real system as a crash
+or as a sentence that is untrue.
 """
 
 from __future__ import annotations
@@ -84,9 +84,7 @@ from tests.conftest import FLEET_ABSENT, fleet_data, fleet_path
 from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
-# The second fleet's committed house. Until 8 October 2026 this read a
-# capture of 26 August that was never committed, so its cases skipped
-# everywhere and only the reference fleet was checked.
+# The second fleet's committed house, so both fleets are checked.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 # The newest copy of each fleet, for the forward simulation below. The
 # dated pair above is the campaign's fixed ground; these move.
@@ -119,11 +117,9 @@ def _fleet(path: Path) -> list[dict]:
 
 def _check_invariants(coord, recoveries, bare_ids, step: str) -> None:
     watched = set(coord._watched)
-    # A device that keeps dropping out is listed for that (0.23.2), and
-    # the three problem lists do not hold it. The check predates
-    # flapping and ran only on the reference fleet until the second
-    # fleet's committed house was read (fleet refresh, 8 October 2026),
-    # whose records carry real flaps.
+    # A device that keeps dropping out is listed for that (rule UNAV-06),
+    # and the three problem lists do not hold it. The second fleet's records
+    # carry real flaps.
     problems = coord._problem_device_ids() | {
         row["device_id"] for row in coord.flapping_list
     }
@@ -294,21 +290,20 @@ async def test_consistency_tim(hass: HomeAssistant, seed):
 # The campaign above drives synthetic rounds. This drives the real
 # thing: each reference fleet's own storage loaded into a live
 # coordinator, every device registered, every report written and read
-# back. A replay over existing data proves what wrote it; only
-# rendering the whole output surface proves what reads it (#306).
+# back. A replay over existing data proves what wrote it; only rendering
+# the whole output surface proves what reads it.
 
 
 def _fleet_names(path):
     """Return the device names, which the storage file does not carry.
 
     The record holds statistics and no name. The name lives in the
-    registry, and the diagnostics dump beside the fleet file is the
-    only copy of that registry available here.
+    registry, and the diagnostics dump beside the fleet file is the only
+    copy of that registry available here.
 
-    A device the registry holds with no name keeps no name here. The
-    second fleet has six, and this used to hand each its id as a name,
-    which no ladder can see past: a name the registry holds is a name
-    (ruling #402).
+    A device the registry holds with no name keeps no name here. Handing
+    it its id as a name would hide it from the ladder: a name the registry
+    holds is a name (rule DEV-01).
     """
     found = sorted(path.parent.glob("config_entry*.json"))
     if not found:
@@ -368,8 +363,8 @@ async def _render_fleet(hass, path):
     coord._rebuild_registry_view()
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    # Every report sits in the reports folder since 0.23.5, the brief
-    # included; nothing is written under www.
+    # Every report sits in the reports folder, the brief included; nothing
+    # is written under www (rule BRIEF-14).
     pages = {}
     for directory in (hass.config.path(REPORT_DIR),):
         for name in os.listdir(directory):
@@ -383,13 +378,12 @@ async def _render_fleet(hass, path):
 def _check_pages(pages):
     """Every page renders, agrees with itself, and names no raw id."""
     assert "daily_brief.html" in pages
-    # The two retired pages are written nowhere (0.23.5).
+    # The two retired pages are written nowhere.
     assert "battery_report.html" not in pages
     assert "signal_report.html" not in pages
 
-    # A registry id in reader-facing text is the fault #307 found on
-    # the first live trim: a name lookup that missed and printed the
-    # id at a person.
+    # A registry id in reader-facing text is a name lookup that missed and
+    # printed the id at a person (rule DEV-01).
     for name, page in pages.items():
         body = re.sub(r"<svg.*?</svg>", "", page, flags=re.S)
         assert not re.findall(r">\s*[0-9a-f]{32}\s*<", body), name

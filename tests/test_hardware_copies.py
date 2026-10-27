@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hardware_copies.py, Version: 0.26.6 (2026-10-18)
+# File: tests/test_hardware_copies.py, Version: 0.27.10 (2026-10-27)
 
-"""One piece of hardware shown as several devices (0.25.2).
+"""One piece of hardware shown as several devices (rule WATCH-06).
 
-Since Home Assistant 2026.8 one box is one registry device per
-integration that knows it. Tim Plas's Bluetooth proxies are four each:
-ESPHome, Bluetooth, BlueSight and UniFi. Device Sentinel judges the box
-once, through the copy that reaches it most directly, and sets the
-others aside as copies with their records kept.
+From Home Assistant 2026.8 one piece of hardware is one registry device
+per integration that knows it, so a Bluetooth proxy can be four:
+ESPHome, Bluetooth, BlueSight and UniFi. Device Sentinel judges the
+hardware once, through the copy that reaches it most directly, and sets
+the others aside as copies with their records kept.
 
 Copies are found only on what Home Assistant recorded: the same address
 on devices of different integrations, or a Bluetooth adapter registered
@@ -43,8 +43,9 @@ IOT = {"esphome": "local_push", "bluesight": "local_polling", "unifi": "local_po
 _entries: dict[tuple[int, str], MockConfigEntry] = {}
 
 # Before Home Assistant 2026.8 a second integration naming an address
-# already held joins that device, so one box is one device and there are
-# no copies to find; the registry cases run on 2026.8 and later.
+# already held joins that device, so one piece of hardware is one device
+# and there are no copies to find; the registry cases run on 2026.8 and
+# later.
 needs_split = pytest.mark.skipif(MULTI_OWNER_POSSIBLE, reason="one device per box before Home Assistant 2026.8")
 
 
@@ -81,7 +82,7 @@ def _iot(monkeypatch):
 
 
 def _proxy(hass, mac=MAC, tag="1"):
-    """One of Tim's proxies: ESPHome, BlueSight and UniFi know it by its
+    """A Bluetooth proxy: ESPHome, BlueSight and UniFi know it by its
     network address; Bluetooth registers its adapter under the ESPHome
     device."""
     esphome = _device(hass, "esphome", f"e{tag}", f"Proxy {tag}", entities=(("sensor", "signal_strength"),
@@ -90,7 +91,7 @@ def _proxy(hass, mac=MAC, tag="1"):
                         entities=(("sensor", None),), connections={(dr.CONNECTION_NETWORK_MAC, mac.upper())})
     unifi = _device(hass, "unifi", f"u{tag}", f"proxy-{tag}", entities=(("device_tracker", None),),
                     connections={(dr.CONNECTION_NETWORK_MAC, mac)})
-    # On Tim's house the adapter device has no entities of its own.
+    # The adapter device has no entities of its own, as on a real house.
     bluetooth = _device(hass, "bluetooth", f"bt{tag}", f"Proxy {tag} ({mac})", entities=(),
                         connections={(dr.CONNECTION_BLUETOOTH, mac[:-2] + f"b{tag}")}, via=esphome.id)
     return esphome, bluesight, unifi, bluetooth
@@ -115,7 +116,7 @@ async def test_a_proxy_is_watched_once_through_its_esphome_device(hass: HomeAssi
     assert same["watched_through"] == esphome.id
     assert [row["device_id"] for row in same["devices"]][0] == esphome.id
     assert {row["domain"] for row in same["devices"]} == {"esphome", "bluesight", "unifi", "bluetooth"}
-    # The name shown elsewhere, not the domain (0.25.3, James's house).
+    # The name shown elsewhere, not the domain (rule DEV-02).
     names = {row["domain"]: row["integration"] for row in same["devices"]}
     assert names["unifi"] == "UniFi Network"
 
@@ -133,7 +134,7 @@ async def test_two_proxies_stay_two_boxes(hass: HomeAssistant):
 
 @needs_split
 async def test_devices_of_one_integration_sharing_an_address_are_not_copies(hass: HomeAssistant):
-    """A hub and its children may share the hub's address; they are not one box."""
+    """A hub and its children may share the hub's address; they are not one piece of hardware."""
     hub = _device(hass, "hue", "hub", "Hue Bridge", connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     bulb = _device(hass, "hue", "bulb", "Hue Bulb", entities=(("light", None),),
                    connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
@@ -184,8 +185,8 @@ async def test_a_bluetooth_adapter_with_entities_is_a_copy_of_its_proxy(hass: Ho
 @needs_split
 async def test_a_network_tracker_is_never_the_copy_watched(hass: HomeAssistant):
     """A device whose only entity says it is on the network describes the
-    network, not the box, even when its integration polls locally and the
-    box's own integration goes through the cloud."""
+    network, not the hardware, even when its integration polls locally
+    and the hardware's own integration goes through the cloud."""
     box = _device(hass, "tuyacloud", "t1", "Kettle", entities=(("switch", None),),
                   connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     tracker = _device(hass, "nmap_tracker", "n1", "kettle-wifi", entities=(("device_tracker", None),),
@@ -211,7 +212,7 @@ async def test_the_choice_holds_across_restarts(hass: HomeAssistant):
 @needs_split
 async def test_a_device_with_no_entities_is_never_the_copy_kept(hass: HomeAssistant):
     """While ESPHome is still loading after a restart its device has no
-    entities yet; the box is not set aside in favor of BlueSight."""
+    entities yet; that device is not set aside in favor of BlueSight."""
     esphome = _device(hass, "esphome", "e", "Proxy", entities=(), connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     bluesight = _device(hass, "bluesight", "b", "Proxy (BlueSight)", connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     coord = (await setup_entry(hass)).runtime_data
@@ -295,8 +296,8 @@ def test_rank_puts_entities_then_trackers_then_reach():
 
 
 def test_a_chain_of_addresses_never_groups_two_devices_of_one_integration():
-    """Found by review: a tracker holding a hub's address, and the hub's
-    child holding it too, put the hub and its child in one group."""
+    """A tracker holding a hub's address, and the hub's child holding it
+    too, never put the hub and its child in one group."""
     shared = [_D("a", "unifi", {("mac", "aa")}), _D("b", "hue", {("mac", "aa")}), _D("c", "hue", {("mac", "aa")})]
     assert find_groups(shared, lambda d: d.domain) == []
     chained = [_D("a", "unifi", {("mac", "aa"), ("mac", "bb")}), _D("b", "hue", {("mac", "aa")}),
@@ -331,8 +332,8 @@ async def test_the_fingerprints_match_inside_a_download_and_nowhere_else(hass: H
 
 @needs_split
 async def test_a_disabled_entity_never_ranks_a_tracker_over_the_box(hass: HomeAssistant, monkeypatch):
-    """Found by review: UniFi registers a client speed sensor, disabled,
-    and counting it kept the UniFi tracker and set the ESPHome box aside."""
+    """UniFi registers a client speed sensor, disabled; it is not counted,
+    so the UniFi tracker never ranks over the ESPHome device."""
     esphome = _device(hass, "esphome", "e", "Proxy", entities=(("sensor", "signal_strength"), ("button", "restart"),
                                                              ("sensor", None)),
                       connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
@@ -353,8 +354,8 @@ async def test_a_disabled_entity_never_ranks_a_tracker_over_the_box(hass: HomeAs
 
 @needs_split
 async def test_every_watched_member_reads_watched(hass: HomeAssistant):
-    """Found by review: in restart grace two members can be watched, and
-    the row said the second was not."""
+    """In restart grace two members can be watched, and the row says so
+    for each."""
     esphome = _device(hass, "esphome", "e", "Proxy", entities=(), connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     bluesight = _device(hass, "bluesight", "b", "Proxy (BlueSight)", connections={(dr.CONNECTION_NETWORK_MAC, MAC)})
     coord = (await setup_entry(hass)).runtime_data
@@ -365,8 +366,8 @@ async def test_every_watched_member_reads_watched(hass: HomeAssistant):
 
 
 def test_the_copy_with_the_battery_reading_is_kept():
-    """Found by review: a copy set aside takes its readings with it, so
-    the one carrying the battery is the one to watch."""
+    """A copy set aside takes its readings with it, so the one carrying
+    the battery is the one to watch."""
     assert rank_of("local_polling", {"sensor"}, 1, battery=True) > rank_of("local_push", {"sensor"}, 6)
     assert rank_of("local_push", {"device_tracker"}, 3, battery=True) < rank_of("cloud_polling", {"sensor"}, 1)
 
@@ -383,21 +384,20 @@ async def test_a_battery_on_one_copy_decides_which_is_watched(hass: HomeAssistan
 
 
 # ---------------------------------------------------------------------
-# An identifier that is another device's address (0.25.6, ruling #624).
+# An identifier that is another device's address (rule WATCH-06).
 #
-# Tim Plas's 0.25.3 files showed no clones on any of his seven proxies.
 # BlueSight records no connection: it registers each proxy as
 # ("bluesight", "<the proxy's Bluetooth address>"), the address Home
 # Assistant's Bluetooth integration records as the connection of the
-# proxy's adapter device. The shapes below are his, from his
+# proxy's adapter device. The shapes below come from a real house's
 # classification report and BlueSight's source: D11's adapter is
 # "d11 Grumpy BT proxy (1C:9D:C2:C3:42:72)" and BlueSight's entities for
-# it are named d11_1c_9d_c2_c3_42_72_*. His two RTOS nanos carry their
-# network address in BlueSight's identifier instead.
+# it are named d11_1c_9d_c2_c3_42_72_*. An RTOS nano carries its network
+# address in BlueSight's identifier instead.
 
 
 def _tims_proxy(hass, tag, network, bluetooth):
-    """A proxy as Tim's registry holds it: ESPHome by network address,
+    """A proxy as a real registry holds it: ESPHome by network address,
     the Bluetooth adapter under it by Bluetooth address, and BlueSight
     by an identifier holding the Bluetooth address and no connection."""
     esphome = _device(hass, "esphome", f"e{tag}", f"{tag} BT proxy",
@@ -425,7 +425,7 @@ def _tims_proxy(hass, tag, network, bluetooth):
     ("00:00:00:00:00:00", None),          # unset
     ("ff:ff:ff:ff:ff:ff", None),          # broadcast
     ("service", None),
-    ("1C:9D:C2:MAC-147", None),           # an anonymised diagnostics value
+    ("1C:9D:C2:MAC-147", None),           # an anonymized diagnostics value
     ("zigbee2mqtt_0x00158d0001b1b9", None),
     (None, None),
     (12, None),
@@ -472,7 +472,7 @@ def test_an_address_one_integration_gives_two_devices_joins_nothing():
     """A hub named by its address and a child holding it as a connection
     are not copies, and the identifier never brings the hub into a group
     with a third integration. (The child and the tracker share a
-    connection, which is rule 1's business and unchanged.)"""
+    connection, which the shared-connection test decides.)"""
     devices = [
         _fake("hub", "hue", identifiers={("hue", "aa:bb:cc:dd:ee:01")}),
         _fake("bulb", "hue", {("mac", "aa:bb:cc:dd:ee:01")}),
@@ -500,8 +500,8 @@ def test_an_identifier_matching_nothing_joins_nothing():
 
 
 def test_two_identifiers_alike_in_different_integrations_join():
-    """Two integrations naming the box by the same address are rule 1's
-    evidence with no connection at all."""
+    """Two integrations naming the hardware by the same address are the
+    same evidence as a shared connection, with no connection at all."""
     devices = [
         _fake("b", "bluesight", identifiers={("bluesight", "aa:bb:cc:dd:ee:01")}),
         _fake("o", "other", identifiers={("other", "AABBCCDDEE01")}),
@@ -511,7 +511,7 @@ def test_two_identifiers_alike_in_different_integrations_join():
 
 def test_connections_of_different_kinds_alike_are_left_to_rule_one():
     """With no identifier holding the address, a network address and a
-    Bluetooth address that read alike join nothing, as before 0.25.6."""
+    Bluetooth address that read alike join nothing."""
     devices = [
         _fake("w", "wifi_thing", {("mac", "aa:bb:cc:dd:ee:01")}),
         _fake("b", "ble_thing", {("bluetooth", "AA:BB:CC:DD:EE:01")}),
@@ -533,7 +533,7 @@ def test_an_unreadable_identifier_never_stops_the_grouping():
     assert _groups(devices) == [["b", "e"]]
 
 
-# -------------------------------------------------------- Tim's registry
+# ------------------------------------------------------ a real registry
 
 
 @needs_split
@@ -565,7 +565,7 @@ async def test_tims_rtos_nano_shows_its_bluesight_clone(hass: HomeAssistant):
 async def test_the_esphome_copy_is_kept_over_a_busier_bluesight(hass: HomeAssistant):
     """Real BlueSight gives each proxy five entities and pushes locally,
     and a plain ESPHome proxy may have fewer. The copy that records the
-    box's address is kept (found by review)."""
+    hardware's address is kept."""
     esphome = _device(hass, "esphome", "e", "D12 BT proxy", entities=(("sensor", "signal_strength"),),
                       connections={(dr.CONNECTION_NETWORK_MAC, "1c:9d:c2:c2:37:c8")})
     _device(hass, "bluetooth", "bt", "d12 (1C:9D:C2:C2:37:CA)", entities=(),
@@ -590,15 +590,14 @@ async def test_the_bluesight_service_device_stays_watched(hass: HomeAssistant):
     assert service.id not in coord._copy_of
 
 
-# ---- a copy with nothing but notices, and a connection-only proxy (0.26.6)
+# ---- a copy with nothing but notices, and a connection-only proxy
 
 
-# 5. Two copies of one box: the more direct one (local push) has nothing
-# switched on but a firmware notice and a command button, the other a real
-# sensor. The copy rank still counts notices as entities of its own, so the
-# notice copy is kept, the sensor copy set aside as a clone, and then the
-# kept copy is set aside as notices only: the box is watched through
-# nothing.
+# 5. Two copies of one piece of hardware: the more direct one (local
+# push) has nothing switched on but a firmware notice and a command
+# button, the other a real sensor. Notices are never the device, so the
+# hardware must not end up watched through nothing (rules WATCH-04,
+# WATCH-06).
 async def test_r15_5_notice_copy_kept_over_real_copy(hass: HomeAssistant, freezer, monkeypatch):
     import pytest as _pytest
 
@@ -624,12 +623,10 @@ async def test_r15_5_notice_copy_kept_over_real_copy(hass: HomeAssistant, freeze
     )
 
 
-# 3. Rule 9 with the 18:29 copy-rank change: a Bluetooth proxy with only a
-# firmware notice and a restart button switched on, and the Bluetooth
-# adapter Home Assistant registers under it. 0.26.5 kept the proxy and set
-# the adapter aside as its copy. Now the proxy ranks as having nothing, is
-# no candidate, and both stay watched: one box, two devices, two items
-# when it drops.
+# 3. A Bluetooth proxy with only a firmware notice and a restart button
+# switched on, and the Bluetooth adapter Home Assistant registers under
+# it, are one piece of hardware: watched once, not as two devices with
+# two items when it drops (rules WATCH-04, WATCH-06).
 async def test_r16_3_connection_only_proxy_and_its_adapter_are_one_box(hass: HomeAssistant, monkeypatch):
     import pytest as _pytest
 

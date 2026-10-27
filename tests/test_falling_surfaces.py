@@ -3,21 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_falling_surfaces.py, Version: 0.27.10 (2026-10-27)
 
-"""The falling battery on the phone and the card, and the crossing.
+"""The falling battery on the phone and the card, and the crossing
+(rules LIST-02, NOTE-03, NOTE-10).
 
-Ruling #215 fixed five tables that turn a kind into words and left
-three the notifier owns: the family map, the push line, and the card,
-which is not a table at all and reads list properties. A kind absent
-from a list property is invisible with nothing to assert against,
-which is why the card guard here drives every kind through the
-summary rather than checking a table for its key.
+Five tables turn a kind into words, and the notifier owns three more:
+the family map, the push line, and the card, which is not a table at
+all and reads list properties. A kind absent from a list property is
+invisible with nothing to assert against, so the card guard here drives
+every kind through the summary rather than checking a table for its key.
 
-The crossing is the case that only exists once the family map is
-right. A cell already low is absent from the falling source (#213),
-so at the threshold the item swaps one kind for the other in a single
-pass, both are battery, and one push per family survives.
+The crossing: a cell already low is absent from the falling source
+(rule BAT-14), so at the threshold the item swaps one kind for the other
+in a single pass, both are battery, and one push per family survives.
 """
 
 from __future__ import annotations
@@ -55,9 +54,9 @@ from custom_components.device_sentinel.const import (
 from tests.helpers import card_message, record_events, setup_coordinator
 
 # Every kind, and the list row that puts it on the card. Iterated
-# against TODO_KINDS_ALL below, so a kind added without a route to
-# the card fails here rather than showing a person an all-clear
-# while the list says otherwise (ruling #220).
+# against TODO_KINDS_ALL below, so a kind added without a route to the
+# card fails here rather than showing a person an all-clear while the
+# list says otherwise (rule NOTE-10).
 CARD_SOURCE = {
     TODO_KIND_FLAPPING: ("flapping_list", {"since": 1790000000.0, "drops": 3}),
     TODO_KIND_FROZEN: ("frozen_devices_list", {"category": "frozen"}),
@@ -112,8 +111,8 @@ def _battery_device(hass: HomeAssistant, name: str, level: float):
     return device, entry.entity_id
 
 
-# Tim Plas's S63: steady, then speeding up. Since 0.27.0 only a cell
-# speeding up reaches the Problem List and the phone (#731).
+# A real cell: steady, then speeding up. Only a cell speeding up
+# reaches the Problem List and the phone (rule BAT-14).
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
@@ -202,13 +201,13 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     At the threshold the item loses the forecast and gains the level
     in one pass. Both are battery, one push per family survives, and
     the recovery is collected second, so without the crossing rule
-    the phone reads "no longer running down" at the moment the cell
-    went low (ruling #220).
+    the phone would read "no longer running down" at the moment the
+    cell went low (rule NOTE-10).
     """
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 24.0)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
-    # Battery mechanics, not restart behaviour: the startup window
-    # the harness opens is shut so flags apply at once (#346).
+    # Battery mechanics, not restart behavior: the startup window the
+    # harness opens is shut so flags apply at once.
     coord._grace_until = 0.0
     _seed(coord, device.id, 24.0)
     opened = _events(coord)
@@ -237,7 +236,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     assert kinds[device.id] == {TODO_KIND_LOW_BATTERY}
 
     assert [recovery for _, _, recovery in collected] == [False]
-    # And the bus hears the crossing too (James, 27 October 2026).
+    # And the bus hears the crossing too (rule NOTE-12).
     assert [f["kinds"] for f in faults] == [[TODO_KIND_LOW_BATTERY]]
     assert "no longer" not in collected[0][1]
     # The brief's words for a low battery (rules NOTE-10, BAT-03).
@@ -254,8 +253,8 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
 
     await coord.async_update_card()
     message = card_message(hass)
-    # Since 0.23.10 a card that lists anything ends with a link to the
-    # Problem List.
+    # A card that lists anything ends with a link to the Problem List
+    # (rule NOTE-11).
     assert message == (
         "Battery: Door 2nd Bedroom reaches 18% in under a week."
         "\n\n[Open the Problem List](/device-sentinel/problem-list)"
@@ -265,7 +264,7 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
 async def test_a_device_with_both_kinds_reads_as_one_clause(
     hass: HomeAssistant,
 ):
-    """Level then direction, in one entry rather than two (#216)."""
+    """Level then direction, in one entry rather than two (rule BAT-14)."""
     coord = await setup_coordinator(hass)
     row_low = [{"device_id": "d1", "name": "Door 2nd Bedroom", "level": 16.0}]
     row_fall = [
@@ -288,12 +287,12 @@ async def test_a_device_with_both_kinds_reads_as_one_clause(
 
 
 async def test_every_kind_has_a_family_and_a_sentence(hass: HomeAssistant):
-    """The two tables the notifier owns, which #215 did not reach.
+    """The two tables the notifier owns: every kind has a family and a
+    sentence (rule LIST-02).
 
-    Read from TODO_KINDS_ALL rather than a list here, so a kind
-    added without a family or without a line fails on this test
-    instead of arriving on a phone titled Device with an underscore
-    in it, which is precisely what shipped in 0.11.11.
+    Read from TODO_KINDS_ALL rather than a list here, so a kind added
+    without a family or without a line fails on this test instead of
+    arriving on a phone titled Device with an underscore in it.
     """
     coord = await setup_coordinator(hass)
     for kind in TODO_KINDS_ALL:
@@ -336,7 +335,7 @@ async def test_every_kind_reaches_the_card(hass: HomeAssistant):
 async def test_an_acknowledged_falling_cell_leaves_the_card(
     hass: HomeAssistant,
 ):
-    """Acknowledgment silences the phone for the new kind too (#109)."""
+    """Acknowledgment silences the phone for the new kind too (rule NOTE-08)."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
     _seed(coord, device.id, 24.0)

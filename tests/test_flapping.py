@@ -3,19 +3,19 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_flapping.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_flapping.py, Version: 0.27.10 (2026-10-27)
 
-"""A device that keeps dropping out is one problem, not fifty.
+"""A device that keeps dropping out is one problem, not fifty
+(rule UNAV-06).
 
-The second fleet's S73 Door tilt sensor Shed3-Bay2 went unavailable
-for three to four and a half minutes 53 times in 17 hours, each drop
-past the three-minute wait, each opening and closing a problem. The
-owner ruled on 24 September: three drops in two hours make a flap;
-the longest time back between drops is learned from the current run;
-the device stays listed until it has been back longer than that plus
-the freeze grace for a gap that size; one push when it starts and one
-when it clears; every drop still recorded. These tests replay S73's
-pattern. The ones that are not guards fail on 0.23.1.
+A tilt sensor that goes unavailable for three to four and a half
+minutes dozens of times a day, each drop past the three-minute wait,
+would open and close a problem every time. Three drops in two hours
+make a flap; the longest time back between drops is learned from the
+current run; the device stays listed until it has been back longer
+than that plus the freeze grace for a gap that size; one push when it
+starts and one when it clears; every drop still recorded. These tests
+replay that pattern.
 """
 
 from __future__ import annotations
@@ -176,10 +176,10 @@ async def test_the_pages_say_flapping(hass: HomeAssistant, freezer):
 
 
 async def test_the_fault_report_counts_a_device_that_keeps_dropping_out(hass: HomeAssistant, freezer):
-    """The second fleet's report of 8 October counted 2 devices with a fault
-    while S73 stood on the problem list after 404 drops, acknowledged. The
-    section now lists it under Dropping Out and counts it (0.25.1). Fails
-    on 0.25.0, whose section reads "Devices With a Fault (0)" here."""
+    """A device standing on the problem list after hundreds of drops,
+    acknowledged, is listed under Dropping Out and counted, not left out
+    of "Devices With a Fault".
+    """
     coord, device, entity_id, _phone = await _shed(hass, freezer)
     for _ in range(4):
         await _drop(hass, coord, freezer, entity_id)

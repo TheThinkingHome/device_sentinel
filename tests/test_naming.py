@@ -3,9 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_naming.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_naming.py, Version: 0.27.10 (2026-10-27)
 
-"""A device with no registry name is never shown as its id (ruling #402)."""
+"""A device with no registry name is never shown as its id
+(rules DEV-01, DEV-03).
+"""
 
 from __future__ import annotations
 
@@ -90,7 +92,7 @@ def test_never_a_bare_hash():
         assert not HEX32.match(display_name(dev, "unifi", DEVICE_ID))
 
 
-# A name of any length stops at NAME_LENGTH_MAX (0.23.19).
+# A name of any length stops at NAME_LENGTH_MAX (rule DEV-03).
 
 
 def test_a_real_name_is_never_cut():

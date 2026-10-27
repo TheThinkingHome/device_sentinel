@@ -3,23 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_campaign.py, Version: 0.27.7 (2026-10-27)
+# File: test_lutron_campaign.py, Version: 0.27.10 (2026-10-27)
 
-"""Christopher Robert's Lutron campaign of 20 September 2026, replayed (#663 to #665).
+"""A real Lutron campaign of two hubs, replayed (rules STACK-09, STACK-10).
 
 Home Assistant's own Lutron Caseta integration and the Lutron library it
 pins, with only the network faked: each hub's connection is a fake that
 answers while the hub is up and fails while it is down, and the
 library's own monitor loop drops and retries the session as it does on
-a real house. The two hubs are his, with names and serials replaced
-(tests/fixtures/lutron_two_hubs.json): a Basement hub with dimmers, a
-switch and three Picos, a Garage hub with two switches.
+a real house. The two hubs are a tester's, with names and serials
+replaced (tests/fixtures/lutron_two_hubs.json): a Basement hub with
+dimmers, a switch and three Picos, a Garage hub with two switches.
 
-His day, in his own times (America/Chicago): seven Pico presses from
-11:37 to 11:41, the Basement hub unplugged 11:44:24 to 11:48:39 and
-11:50:19 to 11:56:04, the Garage hub 13:21:25 to 13:25:50 and 13:28:30
-to 13:32:40, then unplugged again at 13:34:20 and Home Assistant
-restarted at 13:38 with it still out, back at 13:44:21.
+The day, in the house's own times (America/Chicago): seven Pico
+presses from 11:37 to 11:41, the Basement hub unplugged 11:44:24 to
+11:48:39 and 11:50:19 to 11:56:04, the Garage hub 13:21:25 to 13:25:50
+and 13:28:30 to 13:32:40, then unplugged again at 13:34:20 and Home
+Assistant restarted at 13:38 with it still out, back at 13:44:21.
 """
 
 from __future__ import annotations
@@ -243,7 +243,7 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
         hub.unplug()
         await _settle_library()
         assert hub.bridge._leap is None
-        assert hub.bridge.is_connected() is True  # the public call never moves (#663)
+        assert hub.bridge.is_connected() is True  # the public call never moves (rule STACK-08)
         await _until(hass, freezer, _at(back))
         hub_id = hub_ids[hub.title]
         assert hub_id in _items(coord), f"{hub.title} at {back}"
@@ -295,8 +295,8 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
     await _reload(hass, entries["Garage"])
     assert entries["Garage"].state is ConfigEntryState.LOADED
     await _until(hass, freezer, _at("13:50:00"))
-    # Back, and its third drop in a quarter of an hour leaves it listed
-    # as dropping out, as any device that keeps dropping out is (0.23.2);
+    # Back, and its third drop in a quarter of an hour leaves it listed as
+    # dropping out, as any device that keeps dropping out is (rule UNAV-06);
     # nothing it controls is listed.
     assert list(_items(coord)) == [hub_ids["Garage"]]
     assert ": dropped out 3 times" in _items(coord)[hub_ids["Garage"]]

@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_frozen_sentence_times.py, Version: 0.27.7 (2026-10-27)
+# File: tests/test_frozen_sentence_times.py, Version: 0.27.10 (2026-10-27)
 
 """The frozen sentence's quiet and return times, across a longer wait,
-midnight and the clock change, from the adversarial rounds on 0.26.5 of
-16 October 2026, regrouped by subject in 0.26.7 (#707). Each test
-failed on the build as it stood before its round's fixes.
+midnight and the clock change (rules FRZ-07, UNAV-07).
 
 Accepted rather than tested: a frozen device taken back counts from
-when it was watched again (#650), so its sentence's quiet time is that
-moment; and an unavailable device's paired sentence opens at its
-debounced verdict while its span counts from when it went (#644), so
-the recovery reads a few minutes late, as in 0.26.4.
+when it was watched again, so its sentence's quiet time is that moment
+(rule WATCH-08); and an unavailable device's paired sentence opens at
+its debounced verdict while its span counts from when it went, so the
+recovery reads a few minutes late (rule UNAV-07).
 """
 
 from __future__ import annotations

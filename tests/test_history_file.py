@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_history_file.py, Version: 0.27.10 (2026-10-27)
 
-"""The history file: the older part of the learned history, kept apart.
+"""The history file: the older part of the learned history, kept apart
+(rules STOR-01, STOR-03).
 
 The main file keeps the newest thirty entries of each daily series and
 the rows newer than the line; the history file holds the rest and is
-written only when that part changes, in four steps (rulings #633, #655,
-#660). These tests run on the harness's in-memory storage; the files on
-disk, the stops between steps and the restores are in
-test_history_file_disk.py.
+written only when that part changes, in four steps. These tests run on
+the harness's in-memory storage; the files on disk, the stops between
+steps and the restores are in test_history_file_disk.py.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from custom_components.device_sentinel.history_file import (
 
 from .helpers import register_device, setup_entry
 
-# A real moment: the storage check refuses a time before 2020 (#544).
+# A real moment: the storage check refuses a time before 2020 (rule STOR-07).
 NOW = 1_790_000_000.0
 DAY = 86400.0
 
@@ -58,7 +58,7 @@ def series(field: str, n: int, offset: int = 0) -> list:
     if field == "daily_max":
         return [300.0 + i + offset for i in range(n)]
     if field == "battery_evidence":
-        # Self-dated rows (#737): a day, volts, degrees, events so far.
+        # Self-dated rows (rule BAT-16): a day, volts, degrees, events so far.
         return [[f"2026-{1 + (i + offset) // 28:02d}-{1 + (i + offset) % 28:02d}", 2.9, 21.0, 100 + i + offset]
                 for i in range(n)]
     if field.startswith("battery"):
@@ -101,7 +101,7 @@ def furnish(record: dict, n: int, alt: bool = False) -> None:
         record[field] = series(field, n)
     record["signal_scale"] = "rssi"
     # Watched long enough that no learned gap is longer than the watch
-    # (rulings #403, #549).
+    # (rule FRZ-13).
     record["first_observed"] = "2026-01-01T00:00:00+00:00"
     if alt:
         record[DEV_SIGNAL_ALT] = alt_block(n)
@@ -296,9 +296,9 @@ async def test_lowering_retention_to_thirty_removes_the_history_file(
 async def test_a_trim_from_advanced_erases_the_older_history_at_once(
     hass: HomeAssistant, hass_storage
 ):
-    """The trimmed device's older part leaves the history file in the
-    same save, a restart does not bring it back, and the backup copy
-    holds the whole record with no generation (ruling #662)."""
+    """The trimmed device's older part leaves the history file in the same
+    save, a restart does not bring it back, and the backup copy holds the
+    whole record with no generation (rule STOR-23)."""
     entry, coord, ids = await furnished(hass, n=40)
     await coord._save_now()
     target, keeper = ids
@@ -394,7 +394,7 @@ async def test_a_history_copy_of_another_generation_is_never_joined(
     hass: HomeAssistant, hass_storage, caplog
 ):
     """No match: the main file's thirty days, said in the log, nothing
-    doubled (ruling #660)."""
+    doubled (rule STOR-04)."""
     entry, coord, ids = await furnished(hass, n=40)
     await coord._save_now()
 

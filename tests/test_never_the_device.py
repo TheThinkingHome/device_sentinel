@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_never_the_device.py, Version: 0.26.7 (2026-10-19)
+# File: test_never_the_device.py, Version: 0.27.10 (2026-10-27)
 
-"""What is never the device speaking.
+"""What is never the device speaking (rules WATCH-04, UNAV-01).
 
 A firmware notice and a command button are Home Assistant's, never the
 device reporting: their writes move no clock and end no verdict. A
 device with nothing switched on but those is set aside, in words true
 of it, and its integration reads "Nothing switched on to read"; a
 device with everything switched off and nothing on stays watched for
-the prompt (ruling #369). The Hue bridge's Zigbee connectivity sensor
-is the bridge's word, never the light reporting (James, 17 and 18
-October 2026). Found by the adversarial rounds of 0.26.6.
+the prompt (rule WATCH-03). The Hue bridge's Zigbee connectivity sensor
+is the bridge's word, never the light reporting.
 """
 
 from __future__ import annotations
@@ -145,9 +144,9 @@ async def test_5_a_command_button_press_is_not_a_report(hass: HomeAssistant, fre
 # ---------------------- set aside: nothing switched on that can report
 
 
-# 1. Rule 9: a device whose only entity is a firmware notice has nothing
-# that could ever report, as one with no entity at all (#257, #369). In
-# 0.26.5 the update entity's writes were its reports.
+# 1. A device whose only entity is a firmware notice has nothing that
+# could ever report, as one with no entity at all, so the update
+# entity's writes are not its reports (rule WATCH-04).
 async def test_1_update_only_device_is_not_never_reported(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     _source, device, ids = _sensor(hass, "r12u", main="update", extras=())
@@ -160,7 +159,7 @@ async def test_1_update_only_device_is_not_never_reported(hass: HomeAssistant, f
         hass.states.async_set(ids["main"], "off", force_update=True)
         await hass.async_block_till_done()
         await walk(hass, freezer, 1800, step=600)
-    # Set aside as a device with no entities is (James, 17 October 2026).
+    # Set aside as a device with no entities is (rule WATCH-03).
     assert device.id not in coord._watched
     assert not [i for i in coord.todo_items if i["device_id"] == device.id]
 
@@ -277,9 +276,9 @@ def _loaded(hass, domain):
     return source
 
 
-# 2. Rule 9's last sentence: a device with everything switched off and
-# nothing on stays watched (#369). One whose only entity is a switched-off
-# firmware notice is set aside as having no entities.
+# 2. A device with everything switched off and nothing on stays watched
+# (rule WATCH-03). One whose only entity is a switched-off firmware
+# notice is set aside as having no entities.
 async def test_r15_2_only_a_switched_off_notice_is_set_aside_truthfully(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _loaded(hass, "broadlink")
@@ -291,7 +290,7 @@ async def test_r15_2_only_a_switched_off_notice_is_set_aside_truthfully(hass: Ho
     coord = await setup_coordinator(hass)
     await hass.async_block_till_done()
     await past_grace(hass, freezer)
-    # Set aside, with words true of it (James, 17 October 2026).
+    # Set aside, with words true of it (rule WATCH-03).
     assert device.id not in coord._watched
     reason = coord._set_aside[device.id][2]
     assert reason == "no entities"
@@ -339,7 +338,7 @@ async def test_r17_4_bare_integration_standing_words(hass: HomeAssistant, freeze
     rows = {row["domain"]: row for row in coord.dashboard_integrations()}
     standing = rows["bare"]["standing"]
     meaning = dict(STANDING_MEANINGS).get("Nothing switched on to read")
-    # Its words fit a device with no entities too (James, 17 October 2026).
+    # Its words fit a device with no entities too.
     assert standing == "notices_only"
     assert meaning == "Its devices have nothing switched on that can report."
 

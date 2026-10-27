@@ -3,16 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_unavailable_split.py, Version: 0.26.6 (2026-10-18)
+# File: test_freeze_unavailable_split.py, Version: 0.27.10 (2026-10-27)
 
-"""Freeze and unavailable, muted apart (James, 17 October 2026).
+"""Freeze and unavailable, muted apart (rules MUTE-06, UNAV-02).
 
 A freeze mute silences only what is judged from silence: frozen and
 never reported. Unavailable has its own mute, set on a device only. A
 device's main entities, the ones Home Assistant puts in no category,
-decide whether it is down, and unknown counts as nothing. Every test
-here that tells the new rule from the old fails on 0.26.5; the rest
-guard what stays the same.
+decide whether it is down, and unknown counts as nothing.
 """
 
 from __future__ import annotations
@@ -199,8 +197,8 @@ async def test_the_unavailable_mute_is_set_from_the_device_page_and_leaves_silen
 
 
 async def test_a_motion_sensor_whose_motion_entity_goes_is_unavailable(hass: HomeAssistant, freezer):
-    """James's example: the motion entity unavailable, battery and signal
-    still holding values, a setting and a firmware notice too."""
+    """The motion entity unavailable, battery and signal still holding
+    values, a setting and a firmware notice too."""
     coord, device, ids, record = await _ready(
         hass, freezer, "mo1",
         extras=(("sensor", EntityCategory.DIAGNOSTIC), ("sensor", EntityCategory.DIAGNOSTIC),
@@ -290,8 +288,8 @@ async def test_unknown_beside_unavailable_is_unavailable(hass: HomeAssistant, fr
 
 
 async def test_an_unknown_problem_standing_at_the_upgrade_waits_for_the_device(hass: HomeAssistant, freezer):
-    """No new unknown is raised; one standing from 0.26.5 is held until
-    the device reports, as any down problem is (#529)."""
+    """No new unknown is raised; one already standing is held until the
+    device reports, as any down problem is (rule LIST-08)."""
     coord, device, ids, record = await _ready(hass, freezer, "uk4")
     for eid in ids.values():
         hass.states.async_set(eid, "unknown")

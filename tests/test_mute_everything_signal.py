@@ -3,11 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_mute_everything_signal.py, Version: 0.27.7 (2026-10-27)
+# File: test_mute_everything_signal.py, Version: 0.27.10 (2026-10-27)
 
-"""Mute everything judges a device for nothing, a railed signal included
-(rules MUTE-01, MUTE-07). Before 0.27.7 a device muted for everything
-kept its rail on the Problem List, the card and the to-do count."""
+"""Mute everything judges a device for nothing, a railed signal included,
+so the rail leaves the Problem List, the card and the to-do count
+(rules MUTE-01, MUTE-07).
+"""
 
 from homeassistant.core import HomeAssistant
 

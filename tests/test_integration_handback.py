@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_handback.py, Version: 0.26.6 (2026-10-18)
+# File: tests/test_integration_handback.py, Version: 0.27.10 (2026-10-27)
 
-"""An integration coming back gives its devices time to rejoin (#441).
+"""An integration coming back gives its devices time to rejoin
+(rules UP-08, UNAV-05).
 
-#436 gave a bridge that window and a recovering row, and said so for
-Z-Wave and Matter alike, but those stacks have no bridge reader: their
-devices are carried by the integration rung, which dropped the outage
-the moment the entry loaded again. Reproduced 16 September for both,
-and seen on the second fleet's Z-Wave stick pull, which looked clean
-only because its devices returned before anyone looked.
+A bridge gets that window and a recovering row, and so do Z-Wave and
+Matter, but those stacks have no bridge reader: their devices are
+carried by the integration rung, which must not drop the outage the
+moment the entry loads again. A stick pull looks clean only when its
+devices return before anyone looks.
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ async def test_the_return_records_the_worst_moment(
     assert row[SYS_WORST] == 2
 
 
-# ----------------- an integration outage holds frozen devices (0.26.6)
+# ----------------- an integration outage holds frozen devices
 
 
 def _pair(hass, n=2, domain="shelly"):

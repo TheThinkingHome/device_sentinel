@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_nameless_surfaces.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_nameless_surfaces.py, Version: 0.27.10 (2026-10-27)
 
-"""A nameless device is named by the ladder on every surface (#402).
+"""A nameless device is named by the ladder on every surface (rule DEV-01).
 
-Ruling #402 gave a device with no name one resolver, and said every
-surface asks it. Four did not: the two maintainer reports, the
-low-battery list and a settings picker each read the registry name
-and fell back to the raw id. The second fleet's own classification
-and telemetry reports, written by 0.21.8 on 15 September, show six
-UniFi clients as 32-character ids.
+A device with no name has one resolver, and every surface asks it,
+including the two maintainer reports, the low-battery list and the
+settings pickers. A surface that reads the registry name and falls
+back to the raw id shows UniFi clients as 32-character ids.
 
-The device here is shaped like those six: an empty registry name, a
+The device here is shaped like those clients: an empty registry name, a
 manufacturer, no model, and a MAC, so the ladder names it by its
 integration and its MAC.
 """

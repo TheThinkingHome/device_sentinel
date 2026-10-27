@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_held_values_storage.py, Version: 0.27.6 (2026-10-26)
+# File: tests/test_held_values_storage.py, Version: 0.27.10 (2026-10-27)
 
 """The held values on disk (rule WATCH-12).
 
 Kept in the main file, not with the clocks: written in the verdict's
 own immediate save, cleared when the verdict ends, shape-checked at the
-storage boundary with a damaged entry dropped alone, and absent from a
-0.27.5 file without fault.
+storage boundary with a damaged entry dropped alone, and absent from an
+older file without fault.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ async def test_cleared_at_recovery(hass: HomeAssistant, freezer, hass_storage):
     await hass.async_block_till_done()
     assert rec(coord, device.id)[DEV_HELD_VALUES] is None
     # Past the routine save: a recovery landing during a save already in
-    # flight waits for the next main-file save (Known Gap 67).
+    # flight waits for the next main-file save.
     await walk(hass, freezer, coord.coalesce_seconds + 120)
     stored = _on_disk(hass_storage, device.id)
     assert (stored[DEV_FROZEN_CATEGORY], stored[DEV_HELD_VALUES]) == (None, None)

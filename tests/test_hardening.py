@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.27.9 (2026-10-27)
+# File: test_hardening.py, Version: 0.27.10 (2026-10-27)
 
-"""Audit hardening, legacy cleanup, and the per-screen wiki links.
+"""Audit hardening, old-field cleanup, and the per-screen wiki links
+(rules CODE-06, CODE-07, CODE-14, STOR-19, CFG-03).
 
 The audit fixes guard the edges: report cells escape pipes and newlines
 in a device name so a table keeps its column count, the hot-path
@@ -14,11 +15,10 @@ clock prints a zero age rather than a negative one, and a signal line
 whose name lookup misses falls back to the device id. Two idempotent
 cleanups keep the store and the registry tidy: the storage prune drops
 any stored field the current schema no longer holds, and the dead-types
-sweep removes registry entities whose sentinel type was retired. And
-every settings screen links to its own wiki page rather than the front
-door, with the page names pinned as constants because a typo would
-render as a create-this-page screen rather than an error. This file
-holds the audit fixes, the two cleanups, and the wiki links.
+sweep removes registry entities whose sentinel type was retired. Every
+settings screen links to its own wiki page rather than the front door,
+with the page names pinned as constants because a typo would render as
+a create-this-page screen rather than an error.
 """
 
 import json
@@ -283,13 +283,11 @@ def test_prune_is_idempotent():
 
 
 def test_reconcile_fills_a_field_the_stored_record_never_had():
-    """The half that did not exist until 0.10.23 (ruling #189).
+    """A stored record missing a newer field gets it filled (rule STOR-19).
 
-    A record written by a version before a field joined the schema
-    arrives without it. The removing half was automatic and the
-    filling half was a list somebody had to remember, so this is the
-    direction that could silently fail on an upgrading user while
-    passing every test, since a test builds a fresh record and never
+    A record written before a field joined the schema arrives without
+    it. This direction could fail silently on an upgrading house while
+    passing every test, because a test builds a fresh record and never
     meets a stored one that is missing anything.
     """
     record = _new_device_record("2026-07-19T00:00:00+00:00", 1000.0)
@@ -337,10 +335,9 @@ def test_filled_lists_are_not_shared_between_devices():
 
 
 def test_dead_types_tuple_is_the_sweep_source():
-    """The sweep reads its targets from the dead-types tuple (ruling
-    #82): the mechanism is permanent, its entries go once satisfied.
-    Emptied in 0.23.19 after the reference rig's start removed nothing;
-    since 0.26.7 it holds the three retired Enable buttons (#696)."""
+    """The sweep reads its targets from the dead-types tuple: the
+    mechanism stays, and each entry goes once it has done its work
+    (rule STOR-19). The tuple holds the three retired Enable buttons."""
     import inspect
 
     from custom_components.device_sentinel import _drop_dead_entities
@@ -371,8 +368,8 @@ async def test_setup_prunes_stored_legacy_fields(hass: HomeAssistant):
 
 async def test_retired_ghost_entity_is_removed(hass: HomeAssistant, monkeypatch):
     """A registry entity under a retired unique id is gone after
-    setup. The tuple is empty since 0.23.19 (ruling #82), so the test
-    retires a type of its own to prove the sweep still works."""
+    setup. The test retires a type of its own, so it proves the sweep
+    works whatever the tuple holds (rule STOR-19)."""
     monkeypatch.setattr(
         "custom_components.device_sentinel.DEAD_ENTITY_SENTINEL_TYPES",
         ("retired_for_test",),
@@ -396,7 +393,7 @@ async def test_retired_ghost_entity_is_removed(hass: HomeAssistant, monkeypatch)
 # Every screen links to its own wiki page.
 # ==================================================================
 
-# The wiki's page titles as published, 30 pages as of 0.27.3's wiki. Hyphens are how GitHub renders
+# The wiki's page titles as published. Hyphens are how GitHub renders
 # a space in a page title into a URL.
 PUBLISHED_PAGES = {
     "Advanced",
@@ -444,10 +441,9 @@ ALL_LINKS = {
 def _page_of(url: str) -> str:
     """Return the wiki page a URL targets.
 
-    The constants are bare URLs since #242: the link text moved into
-    the translatable strings, so each screen can name the page it
-    opens rather than every one of them reading "Device Sentinel
-    wiki".
+    The constants are bare URLs because the link text lives in the
+    translatable strings, so each screen names the page it opens
+    (rule CFG-03).
     """
     return url.rsplit("/wiki", 1)[1].lstrip("/") or "Home"
 
@@ -468,8 +464,8 @@ def test_every_link_targets_a_published_page():
 
 
 def test_every_link_is_a_bare_wiki_url():
-    """Bare URLs, not Markdown (ruling #242). A constant carrying its own
-    link text put the words out of a translator's reach and made
+    """Bare URLs, not Markdown (rule CFG-03). A constant carrying its own
+    link text puts the words out of a translator's reach and makes
     three screens render a link nested inside a link."""
     for name, link in ALL_LINKS.items():
         assert link.startswith(WIKI_BASE_URL), name
@@ -478,7 +474,7 @@ def test_every_link_is_a_bare_wiki_url():
 
 
 def test_links_are_distinct_per_page():
-    """The bug this release fixes: one link shared by every screen."""
+    """Each screen has its own link, not one shared by every screen."""
     targets = [_page_of(link) for link in ALL_LINKS.values()]
     assert len(targets) == len(set(targets))
 
@@ -503,7 +499,7 @@ async def test_each_screen_supplies_its_own_page(hass: HomeAssistant):
 
 
 async def test_no_screen_lands_on_the_front_door(hass: HomeAssistant):
-    """Through 0.3.13 every screen did."""
+    """No screen links to the wiki's front door (rule CFG-03)."""
     entry = await setup_entry(hass)
     for step in ("notifications", "exclusions", "battery"):
         result = await _open(hass, entry, step)
@@ -531,7 +527,7 @@ def test_the_logger_uses_the_namespace_home_assistant_targets():
     assert LOGGER.name == "custom_components.device_sentinel"
 
 
-# ------------------------ every screen against its own strings (#198)
+# ----------------- every screen against its own strings (rule CODE-14)
 
 CONFIG_STEPS = (
     "battery",
@@ -556,18 +552,13 @@ def _strings() -> dict:
 async def test_every_screen_offers_exactly_what_it_describes(
     hass: HomeAssistant, step: str
 ):
-    """The gate 0.11.3 did not have (ruling #198).
+    """Each settings screen is checked against its own words (rule CODE-14).
 
-    Days Till Empty was added to the schema, to strings.json and to
-    the translation, and the whole suite passed while the field was
-    absent from the running system, because config_flow.py had never
-    reached the repository. Five hundred and thirty-nine tests could
-    not see that the setting a person came to the screen for was not
-    on it.
-
-    So the screen is checked against its own words, both directions.
-    A field with no label renders as a raw key, and a label with no
-    field is a setting somebody was told about and cannot find.
+    A field can sit in the schema, strings.json and the translation
+    while missing from the running system, and every other test still
+    passes. So the screen is checked both ways: a field with no label
+    renders as a raw key, and a label with no field is a setting
+    somebody was told about and cannot find.
     """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, step)
@@ -587,8 +578,8 @@ async def test_every_screen_offers_exactly_what_it_describes(
 @pytest.mark.parametrize("step", CONFIG_STEPS)
 async def test_every_field_explains_itself(hass: HomeAssistant, step: str):
     """A label alone is a name; the description is what makes a
-    setting usable without opening the wiki (ruling #50 as replaced
-    by #192). Sections carry their own, so they are walked too.
+    setting usable without opening the wiki (rule CFG-03). Sections
+    carry their own, so they are walked too.
     """
     described = _strings()["options"]["step"][step]
     for name in described.get("data", {}):
@@ -606,8 +597,7 @@ async def test_the_battery_screen_carries_both_questions(
     hass: HomeAssistant,
 ):
     """Named rather than left to the parametrized sweep, because this
-    is the field that went missing and the one a person opens the
-    screen to set (ruling #198).
+    is the field a person opens the screen to set (rule CODE-14).
     """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, "battery")
@@ -618,22 +608,17 @@ async def test_the_battery_screen_carries_both_questions(
     labels = _strings()["options"]["step"]["battery"]["data"]
     # The label says what the setting does rather than naming a
     # quantity, so a reader can tell it warns rather than reports
-    # (ruling #277). Pinned because the field it belongs to is
-    # what 0.11.3 shipped without.
+    # (rule BAT-14).
     assert labels[CONF_BATTERY_DAYS] == "Days Till Low Warning"
 
 
 async def test_the_threshold_range_comes_from_the_constants(
     hass: HomeAssistant,
 ):
-    """Ruling #205, narrowed by #209. The battery threshold once had
-    two ways in, the options dialog and a dashboard slider, each
-    carrying its own copy of the range 1 to 99 with nothing shared.
-    They stayed in step by luck.
+    """The battery threshold's range comes from named constants.
 
-    The slider went with the number platform in 0.11.10, so there is
-    one door now, and the constants stay: a named range is checkable
-    and a literal buried in a selector is not.
+    The options dialog is the one way in, and a named range is
+    checkable where a literal buried in a selector is not (rule BAT-14).
     """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, "battery")
@@ -646,10 +631,8 @@ async def test_the_threshold_range_comes_from_the_constants(
 
 
 async def test_the_number_platform_is_gone(hass: HomeAssistant):
-    """One door rather than one and a half (ruling #209). The device
-    page carried a slider for the threshold and nothing for the
-    setting beside it, which is a page half describing a screen that
-    describes itself.
+    """The device page carries no threshold slider, because the setting
+    has one door: the options dialog (rule BAT-14).
     """
     from custom_components.device_sentinel import PLATFORMS
 
@@ -667,16 +650,13 @@ async def test_the_number_platform_is_gone(hass: HomeAssistant):
     )
 
 
-# ------------------------------ no filesystem call on the loop (#326)
+# ----------------------- no filesystem call on the loop (rule CODE-06)
 
 async def test_the_www_retirement_never_touches_the_loop(
     hass: HomeAssistant, monkeypatch
 ) -> None:
-    """The look, the copy and the delete are one executor job.
-
-    Replaces the test of the retired www serving (0.23.5), which held
-    the same rule: no filesystem call on the event loop, the one rule
-    the review guide puts above every other.
+    """The look, the copy and the delete are one executor job, so no
+    filesystem call runs on the event loop (rule CODE-06).
     """
     import importlib
 
@@ -695,7 +675,7 @@ async def test_the_www_retirement_never_touches_the_loop(
     assert jobs == ["_retire_www_folder"]
 
 
-# --------------------------------------------- explicit pairing (#328)
+# -------------------------------------- explicit pairing (rule CODE-07)
 
 async def test_the_rail_verdict_survives_uneven_series(
     hass: HomeAssistant
@@ -733,7 +713,7 @@ def test_the_brief_pairing_is_strict() -> None:
     ["detect_signal", "interventions", "diagnostics", "report_brief"],
 )
 def test_every_pairing_states_its_intent(module_name: str) -> None:
-    """No bare zip anywhere in the component (ruling #328).
+    """No bare zip anywhere in the component (rule CODE-07).
 
     Ruff's B905 enforces this on the build; the test states why it
     matters, which a lint rule cannot.

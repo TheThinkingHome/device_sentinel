@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_names.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_integration_names.py, Version: 0.27.10 (2026-10-27)
 
-"""An integration is named as Home Assistant shows it, never by its id.
+"""An integration is named as Home Assistant shows it, never by its id
+(rule GEN-07).
 
 The Daily Brief names an integration by its name, and the brief's
-wording is the standard wherever surfaces disagree (James, 25 October
-2026, rule GEN-07). Until 0.27.4 every mute text read
-"integration: zwave_js" and classification.md wrote the id in its
-INTEGRATION column, while the set-aside reason already used the name.
+wording is the standard wherever surfaces disagree. So a mute text
+reads the name, not "integration: zwave_js", and classification.md
+writes the name in its INTEGRATION column, as the set-aside reason does.
 
 The test integration's id is "test"; its name is patched to "Test Hub"
 so the two differ, as mqtt and MQTT do on a real house.

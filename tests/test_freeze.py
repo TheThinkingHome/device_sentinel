@@ -3,24 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.27.4 (2026-10-25)
+# File: test_freeze.py, Version: 0.27.10 (2026-10-27)
 
-"""The freeze, unavailable, unknown, and never-reported detector.
+"""The freeze, unavailable, unknown, and never-reported detector
+(rules FRZ-01, FRZ-06, FRZ-07, FRZ-09, FRZ-10, UNAV-03, STACK-07).
 
-The freeze margin follows the ruling-85 power curve shaped by the two
-deltas and gated by the arming floor: a device is judged frozen when it
-goes silent past its learned window, unavailable or unknown when all its
-live entities read so, with the worst category winning a mix and one
-fresh entity keeping the whole device alive. A device that has produced
-nothing since well before now is flagged not-reported ahead of the other
-categories, because it has no rhythm to miss, while a device still inside
-its grace window is left alone. Detection is live: a verdict flips once,
-clears the instant the device reports, is debounced for the unavailable
-case, and survives a reboot because the window is measured from the
-device's own stored last-activity clock. A freeze-excluded device is
-watched but never given a verdict, every menu step carries a label so no
-screen renders blank, and a pre-0.5.0 record missing the freeze fields
-is judged without crashing the sweep. This file holds that detector.
+The freeze margin follows the power curve shaped by the two deltas and
+gated by the arming floor: a device is judged frozen when it goes
+silent past its learned window, unavailable when all its live entities
+read so, with the worst category winning a mix and one fresh entity
+keeping the whole device alive. A device that has produced nothing
+since well before now is flagged not-reported ahead of the other
+categories, because it has no rhythm to miss, while a device still
+inside its grace window is left alone. Detection is live: a verdict
+flips once, clears the instant the device reports, is debounced for
+the unavailable case, and survives a reboot because the window is
+measured from the device's own stored last-activity clock. A
+freeze-excluded device is watched but never given a verdict, every menu
+step carries a label so no screen renders blank, and an old record
+missing the freeze fields is judged without crashing the sweep.
 """
 
 import json
@@ -87,8 +88,8 @@ def _never_reported_record(first_observed_iso: str):
 
 
 def _pre_050_record(first_observed_iso):
-    """A record as a pre-0.5.0 storage load leaves it: no freeze
-    fields at all."""
+    """A record as an old storage load leaves it: no freeze fields at
+    all."""
     record = _new_device_record(first_observed_iso, None)
     record[DEV_EVENT_COUNT] = 0
     record[DEV_LAST_ACTIVITY] = None
@@ -107,13 +108,13 @@ async def test_margin_curve_hits_the_ruling_85_anchors(
 ):
     """The default curve passes through its anchors: a 1-hour device
     gets a bit over a 2x window, and the grace is clamped to the
-    deltas. The band moved at 0.6.7 with the delta-high default (6h
-    to 8h, #102), which lifts the whole midrange."""
+    deltas. The 8-hour delta-high default lifts the whole midrange
+    (rule FRZ-06)."""
     coord = await setup_coordinator(hass)
     one_hour = 3600.0
     grace = coord._freeze_grace(one_hour)
     window = one_hour + grace
-    # 1 hr -> ~2.35x window on the 0.6.7 defaults.
+    # 1 hr -> ~2.35x window on the defaults.
     assert 2.1 <= window / one_hour <= 2.6
 
 
@@ -160,7 +161,7 @@ async def test_deltas_reshape_the_curve_not_just_the_ends(
 
 async def test_unarmed_device_has_no_freeze_window(hass: HomeAssistant):
     """A device with too few learned days has no window, so it is
-    never called frozen (unavailable-only until armed, #27)."""
+    never called frozen (unavailable-only until armed, rule FRZ-01)."""
     coord = await setup_coordinator(hass)
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_DAILY_MAX] = [60.0] * (FREEZE_ARMING_DAYS - 1)
@@ -231,8 +232,8 @@ async def test_all_entities_unavailable_is_unavailable(hass: HomeAssistant):
 
 async def test_all_entities_unknown_is_not_down(hass: HomeAssistant):
     """When every live entity reads unknown, the device is not down:
-    unknown counts as nothing (James, 17 October 2026), and a device
-    heard 10 seconds ago is not frozen either."""
+    unknown counts as nothing (rule UNAV-02), and a device heard 10
+    seconds ago is not frozen either."""
     device, entities = register_device(hass, "un2", entity_count=2)
     coord = await setup_coordinator(hass)
     for e in entities:
@@ -480,8 +481,8 @@ async def test_freeze_exclude_suppresses_every_verdict(hass: HomeAssistant):
 
 def test_every_menu_step_has_a_label():
     """Every step in the options menu has a label in both string
-    files, so no screen renders blank. This is the guard for the
-    0.5.0 miss where freeze had a step but no menu label."""
+    files, so no screen renders blank, as a step with no menu label
+    would (rule CODE-14)."""
     base = pathlib.Path("custom_components/device_sentinel")
     for fn in ("strings.json", "translations/en.json"):
         data = json.loads((base / fn).read_text())
@@ -502,18 +503,18 @@ def test_grace_window_is_48_hours():
 
 
 # ==================================================================
-# Judgment survives a pre-0.5.0 record.
+# Judgment survives an old record.
 # ==================================================================
 
 async def test_old_record_judges_without_crashing(hass: HomeAssistant):
-    """A pre-0.5.0 record with no freeze fields is judged, not
-    crashed on, and an old zero-event ghost gets its verdict."""
+    """An old record with no freeze fields is judged, not crashed on,
+    and an old zero-event ghost gets its verdict (rule STOR-19)."""
     device, _ = register_device(hass, "ghost", "Front Security")
     coord = await setup_coordinator(hass)
     record = _pre_050_record("2026-07-11T01:17:48.811715+00:00")
     coord.data["devices"][device.id] = record
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     # The whole sweep runs without raising, and the ghost, well past
     # the 48-hour grace, is flagged not_reported.
@@ -522,9 +523,9 @@ async def test_old_record_judges_without_crashing(hass: HomeAssistant):
 
 
 async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
-    """Two pre-0.5.0 ghosts, both missing the freeze fields, are both
-    judged in one sweep. Before the fix the first killed the tick and
-    the second was never reached; both must now be flagged."""
+    """Two old ghosts, both missing the freeze fields, are both judged
+    in one sweep, so the first cannot kill the tick before the second
+    is reached."""
     first, _ = register_device(hass, "first", "First Ghost")
     second, _ = register_device(hass, "second", "Second Ghost")
     coord = await setup_coordinator(hass)
@@ -533,7 +534,7 @@ async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
     coord.data["devices"][first.id] = first_record
     coord.data["devices"][second.id] = second_record
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     coord._judge_all_devices()
     assert first_record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED
@@ -570,7 +571,7 @@ async def _blip_and_republish(hass, coord, device, eid, seen, heard, freezer):
     """Take a device down briefly, then bring it back by republishing.
 
     The republish returns the same last-contact stamp, so the contact
-    clock does not advance and the return is not a report (#124).
+    clock does not advance and the return is not a report (rule FRZ-11).
     """
     record = coord.data[DATA_DEVICES][device.id]
     freezer.tick(timedelta(seconds=30))
@@ -700,7 +701,7 @@ async def test_a_published_verdict_keeps_its_since_while_still_down(
 
 
 # ==================================================================
-# #160: silence is judged on what was watched, not the wall clock.
+# Silence is judged on what was watched, not the wall clock (rule FRZ-10).
 # ==================================================================
 
 def _freeze_window_of(coord, record):
@@ -835,9 +836,8 @@ async def test_an_unstamped_pair_credits_nothing(
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-# The second fleet's committed house. Until 8 October 2026 this read a
-# capture of 26 August that was never committed, so its cases skipped
-# everywhere and only the reference fleet was checked.
+# A second house's committed files, so its cases run everywhere and
+# not only on the first house.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
 CLOCKS_FOR = {
@@ -850,12 +850,10 @@ POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, float("nan"), 4.1e18, ""]
 def _held(path: Path) -> bool:
     """Whether this fleet is here, by both files `_fleet` opens.
 
-    The guard used to ask whether the reference fleet existed and then
-    open whichever fleet the seed chose, so a directory holding one of
-    them raised `FileNotFoundError` instead of falling back. A fleet
-    can go missing on its own: captures are replaced as houses move
-    forward, and the second fleet's 26 August set is already gone. The
-    clocks file is checked too, because `_fleet` merges it in.
+    A guard that checks one fleet and then opens another raises
+    `FileNotFoundError` instead of falling back. A fleet can go missing
+    on its own, because captures are replaced as houses move forward.
+    The clocks file is checked too, because `_fleet` merges it in.
     """
     return path.exists() and (path.parent / CLOCKS_FOR[path.name]).exists()
 
@@ -878,7 +876,7 @@ def _fleet(path: Path) -> list[dict]:
 async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
     """A hostile record in memory can only arrive through a load,
     and the load repairs what the check cannot vouch for
-    (ruling #370). The repair is run here the way the gate runs it,
+    (rule STOR-09). The repair is run here the way the gate runs it,
     then the sweep must finish on the repaired fleet, and a
     never-reported verdict must still only land on a device that
     owns an entity."""
@@ -900,7 +898,7 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
                 ["2026-07-08T00:00:00+00:00", "yesterday", None, 7, ""]
             )
         coord.data[DATA_DEVICES][device.id] = record
-    # Repaired the way the gate repairs at load (ruling #370):
+    # Repaired the way the gate repairs at load (rule STOR-09):
     # non-records dropped, damaged fields reset to defaults.
     coord._repair_records()
     for _ in range(5):
@@ -917,7 +915,7 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
 
 
 # ==================================================================
-# An ESPHome device's own connection (rulings #636, #639 and #640, 0.26.0).
+# An ESPHome device's own connection (rules STACK-07, STACK-08).
 # ==================================================================
 
 class _Info:
@@ -971,7 +969,7 @@ UNREADABLE = "could not read whether an ESPHome device deep-sleeps or is connect
 
 async def test_an_awake_esphome_device_is_never_frozen_while_connected(hass: HomeAssistant):
     """Home Assistant holds the connection, so the device is connected
-    with nothing new to say (rulings #636 and #640)."""
+    with nothing new to say (rule STACK-07)."""
     device, eid = _esphome_device(hass, "awake", _Runtime(False))
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -983,7 +981,7 @@ async def test_an_awake_esphome_device_is_never_frozen_while_connected(hass: Hom
 async def test_an_entity_unavailable_while_connected_changes_nothing(hass: HomeAssistant):
     """A firmware update entity reads unavailable while the ESPHome
     dashboard is stopped; the connection is up, so the device is still
-    not judged frozen (ruling #640)."""
+    not judged frozen (rule STACK-07)."""
     device, eid, update = _esphome_device(hass, "update", _Runtime(False), status=True)
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -994,8 +992,7 @@ async def test_an_entity_unavailable_while_connected_changes_nothing(hass: HomeA
 
 async def test_a_dropped_device_is_unavailable_whatever_its_status_sensor_reads(hass: HomeAssistant):
     """ESPHome keeps the Status sensor available and switches it off when
-    the connection drops; the connection says unavailable (ruling #640;
-    found by the adversarial round of 12 October 2026)."""
+    the connection drops; the connection says unavailable (rule STACK-07)."""
     device, eid, status = _esphome_device(hass, "dropped", _Runtime(False, available=False), status=True)
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, STATE_UNAVAILABLE)
@@ -1012,7 +1009,7 @@ async def test_a_dropped_device_is_unavailable_whatever_its_status_sensor_reads(
 async def test_the_status_sensor_turning_off_is_not_the_device_speaking(hass: HomeAssistant, freezer):
     """The drop writes the Status sensor off; that must not move the
     device's clock, or a frozen device is told recovered as it dies
-    (ruling #640; adversarial round five, 12 October 2026)."""
+    (rule STACK-07)."""
     runtime = _Runtime(False)
     device, eid, status = _esphome_device(hass, "statusoff", runtime, status=True)
     coord = await setup_coordinator(hass)
@@ -1051,8 +1048,8 @@ async def test_a_deep_sleep_device_keeps_the_freeze_rule(hass: HomeAssistant):
 
 @pytest.mark.parametrize("runtime", [None, object(), _Runtime(None).__class__.__new__(_Runtime)])
 async def test_unreadable_flags_keep_the_freeze_rule(hass: HomeAssistant, runtime, caplog):
-    """The private read is wrapped (rulings #639 and #640): no runtime
-    data, a runtime of another shape, or a missing attribute each answer
+    """The private read is wrapped (rule STACK-08): no runtime data, a
+    runtime of another shape, or a missing attribute each answer
     "unknown", the device stays on the freeze rule, and one line is logged."""
     device, eid = _esphome_device(hass, "odd", runtime)
     coord = await setup_coordinator(hass)
@@ -1075,9 +1072,9 @@ async def test_another_integrations_device_is_not_an_esphome_device(hass: HomeAs
 
 
 async def test_a_device_already_frozen_keeps_its_verdict_until_it_reports(hass: HomeAssistant):
-    """A device standing frozen when 0.26.0 starts is not cleared by the
+    """A device standing frozen at the upgrade is not cleared by the
     connection rule, which would tell it as recovered though it never
-    reported (#529, found by the adversarial round of 11 October)."""
+    reported (rule LIST-08)."""
     device, eid = _esphome_device(hass, "standing", _Runtime(False))
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -1089,9 +1086,8 @@ async def test_a_device_already_frozen_keeps_its_verdict_until_it_reports(hass: 
 async def test_an_awake_device_reading_unknown_is_not_down_and_not_frozen(hass: HomeAssistant):
     """Unknown is a value Home Assistant shows while the device is
     connected, as a device of buttons does until one is pressed: the
-    connection rule keeps frozen off it (ruling #636; adversarial round
-    three, 12 October 2026), and unknown counts as nothing (James, 17
-    October 2026)."""
+    connection rule keeps frozen off it (rule STACK-07), and unknown
+    counts as nothing (rule UNAV-02)."""
     device, eid = _esphome_device(hass, "unknownawake", _Runtime(False))
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, STATE_UNKNOWN)
@@ -1113,9 +1109,9 @@ async def test_a_sleeping_device_reading_unknown_keeps_the_freeze_rule(hass: Hom
 
 @pytest.mark.parametrize("flag", [None, 0, 1, "false"])
 async def test_a_flag_that_is_not_true_or_false_is_unknown(hass: HomeAssistant, flag):
-    """Only a real True or False is an answer (rulings #639 and #640);
-    None or any other shape keeps the freeze rule. bool(None) once made
-    a device awake (adversarial round three, 12 October 2026)."""
+    """Only a real True or False is an answer (rule STACK-08); None or
+    any other shape keeps the freeze rule, so bool(None) cannot make a
+    device awake."""
     device, _ = _esphome_device(hass, "oddflag", _Runtime(flag))
     other, _ = _esphome_device(hass, "oddconn", _Runtime(False, available=flag))
     coord = await setup_coordinator(hass)

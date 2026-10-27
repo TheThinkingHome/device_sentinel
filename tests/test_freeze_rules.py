@@ -3,18 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_rules.py, Version: 0.27.9 (2026-10-27)
+# File: test_freeze_rules.py, Version: 0.27.10 (2026-10-27)
 
-"""The freeze wait as the shorter of two rules (#542, amended in 0.24.0).
+"""The freeze wait as the shorter of two rules
+(rules FRZ-03, FRZ-04, FRZ-05).
 
 The Trimmed Maximum reads the last 14 days' longest gaps and sets the
 longest aside. The Log-Normal Percentile reads up to 42 from a device's
 28th day and sets aside days far above or below its usual. The wait in
-use is the shorter. Each case here is one James ruled on, on 2 October
-2026: two bad days at the end of steady weeks, a device that starts
-reporting faster, the short days that blew up the shadow rule, a young
-device, and the count since a reset. The histories are built, not
-copied, so each shows one thing.
+use is the shorter. The cases: two bad days at the end of steady weeks,
+a device that starts reporting faster, short days that would blow up a
+rule clipped on one side only, a young device, and the count since a
+reset. The histories are built, not copied, so each shows one thing.
 """
 
 from __future__ import annotations
@@ -63,10 +63,10 @@ def test_no_log_normal_percentile_before_28_days():
 
 
 def test_short_days_no_longer_blow_up_the_wait():
-    """The dragon light's pattern: ordinary days of 10 to 40 hours, with
-    a few days whose longest gap was minutes. The shadow rule of 0.23.17,
-    which set aside long days only, threw its wait past 900 hours; the
-    rule clipped on both sides stays near the device's own long days."""
+    """Ordinary days of 10 to 40 hours, with a few days whose longest gap was
+    minutes. A rule that set aside long days only would throw its wait past
+    900 hours; the rule clipped on both sides stays near the device's own
+    long days (rule FRZ-04)."""
     daily = [h * HOUR for h in (16, 43, 12, 22, 21, 27, 15, 23, 30, 37, 10, 20, 25, 18)] * 3
     for i in (3, 17, 31):
         daily[i] = 0.05 * HOUR
@@ -318,7 +318,7 @@ async def test_a_settings_change_replaces_the_kept_wait(hass: HomeAssistant):
 
 async def test_the_device_page_carries_both_rules(hass: HomeAssistant):
     """Each rule's figure and days, which is in use, and the Log-Normal
-    Percentile's own days with those it set aside (0.24.9)."""
+    Percentile's own days with those it set aside (rule FRZ-22)."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "both", "Door 2nd Bedroom")
     daily = _steady(38) + [6 * HOUR, 5.5 * HOUR]
@@ -354,8 +354,8 @@ async def test_the_log_normal_chart_reads_only_its_own_days(hass: HomeAssistant)
 
 
 async def test_a_history_holding_a_non_number_is_not_judged(hass: HomeAssistant):
-    """Only a fault could put one there, but the minute check and the
-    page must not fail on it (0.24.9, before Latest)."""
+    """Only a fault could put one there, but the minute check and the page
+    must not fail on it."""
     coord = await setup_coordinator(hass)
     for bad in ("x", None, float("nan"), float("inf"), True):
         daily = _steady(30)
@@ -368,8 +368,8 @@ async def test_a_history_holding_a_non_number_is_not_judged(hass: HomeAssistant)
 
 async def test_the_page_keeps_the_rule_figures_apart_from_the_history_series(hass: HomeAssistant):
     """The History chart's day-by-day series and the rule charts' figures
-    shared the names "trimmed" and "lognormal", and the series won: both
-    charts drew blank on James's rig (0.24.9, before Latest)."""
+    must not share the names "trimmed" and "lognormal", or the series wins
+    and both charts draw blank (rule FRZ-22)."""
     from custom_components.device_sentinel.const import DATA_DEVICES
 
     device, _ = register_device(hass, "keep", "Button Terrace Dining")
@@ -383,10 +383,10 @@ async def test_the_page_keeps_the_rule_figures_apart_from_the_history_series(has
 
 
 async def test_the_status_and_the_devices_tab_show_the_rhythm_in_use(hass: HomeAssistant):
-    """Two long silences in the last fortnight: the Trimmed Maximum keeps
-    the second at 3.2 hours, the Log-Normal Percentile sets both aside and
-    is in use. The bar read "rhythm 3.2h" beside "window 34m" on James's
-    plug (0.24.10)."""
+    """Two long silences in the last fortnight: the Trimmed Maximum keeps the
+    second at 3.2 hours, the Log-Normal Percentile sets both aside and is
+    in use. The bar shows the rhythm of the rule in use, never "rhythm
+    3.2h" beside "window 34m" (rule FRZ-05)."""
     from custom_components.device_sentinel.const import DATA_DEVICES
 
     device, _ = register_device(hass, "plug", "Plug James Night Light")

@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_gap_bounds.py, Version: 0.24.4 (2026-10-04)
+# File: tests/test_gap_bounds.py, Version: 0.27.10 (2026-10-27)
 
-"""A learned gap may not be negative or exceed the watch (ruling #403)."""
+"""A learned gap may not be negative or exceed the watch (rule FRZ-13)."""
 
 from __future__ import annotations
 
@@ -84,12 +84,11 @@ async def test_a_negative_series_is_reset_at_load(hass: HomeAssistant, hass_stor
 async def test_a_gap_wider_than_the_watch_is_forgotten(
     hass: HomeAssistant, hass_storage
 ):
-    """The second fleet's 1,076 days against 25 days watched, at load.
+    """A gap of 1,076 days against 25 days watched, at load.
 
-    Nobody was listening for the part of that gap before the watch
-    began, so it is forgotten (rulings #403 and #549, 0.24.4), not
-    bounded to the watch as it was under #399's reasoning, and the day
-    it held reads as skipped in the history's dates.
+    Nobody was listening for the part of that gap before the watch began,
+    so it is forgotten, not bounded to the watch, and the day it held reads
+    as skipped in the history's dates (rule FRZ-13).
     """
     from datetime import timedelta
 

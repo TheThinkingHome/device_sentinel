@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_main_entities_decide_unavailable.py, Version: 0.27.6 (2026-10-26)
+# File: test_main_entities_decide_unavailable.py, Version: 0.27.10 (2026-10-27)
 
-"""A device's main entities decide whether it is unavailable.
+"""A device's main entities decide whether it is unavailable (rules
+UNAV-01, UNAV-02).
 
 The main entities are the ones Home Assistant puts in no category. A
 device is unavailable when they read unavailable and no entity of its
@@ -13,8 +14,7 @@ own is actively reporting; a report through another entity keeps it
 alive only for its freeze window, or an hour while it is still
 learning. Unknown, and an event entity at rest, count as nothing: a
 standing verdict is held until the device reports, and the clock
-judges the rest (James, 17 and 18 October 2026). Found by the
-adversarial rounds of 0.26.6.
+judges the rest.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def _rec(coord, device_id):
 
 
 # 1. Control: main entity unavailable, diagnostic held by the stack: judged
-# unavailable on the main entity (rule 5).
+# unavailable on the main entity (rule UNAV-01).
 async def test_1a_control_main_unavailable_diag_held(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r10a")
     hass.states.async_set(ids["main"], "unavailable")
@@ -64,11 +64,11 @@ async def test_1a_control_main_unavailable_diag_held(hass: HomeAssistant, freeze
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
 
 
-# 1. Rule 5: a device whose only main entity reads unavailable while its
-# diagnostic keeps reporting fresh values. Judged unavailable on the main
-# entity; each diagnostic report is the device reporting (#529) and ends
-# the verdict; the sweep lists it again. Over four hours, one outage that
-# never ended: how many faults and recoveries are told?
+# 1. A device whose only main entity reads unavailable while its
+# diagnostic keeps reporting fresh values. Each diagnostic report is the
+# device reporting and ends the verdict. Over four hours, one outage
+# that never ended: how many faults and recoveries are told
+# (rules UNAV-01, LIST-06)?
 async def test_r18_1_a_device_reporting_through_a_diagnostic_is_alive(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r18a")
     faults, back = record_events(hass, EVENT_FAULT), record_events(hass, EVENT_RECOVERED)
@@ -84,8 +84,8 @@ async def test_r18_1_a_device_reporting_through_a_diagnostic_is_alive(hass: Home
         await walk(hass, freezer, 30 * 60)
     items = [i for i in coord.todo_items if i["device_id"] == device.id]
     # A device actively reporting is alive, whatever its main entity
-    # reads (James, 17 October 2026): told down once, back once at its
-    # first report, and not listed again while it keeps reporting.
+    # reads: told down once, back once at its first report, and not
+    # listed again while it keeps reporting (rule UNAV-01).
     assert len(_mine(faults, device.id)) == 1
     assert len(_mine(back, device.id)) == 1
     assert record[DEV_FROZEN_CATEGORY] is None
@@ -105,10 +105,10 @@ async def _alive_through_battery(hass, freezer, uid, options=None):
     return coord, device, ids, record, faults, back
 
 
-# 1. Rule 5 then the whole device goes: the door reading is gone, the
-# battery reports once (alive), then the battery goes unavailable too.
-# Every entity of its own reads unavailable and nothing reports; the
-# device is never judged unavailable again.
+# 1. A diagnostic keeps the device alive, then the whole device goes: the
+# door reading is gone, the battery reports once (alive), then the
+# battery goes unavailable too. Every entity of its own reads unavailable
+# and nothing reports, so the device is judged unavailable (rule UNAV-01).
 async def test_r19_1_whole_device_down_after_one_report(hass: HomeAssistant, freezer):
     coord, device, ids, record, faults, back = await _alive_through_battery(hass, freezer, "r19a")
     hass.states.async_set(ids["x0"], "unavailable")
@@ -118,7 +118,8 @@ async def test_r19_1_whole_device_down_after_one_report(hass: HomeAssistant, fre
         "every entity unavailable, not judged down", record[DEV_FROZEN_CATEGORY])
 
 
-# 1b. As 1 with a freeze mute (rule 1: still reported when unavailable).
+# 1b. As 1 with a freeze mute: still reported when unavailable
+# (rule MUTE-06).
 async def test_r19_1b_freeze_muted_whole_device_down_never_reported(hass: HomeAssistant, freezer):
     coord, device, ids, record, faults, back = await _alive_through_battery(
         hass, freezer, "r19b", {CONF_FREEZE_MUTED_DEVICES: "SELF"})
@@ -130,9 +131,10 @@ async def test_r19_1b_freeze_muted_whole_device_down_never_reported(hass: HomeAs
     assert len(_mine(faults, device.id)) == n + 1
 
 
-# 1. Rule 5: main entity gone, the diagnostic reports once, then the
-# device dies and the diagnostic only holds its value. Freeze-muted, so
-# only an unavailable verdict could ever tell it.
+# 1. Main entity gone, the diagnostic reports once, then the device dies
+# and the diagnostic only holds its value. Freeze-muted, so only an
+# unavailable verdict can tell it, and one old report does not keep it
+# alive (rule UNAV-01).
 async def test_r21_1_one_old_report_keeps_a_dead_device_alive(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r21a", {CONF_FREEZE_MUTED_DEVICES: "SELF"})
     hass.states.async_set(ids["main"], "unavailable")
@@ -149,11 +151,9 @@ async def test_r21_1_one_old_report_keeps_a_dead_device_alive(hass: HomeAssistan
 # ----------------------- unknown and an event at rest count as nothing
 
 
-# (c)/(f) A device whose only main entity is an event entity at rest:
-# _states_of turns its unknown into EVENT_RESTING, so the "all main
-# entities read unknown" fallback in _live_entity_states
-# (coordinator.py 5084-5090) never fires and the diagnostic going
-# unavailable is never read. On 0.26.5 this device was unavailable.
+# (c)/(f) A device whose only main entity is an event entity at rest is
+# read on all its entities, so a diagnostic going unavailable is read
+# and the device is unavailable (rules UNAV-01, UNAV-02).
 async def test_a_device_whose_only_main_entity_is_an_event_at_rest_is_read_on_all(
     hass: HomeAssistant, freezer
 ):
@@ -167,12 +167,9 @@ async def test_a_device_whose_only_main_entity_is_an_event_at_rest_is_read_on_al
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
 
 
-# (f) A standing unknown verdict from 0.26.5 is cleared on the first
-# sweep (detect_freeze.py 755-785 return None for all-unknown when the
-# clock is short of the window) and retires as a recovery while the
-# device still says nothing. The docstring of the existing test
-# test_an_unknown_problem_standing_at_the_upgrade_waits_for_the_device
-# promises the hold, but that test never checks for a recovery.
+# (f) A standing unknown verdict at the upgrade is held, not retired as
+# a recovery while the device still says nothing (rules UNAV-02,
+# LIST-08).
 async def test_an_unknown_problem_standing_at_the_upgrade_is_not_announced_recovered(
     hass: HomeAssistant, freezer
 ):
@@ -191,11 +188,9 @@ async def test_an_unknown_problem_standing_at_the_upgrade_is_not_announced_recov
     assert _items(coord, device.id)
 
 
-# R2-1. detect_freeze.py 794-795: with every entity reading unknown, a
-# standing UNKNOWN verdict (from 0.26.5) is returned before the freeze
-# clock is read, so a device silent far past its window is never called
-# frozen. 0.26.5 escalated it (FREEZE_CATEGORY_PRIORITY), and rule 4 says
-# unknown counts as nothing, leaving the clock to judge.
+# With every entity reading unknown, a standing unknown verdict does not
+# stop the freeze clock: unknown counts as nothing, so a device silent
+# far past its window is called frozen by the clock (rule UNAV-02).
 async def test_a_standing_unknown_on_an_all_unknown_device_still_goes_frozen_by_the_clock(
     hass: HomeAssistant, freezer
 ):
@@ -210,7 +205,7 @@ async def test_a_standing_unknown_on_an_all_unknown_device_still_goes_frozen_by_
 
 
 # A. Control: an unavailable device whose entities then read unknown keeps
-# its verdict until it reports (rule 4, standing branch).
+# its verdict until it reports (rule UNAV-02).
 async def test_a_control_unmuted_unavailable_then_unknown_holds(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r8a")
     await _gone(hass, freezer, ids)
@@ -224,8 +219,9 @@ async def test_a_control_unmuted_unavailable_then_unknown_holds(hass: HomeAssist
 
 
 # 1b. The same device's main entity then reads unknown, the stack still
-# holding the diagnostic; the device never reports. Rule 4: unknown counts
-# as nothing and a standing verdict is held until the device reports.
+# holding the diagnostic; the device never reports. Unknown counts as
+# nothing and a standing verdict is held until the device reports
+# (rule UNAV-02).
 async def test_1b_main_goes_unknown_diag_held_no_false_recovery(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r10b")
     back = record_events(hass, EVENT_RECOVERED)
@@ -266,9 +262,9 @@ async def test_1c_restart_main_unknown_diag_held(hass: HomeAssistant, freezer):
 DIAG = ("sensor", EntityCategory.DIAGNOSTIC)
 
 
-# C. Rules 4/5: only main entity an event entity; it goes unavailable, then
-# back to rest (unknown) while the stack still holds the diagnostic. The
-# binary_sensor twin (round 10, test 1b) is held; this one recovers.
+# C. The only main entity is an event entity; it goes unavailable, then
+# back to rest (unknown) while the stack still holds the diagnostic.
+# The device stays unavailable and is not told recovered (rule UNAV-02).
 async def test_c_event_main_back_to_rest_diag_held(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r11d", main="event", extras=(DIAG,))
     back = record_events(hass, EVENT_RECOVERED)
@@ -329,13 +325,11 @@ async def _report_for(hass, freezer, lqi, seconds, every=1800):
         await hass.async_block_till_done()
 
 
-# 1. Rule 5 with #647: a remote whose action sensor (its only main entity)
-# reads unknown, as one does until first pressed, while its link quality
-# reports every half hour. It is not down: its clock moves, no verdict is
-# given. But _down_now reads only the main entity, so the outage start is
-# saved the moment the action goes unknown and is never cleared while the
-# device reports. When the remote really drops, two days later, it is
-# listed from that old start, published inside the debounce.
+# 1. A remote whose action sensor (its only main entity) reads unknown,
+# as one does until first pressed, while its link quality reports every
+# half hour. It is not down: its clock moves, no verdict is given, and
+# no outage start is saved, so when the remote really drops later it is
+# not listed from an old start inside the debounce (rule UNAV-04).
 async def test_r17_1_reporting_device_with_unknown_main_has_no_outage_start(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     device, main, batt, lqi = _remote(hass, "r17a")

@@ -3,22 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_maintenance.py, Version: 0.27.10 (2026-10-27)
 
-"""Maintenance mode and the surfaces that shipped beside it.
+"""Maintenance mode and the surfaces beside it (rule FRZ-18).
 
-The window (rulings #225 and #238): one button declares a person at work on
-the hardware, and any device that recovers while the declaration
-stands is attributed to their hands rather than learned. Both edges
-are recorded as system events, the end is a timestamp sensor a
-dashboard can count down from, and pairing keeps precedence where
-both windows are open because it names the stack where maintenance
-names only the person.
+One button declares a person at work on the hardware, and any device
+that recovers while the declaration stands is attributed to their hands
+rather than learned. Both edges are recorded as system events, the end
+is a timestamp sensor a dashboard can count down from, and pairing
+keeps precedence where both windows are open because it names the
+stack where maintenance names only the person.
 
-Beside it: the availability attribute on the Z2M bridge sensor
-(ruling #236), reported and never written; and the battery intervention
-sentence (ruling #235), because a convicted battery device cannot be
-reached by radio and the push should say what fixes it.
+Beside it: the availability attribute on the Z2M bridge sensor,
+reported and never written (rule STACK-03), and a battery fault's words,
+which add no line about a person at the device (rule NOTE-10).
 """
 
 from __future__ import annotations
@@ -57,7 +55,7 @@ def _maintenance_rows(coord) -> list[dict]:
 async def test_the_button_opens_and_a_second_press_closes_early(
     hass: HomeAssistant,
 ):
-    """One button, two meanings, both edges recorded (ruling #238)."""
+    """One button, two meanings, both edges recorded (rule FRZ-18)."""
     coord = await setup_coordinator(hass)
     assert coord.maintenance_until is None
 
@@ -140,11 +138,11 @@ async def test_an_expired_window_closes_at_its_declared_end(
 async def test_a_recovery_during_maintenance_is_not_learned(
     hass: HomeAssistant,
 ):
-    """The discard (rulings #225 and #238): the gap never reaches the rhythm.
+    """The discard: the gap never reaches the rhythm (rule FRZ-18).
 
     The same device, the same gap, twice: without a window the gap
     becomes the day's maximum, with one it is discarded and the
-    maximum it briefly wrote is retracted (ruling #166).
+    maximum it briefly wrote is retracted (rule FRZ-15).
     """
     device, _ = register_device(hass, "maint1", name="Maint One")
     coord = await setup_coordinator(hass)
@@ -160,7 +158,7 @@ async def test_a_recovery_during_maintenance_is_not_learned(
 
     # Again, inside a declared window: discarded, and the retraction
     # pulls the larger gap back out of the day, giving the day back the
-    # gap it had before (ruling #641; it once set the day to nothing).
+    # gap it had before, not nothing (rule FRZ-15).
     earlier = record[DEV_TODAY_MAX]
     record[DEV_LAST_ACTIVITY] = record[DEV_LAST_ACTIVITY] - 900.0
     await coord.async_toggle_maintenance()
@@ -171,14 +169,12 @@ async def test_a_recovery_during_maintenance_is_not_learned(
 async def test_pairing_takes_precedence_over_maintenance(
     hass: HomeAssistant,
 ):
-    """Where both windows are open, the stack's signal wins (ruling #238).
+    """Where both windows are open, the stack's signal wins (rule FRZ-18).
 
-    Observable as the absence of the maintenance retraction path
-    taking a different branch: the discard happens either way, so the
-    proof is the pairing branch running first, which this drives by
-    making the pairing check answer yes and asserting the gap is
-    still discarded (the maintenance branch is an elif and cannot
-    run).
+    The discard happens either way, so the proof is the pairing branch
+    running first, which this drives by making the pairing check answer
+    yes and asserting the gap is still discarded (the maintenance branch
+    is an elif and cannot run).
     """
     device, _ = register_device(hass, "maint2", name="Maint Two")
     coord = await setup_coordinator(hass)
@@ -209,8 +205,8 @@ async def test_without_any_window_the_gap_is_learned(hass: HomeAssistant):
 async def test_the_timer_sensor_is_a_timestamp_or_unknown(
     hass: HomeAssistant,
 ):
-    """The dashboard surface (ruling #238): a time while open, unknown
-    while closed, flipped without waiting for a tick."""
+    """The dashboard surface: a time while open, unknown while closed,
+    flipped without waiting for a tick (rule FRZ-18)."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     state = hass.states.get("sensor.device_sentinel_maintenance_ends")
@@ -245,8 +241,8 @@ async def test_the_battery_conviction_carries_the_intervention_line(
     hass: HomeAssistant,
 ):
     """Neither the push nor the Problem List item adds that a battery
-    device needs a person at it (James, 25 October 2026: not necessary;
-    rule NOTE-10), and a recovery never carried it."""
+    device needs a person at it, and a recovery never carries it
+    (rule NOTE-10)."""
     device, _ = register_device(hass, "batt1", name="Batt One")
     coord = await setup_coordinator(hass)
     coord._notification_delay = lambda _device_id: 0.0
@@ -269,8 +265,7 @@ async def test_the_battery_conviction_carries_the_intervention_line(
     coord._collect_event("frozen", "Batt One", True, device.id)
     assert sentence not in coord._pending_events[-1][1]
 
-    # The tap-open description no longer says it either (James,
-    # 25 October 2026; rule NOTE-10).
+    # The tap-open description does not say it either (rule NOTE-10).
     _summary, description = coord._problem_item_text(
         "Batt One", {"frozen": None}, None, device_id=device.id
     )
@@ -283,8 +278,8 @@ async def test_the_battery_conviction_carries_the_intervention_line(
 
 
 async def test_the_bridge_sensor_reports_availability(hass: HomeAssistant):
-    """The availability attribute (ruling #236): read from the reader,
-    written by nobody."""
+    """The availability attribute: read from the reader, written by
+    nobody (rule STACK-03)."""
 
     class _Reader:
         permit_join_end = None

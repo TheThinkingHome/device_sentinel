@@ -3,10 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_missed_fold.py, Version: 0.20.20 (2026-09-12)
+# File: tests/test_missed_fold.py, Version: 0.27.10 (2026-10-27)
 
 
-"""A midnight missed while down is folded once at load (ruling #406)."""
+"""A midnight missed while down is folded once at load (rule STOR-17)."""
 
 from __future__ import annotations
 
@@ -147,11 +147,11 @@ async def test_a_week_down_folds_once_and_not_seven_times(
 async def test_an_epoch_wipe_suppresses_the_missed_fold(
     hass: HomeAssistant, hass_storage
 ):
-    """Two correct rules meeting badly, caught by an existing test.
+    """Two correct rules meeting badly.
 
-    #204 wipes every rhythm when the statistics epoch changes. The
-    missed-day fold would then append the banked maximum the wipe
-    had just declared invalid, handing back what the wipe removed.
+    A change of statistics epoch wipes every rhythm (rule STOR-19). The
+    missed-day fold must not then append the banked maximum the wipe has
+    just declared invalid, handing back what the wipe removed.
     """
     from custom_components.device_sentinel.const import DATA_STATS_EPOCH
 
@@ -173,13 +173,13 @@ async def test_an_epoch_wipe_suppresses_the_missed_fold(
 async def test_a_signal_reading_that_is_not_finite_is_refused(
     hass: HomeAssistant, hass_storage
 ):
-    """Ruling #407, the rule #347 already applies to a battery level.
+    """A reading that is not a number is refused, as a battery level is
+    (rules SIG-04, BAT-02).
 
-    float() accepts every one of these and raises on none, and
-    ESPHome and MQTT sensors publish nan for a reading that failed.
-    One reached signal_value, both of the day's extremes and the P2
-    estimator, and every statistic computed from them afterwards is
-    nan.
+    float() accepts every one of these and raises on none, and ESPHome and
+    MQTT sensors publish nan for a reading that failed. One reaching
+    signal_value, both of the day's extremes and the P2 estimator would
+    make every statistic computed from them nan.
     """
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0

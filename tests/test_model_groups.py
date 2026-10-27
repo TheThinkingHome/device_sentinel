@@ -3,20 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_model_groups.py, Version: 0.27.10 (2026-10-27)
 
-"""Model groups, the backbone (0.23.4).
+"""Model groups, the backbone (rules DEV-14, DEV-15).
 
-The owner ruled on 25 September that identical devices are read as
-groups, recorded first and used later: a group is maker, model id or
-model, and hardware version, with firmware shown inside; a device
-that gives no hardware version joins its model's only given version;
-firmware history is kept for the History setting's window; muted
-devices count and excluded ones are recorded nowhere. Nothing that
-judges reads any of it.
-
-The tests that are not guards fail on 0.23.3, which has no firmware
-history and no Model Groups section.
+Identical devices are read as groups, recorded first and used later: a
+group is maker, model id or model, and hardware version, with firmware
+shown inside; a device that gives no hardware version joins its model's
+only given version; firmware history is kept for the History setting's
+window; muted devices count and excluded ones are recorded nowhere.
+Nothing that judges reads any of it.
 """
 
 from __future__ import annotations
@@ -58,8 +54,8 @@ from custom_components.device_sentinel.report_battery import BatteryReportMixin
 from tests.conftest import fleet_data, fleet_param
 from .helpers import setup_entry
 
-# A real moment for the fixtures' stamps: the storage check refuses
-# a time before 2020 as impossible (ruling #544).
+# A real moment for the fixtures' stamps, because the storage check
+# refuses a time before 2020 as impossible (rule STOR-07).
 TIME_BASE = 1_780_000_000.0
 
 DAY = 86400.0
@@ -109,7 +105,7 @@ async def test_the_firmware_a_device_gives_is_recorded_at_the_start(
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="2.3.0")
     entry = await setup_entry(hass)
-    # Since 0.23.9 a version waits for the fold, held an hour at least.
+    # A version waits for the fold, held an hour at least (rule DEV-15).
     assert _history(entry, panel) == []
     entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     history = _history(entry, panel)
@@ -126,8 +122,8 @@ async def test_an_update_is_recorded_once_and_a_repeat_is_not(hass: HomeAssistan
     await hass.async_block_till_done()
     registry.async_update_device(panel.id, name_by_user="James's panel")
     await hass.async_block_till_done()
-    # Held until the fold (0.23.9): the start's 2.3.0 was replaced
-    # before any fold, so only 3.4.0 is written.
+    # Held until the fold: the start's 2.3.0 was replaced before any fold,
+    # so only 3.4.0 is written (rule DEV-15).
     entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     assert [version for version, _ in _history(entry, panel)] == ["3.4.0"]
     registry.async_update_device(panel.id, name_by_user="James's other panel")
@@ -176,9 +172,9 @@ async def test_the_fold_prunes_by_the_history_setting(hass: HomeAssistant):
 async def test_a_record_stored_before_the_field_is_filled_and_noted(
     hass: HomeAssistant, hass_storage
 ):
-    """End to end through the real load: a record written by 0.23.3
-    carries no firmware history, and the first start of 0.23.4 fills
-    the field and records the version the registry gives."""
+    """End to end through the real load: a record written before firmware
+    history existed carries none, and the first start fills the field and
+    records the version the registry gives (rule STOR-19)."""
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="3.4.0")
     stored = _new_device_record("2026-07-01T00:00:00+00:00", TIME_BASE + 1000.0)

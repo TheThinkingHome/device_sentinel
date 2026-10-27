@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hostile_names.py, Version: 0.24.9 (2026-10-06)
+# File: tests/test_hostile_names.py, Version: 0.27.10 (2026-10-27)
 
-"""Names and typed text that could break a page (0.24.9, before Latest).
+"""Names and typed text that could break a page (rules CODE-10, DEV-05).
 
 A device name can come from the device itself, and a person can type a
 name or a battery. None of it may split a table, become a link or a

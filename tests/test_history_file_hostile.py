@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_hostile.py, Version: 0.26.2 (2026-10-13)
+# File: tests/test_history_file_hostile.py, Version: 0.27.10 (2026-10-27)
 
-"""Hostile history files (ruling #661, the adversarial round).
+"""Hostile history files (rule STOR-03).
 
 A history file damaged in any shape must never stop a start, never be
 joined into a record the main file holds clean, and never reach a

@@ -3,18 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_manifest_ruling.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_manifest_ruling.py, Version: 0.27.10 (2026-10-27)
 
-"""The manifest names frontend, mqtt, esphome, zha and lutron_caseta, and nothing else (rulings #515, #639, #652 and #663).
+"""The manifest names frontend, mqtt, esphome, zha and lutron_caseta, and
+nothing else (rules STACK-03, STACK-08, DASH-01).
 
-Rule 3 of the stack readers: Extended Diagnostics may read another
-integration's private state, and nothing goes in the manifest, so a
-reader of it never sees integrations Device Sentinel does not use.
-0.23.11 as first built broke it: its Thread probe imported
-homeassistant.components.thread, and Home Assistant's own validator,
-hassfest, refused the repository until the import was declared. The
-rule was kept and the import removed. This test holds both halves, so
-the gate catches what hassfest caught.
+Extended Diagnostics may read another integration's private state, and
+nothing goes in the manifest for it, so a reader of the manifest never
+sees integrations Device Sentinel does not use. Home Assistant's own
+validator, hassfest, refuses an undeclared import, so this test holds
+both halves and the gate catches what hassfest would.
 """
 
 from __future__ import annotations
@@ -33,17 +31,17 @@ ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs
 
 def test_the_manifest_declares_nothing_new():
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
-    # esphome since 0.26.0 (ruling #639): the one integration whose
-    # private state detection reads, named here so a reader of the
-    # manifest sees it, and loaded first so the flag is there at the
-    # first read. after_dependencies only: Device Sentinel starts
-    # without it. zha since 0.26.0 (ruling #652): the time ZHA last
-    # heard each device, read the same way.
-    # lutron_caseta since 0.26.3 (ruling #663): its hub's session,
-    # read to judge the hub up or down.
-    # frontend and panel_custom since 0.27.0 (ruling #721): the
-    # dashboard is registered through panel_custom, so both must be
-    # set up first, and frontend leaves the list loaded after.
+    # esphome: the one integration whose private state detection reads, named
+    # so a reader of the manifest sees it, and loaded first so the flag is
+    # there at the first read. after_dependencies only, so Device Sentinel
+    # starts without it (rule STACK-08).
+    # zha: the time ZHA last heard each device, read the same way
+    # (rule STACK-04).
+    # lutron_caseta: its hub's session, read to judge the hub up or down
+    # (rule STACK-09).
+    # frontend and panel_custom: the dashboard is registered through
+    # panel_custom, so both are set up first, and frontend leaves the list
+    # loaded after (rule DASH-01).
     assert manifest.get("after_dependencies") == ["esphome", "lutron_caseta", "mqtt", "zha"]
     assert manifest.get("dependencies") == ["frontend", "http", "panel_custom", "websocket_api"]
     assert "requirements" not in manifest

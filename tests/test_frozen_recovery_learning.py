@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_frozen_recovery_learning.py, Version: 0.26.0 (2026-10-12)
+# File: test_frozen_recovery_learning.py, Version: 0.27.10 (2026-10-27)
 
-"""What a frozen device's recovery teaches (ruling #638, retiring #166).
+"""What a frozen device's recovery teaches (rules FRZ-12, FRZ-19).
 
 A gap that ends while a device stands frozen is learned whole when the
 device ended the silence itself: the two freeze rules already set a
@@ -19,11 +19,6 @@ command is read from Home Assistant's own `call_service` event, so an
 automation's command counts the same as a hand. A command on an
 ordinary day, with no freeze standing, changes nothing; a taint still
 outranks everything.
-
-The cap this replaces, from 30 July, held a pulled battery's 74 minutes
-down to a 10-minute device's rhythm plus half. Under it Presence Guest
-on the reference rig was judged frozen 11 times in 92 days; without it,
-4 (the replay of 11 October 2026).
 """
 
 from datetime import timedelta
@@ -84,8 +79,8 @@ def _last_episode(coord, device_id):
 
 
 async def test_a_frozen_devices_own_recovery_is_learned_whole(hass: HomeAssistant, freezer):
-    """The 30 July case the cap was written for, under #638: the whole
-    74 minutes teach the device, because nothing says a hand ended it."""
+    """A pulled battery's 74 minutes on a 10-minute device: the whole gap
+    teaches the device, because nothing says a hand ended it (rule FRZ-12)."""
     device, eid = register_device(hass, "whole1", "Slow Device")
     coord = await setup_coordinator(hass)
     record = _armed(coord, device.id, 615.0)
@@ -100,10 +95,10 @@ async def test_a_frozen_devices_own_recovery_is_learned_whole(hass: HomeAssistan
 
 
 async def test_a_recovery_after_a_command_clears_and_teaches_nothing(hass: HomeAssistant, freezer):
-    """Tim Plas's workaround made honest: toggling a frozen device from
-    its card clears the alarm and teaches nothing. Driven through the
-    real handlers, with the render tick opening the silence episode as
-    the live system does, so the LEARNED cell is read as written."""
+    """Toggling a frozen device from its card clears the alarm and teaches
+    nothing (rule FRZ-19). Driven through the real handlers, with the
+    render tick opening the silence episode as the live system does, so
+    the LEARNED cell is read as written."""
     freezer.move_to("2026-10-11 15:00:00+00:00")
     device, eid = register_device(hass, "cmd1", "Coop Light")
     coord = await setup_coordinator(hass)
@@ -222,8 +217,7 @@ async def test_unconvicted_life_is_untouched(hass: HomeAssistant, freezer):
 
 async def test_a_clock_set_back_does_not_stretch_the_window(hass: HomeAssistant, freezer):
     """A command stamped before the system clock was set back two hours is
-    no reply to a report an hour later on the new clock (#538, found by
-    the adversarial round of 11 October)."""
+    no reply to a report an hour later on the new clock (rule FRZ-21)."""
     freezer.move_to("2026-10-11 15:00:00+00:00")
     device, eid = register_device(hass, "cmd9", "Clock Device")
     coord = await setup_coordinator(hass)
@@ -237,8 +231,7 @@ async def test_a_clock_set_back_does_not_stretch_the_window(hass: HomeAssistant,
 
 async def test_a_command_in_any_shape_home_assistant_accepts_is_read(hass: HomeAssistant):
     """Home Assistant accepts one string of comma-separated ids and any
-    letter case; the event carries the call as written (adversarial
-    round three, 12 October 2026)."""
+    letter case; the event carries the call as written (rule FRZ-19)."""
     device, eid = register_device(hass, "cmd10", "Comma Device")
     other, other_eid = register_device(hass, "cmd11", "Case Device")
     coord = await setup_coordinator(hass)
@@ -250,8 +243,8 @@ async def test_a_command_in_any_shape_home_assistant_accepts_is_read(hass: HomeA
 
 async def test_a_clock_step_moves_the_command_with_it(hass: HomeAssistant, freezer):
     """A reply three real seconds after a command is its reply, whatever
-    the clock did between (#538): the command moves with the other
-    moments (adversarial round three, 12 October 2026)."""
+    the clock did between: the command moves with the other moments
+    (rule FRZ-21)."""
     freezer.move_to("2026-10-11 15:00:00+00:00")
     device, eid = register_device(hass, "cmd12", "Step Device")
     coord = await setup_coordinator(hass)
@@ -267,8 +260,7 @@ async def test_a_clock_step_moves_the_command_with_it(hass: HomeAssistant, freez
 async def test_a_discarded_gap_gives_the_day_back_its_earlier_longest(hass: HomeAssistant, freezer):
     """A 90-minute quiet spell this morning, then a 12-hour freeze ended
     by a toggle: the toggle's gap is discarded and today's longest goes
-    back to the 90 minutes, rather than to nothing (ruling #641; found by
-    the adversarial round of 12 October 2026)."""
+    back to the 90 minutes, rather than to nothing (rule FRZ-15)."""
     freezer.move_to("2026-10-11 15:00:00+00:00")
     device, eid = register_device(hass, "cmd13", "Morning Device")
     coord = await setup_coordinator(hass)
@@ -284,7 +276,7 @@ async def test_a_discarded_gap_gives_the_day_back_its_earlier_longest(hass: Home
 
 def test_the_undo_leaves_a_larger_gap_alone():
     """Only the gap just learned is pulled back; a longer one from
-    earlier in the day was never replaced, so it stays (ruling #641)."""
+    earlier in the day was never replaced, so it stays (rule FRZ-15)."""
     from custom_components.device_sentinel.detect_freeze import FreezeMixin
 
     record = {DEV_TODAY_MAX: 9000.0}

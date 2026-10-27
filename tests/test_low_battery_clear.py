@@ -3,12 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_low_battery_clear.py, Version: 0.27.7 (2026-10-27)
+# File: test_low_battery_clear.py, Version: 0.27.10 (2026-10-27)
 
 """A low battery clears only above the threshold plus 3, and says when it
-crossed (rule BAT-03, Ruled Change 42): 18 percent at the default 15
-still reads low, and the brief and the push read "battery crossed the
-threshold on Oct 24. Its current level is 17%." """
+crossed (rule BAT-03): 18 percent at the default 15 still reads low, and
+the brief and the push read "battery crossed the threshold on Oct 24.
+Its current level is 17%."
+"""
 
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -69,9 +70,9 @@ async def test_back_above_the_line_no_number_is_given(hass: HomeAssistant):
 
 
 async def test_a_row_of_history_is_told_by_its_own_time(hass: HomeAssistant):
-    """First adversarial round of 0.27.7: the brief's sentence put the
-    row's time after the current level, and a table row borrowed the
-    device's latest crossing day."""
+    """The brief's sentence puts the row's time before the current level,
+    and a table row keeps its own crossing day, not the device's latest.
+    """
     from custom_components.device_sentinel.const import DATA_INCIDENTS, INC_KIND, TODO_KIND_LOW_BATTERY
 
     coord, _device, _eids, record = await _low(hass, 7)

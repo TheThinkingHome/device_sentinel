@@ -3,15 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.27.7 (2026-10-27)
+# File: test_journal.py, Version: 0.27.10 (2026-10-27)
 
-"""The forensic record: incidents, episodes, and system events.
+"""The record of incidents, episodes and system events, and what the
+brief says from it (rules LIST-09, LIST-11, BRIEF-16, STOR-18).
 
-One of the files split out of test_email_brief.py, which had
-grown larger than any source file in the project (ruling #203).
-The seam is the subject, the same rule the source split followed.
-Helpers are carried to every file that calls them rather than
-pooled, so each file reads on its own.
+Helpers are copied into each file that calls them, so each file reads
+on its own.
 """
 
 
@@ -117,10 +115,9 @@ def _register(hass, uid, name, battery=False, source=None):
 def _brief_text(hass):
     """Return the composed brief text of the newest write.
 
-    Since 0.10.18 the file on disk is the rendered HTML page; the
-    composed text remains the product these tests assert on, because
-    it is the message field, the persistent-notification body, and
-    the source the page is rendered from, so its prose is the prose.
+    The file on disk is the rendered page; the composed text is the
+    message field, the persistent card's body and the source of the
+    page, so its prose is the prose these tests read.
     """
     from custom_components.device_sentinel.const import DOMAIN
 
@@ -182,13 +179,11 @@ def _causes(coord, cause):
 async def test_the_unclean_restart_reads_as_english(
     hass: HomeAssistant
 ):
-    """The brief must not print the storage key.
+    """The brief never prints the storage key.
 
-    0.10.11 added the event and not its wording, so the composer fell
-    through to its last line and the brief read a bare
-    "unclean_restart" in both the prose and the table. Harmless to
-    judgment, and the first thing anyone reads on the morning after a
-    real one, which is exactly when the wording should be working.
+    An event kind with no wording falls through to its raw key, so the
+    brief would read a bare "unclean_restart" on the morning after a
+    real one, which is when the wording matters most (rule STOR-18).
     """
     coord = await setup_coordinator(hass)
     coord.data[DATA_SYSTEM_EVENTS] = [
@@ -213,9 +208,8 @@ async def test_the_unclean_restart_reads_as_english(
     sentence = coord._system_event_sentence(
         coord.data[DATA_SYSTEM_EVENTS][0]
     )
-    # The wording is the ruled one (ruling #376): the sentence says
-    # what the gap cost and stops. The count still leads the reader
-    # to it on the morning after, which is what this test guards.
+    # The sentence says what the gap cost and stops. The count still
+    # leads the reader to it on the morning after (rule BRIEF-03).
     assert (
         "120 devices had their silence timers restarted" in sentence
     )
@@ -225,13 +219,12 @@ async def test_the_unclean_restart_reads_as_english(
 async def test_every_system_event_kind_has_wording(
     hass: HomeAssistant
 ):
-    """The gate that would have caught 0.10.11's omission.
+    """Every system event kind has its own wording.
 
-    The composer names each kind and falls through to the raw key for
-    anything it does not know, so a kind added without wording is
-    silent until it appears in somebody's brief. This walks every kind
-    the integration can write and fails on any that still reads as its
-    own storage key.
+    The composer falls through to the raw key for any kind it does not
+    know, so a kind added without wording stays silent until it shows
+    in a brief. This walks every kind the integration can write and
+    fails on any that still reads as its storage key.
     """
     coord = await setup_coordinator(hass)
     kinds = (
@@ -291,8 +284,7 @@ async def test_opening_and_resolution_land_on_the_timeline(
 
 async def test_acknowledgement_is_recorded(hass: HomeAssistant):
     """The check lands on the timeline as an action, not as a
-    problem event. Rewritten in 0.10.4: it used to assert the
-    retired INCIDENT_ACKNOWLEDGED event."""
+    problem event."""
     device, entity_id, _ = _register(hass, "a1", "Acked Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "21.5")
@@ -301,8 +293,7 @@ async def test_acknowledgement_is_recorded(hass: HomeAssistant):
     uid = coord.todo_items[0]["uid"]
     await coord.async_todo_update(uid=uid, status="completed")
     assert len(_causes(coord, ACTION_ACKNOWLEDGED)) == 1
-    # The event this replaced, retired in 0.10.4 and its constant
-    # removed in 0.23.19, must not come back.
+    # The retired acknowledged event must not come back.
     assert _events(coord, "acknowledged") == []
 
 
@@ -432,8 +423,8 @@ async def test_resolution_borrows_its_cause(hass: HomeAssistant):
 
     resolved = _events(coord, INCIDENT_RESOLVED)
     assert resolved
-    # 0.7.6: not "on its own". We saw no lever, which is not the same
-    # as there having been none.
+    # Not "on its own": seeing no lever is not the same as there
+    # having been none.
     assert resolved[-1][INC_CAUSE] == RECOVERY_CAUSE_UNOBSERVED
 
 
@@ -475,8 +466,8 @@ async def test_incidents_reach_diagnostics(hass: HomeAssistant):
 
 
 async def test_startup_storm_is_named_a_restart(hass: HomeAssistant):
-    """The folded 0.6.9 fix: every device reporting at once after a
-    restart looks like a bridge reconnect, and is not one."""
+    """Every device reporting at once after a restart looks like a
+    bridge reconnect, and is not one."""
     from custom_components.device_sentinel.const import (
         EPISODE_ENDED_RESTART,
         EP_ENDED,
@@ -570,13 +561,11 @@ async def test_a_restart_stamps_everything(hass: HomeAssistant):
 async def test_diagnostics_carry_the_support_fields(
     hass: HomeAssistant,
 ):
-    """last_version, the awaiting counts, and per-device entities.
+    """last_version, the Switched Off counts, and per-device entities.
 
-    The three additions of ruling #305, each closing a question the
-    first external fleet's files could not answer: whether an
-    upgrade start was detected, whether the enable buttons have work
-    waiting, and whether a silent device is off, disabled, or
-    unheard.
+    Each answers a question a house's files could not: whether an
+    upgrade start was seen, whether a sensor is switched off, and
+    whether a silent device is off, disabled or unheard (rule STOR-21).
     """
     from homeassistant.helpers import entity_registry as er
 
@@ -599,9 +588,8 @@ async def test_diagnostics_carry_the_support_fields(
     diag = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diag["storage"]["last_version"] == coord.version
-    # The Switched Off cards' counts (ruling #698), in place of the
-    # retired Enable buttons' awaiting counts (#696), Battery Voltage
-    # Switched Off included since 0.27.4.
+    # The Switched Off cards' counts, Battery Voltage included
+    # (rule REC-05).
     assert set(diag["switched_off"]) == {
         "signal",
         "last_seen",
@@ -616,24 +604,19 @@ async def test_diagnostics_carry_the_support_fields(
     assert battery_rows[0]["state"] == "77"
 
 
-# --------------------------------- the opening and its resolve, 0.21.10
+# ------------------------------------------- the opening and its resolve
 
 
 async def test_an_opening_survives_while_its_problem_is_listed(
     hass: HomeAssistant, freezer
 ):
-    """Ruling #438. Found on hardware, 15 September.
+    """An opening is kept while its problem is still listed (rule LIST-11).
 
-    A vibration sensor went unavailable on 26 August and came back
-    twenty days later. The brief said "recovered after ?" because the
-    incident log trims every row older than fourteen days, and it
-    trims by each row's own timestamp rather than by the life of the
-    problem: the opening aged out on 9 September while the fault was
-    still live and still on the to-do list.
-
-    An opening whose problem is still listed is not history, it is
-    current state that happens to be old. It ages normally once the
-    problem leaves the list for good.
+    A sensor down twenty days read "recovered after ?" because the
+    incident log trims each row by its own age, so the opening aged
+    out while the fault was still on the list. An opening whose
+    problem is still listed is current state that happens to be old.
+    It ages normally once the problem leaves the list for good.
     """
     device, entity_id, _ = _register(hass, "v1", "Vibration FJ40")
     coord = await setup_coordinator(hass)
@@ -648,9 +631,8 @@ async def test_an_opening_survives_while_its_problem_is_listed(
     assert len(opened) == 1
 
     # Twenty days pass with the problem still on the list, and some
-    # other device writes an incident. That write is what runs the
-    # trim, which is why the reference fleet lost this opening: a
-    # busy house trims a quiet device's row as collateral.
+    # other device writes an incident. That write runs the trim, so a
+    # busy house would trim a quiet device's row as collateral.
     other, other_entity, _ = _register(hass, "v9", "Another Sensor")
     freezer.tick(timedelta(days=20))
     hass.states.async_set(other_entity, "1")
@@ -668,10 +650,9 @@ async def test_an_opening_survives_while_its_problem_is_listed(
 async def test_the_resolve_carries_the_duration_it_was_given(
     hass: HomeAssistant, freezer
 ):
-    """The caller computes a fallback start time from the to-do row
-    and then does not hand it over, so the resolve recomputes from
-    the log and finds nothing. Ruling #367 exists because that
-    fallback was needed; it was written and never wired through.
+    """The caller hands the fallback start time from the to-do row to
+    the resolve, so the resolve does not recompute from the log and
+    find nothing (rule LIST-09).
     """
     device, entity_id, _ = _register(hass, "v2", "Vibration FJ40")
     coord = await setup_coordinator(hass)
@@ -706,9 +687,8 @@ async def test_the_resolve_carries_the_duration_it_was_given(
 async def test_a_recovery_with_no_duration_says_so_plainly(
     hass: HomeAssistant,
 ):
-    """Ruling #438's companion. Where nothing can measure the gap,
-    the brief said "recovered after ?", which is what the reference
-    rig printed on 15 September for a sensor down twenty days.
+    """Where nothing can measure the gap, the sentence does not say
+    "recovered after ?" (rule LIST-11).
     `_human_span` is right to answer a bare column with a question
     mark; a sentence is not a column."""
     coord = await setup_coordinator(hass)

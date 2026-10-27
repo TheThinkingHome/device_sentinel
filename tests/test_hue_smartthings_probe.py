@@ -3,16 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hue_smartthings_probe.py, Version: 0.26.4 (2026-10-15)
+# File: tests/test_hue_smartthings_probe.py, Version: 0.27.10 (2026-10-27)
 
-"""Hue and SmartThings in Extended Diagnostics, read more fully (0.26.4).
+"""Hue and SmartThings in Extended Diagnostics, read more fully
+(rules STACK-11, STACK-13).
 
-Sampling only: once a minute, from memory, nothing sent to a bridge
-or a cloud and no callback added to either library. The bridge and
-the location are the real libraries (tests/hue_smartthings_fakes.py),
-so a renamed field or a changed enum fails here rather than in a
-house. The last tests hand the readers libraries that are broken in
-every way found, and the minute check must carry on.
+Sampling only: once a minute, from memory, nothing sent to a bridge or
+a cloud and no callback added to either library. The bridge and the
+location are the real libraries (tests/hue_smartthings_fakes.py), so a
+renamed field or a changed enum fails here rather than in a house. The
+last tests hand the readers libraries that are broken in every way
+found, and the minute check must carry on.
 """
 
 from __future__ import annotations
@@ -138,19 +139,18 @@ async def test_hue_reads_the_bridge_and_each_device(hass: HomeAssistant):
     (bridge,) = probe_lines(coord, "bridge")
     assert bridge[PROBE_NOW] == "connected"
     assert bridge[PROBE_DETAIL].startswith("firmware 1.70.1970019010, ")
-    if hasattr(api.devices, "get_software_update"):  # aiohue 4.9.0 on 2026.10
+    if hasattr(api.devices, "get_software_update"):  # the newer aiohue, on Home Assistant 2026.10
         assert "update ready to install" in bridge[PROBE_DETAIL]
-    else:  # aiohue 4.8.1 on 2026.5 has no update state, and says nothing
+    else:  # the older aiohue, on 2026.5, has no update state and says nothing
         assert "update" not in bridge[PROBE_DETAIL]
     assert "entry loaded" in bridge[PROBE_DETAIL]
     assert "Device Sentinel" in bridge[PROBE_DETAIL]
 
 
 async def test_a_stream_outage_reads_down_and_its_devices_stale(hass: HomeAssistant):
-    """aiohue holds CONNECTING through every wait to reconnect, so an
-    outage read "connecting" before 0.26.4; it reads down. The
-    entities keep their last state, so the bridge's word on each device
-    is stale and gives no opinion."""
+    """aiohue holds CONNECTING through every wait to reconnect, so an outage
+    reads down, not "connecting". The entities keep their last state, so
+    the bridge's word on each device is stale and gives no opinion."""
     api, _entry_ = await _house(hass)
     coord = await _studied(hass, "Philips Hue")
     coord.probe_tick(1000.0)
@@ -221,8 +221,8 @@ async def test_the_ignore_list_is_described_as_hue_applies_it(hass: HomeAssistan
 
 
 async def test_two_bridges_have_a_line_each(hass: HomeAssistant):
-    """Two bridges shared the node name "bridge" before 0.26.4, so the
-    probe read them as one flipping between their two states."""
+    """Two bridges share the node name "bridge", so the probe must not read
+    them as one flipping between their two states."""
     upstairs = await hue_api(hue_bridge_resources() + hue_lamp(LAMP, "Hall lamp"))
     downstairs = await hue_api(hue_bridge_resources() + hue_lamp(MOTION, "Den lamp"))
     up = _entry(hass, HUE_DOMAIN, hue_runtime(upstairs), title="Hue Bridge 001788fffe6a1b2c")
@@ -296,8 +296,7 @@ async def _socket(hass, entry):
 
 
 def test_smartthings_types_say_how_a_device_reaches_the_cloud():
-    """Before 0.26.4 a hub, which carries hub data, was read as a
-    device behind a hub."""
+    """A hub, which carries hub data, is not read as a device behind a hub."""
     assert smartthings_network("HUB") == "a SmartThings hub"
     for kind in ("ZIGBEE", "ZWAVE", "MATTER", "LAN", "EDGE_CHILD"):
         assert smartthings_network(kind) == "behind a SmartThings hub"
@@ -397,7 +396,8 @@ async def test_two_locations_have_a_line_each(hass: HomeAssistant):
 
 async def test_another_integrations_entity_is_not_the_device(hass: HomeAssistant):
     """A Battery Notes entity on an offline SmartThings device stays
-    available; the row reads the device's own entities only (#404)."""
+    available; the row reads the device's own entities only
+    (rule WATCH-02)."""
     entry, _client = _location(hass, [st_device(CONTACT, "Garage contact", "ZIGBEE", parent=HUB)])
     contact, contact_entity = _device(hass, entry, SMARTTHINGS_DOMAIN, CONTACT, "Garage contact")
     notes = er.async_get(hass).async_get_or_create(

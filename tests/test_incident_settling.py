@@ -3,17 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_incident_settling.py, Version: 0.16.20 (2026-08-22)
+# File: tests/test_incident_settling.py, Version: 0.27.10 (2026-10-27)
 
-"""The recorder's cooling-off, and the phone's (ruling #318).
+"""The recorder's cooling-off, and the phone's (rule LIST-06).
 
-Two rules from one fleet's data. A propane sensor whose battery
-reading swings wrote 3,637 incident rows in five days, 94 percent of
-that fleet's whole history, because every threshold crossing wrote a
-pair and nothing stopped it. And a coordinator unplugged for four
-days pushed at every restart, because the verdict moved between two
-ways of saying the same thing and the correction registered as a new
-problem arriving.
+A battery reading that swings around a threshold would write a pair of
+incident rows at every crossing, thousands in a few days, if nothing
+stopped it. And a coordinator unplugged for days would push at every
+restart if the verdict moving between two ways of saying the same
+thing registered as a new problem arriving.
 """
 
 from __future__ import annotations

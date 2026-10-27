@@ -3,20 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.27.7 (2026-10-27)
+# File: test_notifications.py, Version: 0.27.10 (2026-10-27)
 
-"""The config-flow backbone, the notification surface, and the engine.
+"""The config-flow backbone, the notification surface, and the engine
+(rules NOTE-01 to NOTE-11).
 
 The integration installs with zero questions and a single instance, and
 its status sensor proves persistence across restarts. Its notification
-surface mirrors the Sentinel Notify model: two target lists (high gets
-every push at any hour, normal every push outside Quiet Hours), a
-persistent card, quiet hours, and the daily brief schedule. The engine sends per-family
-pushes, a fault audible on the phone's own sound and a recovery silent,
-and a self-overwriting card, all reading the same acknowledged-aware
-problem lists the sensors publish. The problem counts are opt-in and
-the exclusions picker offers only integrations that own a watched
-device. This file holds all of that: install, surface, and engine.
+surface has two target lists (high gets every push at any hour, normal
+every push outside Quiet Hours), a persistent card, quiet hours, and
+the daily brief schedule. The engine sends per-family pushes, a fault
+audible on the phone's own sound and a recovery silent, and a
+self-overwriting card, all reading the same acknowledged-aware problem
+lists the sensors publish. The problem counts are opt-in and the
+exclusions picker offers only integrations that own a watched device.
 """
 
 import json
@@ -90,9 +90,9 @@ MANIFEST_VERSION = json.loads(
 async def test_flow_creates_entry_with_zero_questions(hass: HomeAssistant):
     """Opening the flow creates the entry immediately, no form.
 
-    This is the install flow, not the options menu. Ruling #313 moved
-    the six option sections off create-entry and onto the menu; this
-    one call is what creating the entry is for and it stays.
+    This is the install flow, not the options menu. The option sections
+    live on the menu; this one call is what creating the entry is for
+    (rule CFG-01).
     """
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -328,7 +328,7 @@ class _Harness(NotifierMixin):
         self._suppressed = suppressed or {}
         self.sent = []
         # The card is on here because these tests are about what it
-        # says; its default is off for a new install (ruling #462).
+        # says; its default is off for a new install (rule NOTE-11).
         self.entry = type("E", (), {"options": {"persistent_enabled": True}})()
         self.hass = type(
             "H", (), {"services": type("S", (), {})()}
@@ -339,9 +339,9 @@ class _Harness(NotifierMixin):
 
         self.hass.services.async_call = async_call
 
-    # The card is raised through Home Assistant's own helpers since
-    # 0.23.19; recorded here in the shape a service call had, so each
-    # test reads it as before.
+    # The card is raised through Home Assistant's own helpers; it is
+    # recorded here in the shape of a service call, so each test reads
+    # it the same way.
     def _card_show(self, message):
         self.sent.append(("persistent_notification", "create", {
             "notification_id": NOTIFY_CARD_ID, "title": "Device Sentinel", "message": message,
@@ -357,7 +357,7 @@ class _Harness(NotifierMixin):
         return self._high
 
     def hub_problem_words(self, device_id):
-        # No hubs here (0.26.3).
+        # No hubs here.
         return None
 
     def _in_startup_grace(self):
@@ -370,7 +370,7 @@ class _Harness(NotifierMixin):
 
     @property
     def battery_falling_list(self):
-        """The card reads two battery sources, not one (#220)."""
+        """The card reads two battery sources, not one (rule NOTE-10)."""
         return self._falling
 
     @property
@@ -383,14 +383,14 @@ class _Harness(NotifierMixin):
 
     @property
     def flapping_list(self):
-        """No device in a flap unless a test says so (0.23.2)."""
+        """No device in a flap unless a test says so."""
         return []
 
     @property
     def reportable_down_rows(self):
-        """What the card and the pushes read (ruling #266): the down
-        devices worth naming, which is all of them unless an upstream
-        is masking some."""
+        """What the card and the pushes read: the down devices worth
+        naming, which is all of them unless an upstream is masking some
+        (rule UP-05)."""
         return self._freeze
 
     @property
@@ -430,8 +430,8 @@ async def test_family_summary_reads_the_lists():
     assert "Battery X 20%" in summary
     assert "Battery U low" in summary
 
-    # The card reads two battery sources (#220). A cell that is both
-    # reads level then direction in one entry; a cell that is only
+    # The card reads two battery sources (rule NOTE-10). A cell that is
+    # both reads level then direction in one entry; a cell that is only
     # falling stands on its own.
     h = _Harness(
         ["notify.phone"],
@@ -449,7 +449,7 @@ async def test_family_summary_reads_the_lists():
 async def test_events_dropped_in_quiet_hours():
     """Inside Quiet Hours a normal-priority target gets no push; the
     card and brief carry the state. A high-priority target still gets
-    it (rule NOTE-07, ruled 25 October 2026)."""
+    it (rule NOTE-07)."""
     h = _Harness(["notify.phone"], battery=[{"name": "X", "level": 10}])
     h.entry.options = {
         CONF_NORMAL_PRIORITY_TARGETS: ["notify.tablet"],
@@ -560,9 +560,9 @@ async def test_full_path_battery_fault_fires_and_updates_card(hass, freezer):
 
 def test_signal_summary_says_railed_not_low():
     """A railed device must read railed, not low: the signal list tags
-    rows by kind, and the card must not call a rail a low. This
-    is the fleet bug from 2026-07-25 where Window Living Room Left
-    (signal_railed True, value 255) showed on the card as low."""
+    rows by kind, and the card must not call a rail a low, as it would
+    for Window Living Room Left (signal_railed True, value 255)
+    (rule SIG-07)."""
     h = _Harness(
         ["notify.phone"],
         signal=[
@@ -594,10 +594,10 @@ def test_freeze_summary_uses_system_words():
 
 
 def test_acknowledged_device_is_hidden_from_summary():
-    """An acknowledged problem is invisible to humans everywhere,
-    including the card and pushes (#109). This is the fleet case:
-    Window Living Room Left is railed and acknowledged, so it must not
-    appear in the signal summary at all."""
+    """An acknowledged problem is invisible to people everywhere,
+    including the card and pushes (rule NOTE-08). Window Living Room
+    Left is railed and acknowledged, so it must not appear in the
+    signal summary at all."""
     h = _Harness(
         ["notify.phone"],
         signal=[
@@ -646,7 +646,7 @@ async def test_card_omits_acknowledged_device():
 async def test_card_suppressed_and_dismissed_when_toggle_off():
     """With the persistent-card toggle off, no card is created and any
     existing card is dismissed, so turning the setting off removes it
-    (0.9.8, wiring CONF_PERSISTENT_ENABLED)."""
+    (rule NOTE-11)."""
     from custom_components.device_sentinel.const import (
         CONF_PERSISTENT_ENABLED,
         NOTIFY_CARD_ID,
@@ -683,7 +683,7 @@ async def test_card_created_when_toggle_on():
 
 async def test_card_default_off_when_option_absent():
     """With no option set, the card is off: nothing is created, and a
-    card left over from before is dismissed (ruling #462)."""
+    card left over from before is dismissed (rule NOTE-11)."""
     h = _Harness(
         ["notify.phone"],
         freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
@@ -697,17 +697,14 @@ async def test_card_default_off_when_option_absent():
 # Entity defaults and the integration picker.
 # ==================================================================
 
-# The problem-count and tracked-count defaults moved twice: opt-in at
-# birth, enabled by #212 when no list carried a weak link, and back to
-# opt-in by #239 once every kind reached the problem list and the
-# facts under #212 had gone stale. The single home for the whole
-# defaults table is tests/test_entity_defaults.py, asserted as one
-# dictionary so a flip is always a decision; nothing here repeats it.
+# The single home for the problem-count and tracked-count defaults is
+# tests/test_entity_defaults.py, asserted as one dictionary so a flip
+# is always a decision; nothing here repeats it (rule CFG-08).
 
 async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
-    """Opt-in under #212 and carried forward by #239. It answers why
-    a particular device is not watched, which is asked once if ever,
-    so it belongs in the registry rather than on the page."""
+    """Opt-in. It answers why a particular device is not watched, which
+    is asked once if ever, so it belongs in the registry rather than on
+    the page (rule CFG-08)."""
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
     eid = reg.async_get_entity_id(
@@ -718,13 +715,12 @@ async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
 
 
 async def test_battery_low_is_a_primary_sensor(hass: HomeAssistant):
-    """Battery: Low sits with the primary sensors (ruling #247).
+    """Battery: Low sits with the primary sensors (rule CFG-09).
 
     A count of what was found is news about the house rather than
-    bookkeeping about the integration, the same line #243 drew for
-    the bridge and broker. This test asserted DIAGNOSTIC until the
-    split; the bookkeeping counts (classification and the three
-    tracked totals) still do.
+    bookkeeping about the integration, the same line drawn for the
+    bridge and broker. The bookkeeping counts (classification and the
+    three tracked totals) stay diagnostic.
     """
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
@@ -938,7 +934,7 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
     )
     coord = entry.runtime_data
     # Past the startup grace, inside which nothing is judged or
-    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    # pushed (rule WATCH-10); this test is not about a start.
     coord._grace_until = 0.0
     calls = _phone_capture(hass)
     hass.states.async_set(eid, "21.5")
@@ -958,16 +954,15 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
 T0 = 1786000000.0
 
 
-# ------------------------ the two line tables stay apart (#331)
+# ------------------------------------------ the two line tables stay apart
 
 async def test_a_fault_line_and_a_recovery_line_stay_apart(
     hass: HomeAssistant,
 ) -> None:
-    """Two tables, one variable name, until this release.
+    """The fault and recovery line tables stay apart.
 
     The recovery table holds a sentence and the fault table holds a
-    pair of them, and both were read into the same name. Renaming
-    one is only safe if the two paths are pinned.
+    pair of them, so both paths are pinned in case one is renamed.
     """
     coord = await setup_coordinator(hass)
     fault = coord._event_line(
@@ -979,7 +974,7 @@ async def test_a_fault_line_and_a_recovery_line_stay_apart(
     assert "Door Laundry" in fault
     assert "Door Laundry" in recovery
     assert fault != recovery
-    # Neither may leak a raw key at a person (ruling #215).
+    # Neither may leak a raw key at a person (rule LIST-02).
     assert "_" not in fault.replace("Door Laundry", "")
     assert "_" not in recovery.replace("Door Laundry", "")
 
@@ -1084,11 +1079,11 @@ async def test_card_failed_write_is_tried_again():
     assert len(_creates(h)) == 1
 
 
-# ------------------------------------------ the card's link, 0.23.10
+# ------------------------------------------------------- the card's link
 
-# From Tim Plas: the card names a few devices and counts the rest, and
-# the place that names them all is the Problem List. A card that lists
-# anything ends with a link there; the all-clear has nothing to open.
+# The card names a few devices and counts the rest, and the place that
+# names them all is the Problem List. A card that lists anything ends
+# with a link there; the all-clear has nothing to open (rule NOTE-11).
 
 
 def _problem_list_slug() -> str:
@@ -1134,7 +1129,7 @@ async def test_the_all_clear_card_carries_no_link():
 
 
 async def test_the_link_does_not_rewrite_an_unchanged_card():
-    """Ruling #454: the card is written only when its words change."""
+    """The card is written only when its words change (rule NOTE-11)."""
     from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
 
     h = _Harness(
