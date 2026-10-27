@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.5 (2026-10-25)
+# File: detect_freeze.py, Version: 0.27.6 (2026-10-26)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -1183,6 +1183,13 @@ class FreezeMixin:
             self._note_frozen_listing(device_id, record, now)
         elif current == FREEZE_CATEGORY_FROZEN:
             self._note_frozen_cleared(device_id, now)
+        # Its own entities' last good values are kept from the verdict's
+        # start, in this same immediate save, and forgotten when it ends,
+        # a mute taking it away included (rule WATCH-12).
+        if category is None:
+            self._release_values(device_id, record)  # type: ignore[attr-defined]
+        elif current is None:
+            self._hold_values(device_id, record)  # type: ignore[attr-defined]
         if category is None:
             record[DEV_FROZEN_SINCE] = None
         elif current is None:
@@ -1210,8 +1217,10 @@ class FreezeMixin:
         A device that reports is alive by definition, so its verdict
         and the down-since stamp are cleared at once. Called from the
         report path, this is the live-recovery half of detection: the
-        moment a frozen device speaks, it leaves the report.
+        moment a frozen device speaks, it leaves the report. Its held
+        values and its watch end with it (rule WATCH-12).
         """
+        self._release_values(device_id, record)  # type: ignore[attr-defined]
         if record.get(DEV_FROZEN_CATEGORY) is not None:
             if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
                 self._note_frozen_cleared(device_id, dt_util.utcnow().timestamp())

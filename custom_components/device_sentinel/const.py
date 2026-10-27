@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.5 (2026-10-26)
+# File: const.py, Version: 0.27.6 (2026-10-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1592,6 +1592,18 @@ SERIES_SIGNAL = (
 DEV_FROZEN_CATEGORY = "frozen_category"
 DEV_FROZEN_SINCE = "frozen_since"
 DEV_DOWN_BEGAN_AS = "down_began_as"
+# The last good value of each of the device's own entities, kept from
+# the moment a verdict starts until it ends: {entity registry id: state}.
+# Keyed by the registry id, so a renamed entity keeps its value. After a
+# restart, a reload or an entity added again, the integration handing
+# back the same value is its cache, not the device speaking. In the main
+# file, written in the verdict's own save (rule WATCH-12).
+DEV_HELD_VALUES = "held_values"
+# The longest state Home Assistant keeps, and so the longest held value.
+HELD_VALUE_LENGTH = 255
+# Sensors whose value is worked out again at each start, so it never
+# says whether the device spoke (rule WATCH-12).
+UNHELD_DEVICE_CLASSES = frozenset({"timestamp", "duration"})
 
 
 # What a statistics epoch keeps. The wipe is everything else, taken

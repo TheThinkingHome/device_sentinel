@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.5 (2026-10-26)
+# File: coordinator.py, Version: 0.27.6 (2026-10-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -88,6 +88,7 @@ from .normalise import (
     check_clocks,
     check_containers,
     check_records,
+    drop_damaged_held_values,
     fault_id,
     repair_containers,
     repair_tables,
@@ -206,6 +207,9 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_HELD_VALUES,
+    HELD_VALUE_LENGTH,
+    UNHELD_DEVICE_CLASSES,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
     DEV_DOWN_SINCE,
@@ -731,6 +735,18 @@ class DeviceSentinelCoordinator(
         # Entities just renamed, whose first state under the new id is
         # Home Assistant moving the old one across, not the device (#647).
         self._renamed_entities: set[str] = set()
+        # The values a device's own entities last held (rule WATCH-12):
+        # each voting entity's registry id against its entity id, the
+        # last good value of each (by registry id), heard from both
+        # state handlers and read from the state machine at setup, and,
+        # per device, the registry ids on watch after a restart, a
+        # reload or an entity added again. Own entities that never vote
+        # (timestamp and duration sensors) are kept apart, so they
+        # cannot speak for a device on watch either.
+        self._held_keys: dict[str, str] = {}
+        self._unheld_own: set[str] = set()
+        self._last_good: dict[str, str] = {}
+        self._on_watch: dict[str, set[str]] = {}
         # The devices set aside at the last registry rebuild, so a
         # return and a new stretch are each seen once, as they happen
         # (#648; adversarial round thirteen). None before the first
@@ -1604,6 +1620,14 @@ class DeviceSentinelCoordinator(
             # shape, and before the first reader. From this line on
             # no reader in the process meets a record or a table row
             # the check would not vouch for.
+            # A damaged held value costs only its own entity's watch: it
+            # is dropped here, the sound ones kept (rule WATCH-12).
+            dropped_held = drop_damaged_held_values(loaded.get(DATA_DEVICES))
+            if dropped_held:
+                LOGGER.info(
+                    "Storage load: %d damaged held value(s) dropped",
+                    dropped_held,
+                )
             filled = fill_missing_row_fields(loaded)
             if filled:
                 LOGGER.info(
@@ -1831,6 +1855,10 @@ class DeviceSentinelCoordinator(
         # still waits would otherwise write the stored list with only
         # itself, and the earlier ones would be lost (rule WATCH-10).
         self._restore_held_recoveries()
+        # This start is a restart or a reload: each device with held
+        # values has its entities put on watch before the first state
+        # is heard (rule WATCH-12).
+        self._arm_held_watches()
         self._unsubs.append(
             self.hass.bus.async_listen(
                 "state_changed",
@@ -2548,6 +2576,8 @@ class DeviceSentinelCoordinator(
         # devices with an enabled firmware notice or command button.
         enabled_real: set[str] = set()
         enabled_notice: set[str] = set()
+        held_keys: dict[str, str] = {}
+        unheld_own: set[str] = set()
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
                 deviceless += 1
@@ -2618,6 +2648,22 @@ class DeviceSentinelCoordinator(
                     device_entries.setdefault(ent.device_id, set()).add(
                         ent.config_entry_id
                     )
+                # Which of its own entities can hold a value for a
+                # device with a verdict: never a firmware notice, a
+                # button or another command, nor the stack's own word
+                # on the node, and never a timestamp or duration sensor,
+                # whose value is worked out again at each start (rule
+                # WATCH-12).
+                if (
+                    ent.domain not in NOTICE_DOMAINS
+                    and ent.entity_id not in stack_words
+                    and node_status_entity.get(ent.device_id) != ent.entity_id
+                ):
+                    device_class = ent.device_class or ent.original_device_class
+                    if device_class in UNHELD_DEVICE_CLASSES:
+                        unheld_own.add(ent.entity_id)
+                    else:
+                        held_keys[ent.entity_id] = ent.id
             # A muted label mutes the device that carries it, never an
             # entity (ruling #642): Device Sentinel judges devices, and
             # a label on one entity, often put there for a dashboard or
@@ -2767,6 +2813,16 @@ class DeviceSentinelCoordinator(
             if entity_id not in foreign_entities:
                 own_entities.setdefault(owner, []).append(entity_id)
         self._own_entities = own_entities
+        # The entities that hold a value for a device with a verdict,
+        # and the last good values of only those (rule WATCH-12).
+        self._held_keys = held_keys
+        self._unheld_own = unheld_own
+        live_keys = set(held_keys.values())
+        self._last_good = {
+            key: value for key, value in self._last_good.items() if key in live_keys
+        }
+        # A device watched again, or new, starts from what it shows now.
+        self._seed_last_good()
         self._main_entities = {
             device_id: {e for e in entities if e not in foreign_entities}
             for device_id, entities in main_entities.items()
@@ -3204,6 +3260,221 @@ class DeviceSentinelCoordinator(
         window = self._freeze_window(record)
         return window is not None and aside - last >= window
 
+    # ------------------------------------------ values handed back
+
+    def _holds_values(self, device_id: str) -> bool:
+        """Whether this device keeps its last good values while a
+        verdict stands (rule WATCH-12).
+
+        Not a device with a Last Seen entity, which is the stack's own
+        record of hearing it; not one whose stack keeps that clock for
+        it (ruling #652, as ZHA does), asked of the stack itself so this
+        file names none; and not one on an integration that fetches its
+        readings from the device, whose reading is the device answering.
+        A stack clock that cannot be read leaves the device judged as one
+        without, as #652 does everywhere.
+        """
+        domain = self._watched.get(device_id)
+        return (
+            domain is not None
+            and device_id not in self._last_seen_entity
+            and domain not in FETCHING_INTEGRATIONS
+            and stack_last_heard(self.hass, domain, device_id) is None
+        )
+
+    def _held_entities(self, device_id: str) -> dict[str, str]:
+        """The device's entities that can hold a value, each with its
+        registry id (rule WATCH-12)."""
+        return {
+            entity_id: self._held_keys[entity_id]
+            for entity_id in self._own_entities.get(device_id, ())
+            if entity_id in self._held_keys
+        }
+
+    @staticmethod
+    def _good_value(state: str) -> bool:
+        """Whether a state is a value that can be held and compared
+        (rule WATCH-12). Unavailable and unknown are never values, nor
+        is the empty text an action sensor rests at after a press."""
+        return state not in BAD_STATES and 0 < len(state) <= HELD_VALUE_LENGTH
+
+    def _note_good(self, entity_id: str, state: str) -> None:
+        """Remember an entity's latest good value, for the moment a
+        verdict starts (rule WATCH-12)."""
+        key = self._held_keys.get(entity_id)
+        if key is not None and self._good_value(state):
+            self._last_good[key] = state
+
+    def _seed_last_good(self) -> None:
+        """Take each entity's value from the state machine at each
+        registry rebuild, setup's included, so a verdict starting before
+        its next change still has it (rule WATCH-12)."""
+        for entity_id in self._held_keys:
+            state = self.hass.states.get(entity_id)
+            if state is not None:
+                self._note_good(entity_id, state.state)
+
+    def _hold_values(self, device_id: str, record: dict[str, Any]) -> None:
+        """Keep the device's last good values as its verdict starts, in
+        the verdict's own save (rule WATCH-12)."""
+        held = (
+            {
+                key: self._last_good[key]
+                for key in self._held_entities(device_id).values()
+                if key in self._last_good
+            }
+            if self._holds_values(device_id)
+            else {}
+        )
+        record[DEV_HELD_VALUES] = held or None
+        self._dirty = True
+
+    def _release_values(self, device_id: str, record: dict[str, Any]) -> None:
+        """Forget the held values and end the watch: the verdict is over,
+        or the device has spoken, or it is no longer watched (rule
+        WATCH-12)."""
+        self._on_watch.pop(device_id, None)
+        if record.get(DEV_HELD_VALUES) is not None:
+            record[DEV_HELD_VALUES] = None
+            self._dirty = True
+
+    def _arm_held_watches(self) -> None:
+        """Put each held entity on watch at setup, which follows a
+        restart or a reload (rule WATCH-12). Held values with no verdict
+        behind them, or on a device that no longer keeps them, go."""
+        self._on_watch = {}
+        records = self.data.get(DATA_DEVICES) or {}
+        for device_id, record in records.items():
+            if not isinstance(record, dict) or record.get(DEV_HELD_VALUES) is None:
+                continue
+            held = record[DEV_HELD_VALUES]
+            if device_id not in self._watched:
+                continue
+            if record.get(DEV_FROZEN_CATEGORY) is None or not self._holds_values(device_id):
+                self._release_values(device_id, record)
+                continue
+            entities = {
+                entity_id: key
+                for entity_id, key in self._held_entities(device_id).items()
+                if key in held
+            }
+            if any(
+                (state := self.hass.states.get(entity_id)) is not None
+                and self._good_value(state.state)
+                and not self._same_value(held[key], state.state)
+                for entity_id, key in entities.items()
+            ):
+                # Already showing a value other than the one it held: the
+                # device spoke while nobody was listening, so it is judged
+                # on what it shows now (rule WATCH-12).
+                self._release_values(device_id, record)
+                continue
+            if entities:
+                self._on_watch[device_id] = set(entities.values())
+
+    def _arm_entity_watch(self, entity_id: str) -> None:
+        """Put one entity on watch when it is removed, or Home Assistant
+        writes its placeholder as an integration reloads: the value
+        coming next is the one it held (rule WATCH-12)."""
+        mapped = self._entity_map.get(entity_id)
+        key = self._held_keys.get(entity_id)
+        if mapped is None or key is None:
+            return
+        device_id = mapped[0]
+        record = self.data.get(DATA_DEVICES, {}).get(device_id)
+        if not isinstance(record, dict) or record.get(DEV_FROZEN_CATEGORY) is None:
+            return
+        held = record.get(DEV_HELD_VALUES)
+        if isinstance(held, dict) and key in held and self._holds_values(device_id):
+            self._on_watch.setdefault(device_id, set()).add(key)
+
+    @staticmethod
+    def _same_value(held: str, state: str) -> bool:
+        """Whether a value is the one held: as numbers when both read as
+        numbers, so 21.5 is 21.50, and otherwise as text without case
+        (rule WATCH-12)."""
+        try:
+            first, second = float(held), float(state)
+        except ValueError:
+            pass
+        else:
+            if math.isfinite(first) and math.isfinite(second):
+                return first == second
+        return held.casefold() == state.casefold()
+
+    def _read_on_watch(
+        self, device_id: str, entity_id: str, state: str
+    ) -> str | None:
+        """What a state change means for a device on watch (rule WATCH-12).
+
+        "cache" when it is the held value handed back, or an own entity
+        that never votes; "spoke" when a held entity reads a different
+        value, which ends the watch and the held values; None when it is
+        read as it always was, as an absence is.
+        """
+        watch = self._on_watch.get(device_id)
+        if not watch:
+            return None
+        key = self._held_keys.get(entity_id)
+        if key is None:
+            return "cache" if entity_id in self._unheld_own else None
+        if key not in watch or not self._good_value(state):
+            return None
+        record = self.data[DATA_DEVICES].get(device_id)
+        held = record.get(DEV_HELD_VALUES) if isinstance(record, dict) else None
+        stored = held.get(key) if isinstance(held, dict) else None
+        if stored is None:
+            return None
+        if self._same_value(stored, state):
+            return "cache"
+        if isinstance(record, dict):
+            self._release_values(device_id, record)
+        return "spoke"
+
+    def _held_reading(self, entity_id: str, state: Any) -> str | None:
+        """An entity's state as the down readers take it (rule WATCH-12).
+
+        For a device on watch whose verdict is unavailable or unknown,
+        a held entity reads unknown, not yet known, so a value handed
+        back cannot end the verdict, nor its stack calling it available;
+        an own entity that never votes is not read at all. None means
+        skipped. A frozen or never reported device is read as it is: its
+        clock keeps it, and reading unknown would start an outage.
+        """
+        mapped = self._entity_map.get(entity_id)
+        if mapped is None:
+            return str(state.state)
+        device_id = mapped[0]
+        watch = self._on_watch.get(device_id)
+        if not watch:
+            return str(state.state)
+        record = self.data.get(DATA_DEVICES, {}).get(device_id)
+        if not isinstance(record, dict) or record.get(DEV_FROZEN_CATEGORY) not in (
+            FREEZE_CATEGORY_UNAVAILABLE,
+            FREEZE_CATEGORY_UNKNOWN,
+        ):
+            return str(state.state)
+        if entity_id in self._unheld_own:
+            return None
+        if self._held_keys.get(entity_id) not in watch:
+            return str(state.state)
+        if state.state == STATE_UNAVAILABLE and state.attributes.get("restored") is not True:
+            return STATE_UNAVAILABLE
+        return STATE_UNKNOWN
+
+    def held_diagnostics(self) -> dict[str, int]:
+        """How many devices hold values and how many entities are on
+        watch, for the download (rule WATCH-12)."""
+        records = self.data.get(DATA_DEVICES) or {}
+        return {
+            "devices_with_held_values": sum(
+                1
+                for record in records.values()
+                if isinstance(record, dict) and record.get(DEV_HELD_VALUES)
+            ),
+            "entities_on_watch": sum(len(keys) for keys in self._on_watch.values()),
+        }
+
     def _entity_renamed(self, old_id: str, new_id: str) -> None:
         """Note a renamed entity, whose first write is not a report.
 
@@ -3542,8 +3813,19 @@ class DeviceSentinelCoordinator(
         """Handle a state change for a watched device's entity."""
         new_state = event.data.get("new_state")
         if new_state is None:
+            # An entity removed: added again, its first value is the one
+            # it held (rule WATCH-12).
+            self._arm_entity_watch(event.data["entity_id"])
             return
         entity_id = event.data["entity_id"]
+        if (
+            new_state.state == STATE_UNAVAILABLE
+            and new_state.attributes.get("restored") is True
+        ):
+            # Home Assistant's placeholder for an entity whose
+            # integration is reloading or still loading: the same
+            # (rule WATCH-12).
+            self._arm_entity_watch(entity_id)
         # Guarded rather than indexed: the filter has already checked
         # membership, but that safety lives in HA dispatching filter
         # and handler in one loop turn. The guard makes the invariant
@@ -3615,6 +3897,21 @@ class DeviceSentinelCoordinator(
             # still reads the device.
             self._settle_down(device_id, entity_id)
             return
+        # After a restart, a reload or an entity added again, the value
+        # an entity held coming back is its integration's cache, by
+        # whatever path it comes: no previous state, Home Assistant's
+        # placeholder, unknown first, or the integration's own restore.
+        # Kept as a reading, as a republish is, with no clock moved and
+        # no outage ended. Only a different value is the device
+        # speaking (rule WATCH-12).
+        reading = self._read_on_watch(device_id, entity_id, new_state.state)
+        self._note_good(entity_id, new_state.state)
+        if reading == "cache":
+            if new_state.state not in BAD_STATES:
+                self._record_activity(
+                    device_id, entry_id, entity_id, new_state.state, foreign=True
+                )
+            return
         # The device's outage starts when it goes down as a whole and
         # ends when the entities that decide hold a value again (ruling
         # #647, read through _live_entity_states since 0.26.6). An event entity reads unknown until its next event,
@@ -3645,7 +3942,9 @@ class DeviceSentinelCoordinator(
             # failed command, or cached values handed back by a reload.
             return
         old_state = event.data.get("old_state")
-        if self._republished(device_id, old_state, was_gone):
+        # A held entity reading a different value is the device speaking,
+        # whatever came before it (rule WATCH-12).
+        if reading != "spoke" and self._republished(device_id, old_state, was_gone):
             # A value coming back through a restart or an outage is the
             # stack republishing it, not the device speaking (#535,
             # reversing #125 and generalising #530). Kept as a reading,
@@ -3821,7 +4120,14 @@ class DeviceSentinelCoordinator(
             self._settle_down(device_id, entity_id)
             return
         foreign = entity_id in self._foreign_entities
+        if self._read_on_watch(device_id, entity_id, new_state.state) == "cache":
+            # The same value written again never counts while on watch,
+            # and nor does an own entity that never votes. A different
+            # value, already shown when the watch began, is the device
+            # speaking and is recorded as a report below (rule WATCH-12).
+            return
         if not foreign:
+            self._note_good(entity_id, new_state.state)
             self._settle_down(device_id, entity_id)
             # A same-value write while the connection is down is not
             # the device speaking either (#640; adversarial round six),
@@ -4912,6 +5218,9 @@ class DeviceSentinelCoordinator(
             record = records.get(device_id)
             if not isinstance(record, dict):
                 continue
+            # Set aside, excluded or removed: nothing is held for it, and
+            # nothing is on watch (rule WATCH-12).
+            self._release_values(device_id, record)
             if (
                 record.get(DEV_FROZEN_CATEGORY) is None
                 and record.get(DEV_FROZEN_SINCE) is None
@@ -5404,10 +5713,15 @@ class DeviceSentinelCoordinator(
             state = self.hass.states.get(entity_id)
             if state is None:
                 continue
-            if _resting(entity_id, state.state):
+            # A value handed back to a device judged unavailable reads as
+            # not known yet (rule WATCH-12).
+            value = self._held_reading(entity_id, state) if self._on_watch else state.state
+            if value is None:
+                continue
+            if _resting(entity_id, value):
                 resting = True
                 continue
-            states.append(state.state)
+            states.append(value)
         if not states and resting:
             states.append(EVENT_RESTING)
         return states

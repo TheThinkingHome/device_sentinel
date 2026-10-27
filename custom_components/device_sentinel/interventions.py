@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.5 (2026-10-26)
+# File: interventions.py, Version: 0.27.6 (2026-10-26)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -182,7 +182,14 @@ _SEEN_TOLD = "told"
 # from its open row in the events log; these say what the bus and the
 # phone have heard of it, so a restart neither repeats its down push nor
 # owes a restored for a down never told (rules UP-09, UP-10, UP-11).
+# Each also keeps when the entry first fell in the outage the phone heard
+# (under BRIDGE_SEEN_SINCE), when it came back or was closed, and how it
+# closed when it closed as removed or no longer watched, so the
+# integration's over push tells that outage from the record alone, never
+# from an older return in the log (rule UP-09).
 DATA_INTEGRATION_SEEN = "integration_seen"
+_SEEN_BACK = "back"
+_SEEN_ENDED = "ended"
 
 
 def _count(value: Any) -> int | None:
@@ -1013,6 +1020,12 @@ class InterventionMixin:
                     # damaged and dropped: taken as told (rule STOR-07).
                     seen = stored[key] = {}
                     self._dirty = True
+                # A file from 0.27.5 or before kept no start with the
+                # record: the open row's is the entry's fall, kept for
+                # the over push (rule UP-09).
+                if _moment(seen.get(BRIDGE_SEEN_SINCE)) is None:
+                    seen[BRIDGE_SEEN_SINCE] = float(when)
+                    self._dirty = True
                 self._owe_upstream_restored(
                     UPSTREAM_INTEGRATION, key, None, float(when), seen,
                     name=scope, counted=devices,
@@ -1081,12 +1094,25 @@ class InterventionMixin:
         # until the bus hears it, and pushed already where its
         # integration's down push has gone for another entry or inside
         # the hand-back (rules UP-09, UP-10).
-        seen: dict[str, Any] = {_SEEN_DEVICES: behind, _SEEN_TOLD: False}
+        seen: dict[str, Any] = {
+            _SEEN_DEVICES: behind, _SEEN_TOLD: False, BRIDGE_SEEN_SINCE: since,
+        }
         if (
             entry.domain in self._upstream_announced
             and entry.entry_id not in self._entry_only_device
         ):
             seen[_SEEN_PUSHED] = True
+            # Fallen again inside the outage the phone heard: that
+            # outage still began at its first fall and keeps the most it
+            # had down, so the over push tells all of it (rule UP-09).
+            before = self._entry_outages().get(_entry_key(entry))
+            if isinstance(before, dict) and before.get(_SEEN_PUSHED) is True:
+                first = _moment(before.get(BRIDGE_SEEN_SINCE))
+                if first is not None and first < since:
+                    seen[BRIDGE_SEEN_SINCE] = first
+                worst = _count(before.get(_SEEN_WORST))
+                if worst is not None:
+                    seen[_SEEN_WORST] = worst
         self._entry_outages()[_entry_key(entry)] = seen
         self._dirty = True
         self._say_upstream_down(
@@ -1111,6 +1137,12 @@ class InterventionMixin:
         if domain is None:
             return
         self._close_entry_outage(f"{domain}|{entry_id}")
+        # Kept with a pushed record, so the over push says when and how
+        # it ended rather than that it came back (rule UP-09).
+        seen = self._entry_outages().get(f"{domain}|{entry_id}")
+        if isinstance(seen, dict):
+            seen[_SEEN_ENDED] = how
+            seen[_SEEN_BACK] = now
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
@@ -1175,6 +1207,12 @@ class InterventionMixin:
             ended["devices"] = max(carried, ended["worst"])
         self._integration_told.discard(entry.entry_id)
         self._close_entry_outage(key)
+        # Kept with a pushed record, so the over push ends the outage at
+        # its return, as the brief and the bridge's push do, not at the
+        # end of the hand-back when the push is sent (rule UP-09).
+        seen = self._entry_outages().get(key)
+        if isinstance(seen, dict):
+            seen[_SEEN_BACK] = now
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
@@ -1543,8 +1581,11 @@ class InterventionMixin:
                     self._dirty = True
                     self._critical = True
                 continue
+            # Raised, never lowered: an entry fallen again inside the
+            # outage the phone heard keeps the most of its first fall
+            # (rule UP-11).
             peak = self._upstream_peak.get(key)
-            if peak is not None and seen.get(_SEEN_WORST) != peak:
+            if peak is not None and peak > (_count(seen.get(_SEEN_WORST)) or 0):
                 seen[_SEEN_WORST] = peak
                 self._dirty = True
 
@@ -1690,54 +1731,56 @@ class InterventionMixin:
         """The integration's own outage as one ended row, for its over
         push, or None where nothing stored says what it was.
 
-        Built from the returns of the entries its down push covered,
-        which keep their pushed mark until the over push goes: from the
-        first of them to fall to the last to come back, with the devices
-        behind them and the most that went down, added together, so the
-        over push agrees with the down push. An entry that is its one
-        device's had no part in that push and is left out (rules UP-09,
-        UP-11).
+        Read from the stored records of the entries its down push
+        covered, which keep their pushed mark until the over push goes,
+        and never from the events log, where an entry's latest return
+        can be an earlier outage's. It ends at the last of them to come
+        back or be closed, as the brief and the bridge's push tell a
+        return, not at the end of the hand-back when the push is sent; a
+        record that kept no return ends now. Its length runs from the
+        first of them to fall, as the row was dated, to that end; its
+        count is the devices behind them and the most that
+        went down, added together, so the over push agrees with the down
+        push. Where every one of them closed as removed or no longer
+        watched, it says so, as the brief does, rather than that it came
+        back. An entry that is its one device's had no part in that push
+        and is left out (rules UP-09, UP-11).
         """
-        pushed = {
-            key.partition("|")[2]
-            for key, seen in self._entry_outages().items()
-            if key.partition("|")[0] == domain
-            and isinstance(seen, dict)
-            and seen.get(_SEEN_PUSHED) is True
-        }
-        if not pushed:
-            return None
-        last: dict[str, dict[str, Any]] = {}
-        for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
-            if not isinstance(row, dict) or row.get(SYS_KIND) != SYS_INTEGRATION_UP:
-                continue
-            if row.get(SYS_SCOPE) != domain:
-                continue
-            entry_id, _device, how = parse_detail(row.get(SYS_DETAIL))
-            if entry_id in pushed and how not in (REMOVED, UNWATCHED):
-                last[entry_id] = row
+        now = dt_util.utcnow().timestamp()
         starts: list[float] = []
         ends: list[float] = []
+        hows: set[str | None] = set()
         devices = worst = 0
-        for row in last.values():
-            end = _moment(row.get(SYS_WHEN))
-            if end is None:
+        for key, seen in self._entry_outages().items():
+            if key.partition("|")[0] != domain or not isinstance(seen, dict):
                 continue
-            span = row.get(SYS_DURATION)
-            if isinstance(span, bool) or not isinstance(span, (int, float)) or span < 0:
-                span = 0.0
-            starts.append(end - float(span))
-            ends.append(end)
-            devices += _count(row.get(SYS_DEVICES)) or 0
-            worst += _count(row.get(SYS_WORST)) or 0
-        if not ends:
+            if seen.get(_SEEN_PUSHED) is not True:
+                continue
+            since = _moment(seen.get(BRIDGE_SEEN_SINCE))
+            if since is None:
+                continue
+            starts.append(since)
+            back = _moment(seen.get(_SEEN_BACK))
+            ends.append(back if back is not None and back >= since else now)
+            ended_how = seen.get(_SEEN_ENDED)
+            hows.add(ended_how if ended_how in (REMOVED, UNWATCHED) else None)
+            devices += _count(seen.get(_SEEN_DEVICES)) or 0
+            worst += _count(seen.get(_SEEN_WORST)) or 0
+        if not starts:
+            # A record from a file with no stored start: the caller
+            # names the integration from its latest return instead.
             return None
+        detail = None
+        if None not in hows:
+            how = REMOVED if hows == {REMOVED} else UNWATCHED
+            detail = make_detail("", None, how)
+        end = max(ends)
         ended: dict[str, Any] = {
             SYS_KIND: SYS_INTEGRATION_UP,
-            SYS_WHEN: max(ends),
+            SYS_WHEN: end,
             SYS_SCOPE: domain,
-            SYS_DETAIL: None,
-            SYS_DURATION: max(ends) - min(starts),
+            SYS_DETAIL: detail,
+            SYS_DURATION: max(0.0, end - min(starts)),
         }
         if devices:
             ended[SYS_DEVICES] = devices

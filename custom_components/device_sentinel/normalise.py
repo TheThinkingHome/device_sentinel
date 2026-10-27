@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.5 (2026-10-26)
+# File: normalise.py, Version: 0.27.6 (2026-10-26)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -95,6 +95,8 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_HELD_VALUES,
+    HELD_VALUE_LENGTH,
     DEV_LAST_ACTIVITY,
     DEV_DOWN_SINCE,
     DEV_WATCHED_FROM,
@@ -264,6 +266,8 @@ MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
 # Each entity's outage start and the state it read (ruling #647).
 DOWN_SINCE = "None or [moment, state]"
+# The values a device held when its verdict started (rule WATCH-12).
+HELD_VALUES = "None or a mapping of entity registry ids to held values"
 # A device's firmware history (0.23.4): [version, first seen] pairs,
 # the version a non-empty string and the moment a number.
 VERSION_HISTORY = "list of [version, first seen] pairs"
@@ -334,7 +338,48 @@ EXPECTED: dict[str, str] = {
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: MOMENT,
     DEV_DOWN_BEGAN_AS: STRING,
+    DEV_HELD_VALUES: HELD_VALUES,
 }
+
+
+def held_entry_ok(key: Any, value: Any) -> bool:
+    """One held value: a registry id and the state it held, a string
+    Home Assistant could have shown, never unavailable or unknown, which
+    are not values (rule WATCH-12)."""
+    return (
+        isinstance(key, str)
+        and 0 < len(key) <= HELD_VALUE_LENGTH
+        and isinstance(value, str)
+        and 0 < len(value) <= HELD_VALUE_LENGTH
+        and value not in ("unavailable", "unknown")
+    )
+
+
+def drop_damaged_held_values(devices: Any) -> int:
+    """Drop each damaged held value in place, keeping the sound ones,
+    and return how many went (rule WATCH-12).
+
+    A damaged entry costs only that entity's watch after the next
+    start, so it is dropped without stopping anything; a mapping left
+    empty becomes None. A field that is not a mapping at all is left
+    for the record check, which resets it to None as it does any field.
+    """
+    dropped = 0
+    if not isinstance(devices, dict):
+        return 0
+    for record in devices.values():
+        if not isinstance(record, dict):
+            continue
+        held = record.get(DEV_HELD_VALUES)
+        if not isinstance(held, dict):
+            continue
+        bad = [key for key, value in held.items() if not held_entry_ok(key, value)]
+        for key in bad:
+            del held[key]
+        dropped += len(bad)
+        if not held:
+            record[DEV_HELD_VALUES] = None
+    return dropped
 
 
 def _forecast_row_ok(row: Any) -> bool:
@@ -705,6 +750,13 @@ def _fault(kind: str, value: Any) -> str | None:
         if value is None or isinstance(value, dict):
             return None
         return _describe(value)
+    if kind == HELD_VALUES:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            return _describe(value)
+        bad = [k for k, v in value.items() if not held_entry_ok(k, v)]
+        return None if not bad else f"{len(bad)} bad held value(s)"
     if kind == STATE:
         if value is None:
             return None

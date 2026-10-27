@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.27.5 (2026-10-26)
+# File: notifier.py, Version: 0.27.6 (2026-10-26)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -423,8 +423,10 @@ class NotifierMixin:
             wanted = (SYS_BRIDGE_UP, name)
         else:
             # An integration's own outage, which can span several of its
-            # entries, rather than the last entry of it to come back
-            # (rules UP-09, UP-11).
+            # entries, told from its stored records rather than the log.
+            # Only a file whose records keep no start, written before
+            # 0.27.6, falls through to its latest return below (rules
+            # UP-09, UP-11).
             ended = self._integration_over_row(name)  # type: ignore[attr-defined]
             if ended is not None:
                 return self._system_event_sentence(ended)  # type: ignore[attr-defined]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.27.4 (2026-10-25)
+# File: diagnostics.py, Version: 0.27.6 (2026-10-26)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -57,6 +57,7 @@ from .const import (
     CONF_NORMAL_PRIORITY_TARGETS,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
+    DEV_HELD_VALUES,
     DATA_HISTORY_LINE,
     DATA_LAST_VERSION,
     DATA_BATTERY_FORECAST_TALLY,
@@ -467,7 +468,12 @@ async def async_get_config_entry_diagnostics(
             # Every entity of the device, for working out what it is
             # (0.25.0).
             "all_entities": _all_entities(hass, device_id),
-            "statistics": record,
+            # The record, less the values held while a verdict stands:
+            # they are the device's own states, a lock or a presence
+            # among them, and the download carries no states (0.25.0).
+            # Only how many it holds (rule WATCH-12).
+            "statistics": {k: v for k, v in record.items() if k != DEV_HELD_VALUES},
+            "held_value_count": len(record.get(DEV_HELD_VALUES) or {}),
             # Weekly averages and the trend read from them (0.23.6).
             "battery_trend": coordinator.battery_trend_summary(record),
             # What powers it and where that came from (0.24.7).
@@ -595,6 +601,10 @@ async def async_get_config_entry_diagnostics(
             # Each hub whose devices are judged by it, and whether its
             # connection reads up (rulings #663 to #665).
             "hubs": coordinator.hub_diagnostics(),
+            # Devices keeping their last good values while a verdict
+            # stands, and their entities on watch for a value handed
+            # back (rule WATCH-12).
+            "held_values": coordinator.held_diagnostics(),
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
