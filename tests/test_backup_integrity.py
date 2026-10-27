@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_backup_integrity.py, Version: 0.24.4 (2026-10-04)
+# File: tests/test_backup_integrity.py, Version: 0.27.8 (2026-10-27)
 
 # Tests for 0.18.0 and 0.18.1.
 #
@@ -130,7 +130,9 @@ async def test_the_repair_restarts_a_damaged_clock(
     assert isinstance(record[DEV_LAST_ACTIVITY], float)
     assert record[DEV_LAST_ACTIVITY] >= before
     assert record[DEV_TAINTED] is False
-    assert coord.repairs_at_load == 1
+    # Counted by the load repair that calls this, with the rows and
+    # fields it repairs beside the clocks (rule STOR-12).
+    assert coord.repairs_at_load == 0
     events = [
         e
         for e in coord.data.get("system_events", [])
@@ -230,78 +232,21 @@ async def test_fault_ids_name_the_right_file(hass: HomeAssistant):
     )
 
 
-# The signal census (ruling #344). Reported from a live log carrying
-# 133 copies of two lines, 38 inside one second.
+# The signal census (ruling #344) was a routine count, taken out of the
+# log with the rest (rule GEN-10, 27 October 2026).
 
 
-async def test_the_signal_census_is_said_once(hass: HomeAssistant, caplog):
-    """Rebuilding the registry view many times says it once."""
+async def test_the_signal_census_is_not_logged(hass: HomeAssistant, caplog):
+    """Rebuilding the registry view writes no census at any level."""
     import logging
 
     coord = await setup_coordinator(hass)
     register_device(hass, "cen", name="CEN")
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="custom_components.device_sentinel"):
+    with caplog.at_level(logging.DEBUG, logger="custom_components.device_sentinel"):
         for _ in range(20):
             coord._rebuild_registry_view()
-    said = [
-        r for r in caplog.records if "Signal units in use" in r.getMessage()
+    assert not [
+        r for r in caplog.records
+        if "Signal units" in r.getMessage() or "refused as a percentage" in r.getMessage()
     ]
-    assert len(said) <= 1, f"census said {len(said)} times"
-
-
-async def test_the_census_speaks_again_when_it_changes(
-    hass: HomeAssistant, caplog
-):
-    """A fleet whose units change says so, rather than staying quiet.
-
-    Driven through the census directly rather than through a registry
-    rebuild: the harness fleet publishes no signal entities, so a
-    rebuild has no census to say and the first draft of this test
-    was asserting against silence that was correct.
-    """
-    import logging
-    from collections import Counter
-
-    coord = await setup_coordinator(hass)
-    coord._signal_census_said = None
-    with caplog.at_level(logging.INFO, logger="custom_components.device_sentinel"):
-        coord._log_signal_census(Counter({"lqi": 4}), Counter(), [])
-        caplog.clear()
-        # Same census: silent.
-        coord._log_signal_census(Counter({"lqi": 4}), Counter(), [])
-        assert not [
-            r for r in caplog.records if "Signal units" in r.getMessage()
-        ]
-        # Changed census: said again.
-        coord._log_signal_census(Counter({"lqi": 4, "dbm": 7}), Counter(), [])
-    said = [
-        r for r in caplog.records if "Signal units in use" in r.getMessage()
-    ]
-    assert len(said) == 1
-    assert "dbm x7" in said[0].getMessage()
-
-
-async def test_the_long_lists_are_not_info(hass: HomeAssistant, caplog):
-    """Counts at info, entity names at debug (ruling #344)."""
-    import logging
-
-    coord = await setup_coordinator(hass)
-    coord._signal_census_said = None
-    caplog.clear()
-    with caplog.at_level(logging.INFO, logger="custom_components.device_sentinel"):
-        coord._log_signal_census(
-            __import__("collections").Counter({"lqi": 74}),
-            __import__("collections").Counter(),
-            [f"sensor.thing_{i}_battery" for i in range(63)],
-        )
-    for record in caplog.records:
-        if record.levelno >= logging.INFO:
-            assert "sensor.thing_0_battery" not in record.getMessage(), (
-                "an entity list reached the info log"
-            )
-    counts = [
-        r for r in caplog.records if "refused as a percentage" in r.getMessage()
-    ]
-    assert len(counts) == 1
-    assert "63" in counts[0].getMessage()

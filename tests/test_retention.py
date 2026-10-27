@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.23.19 (2026-09-30)
+# File: test_retention.py, Version: 0.27.8 (2026-10-27)
 
 """How much is kept, and what reads only a window of it.
 
@@ -523,6 +523,8 @@ async def test_system_events_keep_the_retention_the_person_chose(
          "scope": "system", "detail": None, "duration": None},
     ]
     coord._record_system_event(SYS_RESTART)
+    # Held to the setting at the midnight run (rule STOR-14).
+    coord._trim_house_tables(now)
 
     kinds = {row[SYS_KIND] for row in coord.data[DATA_SYSTEM_EVENTS]}
     assert "old_but_kept" in kinds, "trimmed at the incident window"

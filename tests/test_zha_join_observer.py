@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_zha_join_observer.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_zha_join_observer.py, Version: 0.27.8 (2026-10-27)
 
 # Tests for 0.19.2, the ZHA join observer (ruling #360).
 #
@@ -63,7 +63,7 @@ async def test_a_handling_is_recorded_by_registry_id(
         hass, lambda device_id, kind: seen.append((device_id, kind))
     )
     observer.async_start()
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         # A re-pair: the join comes first, carrying the address (#719).
         observer._on_message(PAIRING)
         observer._on_message(
@@ -136,7 +136,7 @@ async def test_messages_it_is_not_for_are_ignored(
     connection notices are none of this reader's business; a removal
     is, since 0.19.2."""
     observer = stack_zha.make_join_observer(hass)
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         for kind in (
             "group_added",
             "log_entry",
@@ -155,7 +155,7 @@ async def test_a_malformed_message_is_named_not_parsed(
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
     )
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         observer._on_message("not a dict")
         observer._on_message(None)
         observer._on_message({"type": []})
@@ -315,7 +315,7 @@ async def test_a_full_init_alone_after_a_restart_is_not_handled(
     observer = stack_zha.make_join_observer(
         hass, lambda device_id, kind: seen.append((device_id, kind))
     )
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         for registry_id, ieee, name in _RIG_21_OCTOBER:
             observer._on_message(_full_init(registry_id, ieee, name))
     assert seen == []
@@ -408,7 +408,7 @@ async def test_a_device_changing_its_address_is_not_handled(hass: HomeAssistant,
         hass, lambda device_id, kind: seen.append((device_id, kind))
     )
     registry_id, ieee, name = _RIG_21_OCTOBER[1]
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
         observer._on_message(_full_init(registry_id, ieee, name))
         observer._on_message(_full_init(registry_id, ieee, name))
