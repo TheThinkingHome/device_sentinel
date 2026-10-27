@@ -4890,6 +4890,12 @@
         },
         {
             "manufacturer": "Govee",
+            "model": "H5108",
+            "battery_type": "AAA",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Govee",
             "model": "H5121",
             "battery_type": "CR2450"
         },
