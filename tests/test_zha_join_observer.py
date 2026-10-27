@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_zha_join_observer.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_zha_join_observer.py, Version: 0.27.9 (2026-10-27)
 
 # Tests for 0.19.2, the ZHA join observer (ruling #360).
 #
@@ -81,7 +81,7 @@ async def test_a_handling_is_recorded_by_registry_id(
             }
         )
     assert seen == [
-        ("97bdcccf073c7ebc33adf6edd9ab8907", "device_fully_initialized")
+        ("97bdcccf073c7ebc33adf6edd9ab8907", "re-pair")
     ]
     assert "was handled" in caplog.text
     assert "97bdcccf073c7ebc33adf6edd9ab8907" in observer.handled
@@ -349,7 +349,7 @@ async def test_a_re_pair_counts_both_full_inits(hass: HomeAssistant):
     observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
     observer._on_message(_full_init(registry_id, ieee, name))
     observer._on_message(_full_init(registry_id, ieee, name))
-    assert seen == [(registry_id, "device_fully_initialized")] * 2
+    assert seen == [(registry_id, "re-pair")] * 2
 
 
 async def test_another_devices_join_explains_nothing(hass: HomeAssistant):
@@ -429,12 +429,12 @@ async def test_the_permit_action_opens_pairing_for_its_duration(hass: HomeAssist
     await hass.async_block_till_done()
     observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
     observer._on_message(_full_init(registry_id, ieee, name))
-    assert seen == [(registry_id, "device_fully_initialized")]
+    assert seen == [(registry_id, "re-pair")]
     freezer.tick(61)
     other_id, other_ieee, other_name = _RIG_21_OCTOBER[2]
     observer._on_message({"type": "device_joined", "device_info": {"ieee": other_ieee}})
     observer._on_message(_full_init(other_id, other_ieee, other_name))
-    assert seen == [(registry_id, "device_fully_initialized")]
+    assert seen == [(registry_id, "re-pair")]
     # Another action opens nothing.
     hass.bus.async_fire("call_service", {"domain": "light", "service": "turn_on", "service_data": {"duration": 60}})
     await hass.async_block_till_done()

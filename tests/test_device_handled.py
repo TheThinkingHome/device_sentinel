@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_handled.py, Version: 0.24.11 (2026-10-07)
+# File: tests/test_device_handled.py, Version: 0.27.9 (2026-10-27)
 
 # Tests for 0.19.2, attributing a recovery to a person (ruling #362).
 #
@@ -349,7 +349,10 @@ async def test_a_handling_is_told_on_the_devices_own_line(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     for kind, words in (("device_joined", "re-paired by hand"),
                         ("raw_device_initialized", "reconfigured by hand"),
-                        ("device_fully_initialized", "re-paired or reconfigured by hand"),
+                        # A full init with no join before it is a
+                        # reconfigure; a re-pair is filed as one (FRZ-05).
+                        ("device_fully_initialized", "reconfigured by hand"),
+                        ("re-pair", "re-paired by hand"),
                         ("device_removed", "removed by hand")):
         row = _event(device.id, dt_util.utcnow().timestamp() - 60, kind)
         assert (coord._system_event_who(row), coord._system_event_phrase(row)) == ("Hall Switch", words)

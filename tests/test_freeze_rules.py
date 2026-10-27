@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_rules.py, Version: 0.24.10 (2026-10-06)
+# File: test_freeze_rules.py, Version: 0.27.9 (2026-10-27)
 
 """The freeze wait as the shorter of two rules (#542, amended in 0.24.0).
 
@@ -190,7 +190,8 @@ async def test_a_re_pair_resets_the_count(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     record = coord.data["devices"][device.id]
     record[DEV_LOGNORMAL_DAYS] = None
-    coord._record_device_handled(device.id, "device_joined")
+    # Filed as a re-pair by the ZHA observer (rule FRZ-05).
+    coord._record_device_handled(device.id, "re-pair")
     assert record[DEV_LOGNORMAL_DAYS] == 0
 
 

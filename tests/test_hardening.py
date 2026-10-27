@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.27.0 (2026-10-22)
+# File: test_hardening.py, Version: 0.27.9 (2026-10-27)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -55,15 +55,10 @@ from custom_components.device_sentinel.const import (
     LOW_THRESHOLD_MAX,
     LOW_THRESHOLD_MIN,
     WIKI_BASE_URL,
-    WIKI_LINK_BATTERY,
-    WIKI_LINK_EXCLUSIONS,
-    WIKI_LINK_FREEZE,
     WIKI_LINK_HOME,
-    WIKI_LINK_NOTIFICATIONS,
-    WIKI_LINK_REPORTS,
-    WIKI_LINK_SIGNAL,
 )
 
+from custom_components.device_sentinel import const as _const
 from tests.helpers import register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
@@ -401,35 +396,48 @@ async def test_retired_ghost_entity_is_removed(hass: HomeAssistant, monkeypatch)
 # Every screen links to its own wiki page.
 # ==================================================================
 
-# The wiki's page titles as published. Hyphens are how GitHub renders
+# The wiki's page titles as published, 30 pages as of 0.27.3's wiki. Hyphens are how GitHub renders
 # a space in a page title into a URL.
 PUBLISHED_PAGES = {
-    "Home",
-    "Notifications-and-Daily-Brief",
     "Advanced",
+    "Automation-Events",
+    "Built-to-Be-Efficient",
     "Exclusions-and-Muting",
-    "Low-Battery",
-    "Signal-Strength",
-    "Freeze-Detection",
-    "Maintenance-Mode",
-    "The-Diagnostic-Reports",
-    "The-Signal-Dwell-Chart",
-    "Installation-and-Setup",
-    "The-Battery-Report",
-    "How-Device-Sentinel-Learns",
-    "The-Device-Page",
-    "The-Problem-List",
+    "Extended-Diagnostics",
     "FAQ-and-Troubleshooting",
+    "Freeze-Detection",
+    "Home",
+    "How-Device-Sentinel-Learns",
+    "Installation-and-Setup",
+    "Low-Battery",
+    "Lutron-Caseta",
+    "Maintenance-Mode",
+    "Matter",
+    "Notifications-and-Daily-Brief",
+    "Repairs",
+    "Screenshots",
+    "Signal-Strength",
+    "The-Bridge-and-Broker-Sensors",
+    "The-Daily-Brief",
+    "The-Dashboard",
+    "The-Device-Page",
+    "The-Diagnostic-Reports",
+    "The-Problem-List",
+    "What-Is-Recorded-About-Your-House",
+    "WiFi-Devices",
+    "WiFi",
+    "Z-Wave",
+    "ZHA",
+    "Zigbee2MQTT",
 }
 
+# Every wiki link the integration carries, read from const so a link
+# added later is pinned by these tests without anyone listing it (rule
+# REL-14): three links in use were left out of a hand-kept list.
 ALL_LINKS = {
-    "WIKI_LINK_HOME": WIKI_LINK_HOME,
-    "WIKI_LINK_NOTIFICATIONS": WIKI_LINK_NOTIFICATIONS,
-    "WIKI_LINK_EXCLUSIONS": WIKI_LINK_EXCLUSIONS,
-    "WIKI_LINK_BATTERY": WIKI_LINK_BATTERY,
-    "WIKI_LINK_SIGNAL": WIKI_LINK_SIGNAL,
-    "WIKI_LINK_FREEZE": WIKI_LINK_FREEZE,
-    "WIKI_LINK_REPORTS": WIKI_LINK_REPORTS,
+    name: getattr(_const, name)
+    for name in dir(_const)
+    if name.startswith("WIKI_LINK_")
 }
 
 

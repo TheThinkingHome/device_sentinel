@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_model_pace.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_model_pace.py, Version: 0.27.9 (2026-10-27)
 
 """How fast the others of a battery's model fall, as context (#738).
 
@@ -46,9 +46,10 @@ async def test_the_others_of_a_model_give_its_pace(hass: HomeAssistant):
         record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
     (a, _), (b, _), (c, _), (lone, _), (pair, _), _ = made
     paces = coord.battery_model_paces()
-    # Door A's others are B and C: the middle of 1.4 and 2.1.
-    assert paces[a.id]["others"] == 2 and abs(paces[a.id]["pace"] - 1.75) < 0.15, paces[a.id]
-    assert abs(paces[c.id]["pace"] - 1.05) < 0.15, paces[c.id]
+    # Door A's others are B and C: the range 1.4 to 2.1 (rule BAT-16).
+    assert paces[a.id]["others"] == 2, paces[a.id]
+    assert abs(paces[a.id]["pace_low"] - 1.4) < 0.15 and abs(paces[a.id]["pace_high"] - 2.1) < 0.15, paces[a.id]
+    assert abs(paces[c.id]["pace_low"] - 0.7) < 0.15 and abs(paces[c.id]["pace_high"] - 1.4) < 0.15, paces[c.id]
     assert paces[b.id]["model"] == "Third Reality 3RDS17BZ"
     # Fewer than two others: nothing is said.
     assert lone.id not in paces and pair.id not in paces

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_dashboard_devices.py, Version: 0.27.9 (2026-10-27)
 
 """The Devices tab and each device's page.
 
@@ -145,10 +145,12 @@ async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_w
     assert (row["window"], row["window_learning"]) == (None, True)
     # A hub, or a device its hub judges, is never judged by a window, so
     # it is not learning one (adversarial round): a Lutron Caseta hub.
-    coord.hub_takes_over = lambda device_id: True
+    # Since 0.27.9 the row says how it is judged (tests/test_judged_by.py).
+    coord.judged_by_hub = lambda device_id: True
     rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
     row = next(r for r in rows if r["device_id"] == device.id)
     assert (row["window"], row["window_learning"]) == (None, False)
+    assert row["judged_by"] == {"how": "connection"}
 
 
 async def test_the_page_says_when_the_log_normal_count_started_again(hass: HomeAssistant):
