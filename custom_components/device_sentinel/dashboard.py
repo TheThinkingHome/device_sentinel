@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.4 (2026-10-25)
+# File: dashboard.py, Version: 0.27.7 (2026-10-27)
 
 """What the dashboard reads from the coordinator.
 
@@ -45,6 +45,7 @@ from .report_battery import (
 )
 from . import stacks
 from .const import (
+    BATTERY_STEPS_COARSE,
     BATTERY_MODEL_PACE_MIN_OTHERS,
     BATTERY_FIT_MIN_DAYS,
     CLIP_START_DAYS,
@@ -571,7 +572,9 @@ class IntegrationViewMixin:
         rows = self.classification_rows()
         problems = self._problems_by_device()
         outages = self.integration_outages()
-        seen_routers = set(self.data.get(DATA_ROUTERS_SEEN) or [])
+        # Excluded by Device Sentinel when first seen, not by the person
+        # from a card (Ruled Change 70).
+        seen_routers = set(self.data.get(DATA_ROUTERS_SEEN) or []) - set(self.exclusion_offers())
         domains: dict[str, dict[str, int]] = {}
         for row in rows:
             count = domains.setdefault(row["integration"], {
@@ -687,6 +690,7 @@ class IntegrationViewMixin:
             "name": title,
             "standing": self._integration_standing(domain, watched),
             "first_seen": domain in (self.data.get(DATA_ROUTERS_SEEN) or [])
+            and domain not in self.exclusion_offers()
             and domain in self.excluded_integrations,
             "devices": listed,
             # On the exclusion list, so the page offers to take it back;
@@ -1392,6 +1396,9 @@ class DeviceViewMixin:
             # and the page says nothing about it (#733).
             "short": battery_heard_days(series) < BATTERY_FIT_MIN_DAYS,
             "readable": readable,
+            # A coarse cell is judged by the low threshold alone and
+            # never read as steady or falling (rule BAT-10).
+            "coarse": self.battery_steps(record) == BATTERY_STEPS_COARSE,
             # Earlier Forecasts, newest first, each with what happened
             # (ruling #732).
             "forecasts": self.battery_forecast_view(record),  # type: ignore[attr-defined]
@@ -1412,7 +1419,8 @@ class DeviceViewMixin:
             series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH,
             self.battery_ceiling,  # type: ignore[attr-defined]
         )
-        falling = bool(trend["reading"] and trend["pace"])
+        # A coarse cell is never read as falling (rule BAT-10).
+        falling = bool(trend["reading"] and trend["pace"]) and not page["coarse"]
         target = self.battery_target(current, record)  # type: ignore[attr-defined]
         days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
         # The range a falling cell reaches the low threshold in (rulings

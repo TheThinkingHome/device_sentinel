@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.4 (2026-10-25)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.7 (2026-10-27)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -37,12 +37,14 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import label_registry as lr
 
 from .const import (
+    DATA_EXCLUSION_OFFERS,
+    OFFER_CLOSED,
+    OFFER_OPEN,
     CONF_UNAVAILABLE_MUTED_LABELS,
     LOGGER,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
-    DEFAULT_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
@@ -569,7 +571,7 @@ class DeviceActionsMixin:
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
         if stored is None:
             # The default list stands until the option is first saved.
-            current = list(DEFAULT_EXCLUDED_INTEGRATIONS)
+            current = list(self.default_exclusions())  # type: ignore[attr-defined]
         elif isinstance(stored, (list, tuple)):
             current = [d for d in stored if isinstance(d, str)]
         else:
@@ -589,6 +591,11 @@ class DeviceActionsMixin:
             if merged.get(key) != self.entry.options.get(key)
         )
         self.hass.config_entries.async_update_entry(self.entry, options=merged)
+        offers = self.exclusion_offers()  # type: ignore[attr-defined]
+        if on and offers.get(domain) == OFFER_OPEN:
+            # Its card is answered for good (Ruled Change 70).
+            self.data[DATA_EXCLUSION_OFFERS] = {**offers, domain: OFFER_CLOSED}  # type: ignore[attr-defined]
+            self._dirty = True  # type: ignore[attr-defined]
         self._record_system_event(  # type: ignore[attr-defined]
             SYS_INTEGRATION_PAGE,
             scope=domain,

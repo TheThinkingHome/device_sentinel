@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.5 (2026-10-26)
+# File: router_ties.py, Version: 0.27.7 (2026-10-27)
 
 """Router ties: which watched devices a router says have left.
 
@@ -127,13 +127,18 @@ from .const import (
     CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_UNAVAILABLE_MUTED_LABELS,
     DATA_DEVICES,
+    DATA_EXCLUSION_OFFERS,
     DATA_ROUTERS_SEEN,
     DATA_WIFI_MEDIUM,
     DATA_WIFI_MEDIUM_REJECTED,
     DEV_FROZEN_SINCE,
     AUTO_EXCLUDED_INTEGRATIONS,
+    DEFAULT_EXCLUDED_BEFORE_0277,
     DEFAULT_EXCLUDED_INTEGRATIONS,
+    OFFER_CLOSED,
+    OFFER_OPEN,
     ROUTER_INTEGRATIONS,
+    SYS_EXCLUSION_OFFERED,
     SYS_FIRST_SEEN_EXCLUDED,
     WIFI_BURST_FLOOR,
     WIFI_FALLEN_UNUSABLE_SECONDS,
@@ -648,20 +653,22 @@ class RouterTiesMixin:
 
     async def _sight_router_integrations(self) -> None:
         """Exclude a router integration the first time it is seen
-        (ruling #420), and each of AUTO_EXCLUDED_INTEGRATIONS (#711).
+        (ruling #420), and each of AUTO_EXCLUDED_INTEGRATIONS (#711), on
+        a new install; on a house that already exists, recommend it
+        (Ruled Change 70, rule MUTE-02).
 
         Fires once per integration, ever. A new install gets these from
-        the default list; an install that already exists gets one added
-        the first time it appears, at a start or within a minute of the
-        integration being added while running (James, 20 October 2026),
-        so it is excluded before it can raise a false alarm. One the
-        person has already decided about, by a mute or an exclusion of
-        it or its devices, is left as they chose. After that the
-        integration is recorded and never new again, so a person who
-        takes it off the list keeps that choice.
+        the default list, and one the default lacks, such as a FRITZ!Box
+        router, is added in its first run. On a house that already
+        exists nothing is added behind the person's back: an
+        integration seen for the first time raises a card on the
+        Recommendations tab, told once in the brief, with an Exclude
+        button and a tick to keep watching it. One the person has
+        already decided about, by a mute or an exclusion of it or its
+        devices, is left as they chose. After that the integration is
+        recorded and never new again.
 
-        The write is grow-only: a sighting that adds nothing writes no
-        options. Runs one at a time.
+        Runs one at a time.
         """
         if self._stopped:  # type: ignore[attr-defined]
             return
@@ -675,6 +682,19 @@ class RouterTiesMixin:
                 return
             await self._sight_once()
 
+    def exclusion_offers(self) -> dict[str, str]:
+        """Each integration recommended for exclusion, "open" while its
+        card stands and "closed" once it was excluded (Ruled Change 70).
+        Read defensively: the shape is this release's own."""
+        found = self.data.get(DATA_EXCLUSION_OFFERS)
+        if not isinstance(found, dict):
+            return {}
+        return {
+            str(domain): state
+            for domain, state in found.items()
+            if state in (OFFER_OPEN, OFFER_CLOSED)
+        }
+
     async def _sight_once(self) -> None:
         """One sighting; see _sight_router_integrations.
 
@@ -685,46 +705,94 @@ class RouterTiesMixin:
         present = self._first_seen_exclusions_present()
         seen = set(self.data.get(DATA_ROUTERS_SEEN) or [])
         fresh = present - seen
-        # Recorded whether or not anything is added: one already on the
-        # person's list must still stop being new, or the day they take
-        # it off, the next sighting would add it again.
-        if not fresh:
-            return
-        default = set(DEFAULT_EXCLUDED_INTEGRATIONS)
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
-        if stored is None:
+        # The first run of a new install (Ruled Change 70).
+        new_install = self.setup_count <= 1 and not self._pin_before_0277  # type: ignore[attr-defined]
+        offers = self.exclusion_offers()
+        pinned = False
+        if stored is None and self._pin_before_0277:  # type: ignore[attr-defined]
+            # A house that already exists and never saved its list
+            # follows the default, so the names this release adds to it
+            # would exclude without asking: the list it already used is
+            # written as its own, once (Ruled Change 70).
+            stored = list(DEFAULT_EXCLUDED_BEFORE_0277)
+            pinned = True
+        current = (
+            [name for name in stored if isinstance(name, str)]
+            if isinstance(stored, (list, tuple))
+            # A list damaged by hand is not a reason to fail the start
+            # (fifth adversarial round of 0.26.8).
+            else ([] if stored is not None else list(self.default_exclusions()))  # type: ignore[attr-defined]
+        )
+        # A card whose integration is now excluded is closed for good:
+        # taken back later, it does not come back (Ruled Change 70).
+        closing = {
+            domain for domain, state in offers.items()
+            if state == OFFER_OPEN and domain in current
+        }
+        if not fresh and not pinned and not closing:
+            return
+        told: list[str] = []
+        offered: list[str] = []
+        adding: list[str] = []
+        kept_out: list[str] = []
+        if new_install and stored is None:
             # A list never saved is the default. Those the default
             # already holds are excluded by it; a #711 name the person
             # has decided about is taken off it, as they chose; one the
             # default lacks, such as a FRITZ!Box router, is added (sixth
             # adversarial round of 0.26.8).
-            current = list(DEFAULT_EXCLUDED_INTEGRATIONS)
+            default = set(DEFAULT_EXCLUDED_INTEGRATIONS)
             kept_out = [n for n in sorted(fresh & set(AUTO_EXCLUDED_INTEGRATIONS)) if self._choice_made(n)]
             # A router is excluded as #420 always did, whatever was muted
             # (seventh adversarial round of 0.26.8).
             adding = [n for n in sorted(fresh - default) if not self._leave_as_chosen(n)]
             told = sorted(((fresh & default) - set(kept_out)) | set(adding))
-            write = bool(kept_out or adding)
             new_list = [n for n in current if n not in kept_out] + adding
-        else:
-            if isinstance(stored, (list, tuple)):
-                current = [name for name in stored if isinstance(name, str)]
-            else:
-                # A list damaged by hand is not a reason to fail the
-                # start (fifth adversarial round of 0.26.8).
-                current = []
+        elif new_install:
             adding = [
                 name for name in sorted(fresh)
                 if name not in current and not self._leave_as_chosen(name)
             ]
             told = adding
-            write = bool(adding)
             new_list = current + adding
+        else:
+            # A house that already exists: recommended, not excluded,
+            # routers and media alike, unless the person has decided
+            # about it already (Ruled Change 70).
+            offered = [
+                name for name in sorted(fresh)
+                if name not in current
+                and name not in offers
+                and not self._choice_made(name)
+            ]
+            new_list = current
+        write = pinned or bool(kept_out or adding)
         # Each one excluded is told in the brief, so a person who watched
         # it on purpose sees it and can take it back; before the next
         # midnight, its devices' history is kept.
         for name in told:
             self._record_system_event(SYS_FIRST_SEEN_EXCLUDED, scope=name)  # type: ignore[attr-defined]
+        # Each one recommended is told once, pointing to its card: only
+        # one with devices has a card to point to (second adversarial
+        # round of 0.27.7).
+        registry = dr.async_get(self.hass)
+        for name in offered:
+            if any(
+                dr.async_entries_for_config_entry(registry, entry.entry_id)
+                for entry in self.hass.config_entries.async_entries(name)
+            ):
+                self._record_system_event(SYS_EXCLUSION_OFFERED, scope=name)  # type: ignore[attr-defined]
+        if offered or closing:
+            updated = dict(offers)
+            for name in offered:
+                updated[name] = OFFER_OPEN
+            for name in closing:
+                updated[name] = OFFER_CLOSED
+            self.data[DATA_EXCLUSION_OFFERS] = updated
+            mark = getattr(self, "_mark_changed", None)
+            if mark is not None:
+                mark()
         self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
         if write:
             if adding:

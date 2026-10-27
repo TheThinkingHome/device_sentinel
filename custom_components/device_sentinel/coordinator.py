@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.6 (2026-10-26)
+# File: coordinator.py, Version: 0.27.7 (2026-10-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -56,6 +56,7 @@ import threading
 import time
 from collections import Counter, deque
 from datetime import date, timedelta
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -133,7 +134,9 @@ from .battery_evidence import BatteryEvidenceMixin
 from .battery_forecasts import BatteryForecastMixin
 from .battery_replacement import BatteryReplacementMixin
 from .history_file import fold_line
+from .store import _version_tuple as _store_version_tuple
 from .const import (
+    CONF_EXCLUDED_INTEGRATIONS,
     ACTIVE_REPORT_SECONDS,
     SET_ASIDE_NOTICES_ONLY,
     NOTICE_DOMAINS,
@@ -649,6 +652,16 @@ class DeviceSentinelCoordinator(
         # by (device_id, kind). A hold is cancelled by its own
         # recovery, so anything still here is still true.
         self._held_events: dict[tuple[str, str], Any] = {}
+        # Items whose last problem cleared, kept on the list for a
+        # minute before they leave (rule LIST-06): when it cleared, and
+        # the timer that comes back to retire them.
+        self._parked: dict[str, float] = {}
+        # Set at load (Ruled Change 70); see store.default_exclusions.
+        self._pin_before_0277 = False
+        # Faults whose debounce ended while their device waited its
+        # minute, kept until the minute decides.
+        self._matured_in_park: dict[tuple[str, str], tuple[str, str]] = {}
+        self._park_timer: Callable[[], None] | None = None
         # When the current burst of cold changes began, so the
         # debounce can be capped rather than pushed out for ever.
         # What the system could actually watch (ruling #160). Both storage
@@ -1795,6 +1808,15 @@ class DeviceSentinelCoordinator(
                 self.version,
                 loaded.get(DATA_LAST_VERSION) or "an earlier version",
             )
+        # A house last written before 0.27.7 that never saved its
+        # exclusion list keeps the default it had (Ruled Change 70):
+        # read here, before the stamp moves on.
+        came_from = loaded.get(DATA_LAST_VERSION)
+        self._pin_before_0277 = (
+            isinstance(came_from, str)
+            and _store_version_tuple(came_from) < (0, 27, 7)
+            and CONF_EXCLUDED_INTEGRATIONS not in self.entry.options
+        )
         loaded[DATA_LAST_VERSION] = self.version
         # The rotation arms only when the live file on disk is one
         # this process knows to be clean (ruling #370). A load that
@@ -2156,6 +2178,9 @@ class DeviceSentinelCoordinator(
         for cancel in self._held_events.values():
             cancel()
         self._held_events.clear()
+        if self._park_timer is not None:
+            self._park_timer()
+            self._park_timer = None
         # The probe's lines wait a minute for the next tick; a stop has
         # none, so they are written here (0.23.10).
         await self.async_probe_stop()

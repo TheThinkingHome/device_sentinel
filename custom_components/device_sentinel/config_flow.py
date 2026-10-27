@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.27.4 (2026-10-25)
+# File: config_flow.py, Version: 0.27.7 (2026-10-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -1551,11 +1551,17 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 )
             )
         options = self.config_entry.options
-        excluded = list(
-            options.get(
-                CONF_EXCLUDED_INTEGRATIONS, DEFAULT_EXCLUDED_INTEGRATIONS
+        stored = options.get(CONF_EXCLUDED_INTEGRATIONS)
+        if stored is None:
+            # The list a house follows until it saves its own (Ruled
+            # Change 70).
+            runtime = getattr(self.config_entry, "runtime_data", None)
+            stored = (
+                runtime.default_exclusions()
+                if runtime is not None
+                else DEFAULT_EXCLUDED_INTEGRATIONS
             )
-        )
+        excluded = list(stored)
         # The exclude picker offers integrations with something left to
         # exclude, plus the ones already excluded. An integration whose
         # devices are every one of them set aside already is not

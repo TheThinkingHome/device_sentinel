@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.27.4 (2026-10-25)
+# File: detect_battery.py, Version: 0.27.7 (2026-10-27)
 
 """Battery: the level threshold and what is tracked.
 
@@ -549,7 +549,9 @@ class BatteryMixin:
                 return
             threshold = self.low_threshold
             if was_low:
-                is_low = level < threshold + BATTERY_CLEAR_MARGIN
+                # Clears only above the threshold plus 3 (rule BAT-03):
+                # 18 percent at the default 15 still reads low.
+                is_low = level <= threshold + BATTERY_CLEAR_MARGIN
             else:
                 is_low = level <= threshold
 

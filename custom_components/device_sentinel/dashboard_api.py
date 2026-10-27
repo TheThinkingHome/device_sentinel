@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.4 (2026-10-25)
+# File: dashboard_api.py, Version: 0.27.7 (2026-10-27)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -561,12 +561,15 @@ def ws_device_power(
 ) -> None:
     """Set what powers a device, or clear the owner's entry (0.24.7),
     recorded with where it was pressed (rule BRIEF-07)."""
-    _page_act(
-        hass, connection, msg,
-        lambda c: c.page_from(msg["source"], lambda: c.page_set_power(
+    def act(c: Any) -> dict[str, Any]:
+        c.page_from(msg["source"], lambda: c.page_set_power(
             msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other")
-        )),
-    )
+        ))
+        # Battery Notes' form for a battery type set here, wherever it
+        # was set from, the Recommendations tab too (rule DEV-09).
+        return {"report_url": c.power_report_url(msg["device_id"]) if msg.get("choice") else None}
+
+    _page_act(hass, connection, msg, act)
 
 
 @websocket_api.require_admin

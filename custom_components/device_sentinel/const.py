@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.6 (2026-10-26)
+# File: const.py, Version: 0.27.7 (2026-10-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -769,6 +769,19 @@ DEFAULT_EXCLUDED_INTEGRATIONS = (
     "samsungtv",
     "apple_tv",
     "dlna_dmr",
+    # Ruled Change 69 (James, 27 October 2026): seen only through
+    # Amazon's cloud, and switched off with the television.
+    "alexa_media",
+    "cast",
+)
+
+# The default list as 0.27.6 had it (Ruled Change 70, rule MUTE-02). A
+# house that never saved its list follows the default, so on such a
+# house that already exists this is written as its list once, and the
+# names 0.27.7 adds to the default reach it as a recommendation, not
+# behind its back.
+DEFAULT_EXCLUDED_BEFORE_0277 = tuple(
+    name for name in DEFAULT_EXCLUDED_INTEGRATIONS if name not in ("alexa_media", "cast")
 )
 
 # Integrations excluded once, the first time a house is seen with them,
@@ -788,6 +801,12 @@ AUTO_EXCLUDED_INTEGRATIONS = (
     "samsungtv",
     "apple_tv",
     "dlna_dmr",
+    # Ruled Change 69 (James, 27 October 2026): Alexa Media Player
+    # brought 18 devices, Bluetooth headphones among them, seen only
+    # through Amazon's cloud; a Google Cast device goes unavailable
+    # whenever it is switched off (Tim Plas's friend's house).
+    "alexa_media",
+    "cast",
 )
 
 # The integrations that publish a tracker per client on the network
@@ -821,6 +840,31 @@ ROUTER_INTEGRATIONS = (
 # AUTO_EXCLUDED_INTEGRATIONS alike: once listed here, never new again.
 # The name is from 0.18, when only routers were.
 DATA_ROUTERS_SEEN = "routers_seen"
+
+# On a house that already exists, a router or media integration seen for
+# the first time is recommended for exclusion, not excluded (Ruled
+# Change 70, rule MUTE-02): the domains whose card stands, until the
+# person excludes the integration. A tick on the card keeps it
+# watching, kept as a written recommendation's tick is.
+DATA_EXCLUSION_OFFERS = "exclusion_offers"
+OFFER_OPEN = "open"
+OFFER_CLOSED = "closed"
+# Why each is usually excluded, as its card says it (Ruled Change 70).
+EXCLUSION_OFFER_REASONS = {
+    "router": (
+        "it registers every client on your network as a device, copies "
+        "of hardware other integrations already watch"
+    ),
+    "alexa_media": (
+        "Device Sentinel sees its devices only through Amazon's cloud, "
+        "and headphones paired to an Echo are listed as devices of their own"
+    ),
+    "music_assistant": (
+        "it adds a player for each speaker it drives, a copy of hardware "
+        "watched through its own integration"
+    ),
+    "media": "its devices go unavailable whenever they are switched off",
+}
 
 # The devices set aside (disabled, excluded or held after a removal)
 # at the last registry rebuild (ruling #648). Saved, so a device taken
@@ -1530,7 +1574,10 @@ RETIRED_SLIDER_KEYS = (
 # (ruling #205).
 LOW_THRESHOLD_MIN = 1
 LOW_THRESHOLD_MAX = 99
-BATTERY_CLEAR_MARGIN = 2
+# A low battery clears only above the threshold plus this (rule BAT-03,
+# Ruled Change 42): a cell hovers near the line, and Door 2nd Bedroom
+# recovered by more than 2 points.
+BATTERY_CLEAR_MARGIN = 3
 
 # Per-device battery storage fields.
 DEV_BATTERY_LOW = "battery_low"
@@ -2795,6 +2842,9 @@ SYS_INTEGRATION_PAGE = "integration_page"
 # An integration added to the exclusion list the first time it is seen
 # (#420, #711), its domain in the scope.
 SYS_FIRST_SEEN_EXCLUDED = "first_seen_excluded"
+# On a house that already exists, the same integration recommended for
+# exclusion instead (Ruled Change 70), told once in the brief.
+SYS_EXCLUSION_OFFERED = "exclusion_offered"
 
 # A person deliberately erased a device's or an integration's learned
 # history from the Advanced screen (ruling #307). Recorded because it

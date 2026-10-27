@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.3 (2026-10-24)
+# File: journal.py, Version: 0.27.7 (2026-10-27)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -475,6 +475,7 @@ class JournalMixin:
         superseded: bool = False,
         duration: float | None = None,
         since: float | None = None,
+        at: float | None = None,
     ) -> None:
         """Append one event to the incident log.
 
@@ -485,7 +486,9 @@ class JournalMixin:
         else, so what the phone says, what the brief says, and what
         a future voice answer says can never disagree.
         """
-        written = dt_util.utcnow().timestamp()
+        # `at`: a recovery told after its minute's wait is dated when it
+        # happened (rule LIST-06).
+        written = at if at is not None else dt_util.utcnow().timestamp()
         entry = {
             INC_DEVICE_ID: device_id,
             INC_NAME: name,
@@ -801,6 +804,7 @@ class JournalMixin:
         opened_at: float | None = None,
         superseded: bool = False,
         down_for: float | None = None,
+        at: float | None = None,
     ) -> None:
         """Close one problem on the incident timeline.
 
@@ -840,6 +844,7 @@ class JournalMixin:
             cause=cause,
             duration=duration,
             superseded=superseded,
+            at=at,
         )
 
     def _acknowledged_devices(self) -> set[str]:

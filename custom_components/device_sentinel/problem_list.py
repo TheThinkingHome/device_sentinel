@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.5 (2026-10-26)
+# File: problem_list.py, Version: 0.27.7 (2026-10-27)
 
 """The problem list: the single memory every channel renders.
 
@@ -36,6 +36,7 @@ from __future__ import annotations
 import math
 
 import uuid
+from collections.abc import Callable
 from typing import Any
 from homeassistant.core import callback
 from homeassistant.helpers.event import (
@@ -48,6 +49,7 @@ from .events import sort_kinds
 from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS
 from .normalise import row_damage
 from .const import (
+    INCIDENT_SETTLE_SECONDS,
     TODO_KIND_FLAPPING,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -136,6 +138,11 @@ _RECOVERY_LINE = {
 
 class ProblemListMixin:
     """The problem list: the single memory every channel renders."""
+
+    # Set in the coordinator's constructor (rule LIST-06).
+    _parked: dict[str, float]
+    _park_timer: Callable[[], None] | None
+    _matured_in_park: dict[tuple[str, str], tuple[str, str]]
 
 
     def _todo_tag_of(self, device_id: str) -> str:
@@ -281,6 +288,7 @@ class ProblemListMixin:
                         record[TODO_DEVICE_ID], name, kinds
                     )
                 else:
+                    level, value = self._event_figures(record[TODO_DEVICE_ID])
                     stamps = record.get(TODO_KINDS, {})
                     since = min(
                         (
@@ -298,6 +306,8 @@ class ProblemListMixin:
                         .astimezone(dt_util.DEFAULT_TIME_ZONE)
                         .isoformat(),
                         renewed=True,
+                        level=level,
+                        signal_value=value,
                     )
             break
         self._sort_todo_items()
@@ -321,7 +331,14 @@ class ProblemListMixin:
             if record[TODO_UID] not in uids:
                 continue
             device_id = record[TODO_DEVICE_ID]
-            self._hand_deleted.add(device_id)
+            if self._parked.pop(device_id, None) is None:
+                self._hand_deleted.add(device_id)
+            else:
+                # Its problems had already cleared and it waited its
+                # minute (rule LIST-06): nothing stands to come back, so
+                # its next fault is a new one.
+                for key in [k for k in self._matured_in_park if k[0] == device_id]:
+                    self._matured_in_park.pop(key, None)
             for kind in record.get(TODO_KINDS, {}):
                 self._record_incident(
                     device_id=device_id,
@@ -420,8 +437,29 @@ class ProblemListMixin:
         for row in self.signal_problem_list:
             entry = _entry(row["device_id"], row.get("name"))
             entry["kinds"][TODO_KIND_RAILED_SIGNAL] = None
+            # The railed value, for the fault event (rule NOTE-12).
+            entry["signal_value"] = row.get("value")
 
         return problems
+
+    def _event_figures(self, device_id: str) -> tuple[Any, Any]:
+        """The battery level and railed signal value a renewed fault
+        carries, read from the same rows the list is built from (rule
+        NOTE-12). Without the flap tracking _current_problems does, so
+        an untick changes nothing but the item."""
+        level = None
+        for row in self.battery_low_list:
+            if row["device_id"] == device_id:
+                level = row.get("level")
+        if level is None:
+            for row in self.battery_falling_list:
+                if row["device_id"] == device_id:
+                    level = row.get("level")
+        value = None
+        for row in self.signal_problem_list:
+            if row["device_id"] == device_id:
+                value = row.get("value")
+        return level, value
 
     @staticmethod
     def _kind_word(
@@ -1068,8 +1106,16 @@ class ProblemListMixin:
         device_id: str,
         left: str | None = None,
         superseded: bool = False,
+        final: bool = False,
+        at: float | None = None,
     ) -> None:
         """Buffer a family event to fire after the sync settles.
+
+        A ticked item is silent on the phone until the device's last
+        problem clears (rules LIST-03, NOTE-08): a kind arriving on it,
+        or leaving it while another stays, sends nothing, and `final`,
+        the recovery as the item leaves the list, is pushed. The bus is
+        not this method's, so automations still hear every change.
 
         The kind maps to its family (battery, signal, freeze), and the
         event line names the device and what happened, timestamped in
@@ -1096,8 +1142,20 @@ class ProblemListMixin:
         # hours (0.23.2).
         if kind == TODO_KIND_UNAVAILABLE and self.is_flapping(device_id):
             return
+        key = (device_id, kind)
+        if not final and self._todo_status_of(device_id) == "completed":
+            # Ticked: nothing reaches the phone until the item leaves
+            # (rule LIST-03). A fault held from before the tick is
+            # dropped by its release, which reads the list; a recovery
+            # here still cancels its own fault's hold.
+            if recovery:
+                cancel = self._held_events.pop(key, None)
+                if cancel is not None:
+                    cancel()
+            return
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
-        when = dt_util.now().strftime("%-I:%M %p").lower()
+        moment = dt_util.now() if at is None else dt_util.as_local(dt_util.utc_from_timestamp(at))
+        when = moment.strftime("%-I:%M %p").lower()
         # The brief's words where they depend on the device: a hub
         # "went down", and a device dropping out says how often, as the
         # brief does (rules NOTE-01, UNAV-08). The push no longer adds
@@ -1114,12 +1172,15 @@ class ProblemListMixin:
             # to 12%", where the push read "was detected low" (James,
             # 25 October 2026; rule NOTE-10).
             said = self._battery_phrase(device_id, False)  # type: ignore[attr-defined]
-        line =self._event_line(kind, name, when, recovery, left, said)
-        key = (device_id, kind)
+        line = self._event_line(kind, name, when, recovery, left, said)
         if recovery:
             cancel = self._held_events.pop(key, None)
             if cancel is not None:
                 cancel()
+                return
+            if self._matured_in_park.pop(key, None) is not None:
+                # Its fault matured while it waited its minute and was
+                # never sent, so its recovery is no news (rule LIST-06).
                 return
             if superseded:
                 return
@@ -1351,10 +1412,12 @@ class ProblemListMixin:
             # clear.
             down = self._down_for(device_id, kind, opened, now)
             self._resolve_incident(
-                device_id, name, kind, now, opened_at=opened, down_for=down
+                device_id, name, kind, now, opened_at=opened, down_for=down,
+                at=now,
             )
             self._collect_event(
-                kind, name, recovery=True, device_id=device_id
+                kind, name, recovery=True, device_id=device_id, final=True,
+                at=now,
             )
             self.fire_recovered(
                 device_id,
@@ -1465,6 +1528,11 @@ class ProblemListMixin:
                 device_id, problem["name"], kind, INCIDENT_OPENED,
                 since=since,
             )
+            if self._said_in_family(device_id, kind, stored_kinds):
+                # A worsening inside the family, such as frozen becoming
+                # unavailable, is the same problem said differently: no
+                # push, as no new fault (rule LIST-06).
+                continue
             self._collect_event(
                 kind, problem["name"], recovery=False,
                 device_id=device_id, left=problem.get("left"),
@@ -1595,6 +1663,30 @@ class ProblemListMixin:
             TODO_KINDS: kinds,
         }
 
+    def _said_in_family(
+        self, device_id: str, kind: str, standing: dict[str, float | None]
+    ) -> bool:
+        """Whether a kind of the same family already stands on the item
+        and has been told, or was never to be told (rule LIST-06).
+
+        One still held for its debounce has told nobody yet, so the
+        worse kind takes its place in the hold rather than the person
+        hearing nothing at all.
+        """
+        family = TODO_KIND_FAMILIES.get(kind, kind)
+        if family != "down":
+            # A battery crossing from running down to low is pushed, as
+            # ruling #220 has it (James, 27 October 2026): only the
+            # not-reporting family is said once.
+            return False
+        same = [
+            k for k in standing
+            if k != UPSTREAM_KIND and TODO_KIND_FAMILIES.get(k, k) == family
+        ]
+        return bool(same) and not any(
+            (device_id, k) in self._held_events for k in same
+        )
+
     def _worth_announcing(
         self, arriving: set[str], standing: dict[str, float | None]
     ) -> bool:
@@ -1617,6 +1709,11 @@ class ProblemListMixin:
         families = {
             TODO_KIND_FAMILIES.get(kind, kind) for kind in standing
         }
+        # A battery running down that crosses into low is news, on the
+        # bus as on the phone (James, 27 October 2026): the forecast has
+        # come true, and a low battery is what a person acts on.
+        if TODO_KIND_LOW_BATTERY in arriving:
+            return True
         return any(
             TODO_KIND_FAMILIES.get(kind, kind) not in families
             for kind in arriving
@@ -1723,6 +1820,12 @@ class ProblemListMixin:
                 continue
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
+            if problem is not None or self._still_judged_down(device_id):
+                # Back inside the minute, or never gone: the item carries
+                # on, and nothing is announced (rule LIST-06). A fault
+                # that matured while it waited is true again, and sent.
+                if isinstance(device_id, str) and self._parked.pop(device_id, None) is not None:
+                    self._send_matured(device_id)
             if problem is None and self._still_judged_down(device_id):
                 # Absent from the source for a moment while its own
                 # verdict still says down: held, never retired as
@@ -1770,8 +1873,25 @@ class ProblemListMixin:
                     if watched
                     else None
                 )
+                cleared = now
+                if watched and self._parks(device_id, record, muted):
+                    cleared = self._parked.setdefault(device_id, now)
+                    if now - cleared < INCIDENT_SETTLE_SECONDS:
+                        # Its last problem cleared: it stays a minute,
+                        # and its recovery is told only if it does not
+                        # come back in that minute (rule LIST-06).
+                        self._schedule_park_release()
+                        kept.append(record)
+                        continue
+                self._parked.pop(device_id, None)
+                if not watched or muted:
+                    # Leaving silently: no recovery will read a fault
+                    # kept from its minute, so none is kept for a later
+                    # one to misread (second adversarial round of 0.27.7).
+                    for key in [k for k in self._matured_in_park if k[0] == device_id]:
+                        self._matured_in_park.pop(key, None)
                 self._retire_item(
-                    record, device_id, now, announce=watched, muted=muted
+                    record, device_id, cleared, announce=watched, muted=muted
                 )
                 changed = True
                 continue
@@ -1866,6 +1986,61 @@ class ProblemListMixin:
         # runs in a sync context and the sends are async.
         self._dispatch_notifications()
 
+    def _parks(
+        self, device_id: str, record: dict[str, Any], muted: set[str] | None
+    ) -> bool:
+        """Whether an item whose problems cleared waits its minute
+        (rule LIST-06): a device's own item with a kind a recovery would
+        be told for. An upstream's row, and kinds a mute took, leave at
+        once, as they announce nothing."""
+        if device_id.startswith("upstream:"):
+            return False
+        if self._in_startup_grace():
+            # Inside the startup window the line goes at once and its
+            # recovery is held until the window shuts (rule WATCH-10),
+            # which already waits longer than a minute.
+            return False
+        return any(
+            kind != UPSTREAM_KIND and kind not in (muted or ())
+            for kind in (record.get(TODO_KINDS) or {})
+        )
+
+    def _send_matured(self, device_id: str) -> None:
+        """Send the faults that matured while the device waited its
+        minute and came back down before it ended (rule LIST-06)."""
+        ticked = self._todo_status_of(device_id) == "completed"
+        for key in [k for k in self._matured_in_park if k[0] == device_id]:
+            family, line = self._matured_in_park.pop(key)
+            if not ticked:
+                self._pending_events.append((family, line, False))
+
+    def _schedule_park_release(self) -> None:
+        """Come back when the oldest parked item's minute is up."""
+        # An item deleted by hand, or otherwise gone, waits for nothing.
+        listed = {
+            record.get(TODO_DEVICE_ID)
+            for record in self.data.get(DATA_TODO_ITEMS, [])
+            if isinstance(record, dict)
+        }
+        for device_id in [d for d in self._parked if d not in listed]:
+            self._parked.pop(device_id, None)
+            for key in [k for k in self._matured_in_park if k[0] == device_id]:
+                self._matured_in_park.pop(key, None)
+        if self._park_timer is not None or not self._parked:
+            return
+        now = dt_util.utcnow().timestamp()
+        due = min(self._parked.values()) + INCIDENT_SETTLE_SECONDS - now
+
+        @callback
+        def _release(_now: Any) -> None:
+            self._park_timer = None
+            if getattr(self, "_stopped", False):
+                return
+            self._sync_problem_list()
+            self._schedule_park_release()
+
+        self._park_timer = async_call_later(self.hass, max(1.0, due + 0.5), _release)
+
     def _problem_device_ids(self) -> set[str]:
         """Return the device_ids that currently have any fault.
 
@@ -1909,6 +2084,10 @@ class ProblemListMixin:
         checked off by hand, or no longer carrying this kind has
         nothing left to announce.
         """
+        if device_id in self._parked:
+            # Its problems cleared and it waits its minute: nothing it
+            # held has anything left to say (rule LIST-06).
+            return False
         for record in self.data.get(DATA_TODO_ITEMS, []):
             if record.get(TODO_DEVICE_ID) != device_id:
                 continue
@@ -1931,6 +2110,17 @@ class ProblemListMixin:
         """
         self._held_events.pop(key, None)
         device_id, kind = key
+        if device_id in self._parked:
+            if self._todo_status_of(device_id) == "completed":
+                # Ticked: silent until its last problem clears (rule
+                # LIST-03; second adversarial round of 0.27.7).
+                return
+            # Its problems cleared and it waits its minute: the fault is
+            # kept until the minute decides (rule LIST-06). Back down,
+            # it is sent; gone for good, it was never news, and its
+            # recovery is not sent either.
+            self._matured_in_park[key] = (family, line)
+            return
         if not self._still_on_the_list(device_id, kind):
             return
         self.hass.async_create_task(

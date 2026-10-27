@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.4 (2026-10-25)
+# File: narrative.py, Version: 0.27.7 (2026-10-27)
 
 """How to say what happened: the composer.
 
@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import math
 from typing import Any
+
+from datetime import datetime
 
 from homeassistant.util import dt as dt_util
 
@@ -70,6 +72,7 @@ from .const import (
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     BATTERY_CLEAR_MARGIN,
+    DEV_BATTERY_SINCE,
     BATTERY_REPLACED_LANDS,
 )
 from .escalation import ESCALATED_FROM, state_word
@@ -214,7 +217,9 @@ class NarrativeMixin:
             dt_util.utc_from_timestamp(epoch)
         ).strftime("%-I:%M %p")
 
-    def _battery_phrase(self, device_id: str, state: bool) -> str:
+    def _battery_phrase(
+        self, device_id: str, state: bool, crossed_at: float | None = None, at: str | None = None
+    ) -> str:
         """Return the battery clause with its level where known.
 
         The level here is the record's level at composition time, not
@@ -233,7 +238,19 @@ class NarrativeMixin:
             if state:
                 return f"battery is at {shown}"
             if level <= self.low_threshold + BATTERY_CLEAR_MARGIN:
-                return f"battery fell to {shown}"
+                # When it crossed, and where it stands (rule BAT-03,
+                # Ruled Change 42): "fell" read as a fall at a level it
+                # may have risen to since.
+                # A row of history is told by its own moment: `at`, its
+                # clock time, where the sentence carries no other, or
+                # `crossed_at` for its day; the device's own crossing
+                # is the latest one (first adversarial round of 0.27.7).
+                if at is not None:
+                    on = f" at {at}"
+                else:
+                    crossed = self._crossed_day(record, crossed_at)
+                    on = f" on {crossed}" if crossed else ""
+                return f"battery crossed the threshold{on}. Its current level is {shown}"
             # Back above the line. The level it fell to is not stored,
             # so no number is given: "now 55%" read as if 55 were the
             # low reading. A cell back at the level the replacement
@@ -243,6 +260,20 @@ class NarrativeMixin:
                 return "battery read low, since replaced or recharged"
             return "battery read low, since recovered"
         return "battery is low" if state else "battery read low"
+
+    @staticmethod
+    def _crossed_day(record: dict[str, Any], crossed_at: float | None = None) -> str | None:
+        """The local day a low battery crossed its threshold, "Oct 24",
+        from the moment given, else the record's, or None."""
+        moment: datetime | None
+        if crossed_at is not None:
+            moment = dt_util.utc_from_timestamp(crossed_at)
+        else:
+            moment = dt_util.parse_datetime(str(record.get(DEV_BATTERY_SINCE) or ""))
+        if moment is None:
+            return None
+        local = dt_util.as_local(moment)
+        return f"{local.strftime('%b')} {local.day}"
 
     def _change_clause(
         self, row: dict[str, Any], form: str = "sentence"
@@ -355,7 +386,11 @@ class NarrativeMixin:
             return f"{name}{change} at {self._clock(row[INC_WHEN])}"
         when = self._clock(self._began_at(row))
         if kind == TODO_KIND_LOW_BATTERY:
-            phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
+            # Its time inside the first sentence, not after the level
+            # (rule BAT-03; first adversarial round of 0.27.7).
+            phrase = self._battery_phrase(row[INC_DEVICE_ID], False, at=when)
+            if " at " in phrase:
+                return f"{name} {phrase}"
             return f"{name} {phrase} at {when}"
         wording = self._EVENT_WORDING.get(kind, kind)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]

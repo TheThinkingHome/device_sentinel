@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.4 (2026-10-25)
+# File: report_brief.py, Version: 0.27.7 (2026-10-27)
 
 """The daily brief: the one report written for a person.
 
@@ -28,6 +28,7 @@ from datetime import timedelta
 from html import escape
 from typing import Any
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
@@ -40,6 +41,9 @@ from .repairs import (
     missing_targets,
 )
 from .const import (
+    EXCLUSION_OFFER_REASONS,
+    OFFER_OPEN,
+    ROUTER_INTEGRATIONS,
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
@@ -138,6 +142,7 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
     SYS_DEVICE_PAGE,
+    SYS_EXCLUSION_OFFERED,
     SYS_FIRST_SEEN_EXCLUDED,
     SYS_INTEGRATION_PAGE,
     SYS_DEVICE_ID,
@@ -353,7 +358,14 @@ class BriefMixin:
             # cannot disagree about the same event: one composer
             # serves every channel, so nothing is described two ways
             # (ruling #120). The level belongs in both or neither.
-            return self._battery_phrase(row[INC_DEVICE_ID], False)
+            # Its own day, not the device's latest crossing.
+            when = row.get(INC_WHEN)
+            crossed = (
+                self._began_at(row)
+                if isinstance(when, (int, float)) and not isinstance(when, bool)
+                else None
+            )
+            return self._battery_phrase(row[INC_DEVICE_ID], False, crossed_at=crossed)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         wording = {
             TODO_KIND_FLAPPING: "started dropping out again and again",
@@ -742,6 +754,16 @@ class BriefMixin:
                 f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
                 f"excluded when first seen, at {when}."
             )
+        if kind == SYS_EXCLUSION_OFFERED:
+            # Recommended, not excluded, on a house that already exists
+            # (Ruled Change 70): "Alexa Media Player: found at 9:14 AM
+            # and usually excluded; the Recommendations tab has a card
+            # for it."
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
+                f"found at {when} and usually excluded; the Recommendations "
+                f"tab has a card for it."
+            )
         if kind == SYS_INTEGRATION_PAGE:
             # An integration excluded or taken back from its page on the
             # dashboard (0.26.1, ruling #659): "ZHA: excluded, from its
@@ -970,6 +992,8 @@ class BriefMixin:
             return f"settings changed ({labels})" if labels else "settings changed"
         if kind == SYS_FIRST_SEEN_EXCLUDED:
             return f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} excluded when first seen"
+        if kind == SYS_EXCLUSION_OFFERED:
+            return f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} recommended for exclusion"
         if kind == SYS_INTEGRATION_PAGE:
             return (
                 f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
@@ -1247,14 +1271,64 @@ class BriefMixin:
                     "settings gives Device Sentinel that second opinion."
                 ))
                 break
+        offers = self._exclusion_offer_entries()
+        items += [(key, text) for key, text, _extra in offers]
         items += self._router_watched_entries()
         items += self._noisy_integration_entries()
         items += self._library_entries()
-        simple = ("target:", "no_target", "muted:")
+        # An integration recommended for exclusion is shown in Simple
+        # too, with its devices and an Exclude button (Ruled Change 70).
+        simple = ("target:", "no_target", "muted:", "offer:")
+        extras = {key: extra for key, _text, extra in offers}
         return [
-            {"key": key, "text": text, "simple": key.startswith(simple)}
+            {"key": key, "text": text, "simple": key.startswith(simple), **extras.get(key, {})}
             for key, text in items
         ]
+
+    def _open_offers(self) -> set[str]:
+        """The integrations whose exclusion card stands (Ruled Change 70)."""
+        return {
+            domain for domain, state in self.exclusion_offers().items()
+            if state == OFFER_OPEN and domain not in self.excluded_integrations
+        }
+
+    def _exclusion_offer_entries(self) -> list[tuple[str, str, dict[str, Any]]]:
+        """One card for each router or media integration seen for the
+        first time on a house that already exists (Ruled Change 70, rule
+        MUTE-02): what it is, why it is usually excluded, its devices,
+        and an Exclude button beside the tick that keeps it watched."""
+        registry = dr.async_get(self.hass)
+        said: list[tuple[str, str, dict[str, Any]]] = []
+        for domain in sorted(self._open_offers()):
+            names = sorted(
+                {
+                    self._device_name(device.id)
+                    for entry in self.hass.config_entries.async_entries(domain)
+                    for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+                },
+                key=str.casefold,
+            )
+            if not names:
+                # Nothing to exclude, or removed from Home Assistant: no
+                # card until it has devices (first adversarial round of
+                # 0.27.7).
+                continue
+            title = self._integration_title(domain)
+            why = EXCLUSION_OFFER_REASONS.get(
+                "router" if domain in ROUTER_INTEGRATIONS else domain,
+                EXCLUSION_OFFER_REASONS["media"],
+            )
+            count = len(names)
+            said.append((
+                f"offer:{domain}",
+                f"{title} Is Usually Excluded: Device Sentinel found the "
+                f"{title} integration, with {count} device"
+                f"{'' if count == 1 else 's'}. It is usually excluded "
+                f"because {why}. Exclude it here, or tick the box to keep "
+                f"watching it.",
+                {"exclude": domain, "devices": names},
+            ))
+        return said
 
     def _library_items(self) -> list[str]:
         """Name watched integrations the library knows to be noise."""
@@ -1273,12 +1347,16 @@ class BriefMixin:
         for domain in self._watched.values():
             per_domain[domain] = per_domain.get(domain, 0) + 1
 
+        offered = self._open_offers()
+
         def present(domains: tuple[str, ...]) -> list[str]:
+            # One with its own card is told there (Ruled Change 70).
             return sorted(
                 domain for domain in domains
                 if per_domain.get(domain)
                 and domain not in excluded
                 and domain not in muted
+                and domain not in offered
             )
 
         said: list[tuple[str, str]] = []
@@ -1403,6 +1481,7 @@ class BriefMixin:
                 entity.domain == "device_tracker"
                 and entity.platform in self._router_integrations_present()
                 and entity.platform not in excluded
+                and entity.platform not in self._open_offers()
                 and entity.device_id
             ):
                 clients.setdefault(entity.platform, set()).add(entity.device_id)
@@ -1433,9 +1512,11 @@ class BriefMixin:
         """
         # A line or a device a person ticked leaves the Brief (ruling
         # #699); the emailed Brief is the whole Advanced list (#693).
+        # An exclusion card is told once, by the day's sentence that
+        # it was found, not every morning (Ruled Change 70).
         items = [
             entry["text"] for entry in self.recommendation_lines()
-            if not entry["acknowledged"]
+            if not entry["acknowledged"] and not entry["key"].startswith("offer:")
         ]
         # One line for each kind of device recommendation, with its
         # count, pointing to the tab that lists them (0.24.9). The

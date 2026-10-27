@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.26.7 (2026-10-19)
+# File: store.py, Version: 0.27.7 (2026-10-27)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -80,6 +80,7 @@ from .const import (
     DATA_SETUP_COUNT,
     DATA_TODO_ITEMS,
     DEFAULT_COALESCE_MINUTES,
+    DEFAULT_EXCLUDED_BEFORE_0277,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_RETENTION_DAYS,
     DEV_DAILY_MAX,
@@ -1034,8 +1035,21 @@ class StorageMixin:
         """
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
         if stored is None:
-            return frozenset(DEFAULT_EXCLUDED_INTEGRATIONS)
+            return frozenset(self.default_exclusions())
         return frozenset(stored)
+
+    def default_exclusions(self) -> tuple[str, ...]:
+        """The list a house follows while it has never saved its own.
+
+        A house first written by a release before 0.27.7 keeps the
+        default it had then, so what 0.27.7 adds reaches it as a
+        recommendation (Ruled Change 70, rule MUTE-02); its first
+        sighting writes that list as its own. Any other house, a new
+        install above all, takes the whole default.
+        """
+        if getattr(self, "_pin_before_0277", False):
+            return DEFAULT_EXCLUDED_BEFORE_0277
+        return DEFAULT_EXCLUDED_INTEGRATIONS
 
     @property
     def excluded_devices(self) -> frozenset[str]:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.27.4 (2026-10-25)
+# File: detect_signal.py, Version: 0.27.7 (2026-10-27)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -832,12 +832,15 @@ class SignalMixin:
         day to day and live on signal_weak_list, which notifies
         nothing (rulings #59, kept by #310, and #211).
 
-        Signal-muted devices are observed but never judged, so
-        they stay off this list until re-included by hand.
+        Signal-muted devices, and devices muted for everything, are
+        observed but never judged, so they stay off this list until
+        re-included by hand.
         """
         problems: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
-            if self._signal_muted(device_id):
+            # Mute everything judges the device for nothing, a rail
+            # included (rules MUTE-01, MUTE-07).
+            if self._signal_muted(device_id) or device_id in self._muted_devices:
                 continue
             if self.signal_railed(record):
                 problems.append(

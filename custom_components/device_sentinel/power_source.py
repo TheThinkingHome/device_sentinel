@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.27.2 (2026-10-23)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.27.7 (2026-10-27)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -72,6 +72,21 @@ KIND_MAINS = "mains"
 KIND_USB = "usb"
 KIND_POE = "poe"
 WIRED_KINDS = {POWER_MAINS: KIND_MAINS, POWER_USB: KIND_USB, POWER_USB_SERVER: KIND_USB, POWER_POE: KIND_POE}
+
+
+
+def wired_choice(text: Any) -> str | None:
+    """The wired choice that typed words mean, whatever their capitals,
+    or None (rules DEV-08, DEV-09): "usb direct to server" typed under
+    Other is USB Direct to Server, never a battery."""
+    if not isinstance(text, str):
+        return None
+    folded = " ".join(text.split()).casefold()
+    for choice in WIRED_KINDS:
+        if choice.casefold() == folded:
+            return choice
+    return None
+
 
 REPORT_FORM = "https://github.com/andrew-codechimp/HA-Battery-Notes/issues/new"
 REPORT_TEMPLATE = "new_device_request.yaml"
@@ -367,10 +382,12 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     except ValueError:
         return None
     quantity = raw.get("quantity")
-    if kind == KIND_BATTERY and battery_type in WIRED_KINDS:
+    if kind == KIND_BATTERY and wired_choice(battery_type) is not None:
         # A wired source typed under Other, as a battery, before it was a
         # choice: read as the choice (0.25.3, James's "USB Direct to
-        # Server", saved as one battery).
+        # Server", saved as one battery), whatever its capitals (rule
+        # DEV-08).
+        battery_type = wired_choice(battery_type) or battery_type
         kind = WIRED_KINDS[battery_type]
     if kind == KIND_BATTERY:
         if not isinstance(quantity, int) or isinstance(quantity, bool) or not (
@@ -677,6 +694,10 @@ class PowerMixin:
                 used = ""
             self._page_done(device_id, f"power entry removed{used}{many}")  # type: ignore[attr-defined]
             return
+        typed_wired = wired_choice(other) if choice == POWER_OTHER else None
+        if typed_wired is not None:
+            # A wired source typed under Other is that choice (rule DEV-08).
+            choice = typed_wired
         if choice in WIRED_KINDS:
             entry = {"kind": WIRED_KINDS[choice], "type": choice, "quantity": None}
         else:
