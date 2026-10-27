@@ -1,6 +1,8 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
+// Since 0.27.9: a model's pace is the slowest to the fastest of the
+// other cells of its model (Ruled Change 26, rule BAT-16).
 // Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
 // subject since 0.23.19. The knee went in 0.27.0, and a cell above twice
 // the threshold is not judged (ruling #725).
@@ -174,14 +176,34 @@ const trends = {
     device: (page) => {
       steady.device(page);
       Object.assign(page.battery, { now: 100, ceiling: 45, lithium: "CR1632",
-        model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 },
+        model_pace: { model: "Aqara Door and window sensor", others: 7, pace_low: 0.8, pace_high: 1.6 },
         evidence: { day: "2026-10-22", volts: 2.95, temperature: 21.5, messages: 182, days: 12 } });
       return page;
     },
   });
   const coinText = text(coin.root);
   check("a lithium cell is said to be one", coinText.includes("A lithium cell (CR1632) holds its level near full"), coinText.slice(-1500));
-  check("its model's pace is context", coinText.includes("The 7 other cells of this model (Aqara Door and window sensor) lose almost nothing a week."));
+  check("its model's pace is a range, as context (BAT-16)", coinText.includes("Others of this model lose 0.8 to 1.6 points a week."), coinText.slice(-1500));
+  const same = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => {
+      steady.device(page);
+      Object.assign(page.battery, { now: 100, ceiling: 45, model_pace: { model: "Aqara", others: 2, pace_low: 0.8, pace_high: 0.8 } });
+      return page;
+    },
+  });
+  check("a range whose ends agree reads one number", text(same.root).includes("Others of this model lose 0.8 points a week.")
+    && !text(same.root).includes("0.8 to 0.8"), text(same.root).slice(-1500));
+  const none = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); Object.assign(page.battery, { now: 100, ceiling: 45, model_pace: null }); return page; },
+  });
+  check("no pace sent, no line", !text(none.root).includes("Others of this model"));
+  for (const [low, high, words] of [[0.96, 1.04, "lose 1 point a week."], [0, 0, "lose almost nothing a week."],
+    [0.04, 1.6, "lose up to 1.6 points a week."]]) {
+    const one = await open(`${PREFIX}/device/${DEVICE}`, {
+      device: (page) => { steady.device(page); Object.assign(page.battery, { now: 100, ceiling: 45, model_pace: { model: "Aqara", others: 2, pace_low: low, pace_high: high } }); return page; },
+    });
+    check(`a pace of ${low} to ${high} reads "${words}"`, text(one.root).includes(`Others of this model ${words}`), text(one.root).match(/Others of this model[^.]*\./));
+  }
   check("its day's evidence is shown, for later", coinText.includes("Kept each day for a better forecast later: 2.95 V, 182 messages, 21.5 \u00b0C on"));
   const falling = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => { steady.device(page); Object.assign(page.battery, { lithium: "CR2032", reading: "falling" }); return page; },
@@ -193,7 +215,7 @@ const trends = {
   const lithiumTab = await open(`${PREFIX}/battery-trends`, {
     battery_trends: (page) => {
       page.steady = [{ device_id: DEVICE, name: "Door Bath Main", type: null, level: 100, steps: "Smooth", days: 60, month_drop: 0,
-        cell: "CR1632", lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 } }];
+        cell: "CR1632", lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace_low: 0.8, pace_high: 1.6 } }];
       return page;
     },
   });
@@ -202,7 +224,7 @@ const trends = {
   const mixed = (page) => {
     page.steady = [
       { device_id: "aaa1", name: "Door Kitchen", type: null, level: 80, steps: "Smooth", days: 60, month_drop: 1,
-        cell: "2× AAA", lithium: null, model_pace: { model: "Third Reality Door sensor", others: 3, pace: 0.4 } },
+        cell: "2× AAA", lithium: null, model_pace: { model: "Third Reality Door sensor", others: 3, pace_low: 0.4, pace_high: 0.4 } },
       { device_id: "unk1", name: "Leak Sink", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0,
         cell: null, lithium: null, model_pace: null }];
     return page;
@@ -234,8 +256,10 @@ const trends = {
     simpleNotSet && simpleNotSet.innerHTML);
   const coinRow = [...lithiumTab.root.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent))
     .find((cells) => cells[0] === "Door Bath Main");
-  check("Other Cells names the lithium cell and its model's pace", coinRow && coinRow.includes("CR1632, lithium") && coinRow.includes("0"), coinRow);
-  check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week"));
+  check("Other Cells names the lithium cell and its model's pace", coinRow && coinRow.includes("CR1632, lithium") && coinRow.includes("0.8 to 1.6"), coinRow);
+  check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest"));
+  check("a range whose ends agree reads one number in the column",
+    rowCells(cellTab.root, "Door Kitchen").some((td) => td.textContent === "0.4"), rowCells(cellTab.root, "Door Kitchen").map((td) => td.textContent));
   // The summary's three parts add up to the cells (0.27.3): the rig's
   // 54 on 24 October read 2 falling and 51 not falling, and Soil
   // Irrigation, at 0% and not falling, was in neither.

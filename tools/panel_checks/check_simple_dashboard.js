@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -150,6 +150,12 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
     buttons(rowCell(root, "Muted")));
   check("no Mute by label", !anyButton(root, "Mute by label"));
   check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !rowCell(root, "Wait rule"));
+  // A device its hub judges shows no gaps, as Advanced (0.27.9).
+  ({ root } = await open({ __mode: "simple" }, (p) => {
+    p.status.category = "never_reported";
+    p.status.judged_by = { how: "hub", hub_id: "hub1", hub_name: "Garage Smart Bridge", hub_page: false };
+  }));
+  check("a device judged by its hub shows no Gaps in Simple", !text(root).includes("Gaps, Last 14 Days"));
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.battery.now = 15.5; p.status.category = "reporting"; }));
   check("a level reads as reported, 15.5% (0.27.1)", text(root).includes("15.5% now") && !text(root).includes("16% now"));
   check("no history ranges and no signal chart", !anyButton(root, "30 Days") && !text(root).includes("Signal median") && !root.querySelector("[aria-label=\"Time range for the graphs\"]"), text(root).match(/Signal.{0,40}/g));

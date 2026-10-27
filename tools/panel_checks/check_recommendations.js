@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
@@ -11,6 +11,9 @@
 // Since 0.27.0: each card's title counts its rows not ticked, with no
 // number at zero or on a written line (#724).
 // Since 0.27.3: the Battery Voltage Switched Off card's Turn on chip.
+// Since 0.27.9: the opening line counts the rows and lines not ticked,
+// as the tab and the button do, and reads "Nothing to recommend right
+// now." at zero (Ruled Change 27, rule REC-01).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -314,6 +317,36 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   ticks = { line: true, [ROWS[0].device_id]: true };
   const quiet = await open({ path: PREFIX, answers: { recommendations: recs } });
   check("With nothing active it says nothing", quiet.root.querySelector("p.recline") === null);
+
+  // The opening line, the tab and the button agree (REC-01): one card
+  // of five devices read "1 recommendation" under "Recommendations (5)".
+  console.log("\nThe opening line counts what the tab counts (REC-01)");
+  const FIVE = {
+    kind: "battery_off", title: "Battery Sensor Switched Off", simple: true, active: 5,
+    body: "5 devices have a battery sensor that is switched off.",
+    devices: [0, 1, 2, 3, 4].map((i) => ({ device_id: `five${i}`, name: `Device ${i}`, area: null, acknowledged: false })),
+  };
+  let fiveTicked = 0;
+  const fiveRecs = () => {
+    const card = JSON.parse(JSON.stringify(FIVE));
+    card.devices.forEach((d, i) => { d.acknowledged = i < fiveTicked; });
+    return { lines: [{ ...LINE, acknowledged: fiveTicked > 0 }], devices: [card], closing: "", power: {}, types: { choices: [], other: "Other" } };
+  };
+  const agree = async (ticked, words, tabWords, bandWords) => {
+    fiveTicked = ticked;
+    const v = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: fiveRecs } });
+    const opening = v.root.querySelector(".pane p").textContent;
+    const tabNow = [...v.root.querySelectorAll(".tab")].map((t) => t.textContent).find((t) => t.startsWith("Recommendations"));
+    const bandNow = v.root.querySelector("button.active-recs");
+    check(`${ticked} of 5 rows and the line ticked: opening, tab and button agree`,
+      opening === words && tabNow === tabWords && (bandWords === null ? bandNow.hidden : !bandNow.hidden && bandNow.textContent === bandWords),
+      [opening, tabNow, bandNow && bandNow.textContent]);
+    return v;
+  };
+  await agree(0, "6 recommendations to help Device Sentinel run better. None of them is required.", "Recommendations (6)", "Active Recommendations (6)");
+  await agree(4, "1 recommendation to help Device Sentinel run better. None of them is required.", "Recommendations (1)", "Active Recommendations (1)");
+  const done = await agree(5, "Nothing to recommend right now.", "Recommendations", null);
+  check("Every row ticked: the card is still drawn, to untick", !!done.root.querySelector('article.rec[data-kind="battery_off"]'));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

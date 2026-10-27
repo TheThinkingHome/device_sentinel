@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_type.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_device_type.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: the Type row and the Devices tab's Type column and filter (0.25.1).
 // Since 0.27.4 a type set or cleared here says it came from the device page.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_type.js [path/to/panel.js]
@@ -96,8 +96,8 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
     set_on_name: "Plug Laundry Router", covers: 8 })));
   cell = rowCell(root, "Type");
   const shield = cell.querySelector("span.powericon");
-  check("Owner's answer: the words, then the shield titled Entered on this page",
-    cell.textContent.startsWith("Plug") && shield && shield.getAttribute("title") === "Entered on this page");
+  check("Owner's answer set on another device: the words, then the shield naming it (DEV-07)",
+    cell.textContent.startsWith("Plug") && shield && shield.getAttribute("title") === "Entered on Plug Laundry Router");
   const whence = cell.querySelector(".powerwhence");
   check("Owner's answer set on another device: names it and how many it covers",
     whence && whence.textContent === "set on Plug Laundry Router, covers 8 devices of this model", whence && whence.textContent);

@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_node_status.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_node_status.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: the Z-Wave status row (ruling #671, 0.26.5). A Z-Wave
 // device's page shows what Z-Wave says of the node, in red when it is
 // dead, and a switched-off sensor with the button that turns it on; a
-// device of any other stack shows no row.
+// device of any other stack shows no row. Since 0.27.9 any reading
+// other than the six it has words for reads "not known yet" (rule
+// STACK-05): a reload showed "unavailable".
 // Run with: LC_ALL=en_US.UTF-8 node check_node_status.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -150,6 +152,13 @@ const rowCell = (root, label) => {
   view = await open({ tweak: (p) => { p.identity.node_status = "unknown"; } });
   cell = rowCell(view.root, "Z-Wave status");
   check("An unknown status reads not known yet", cell && cell.textContent === "not known yet", cell && cell.textContent);
+
+  for (const reading of ["unavailable", "something new"]) {
+    view = await open({ tweak: (p) => { p.identity.node_status = reading; } });
+    cell = rowCell(view.root, "Z-Wave status");
+    check(`A reading of "${reading}" reads not known yet (STACK-05)`, cell && cell.textContent === "not known yet"
+      && !(cell.firstChild.getAttribute("style") || ""), cell && cell.innerHTML);
+  }
 
   view = await open({ tweak: (p) => {
     p.identity.node_status = "off";

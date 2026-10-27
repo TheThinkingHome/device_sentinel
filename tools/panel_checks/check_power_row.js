@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.4 (2026-10-25)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.9 (2026-10-27)
 // Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
 // and dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library. Since 0.26.7 the
-// Battery Last Replaced row beside it (rulings #701, #702).
+// Battery Last Replaced row beside it (rulings #701, #702). Since
+// 0.27.9 the shield on a device covered by an answer set on another
+// device of its model names that device (rule DEV-07).
 // Run with: LC_ALL=en_US.UTF-8 node check_power_row.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -188,10 +190,16 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   let whence = rowCell(root, "Power").querySelector(".powerwhence");
   check("Set on another device: names it and how many it covers",
     whence && whence.textContent === "set on Button Master Shower, covers 4 devices of this model", whence && whence.textContent);
+  let shield = rowCell(root, "Power").querySelector(".powericon");
+  check("and its shield's hover names it too (DEV-07)", shield && shield.getAttribute("title") === "Entered on Button Master Shower"
+    && shield.getAttribute("aria-label") === "Entered on Button Master Shower", shield && shield.outerHTML.slice(0, 160));
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, set_on_name: "Button Randy Night Table", covers: 4 })));
   whence = rowCell(root, "Power").querySelector(".powerwhence");
   check("Set here on a model of four: says so", whence && whence.textContent === "set here, covers 4 devices of this model",
     whence && whence.textContent);
+  shield = rowCell(root, "Power").querySelector(".powericon");
+  check("and its shield reads Entered on this page", shield && shield.getAttribute("title") === "Entered on this page",
+    shield && shield.getAttribute("title"));
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, covers: 1 })));
   check("Set here on a one-off: no extra line", !rowCell(root, "Power").querySelector(".powerwhence"));
   ({ root } = await open({}, LIBRARY));
