@@ -3,7 +3,7 @@
 // integration seen for the first time on a house that already exists
 // (rule MUTE-02), and Send to Battery Notes offered
 // after a battery type is saved from the Power Not Set card (rule DEV-09).
-// Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
+// Run with: LC_ALL=en_US.UTF-8 node check_exclusion_card.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
@@ -76,8 +76,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
           mutes: { everything: { on: false }, freeze: { on: false }, battery: { on: false }, signal: { on: false } } };
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
-        // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they must blank neither chart.
+        // page.rhythm, under the same names as the figures: the real
+        // page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -104,7 +104,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
 
 
 (async () => {
-  console.log("The exclusion card (Ruled Change 70)");
+  console.log("The exclusion card");
   const OFFER = {
     key: "offer:cast", simple: true, acknowledged: false, exclude: "cast", devices: ["Basement Chromecast", "Kitchen Speaker"],
     text: "Google Cast Is Usually Excluded: Device Sentinel found the Google Cast integration, with 2 devices. It is usually excluded because its devices go unavailable whenever they are switched off. Exclude it here, or tick the box to keep watching it.",

@@ -127,7 +127,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   await settle();
   check("another range brings back the history chart", !chart(a.root));
 
-  console.log("The fall drawn to the low threshold (#730)");
+  console.log("The fall drawn to the low threshold");
   const LOW_DAILY = DOOR.map((v) => v + 20);
   const toLow = withBattery({
     daily: LOW_DAILY, now: 36.5, threshold: 15, readable: true,
@@ -149,7 +149,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("the words say the threshold", text(t.root).includes("Expected to reach 15% in about 4 to 5 weeks."));
   check("Advanced says the 0% line once, above the table", text(t.root).split("Many devices stop working").length === 2);
 
-  console.log("Earlier Forecasts (#732)");
+  console.log("Earlier Forecasts");
   const logged = withBattery({ ...JSON.parse(JSON.stringify(toLow.device({}).battery)), forecasts: [
     { day: "2026-11-20", level: 18.5, accelerating: true, target: 15, left: "about 1 to 2 weeks", outcome: null, arrived: null },
     { day: "2026-10-22", level: 31, accelerating: true, target: 15, left: "about 3 to 5 weeks", outcome: "inside", arrived: "2026-11-19" },

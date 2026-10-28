@@ -2,7 +2,7 @@
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
-// its model (rule BAT-16). A cell above twice the threshold is not
+// its model (rule BAT-16). A cell above three times the threshold is not
 // judged (rule BAT-10).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_weeks.js [path/to/panel.js]
 const fs = require("fs");
@@ -124,7 +124,7 @@ const trends = {
   const heads = [...fast.root.querySelectorAll("table.figures th")].map((th) => th.textContent);
   check("its table shows five weeks, oldest first", heads.join("|") === "LEVEL|28 DAYS AGO|21 DAYS AGO|14 DAYS AGO|7 DAYS AGO|THIS WEEK|READING|LEFT", heads);
   check("each week says what it lost", page.includes("down 6.4") && page.includes("down 5.2"), page.slice(-1500));
-  check("the sentence gives its pace today (ruling #725)", page.includes("Falling faster each week, about 5.9 points a week today."), page.slice(-1500));
+  check("the sentence gives its pace today", page.includes("Falling faster each week, about 5.9 points a week today."), page.slice(-1500));
   [...fast.root.querySelectorAll("button")].find((b) => b.textContent === "30 Days").click();
   await settle();
   check("the chart marks no knee", fast.root.querySelectorAll("svg circle").length === 0);
@@ -138,7 +138,7 @@ const trends = {
   check("no fitted line is drawn", ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"));
   check("and no knee", calm.root.querySelectorAll("svg circle").length === 0);
 
-  console.log("A cell above three times the threshold (ruling #725)");
+  console.log("A cell above three times the threshold");
   const high = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => { steady.device(page); page.battery.ceiling = 40; return page; },
   });
@@ -152,7 +152,7 @@ const trends = {
   });
   check("under the ceiling a steady cell still reads steady", text(under.root).includes("Steady: no week has fallen"));
 
-  console.log("A cell with under four weeks of readings (ruling #733)");
+  console.log("A cell with under four weeks of readings");
   const short = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => { steady.device(page); page.battery.ceiling = 80; page.battery.short = true; return page; },
   });
@@ -169,7 +169,7 @@ const trends = {
   check("the LEVEL column reads 15.5%, not 16%", halfCells[0] === "15.5%", halfCells);
   check("and the card's title the same", text(half.root).includes("15.5% now"));
 
-  console.log("A lithium cell, its model's pace and its day's evidence (#736 to #738)");
+  console.log("A lithium cell, its model's pace and its day's evidence");
   const coin = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => {
       steady.device(page);
@@ -279,13 +279,13 @@ const trends = {
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
   check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
   check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 1600));
-  check("the Falling list says where judging starts (ruling #725)",
+  check("the Falling list says where judging starts",
     tabText.includes("A cell is judged falling, and given a time left, at or under 45%, three times your threshold."), tabText.slice(0, 900));
-  check("a steady fall inside the warning days is named under Batteries to Watch (#731)",
+  check("a steady fall inside the warning days is named under Batteries to Watch",
     tabText.includes("Batteries to Watch") && tabText.includes("Back Door (reaches 15% in about 3 to 5 weeks)."), tabText.slice(0, 1200));
   const leftCells = [...tab.root.querySelectorAll("td")].filter((td) => td.textContent.startsWith("reaches 15% in"));
-  check("the time left reaches the threshold (#730)", leftCells.length === 2, leftCells.map((td) => td.textContent));
-  check("only the accelerating cell's time left is red (#731)",
+  check("the time left reaches the threshold", leftCells.length === 2, leftCells.map((td) => td.textContent));
+  check("only the accelerating cell's time left is red",
     leftCells.filter((td) => (td.getAttribute("style") || "").includes("error-color")).map((td) => td.textContent).join("|")
       === "reaches 15% in about 3 to 4 weeks");
   check("the other cells are not called steady", tabText.includes("Other Cells") && !/\bSteady\b/.test(tabText), tabText.slice(0, 900));

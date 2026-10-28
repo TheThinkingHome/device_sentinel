@@ -10,9 +10,10 @@
 // Cancel the exclusion for a device excluded on its own, a link to the
 // integration for one excluded with it, and Home Assistant's own page
 // for one whose history has gone; and an integration's page excluding
-// it or taking it back. Run on the reference house's 103 device rows
+// it or taking it back. Run on a real house's 103 device rows
 // (payloads_fleet.json, anonymized), with areas, labels and exclusions
-// laid over them, since the house as committed carries none.
+// laid over them, since the house as committed carries none (rule
+// CODE-16).
 // Run with: LC_ALL=en_US.UTF-8 node check_device_finders.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -108,7 +109,7 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
 
 (async () => {
   const reply = devicesReply();
-  console.log("\nFinding a device on the Devices tab (ruling #658)");
+  console.log("\nFinding a device on the Devices tab");
   let { root, calls, window } = await open(`${PREFIX}/devices`);
   check("All 103 of the house's devices are listed", bodyRows(root).length === 103, bodyRows(root).length);
 
@@ -147,7 +148,7 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   await choose(root, "Show one area", "");
   await choose(root, "Show one label", "");
 
-  console.log("\nThe Excluded list (ruling #658)");
+  console.log("\nThe Excluded list");
   const show = linkButton(root, "Show the 3 excluded devices");
   check("A link offers the excluded devices, with their count", Boolean(show), [...root.querySelectorAll(".pane button.linkbtn")].map((b) => b.textContent));
   show.click();
@@ -190,7 +191,7 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   ({ root } = await open(`${PREFIX}/devices`, { devices: { rows: reply.rows, excluded: [] } }));
   check("With nothing excluded, no link is offered", !linkButton(root, "Show the"));
 
-  console.log("\nAn integration's page excludes it or takes it back (ruling #659)");
+  console.log("\nAn integration's page excludes it or takes it back");
   const watchedPage = { ...fleet.integration, excluded: false };
   ({ root, calls } = await open(`${PREFIX}/integration/${fleet.integration.domain}`, { integration: watchedPage }));
   const chip = (start) => [...root.querySelectorAll(".pane button.chip")].find((b) => b.textContent.startsWith(start));

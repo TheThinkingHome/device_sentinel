@@ -81,7 +81,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
           mutes: { everything: { on: false }, freeze: { on: false }, battery: { on: false }, signal: { on: false } } };
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
-        // page.rhythm, under the same names the figures once used: the
+        // page.rhythm, under the same names as the figures: the
         // real page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
@@ -108,7 +108,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
 }
 
 (async () => {
-  console.log("\nThe Recommendations tab's opening line (ruling #626)");
+  console.log("\nThe Recommendations tab's opening line");
   const { root } = await open({ path: `${PREFIX}/recommendations` });
   const first = root.querySelector("p");
   const count = (payloads.recommendations.lines || []).length + (payloads.recommendations.devices || []).length;
@@ -120,7 +120,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   // Slow Reporting Devices (rule REC-06): each device with a Mute
   // freeze chip that calls the same mute the device page does, and the
   // list refreshed afterwards.
-  console.log("\nThe Slow Reporting Devices card (ruling #637)");
+  console.log("\nThe Slow Reporting Devices card");
   const SLOW = {
     kind: "slow", title: "Slow Reporting Devices",
     body: "These devices go quiet for long periods. They are often devices that sleep until a person triggers or interacts with them. Because these devices do not report on a rhythm, Device Sentinel has trouble accurately reporting a frozen verdict. Often a freeze verdict for this device is noise and the best practice is to mute it. Device Sentinel will still report when it becomes unavailable or its battery runs low.",
@@ -154,7 +154,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   const muteCall = slow.calls.find((c) => c.type === "device_sentinel/device_mute");
   check("The chip mutes freeze for that device, and nothing else",
     !!muteCall && muteCall.device_id === ROWS[0].device_id && muteCall.kind === "freeze" && muteCall.on === true, muteCall);
-  check("The brief will say it came from the Recommendations tab (ruling #643)", !!muteCall && muteCall.source === "recommendations", muteCall);
+  check("The brief will say it came from the Recommendations tab", !!muteCall && muteCall.source === "recommendations", muteCall);
   const after = [...slow.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "slow");
   check("The list is fetched again and the muted device leaves the card",
     served >= 2 && !!after && after.querySelectorAll("tbody tr").length === 1
@@ -164,7 +164,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     slow.root.querySelector("p").textContent);
 
   // Acknowledgment and the count (rules REC-07, REC-08).
-  console.log("\nTicks, the count and the Active Recommendations button (rulings #696 to #700)");
+  console.log("\nTicks, the count and the Active Recommendations button");
   let ticks = { line: false, [ROWS[0].device_id]: false };
   const OFF = {
     kind: "battery_off", title: "Battery Sensor Switched Off", simple: true, active: 1,
@@ -196,9 +196,9 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     const art = [...acks.root.querySelectorAll("article.rec")].find((a) => (kind ? a.dataset.kind === kind : !a.dataset.kind));
     return art && art.querySelector("h3") ? art.querySelector("h3").textContent : null;
   };
-  check("A card's title counts its rows not ticked (ruling #724)", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
-  check("A written line's title carries no number (ruling #724)", titleOf(null) === "Notifications Recipient Not Set", titleOf(null));
-  check("No Enable button is left in the top band (ruling #696)", !/Enable (Signals|Last Seen|Battery)/.test(acks.root.querySelector(".actions").textContent));
+  check("A card's title counts its rows not ticked", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
+  check("A written line's title carries no number", titleOf(null) === "Notifications Recipient Not Set", titleOf(null));
+  check("No Enable button is left in the top band", !/Enable (Signals|Last Seen|Battery)/.test(acks.root.querySelector(".actions").textContent));
   const offCard = [...acks.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "battery_off");
   const offRows = offCard ? [...offCard.querySelectorAll("tbody tr")] : [];
   check("A sensor its person switched off is shown ticked and faded", offRows[1] && offRows[1].classList.contains("acked")
@@ -249,11 +249,11 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   await settle(); await settle();
   const voltCall = volt.calls.find((c) => c.type === "device_sentinel/device_turn_on");
   check("It asks for this device's voltage sensor alone", !!voltCall && voltCall.kind === "voltage" && voltCall.device_id === ROWS[0].device_id, voltCall);
-  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07).
+  // Where it was pressed, so the log says so (rule BRIEF-07).
   check("It says it was pressed on the Recommendations tab", !!voltCall && voltCall.source === "recommendations", voltCall);
   check("Its row can be ticked", !!(voltCard && voltCard.querySelector('tbody tr input[type="checkbox"]')));
 
-  console.log("\nA card stays open after an answer (ruling #714)");
+  console.log("\nA card stays open after an answer");
   ticks = { line: false, [ROWS[0].device_id]: false };
   const SLOW_CARD = { kind: "slow", title: "Slow Reporting Devices", simple: true, active: 1, body: "One device.",
     devices: [{ device_id: ROWS[2].device_id, name: "Garage Door", area: "Garage", acknowledged: false }] };
@@ -302,7 +302,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("A card the person closed stays closed", !isOpen("battery_off") && isOpen("slow"));
   check("Nothing is kept in the browser", stay.window.localStorage.length === 0 && stay.window.sessionStorage.length === 0);
 
-  console.log("\nThe Daily Brief tab's line (ruling #700)");
+  console.log("\nThe Daily Brief tab's line");
   ticks = { line: false, [ROWS[0].device_id]: false };
   const brief = await open({ path: PREFIX, answers: { recommendations: recs } });
   const recLine = brief.root.querySelector("p.recline");
@@ -313,7 +313,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("With nothing active it says nothing", quiet.root.querySelector("p.recline") === null);
 
   // The opening line, the tab and the button agree (rule REC-01): one card
-  // of five devices read "1 recommendation" under "Recommendations (5)".
+  // of five devices reads five on each, never "1 recommendation".
   console.log("\nThe opening line counts what the tab counts (REC-01)");
   const FIVE = {
     kind: "battery_off", title: "Battery Sensor Switched Off", simple: true, active: 5,

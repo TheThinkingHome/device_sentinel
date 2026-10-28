@@ -197,7 +197,8 @@ const hubPage = (tweak) => (m) => {
   r = await open({ answers: { device: hubPage((p) => { p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB }; p.status.category = "frozen"; }) } });
   text = r.root.textContent;
   check("A light with a verdict of its own still shows it", !text.includes("Judged by its hub") && /frozen/i.test(r.root.querySelector(".devstatus").textContent));
-  // A hub's mute covers its devices (rule STACK-10).
+  // A hub's mute covers its devices, and its page says so (rules STACK-09,
+  // STACK-10).
   r = await open({ answers: { device: hubPage((p) => {
     p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB };
     p.identity.actions = { area_id: null, name_by_user: null, integration_name: null, labels: [], last_seen_off: false,

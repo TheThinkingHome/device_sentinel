@@ -124,7 +124,7 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_type");
   check("Save sends the choice and the words", sent && sent.choice === "Other" && sent.other === "Zigbee router", sent);
-  // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
+  // Where it was set, so the log says so (rule BRIEF-07).
   check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   check("After the save the row reads the owner's words", rowCell(root, "Type").textContent.startsWith("Zigbee router"));
 

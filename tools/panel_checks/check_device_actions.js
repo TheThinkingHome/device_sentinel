@@ -121,7 +121,7 @@ const excludedPage = (excluded) => (p) => {
   ({ root, calls } = await open({}));
   // The chip sits in the Last seen group.
   await click(buttonIn(rowCell(root, "Last seen sensor"), "Turn on its Last Seen"));
-  // Each turn-on says where it was pressed (rules BRIEF-07, DEV-07).
+  // Each turn-on says where it was pressed (rule BRIEF-07).
   check("Last seen sensor: the chip switches on this device's Last Seen, from the device page", calls.some((c) => c.type === "device_sentinel/device_turn_on"
     && c.kind === "last_seen" && c.device_id === DEVICE && c.source === "device_page"), calls.filter((c) => c.type === "device_sentinel/device_turn_on"));
 
@@ -162,7 +162,7 @@ const excludedPage = (excluded) => (p) => {
   await click(confirmButton);
   check("Muted: confirming sends the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true));
 
-  // Mute everything on: the other three show on too, filled, and cannot
+  // Mute everything on: the other four show on too, filled, and cannot
   // be pressed (rule MUTE-09).
   ({ root, calls } = await open({}, (p) => {
     p.identity.actions.mutes = {
@@ -174,7 +174,7 @@ const excludedPage = (excluded) => (p) => {
   }));
   const all = rowCell(root, "Muted");
   const lit = [...all.querySelectorAll("button")].filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-  // The row holds Mute unavailable as well (rule MUTE-06).
+  // The row holds Mute unavailable as well (rule MUTE-09).
   check("Muted: with Mute everything on, all five are filled and checked",
     lit.join() === "\u2713 Mute freeze,\u2713 Mute unavailable,\u2713 Mute battery,\u2713 Mute signal,\u2713 Mute everything", lit);
   check("Muted: the four it covers cannot be pressed",
@@ -290,14 +290,14 @@ const excludedPage = (excluded) => (p) => {
   const madeLabel = calls.find((c) => c.type === "device_sentinel/device_new_label");
   check("Labels: Enter sends the new label", madeLabel && madeLabel.name === "Spare", madeLabel);
 
-  console.log("\nThe Excluded row: one device excluded from its page (ruling #625)");
+  console.log("\nThe Excluded row: one device excluded from its page");
   ({ root, calls } = await open({}, excludedPage({ here: false, integration: false })));
   const order = labelsOf(root);
   check("Excluded is the last row, after Muted", order.slice(-2).join() === "Muted,Excluded", order.slice(-3));
   const excludedRow = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild.textContent === "Excluded");
   check("It sits outside the Last seen group", !!excludedRow && !excludedRow.classList.contains("kvsub"));
   cell = rowCell(root, "Excluded");
-  check("A watched device offers only Exclude this device, with no 'no' (ruling #645)",
+  check("A watched device offers only Exclude this device, with no 'no'",
     cell.textContent === "Exclude this device" && buttons(cell).join() === "Exclude this device", cell.textContent);
   cell.querySelector("button").click();
   await settle();
@@ -318,7 +318,7 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}, excludedPage({ here: true, integration: false })));
   cell = rowCell(root, "Excluded");
-  check("An excluded device says so and offers Cancel the exclusion (ruling #645)",
+  check("An excluded device says so and offers Cancel the exclusion",
     /^Excluded\. Device Sentinel has stopped watching this device and deletes its history at midnight\. After that this page is gone, and the device is taken back in Device Sentinel's settings, Exclusions and Muting\.Cancel the exclusion/.test(cell.textContent)
     && buttons(cell).join() === "Cancel the exclusion", cell.textContent);
   check("The head says it is set aside, excluded", /Set aside: excluded\./.test(root.querySelector(".pagehead").textContent));

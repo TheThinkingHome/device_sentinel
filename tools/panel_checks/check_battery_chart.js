@@ -2,7 +2,7 @@
 // Panel checks: the weekly bars in orange and the fitted line, drawn only
 // at 30 and 14 days.
 // The fitted line is drawn for a cell falling at an even pace only: an
-// accelerating cell is judged on a curve, with no knee (rule BAT-12).
+// accelerating cell is judged on a curve (rules BAT-12, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_chart.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -72,7 +72,7 @@ const backLink = (root) => {
 const text = (root) => root.querySelector(".pane").textContent;
 const DEVICE = payloads._ids ? payloads._ids.alpha : null;
 
-// S63: steady, then speeding up.
+// A recorded cell: steady, then speeding up.
 const S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
   74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
   68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
@@ -142,7 +142,7 @@ const even = {
   await range(fast.root, "30 Days");
   check("at 30 days: five weekly bars, the oldest cut at the edge", bars(fast.root).length === 5, bars(fast.root).length);
   check("in orange, labelled with their averages", text(fast.root).includes("59.6") && text(fast.root).includes("66.0"));
-  check("no straight line beside a curve, and no knee marker (ruling #725)", fitted(fast.root).length === 0
+  check("no straight line beside a curve, and no knee marker", fitted(fast.root).length === 0
     && fast.root.querySelectorAll("svg circle").length === 0 && !text(fast.root).includes("knee"));
   await range(fast.root, "14 Days");
   check("at 14 days: the last two weekly bars", bars(fast.root).length === 2, bars(fast.root).length);

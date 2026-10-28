@@ -208,7 +208,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Dropdown choices take the theme's card and text colours",
     /select option, select optgroup \{ background-color: var\(--card-background-color, #ffffff\);\s*color: var\(--primary-text-color, #212121\); \}/.test(css));
 
-  console.log("\nBattery Last Replaced (rulings #701, #702)");
+  console.log("\nBattery Last Replaced");
   const WORDS = { row: "Battery Last Replaced", none: "No battery replacement yet", card: "Confirm Battery Replacement", done: "replaced" };
   let bpage = await open({}, LIBRARY, false, null);
   check("A device on mains has no row", rowCell(bpage.root, "Battery Last Replaced") === null);

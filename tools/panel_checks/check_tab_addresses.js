@@ -62,7 +62,7 @@ const selected = (root) => {
   const tab = root.querySelector('.tab[aria-selected="true"]');
   return tab ? tab.textContent : null;
 };
-// A tab's label may carry its count, "Recommendations (2)" (rule DASH-16).
+// A tab's label may carry its count, "Recommendations (2)" (rule REC-08).
 const clickTab = (root, name) => [...root.querySelectorAll(".tab")].find((b) => b.textContent === name || b.textContent.startsWith(`${name} (`)).click();
 const where = (window) => window.location.pathname + window.location.search;
 const backLink = (root) => {

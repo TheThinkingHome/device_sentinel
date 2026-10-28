@@ -72,7 +72,7 @@ async function open({ path = PREFIX, mode = "advanced", release = RELEASE } = {}
 const line = (root) => root.querySelector("p.release");
 
 (async () => {
-  console.log("The release line (ruling #723)");
+  console.log("The release line");
   let { root } = await open();
   let foot = line(root);
   check("It reads Device Sentinel and the version", !!foot && foot.textContent === "Device Sentinel 0.27.0", foot && foot.textContent);

@@ -104,8 +104,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
           mutes: { everything: { on: false }, freeze: { on: false }, battery: { on: false }, signal: { on: false } } };
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
-        // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they must blank neither chart.
+        // page.rhythm, under the same names as the figures: the real
+        // page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
@@ -230,7 +230,7 @@ const PAGES = [
     } } });
     const host = lightCopy(window, root);
     const wrong = offenders(window, host, ".pane");
-    check("Every text reads 14px on a page built from a real device's data (#596)", wrong.length === 0, wrong.slice(0, 8));
+    check("Every text reads 14px on a page built from a real device's data", wrong.length === 0, wrong.slice(0, 8));
   }
   {
     // Other tabs are unchanged: the Integrations tab's small text keeps
@@ -254,7 +254,7 @@ const PAGES = [
     check(`A connection-only device reads "${expected}"`, line && line.textContent === expected, line && line.textContent);
     check(`A connection-only device ${word} has no window bar`, !root.querySelector(".devstatus .bar"));
   }
-  // A Matter device with no battery (rule STACK-06):
+  // A Matter device of a type that reports only on use (rule STACK-06):
   // its page says how it is judged, with no window bar or wait rule.
   {
     const { root } = await open({ tweak: (p) => { p.status.available_rule = true; p.status.window = 7200; } });

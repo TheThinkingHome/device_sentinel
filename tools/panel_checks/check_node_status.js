@@ -172,9 +172,9 @@ const rowCell = (root, label) => {
     button.click();
     await settle();
     const sent = view.calls.filter((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "node_status");
-    check("Turn it on asks to switch on the Z-Wave status alone (ruling #698)",
+    check("Turn it on asks to switch on the Z-Wave status alone",
       sent.length === 1 && sent[0].device_id === DEVICE, sent);
-    // Where it was pressed (rules BRIEF-07, DEV-07).
+    // Where it was pressed (rule BRIEF-07).
     check("It says it was pressed on the device page", sent.length === 1 && sent[0].source === "device_page", sent);
   }
 

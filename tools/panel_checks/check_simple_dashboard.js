@@ -123,7 +123,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   window.document.body.append(panel);
   await panel._refresh();
   await settle();
-  check("a hidden tab shown again keeps the switch (#716)", tabs(root).length === 8
+  check("a hidden tab shown again keeps the switch", tabs(root).length === 8
     && modeButton(root, "Advanced").getAttribute("aria-pressed") === "true", tabs(root));
   check("nothing is kept in the browser", window.localStorage.length === 0 && window.sessionStorage.length === 0);
   // Leaving for another page of Home Assistant: the dashboard opened
@@ -162,8 +162,8 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("the battery chart with its expected fall", !!root.querySelector(".futurechart polygon"));
   check("in words", text(root).includes("Expected empty in about 4 to 6 weeks."));
   check("and only once", text(root).split("about 4 to 6 weeks").length === 2, text(root).match(/.{0,30}about 4 to 6 weeks.{0,10}/g));
-  // Door 2nd Bedroom: falling, not soon, and
-  // no time left said anywhere in Simple.
+  // A falling cell whose time left is not soon: Simple says it in words
+  // under the sentence (rule BAT-17).
   ({ root } = await open({ __mode: "simple" }, (p) => {
     withBattery(p); p.status.category = "reporting";
     Object.assign(p.battery, { now: 40, sentence: "Falling about 1.6 points a week, at a steady pace.", left: "about 8 to 11 weeks", left_soon: false, target: 0 });

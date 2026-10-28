@@ -92,8 +92,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
           mutes: { everything: { on: false }, freeze: { on: false }, battery: { on: false }, signal: { on: false } } };
         page.readings = JSON.parse(JSON.stringify(READINGS));
         // The History chart's own series sit beside the rule figures in
-        // page.rhythm, under the same names the figures once used: the
-        // real page carries them, and they must blank neither chart.
+        // page.rhythm, under the same names as the figures: the real
+        // page carries them, and they must blank neither chart.
         const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
         page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
           trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };

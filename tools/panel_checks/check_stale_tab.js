@@ -266,7 +266,7 @@ const notices = (panel) => panel.shadowRoot.querySelectorAll(".updated").length;
     check("and listens again when put back", Boolean(notice(panel)));
   }
 
-  console.log("\nThe banner glows three times, then holds still (ruling #623)");
+  console.log("\nThe banner glows three times, then holds still");
   {
     const t = tab();
     load(t, OLD);
