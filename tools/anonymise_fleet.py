@@ -16,7 +16,7 @@ owner in a private archive.
     python tools/anonymise_fleet.py RAW_DIR OUT_DIR --key fleet_aliases.json
 
 RAW_DIR holds one folder per house (reference, second, fourth, and any
-tester after them), each with the house's storage file, its clocks file,
+further house), each with the house's storage file, its clocks file,
 its answers file or the older power file if it has one, its history
 file if it has one, and its diagnostics download
 (`config_entry-device_sentinel-*.json`). OUT_DIR receives the same
@@ -81,7 +81,7 @@ NAME_FIELDS = {"name", "sort_name", "removed_name"}
 # A problem-list item for an upstream, keyed "upstream:<domain>", names
 # an integration, not a person's device, and its name is the domain
 # the rest of the file carries as a scope. Anonymizing it as a device
-# name made the leak check find the domain everywhere.
+# name would make the leak check find the domain everywhere.
 UPSTREAM_PREFIX = "upstream:"
 
 

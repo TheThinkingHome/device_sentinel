@@ -12,9 +12,15 @@ compared. Each JavaScript file has its comments taken out and its
 whitespace folded, then is compared as text. Any other difference is
 a change to the code and is listed.
 
-    python3 tools/compare_code.py OLD_TREE NEW_TREE [FILE ...]
+With --text, a file whose only other change is to the words in its
+strings or the names of its functions is listed as text only, with
+each string that changed, so the words can be read; logic is still
+proved unchanged.
 
-Exit code 0 when only comments and docstrings differ.
+    python3 tools/compare_code.py [--text] OLD_TREE NEW_TREE [FILE ...]
+
+Exit code 0 when only comments and docstrings differ, or with --text,
+when nothing but text differs.
 """
 
 from __future__ import annotations
@@ -43,6 +49,47 @@ def _python_shape(source: str) -> str:
     return ast.dump(tree, include_attributes=False)
 
 
+def _python_words(source: str) -> tuple[str, list[str]]:
+    """The shape with every string and function name blanked, and the
+    strings and names in order."""
+    tree = ast.parse(_python_unshaped(source))
+    words: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            words.append(node.value)
+            node.value = ""
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            words.append(node.name)
+            node.name = ""
+    return ast.dump(tree, include_attributes=False), words
+
+
+def _python_unshaped(source: str) -> str:
+    """The source with its docstrings taken out."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                node.body = body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
+
+
+JS_STRING = re.compile(r"\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`")
+
+
+def _js_words(source: str) -> tuple[str, list[str]]:
+    """The code with every string blanked, and the strings in order."""
+    code = _js_shape(source)
+    words = JS_STRING.findall(code)
+    return JS_STRING.sub('""', code), words
+
+
 def _js_shape(source: str) -> str:
     lines = source.split("\n")
     for number, text in sorted(js_comments(source), reverse=True):
@@ -53,7 +100,7 @@ def _js_shape(source: str) -> str:
     return re.sub(r"\s+", " ", "\n".join(lines)).strip()
 
 
-def main(old: pathlib.Path, new: pathlib.Path, only: list[str]) -> int:
+def main(old: pathlib.Path, new: pathlib.Path, only: list[str], text: bool = False) -> int:
     names = only or sorted(
         str(p.relative_to(new))
         for pattern in ("custom_components/**/*.py", "tests/*.py", "tools/**/*.py", "custom_components/**/*.js", "tools/panel_checks/*.js")
@@ -76,6 +123,19 @@ def main(old: pathlib.Path, new: pathlib.Path, only: list[str]) -> int:
         except SyntaxError as err:
             changed.append(f"{name}: does not parse ({err})")
             continue
+        if not same and text:
+            try:
+                words = _js_words if name.endswith(".js") else _python_words
+                (shape_a, words_a), (shape_b, words_b) = words(sa), words(sb)
+            except SyntaxError:
+                shape_a, shape_b, words_a, words_b = "a", "b", [], []
+            if shape_a == shape_b and len(words_a) == len(words_b):
+                print(f"{name}: text only")
+                for before, after in zip(words_a, words_b):
+                    if before != after:
+                        print(f"    - {before[:200]!r}")
+                        print(f"    + {after[:200]!r}")
+                continue
         if not same:
             changed.append(f"{name}: code changed")
     for line in changed:
@@ -85,4 +145,7 @@ def main(old: pathlib.Path, new: pathlib.Path, only: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3:]))
+    args = sys.argv[1:]
+    text = "--text" in args
+    args = [a for a in args if a != "--text"]
+    sys.exit(main(pathlib.Path(args[0]), pathlib.Path(args[1]), args[2:], text))
