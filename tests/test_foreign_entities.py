@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_foreign_entities.py, Version: 0.27.11 (2026-10-28)
 
 """Another integration's entity on a device is not the device speaking
 (rules GEN-03, WATCH-02, BAT-01).
@@ -21,6 +21,7 @@ reloads, and holds no device up that is down.
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -225,10 +226,15 @@ async def test_the_diagnostics_count_foreign_entities(hass: HomeAssistant):
 
 
 def test_the_standing_key_is_one_text():
-    """The Integrations tab and classification.md say the same thing."""
+    """The Integrations tab's hover text and the Maintainer Report say
+    the same thing for each standing the tab shows."""
     panel = PANEL.read_text(encoding="utf-8")
-    for standing, meaning in STANDING_MEANINGS:
-        assert f"[{json.dumps(standing)}, {json.dumps(meaning)}]" in panel
+    block = panel.split("const STANDING_MEANING = {", 1)[1].split("};", 1)[0]
+    shown = re.findall(r'^\s*\w+: (".*"),$', block, re.MULTILINE)
+    meanings = {json.dumps(meaning) for _standing, meaning in STANDING_MEANINGS}
+    assert len(shown) == 4
+    for text in shown:
+        assert text in meanings
 
 
 # ==================================================================

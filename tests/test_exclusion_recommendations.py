@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusion_recommendations.py, Version: 0.27.10 (2026-10-27)
+# File: test_exclusion_recommendations.py, Version: 0.27.11 (2026-10-28)
 
 """On a house that already exists, a router or media integration seen for
 the first time is recommended for exclusion, not excluded (rule MUTE-02).
@@ -26,6 +26,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
     DATA_SETUP_COUNT,
     DATA_SYSTEM_EVENTS,
@@ -98,12 +99,16 @@ async def test_alexa_on_an_existing_house_is_recommended_not_excluded(hass: Home
     assert _told(coord, SYS_EXCLUSION_OFFERED) == ["alexa_media"]
 
 
-async def test_the_card_is_told_once_in_the_brief_not_every_morning(hass: HomeAssistant):
+async def test_the_card_is_in_the_brief_every_morning_until_answered(hass: HomeAssistant):
     _integration(hass, "cast", ["Basement Chromecast"])
     coord = await _house(hass, ["mobile_app"])
     await coord._sight_router_integrations()
+    coord._rebuild_registry_view()
     row = [r for r in coord.data[DATA_SYSTEM_EVENTS] if r[SYS_KIND] == SYS_EXCLUSION_OFFERED][0]
     assert "the Recommendations tab has a card for it" in coord._system_event_sentence(row)
+    assert any("Google Cast Is Usually Excluded" in item or "cast Is Usually Excluded" in item
+               for item in coord._recommendations_section())
+    coord.set_recommendation_ack(True, line="offer:cast")
     assert not any("Is Usually Excluded" in item for item in coord._recommendations_section())
 
 
@@ -134,21 +139,34 @@ async def test_a_router_is_recommended_too(hass: HomeAssistant):
     assert "copies of hardware" in _line(coord, "fritz")["text"]
 
 
-async def test_a_choice_already_made_raises_no_card(hass: HomeAssistant):
+async def test_muted_for_everything_it_has_no_card_until_unmuted(hass: HomeAssistant):
     _integration(hass, "cast", ["Basement Chromecast"])
     coord = await _house(hass, ["mobile_app"], **{CONF_MUTED_INTEGRATIONS: ["cast"]})
     await coord._sight_router_integrations()
+    coord._rebuild_registry_view()
     assert _line(coord, "cast") is None
     # And the brief does not point to a card that is not there.
     assert _told(coord, SYS_EXCLUSION_OFFERED) == []
     assert "cast" in coord.data["routers_seen"]
+    hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options, CONF_MUTED_INTEGRATIONS: []})
+    await hass.async_block_till_done()
+    assert _line(coord, "cast") is not None
 
 
-async def test_excluded_from_the_card_it_does_not_come_back(hass: HomeAssistant):
+async def test_a_device_muted_does_not_answer_the_card(hass: HomeAssistant):
+    chromecast = _integration(hass, "cast", ["Basement Chromecast"])
+    coord = await _house(hass, ["mobile_app"], **{CONF_MUTED_DEVICES: [chromecast[0].id]})
+    await coord._sight_router_integrations()
+    coord._rebuild_registry_view()
+    assert _line(coord, "cast") is not None
+    assert _told(coord, SYS_EXCLUSION_OFFERED) == ["cast"]
+
+
+async def test_excluded_and_taken_back_the_card_comes_back(hass: HomeAssistant):
     _integration(hass, "cast", ["Basement Chromecast"])
     coord = await _house(hass, ["mobile_app"])
     await coord._sight_router_integrations()
-    coord.page_set_integration_excluded("cast", True)
+    coord.page_set_integration_excluded("cast", True, source="recommendations_tab")
     await hass.async_block_till_done()
     assert "cast" in coord.excluded_integrations
     assert _line(coord, "cast") is None
@@ -157,10 +175,11 @@ async def test_excluded_from_the_card_it_does_not_come_back(hass: HomeAssistant)
     coord.page_set_integration_excluded("cast", False)
     await hass.async_block_till_done()
     await coord._sight_router_integrations()
-    assert _line(coord, "cast") is None
+    coord._rebuild_registry_view()
+    assert _line(coord, "cast") is not None and not _line(coord, "cast")["acknowledged"]
 
 
-async def test_excluded_in_settings_the_card_closes_at_the_next_sighting(hass: HomeAssistant):
+async def test_excluded_in_settings_the_card_goes_and_comes_back(hass: HomeAssistant):
     _integration(hass, "cast", ["Basement Chromecast"])
     coord = await _house(hass, ["mobile_app"])
     await coord._sight_router_integrations()
@@ -172,7 +191,8 @@ async def test_excluded_in_settings_the_card_closes_at_the_next_sighting(hass: H
     hass.config_entries.async_update_entry(
         coord.entry, options={**coord.entry.options, CONF_EXCLUDED_INTEGRATIONS: ["mobile_app"]})
     await hass.async_block_till_done()
-    assert _line(coord, "cast") is None
+    coord._rebuild_registry_view()
+    assert _line(coord, "cast") is not None
 
 
 async def test_ticked_it_stays_watched_and_counts_for_nothing(hass: HomeAssistant):

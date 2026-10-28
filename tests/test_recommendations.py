@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_recommendations.py, Version: 0.27.11 (2026-10-28)
 
 """The brief's Recommendations section and the device cards (rules
 REC-02, REC-04, REC-10).
@@ -225,26 +225,26 @@ def _watched_integration(hass, domain: str, uid: str):
 
 
 async def test_a_watched_library_integration_is_advised(hass: HomeAssistant):
+    """Each integration recommended for exclusion has its own card
+    (rule REC-03)."""
     for n in range(5):
         _watched_integration(hass, "ping", f"host{n}")
     _watched_integration(hass, "mobile_app", "phone")
     _watched_integration(hass, "spook", "tools")
     coord = await setup_coordinator(hass, {CONF_EXCLUDED_INTEGRATIONS: []})
-    items = coord._recommendation_items()
-    alerts = [line for line in items if line.startswith("Some integrations create false alerts:")]
-    assert len(alerts) == 1
-    assert "integrations to stop false alarms" in alerts[0]
-    tools = [line for line in items if line.startswith("Some integrations own no devices")]
-    assert len(tools) == 1
-    assert "spook (1 device) is watched" in tools[0]
-    assert tools[0].endswith("Exclude it in the Exclusions and Muting settings screen.")
+    cards = {line["key"]: line for line in coord.recommendation_lines() if line["key"].startswith("offer:")}
+    assert set(cards) == {"offer:ping", "offer:mobile_app", "offer:spook"}
+    assert "with 5 devices" in cards["offer:ping"]["text"]
+    assert "because its devices go quiet when they leave the house" in cards["offer:mobile_app"]["text"]
+    assert "because it adds tools to Home Assistant" in cards["offer:spook"]["text"]
+    assert all(card["simple"] for card in cards.values())
 
 
 async def test_an_excluded_library_integration_is_not_advised(hass: HomeAssistant):
     _watched_integration(hass, "ping", "host")
     coord = await setup_coordinator(hass, {CONF_EXCLUDED_INTEGRATIONS: ["ping"]})
     assert not any(
-        line.startswith("Some integrations")
+        "Is Usually Excluded" in line
         for line in coord._recommendation_items()
     )
 

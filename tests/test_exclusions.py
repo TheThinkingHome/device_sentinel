@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.27.10 (2026-10-27)
+# File: test_exclusions.py, Version: 0.27.11 (2026-10-28)
 
 """Excluding and muting, and the ladder that settles them
 (rules MUTE-01, MUTE-03, MUTE-04, MUTE-07, WATCH-08).
@@ -2058,9 +2058,9 @@ async def test_an_integration_page_excludes_and_takes_back_with_one_row_each(has
     await hass.async_block_till_done()
     assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
     assert keep.id not in coord._watched and drop.id not in coord._watched
-    # Settled as a Settings save settles it: its mutes go (rule MUTE-04).
-    assert entry.options[CONF_MUTED_INTEGRATIONS] == []
-    assert entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == []
+    # Its mutes are kept, so taking it back loses nothing (rule MUTE-03).
+    assert entry.options[CONF_MUTED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == ["test"]
     rows = _rows(coord, SYS_INTEGRATION_PAGE)
     assert [(r[SYS_SCOPE], r[SYS_DETAIL]) for r in rows] == [("test", "excluded")]
     assert _rows(coord, SYS_OPTIONS_CHANGED) == [], "the page act also wrote a Settings changed row"
