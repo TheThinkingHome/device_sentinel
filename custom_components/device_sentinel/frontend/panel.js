@@ -48,7 +48,7 @@ const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel
 // A battery level as reported, the same on every surface: "15.5%",
 // "16%", one decimal at most, rounded half up on the number as
 // written, as battery_level.py does, so the brief, the device page and
-// the phone never disagree (rule BAT-17).
+// the phone never disagree (rule NOTE-10).
 const levelNumber = (v) => {
   const tenth = Number(`${Math.round(Number(`${Math.abs(v)}e1`))}e-1`) * Math.sign(v);
   return Number.isInteger(tenth) ? String(Math.abs(tenth) === 0 ? 0 : tenth) : tenth.toFixed(1);
@@ -324,7 +324,7 @@ const COLUMN_SHARE = {
   "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
   "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "GAP STARTED": 1.4,
 };
-// The history table's own widths, as its printout has always used.
+// The history table's own widths, the ones its printout uses.
 const HISTORY_WIDTHS = [8, 8, 11, 9, 11, 9, 44];
 
 function pinTable(table) {
@@ -410,10 +410,9 @@ const STYLE = `
   .dot { width: 10px; height: 10px; border-radius: 5px; background: var(--disabled-text-color, #888); }
   .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   button, select { font: inherit; font-size: 14px; font-weight: 500; }
-  /* A dropdown's open list is drawn by the browser on its own white
-     background, while the closed box takes the theme's text colour,
-     white on a dark theme: the choices vanished (0.24.8). Each choice
-     takes the theme's card and text colours instead. */
+  /* The browser draws a dropdown's open list on its own white
+     background, so on a dark theme white choices vanish. Each choice
+     takes the theme's card and text colours (rule DASH-05). */
   select option, select optgroup { background-color: var(--card-background-color, #ffffff);
     color: var(--primary-text-color, #212121); }
   .pill { min-height: 44px; padding: 0 18px; border-radius: 22px; cursor: pointer;
@@ -435,17 +434,17 @@ const STYLE = `
   .maint select { min-height: 44px; background: transparent; color: var(--primary-text-color); border: 0;
     border-left: 1px solid var(--divider-color); padding: 0 12px; border-radius: 0 22px 22px 0; }
   .asof { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
-  /* The release running, at the foot of every view (ruling #723). */
+  /* The release running, at the foot of every view (rule DASH-15). */
   .release { margin: 12px 4px 0; font-size: 13px; color: var(--secondary-text-color); text-align: center; }
   .release a { color: inherit; }
-  /* A tab older than the dashboard served (0.25.4). */
+  /* A tab older than the dashboard served (rule DASH-14). */
   .updated { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 14px;
     border: 1px solid var(--warning-color, #ffa600); border-left-width: 6px;
     border-radius: var(--ha-card-border-radius, 12px); background: var(--card-background-color, var(--ha-card-background)); }
   .updated span { flex: 1 1 260px; }
   /* It glows three times when it appears, then holds still, so it
      catches the eye without blinking for as long as it is shown; a
-     viewer who asked for less motion sees it still (0.25.6). */
+     viewer who asked for less motion sees it still (rule DASH-14). */
   .updated { animation: ds-updated-glow 1.2s ease-in-out 3; }
   @keyframes ds-updated-glow {
     0%, 100% { box-shadow: 0 0 0 0 transparent; }
@@ -454,8 +453,8 @@ const STYLE = `
   @media (prefers-reduced-motion: reduce) { .updated { animation: none; } }
   /* The controls above sit in a band of their own, and the tabs read
      as tabs: a tinted strip joined to the content, labels in the main
-     text colour, the active one bold with a thicker underline (0.23.10,
-     from Tim Plas: the tab row read as one more row of buttons). */
+     text colour, the active one bold with a thicker underline, so the
+     tab row never reads as one more row of buttons (rule DASH-02). */
   .head { display: flex; flex-direction: column; gap: 12px; padding: 14px;
     background: var(--secondary-background-color, rgba(127,127,127,0.08)); border: 1px solid var(--divider-color);
     border-radius: var(--ha-card-border-radius, 12px); margin-bottom: 8px; }
@@ -472,7 +471,7 @@ const STYLE = `
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { min-height: 28px; padding: 0 11px; border-radius: 14px; cursor: pointer; background: transparent;
     color: var(--primary-text-color); border: 1px solid var(--divider-color); font-size: 13px; }
-  /* The device page's actions (0.24.5): small marks beside a value,
+  /* The device page's actions (rule DASH-09): small marks beside a value,
      and a line saying why a write was refused or asking first. */
   .edit { width: 28px; height: 28px; border: none; border-radius: 14px; background: transparent;
     color: var(--primary-color); display: inline-flex; align-items: center; justify-content: center;
@@ -535,7 +534,7 @@ const STYLE = `
   .bank .band > div:last-child { background: var(--primary-color); border-radius: 3px 3px 0 0; }
   .bank .count { text-align: center; font-size: 11px; color: var(--secondary-text-color); padding-bottom: 2px; }
   .gaps > div.aside { background: repeating-linear-gradient(45deg, var(--divider-color), var(--divider-color) 3px, transparent 3px, transparent 6px); }
-  /* The device page's groups and rule charts (0.24.9). */
+  /* The device page's groups and rule charts. */
   .gaps > div.grey { background: var(--divider-color); }
   .rulechart { position: relative; height: 110px; }
   .rulechart > .ruleline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid #E24B4A; border-radius: 0; flex: none; background: none; }
@@ -555,7 +554,7 @@ const STYLE = `
   .chart svg { width: 100%; height: auto; }
   .chart .axis { fill: var(--secondary-text-color); font-size: 11px; }
   .chip[aria-disabled="true"] { opacity: 0.4; cursor: default; border-style: dashed; }
-  /* A mute that is on (ruling #646): filled, with its check mark, and
+  /* A mute that is on (rule MUTE-09): filled, with its check mark, and
      still filled when it is set elsewhere and cannot be pressed here. */
   .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   .chip.on[aria-disabled="true"] { opacity: 1; border-style: solid; }
@@ -564,10 +563,10 @@ const STYLE = `
   .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
   .readout { background: var(--secondary-background-color, rgba(127,127,127,0.1)); border-radius: 8px; padding: 10px 12px; min-height: 22px; }
   .small { font-size: 12px; color: var(--secondary-text-color); }
-  /* The device page reads at one size (0.26.1, James, 13 October): its
-     secondary text, such as "heard by Device Sentinel 9m ago" and the
-     heartbeat line, dropped to 11 and 12px in many rows. Headings, the
-     big figures, buttons, chips and the charts' own labels keep theirs.
+  /* The device page reads at one size (rule DASH-06): its secondary
+     text, such as "heard by Device Sentinel 9m ago" and the heartbeat
+     line, takes the page's size. Headings, the big figures, buttons,
+     chips and the charts' own labels keep theirs.
      The heartbeat line is plain grey text and a sensor's name is in the
      page's own font, since a pill or monospace reads as a different
      size even at the same pixels. Other tabs are unchanged. */
@@ -639,7 +638,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._updated = false;
     this._onUpdated = (event) => {
       // Only the word a copy of this file sends: a detail naming its file,
-      // or null where its browser could not say. Anything else is not ours.
+      // or null where its browser could not say. Anything else is not this file's.
       const detail = event && event.detail;
       if (!detail || typeof detail !== "object" || !("file" in detail)) return;
       const file = detail.file;
@@ -913,9 +912,8 @@ class DeviceSentinelPanel extends HTMLElement {
     this._maintButton = el("button", { class: "pill", type: "button", onclick: () => this._maintenance() }, "Maintenance Mode");
     this._minutes = el("select", { "aria-label": "Maintenance length" });
     this._asOf = el("span", { class: "asof" });
-    // One highlighted button in place of the three Enable buttons
-    // (rule DASH-02): the recommendations not yet acknowledged, hidden
-    // at zero, opening the tab.
+    // One highlighted button (rule DASH-02): the recommendations not yet
+    // acknowledged, hidden at zero, opening the tab.
     this._activeButton = el("button", { class: "pill active-recs", type: "button", hidden: "",
       onclick: () => this._navigate(this._tabPath("Recommendations")) }, "");
     const actions = el(
@@ -1897,7 +1895,7 @@ class DeviceSentinelPanel extends HTMLElement {
         this._navigate(this._tabPath("Recommendations"));
       } }, "Recommendations tab"), ".") : null;
     // A detected battery replacement names the device and the day
-    // (rule BAT-06), as the emailed Brief does.
+    // (rule REC-10), as the emailed Brief does.
     const confirm = this._recsInView().cards.find((card) => card.kind === "battery_confirm");
     const confirmLine = confirm && confirm.brief ? el("p", { class: "recline", style: "margin:0" }, confirm.brief) : null;
     this._pane.replaceChildren(...[recLine, confirmLine, nav,
@@ -2621,7 +2619,7 @@ class DeviceSentinelPanel extends HTMLElement {
       for (const reading of (page.readings || []).filter((r) => r.kind === kind)) {
         const state = this._hass && this._hass.states ? this._hass.states[reading.entity_id] : null;
         // A reading Home Assistant cannot give is not a reading
-        // (rule BAT-02): the second signal entity of a ZHA device often
+        // (rules BAT-02, SIG-04): the second signal entity of a ZHA device often
         // reads unknown.
         if (!state || state.state === "unknown" || state.state === "unavailable") continue;
         let value = state.state;
@@ -2896,8 +2894,8 @@ class DeviceSentinelPanel extends HTMLElement {
       }
     };
     // An open "Change date" and the day picked so far are kept by device,
-    // so the page's minute refresh does not close it mid-pick (found by
-    // review). Kept in memory only, and dropped once an answer is sent.
+    // so the page's minute refresh does not close it mid-pick. Kept in
+    // memory only, and dropped once an answer is sent.
     this._batteryDayOpen = this._batteryDayOpen || {};
     const held = this._batteryDayOpen[deviceId];
     const day = el("input", { class: "actinput", type: "date", "aria-label": "The day the battery was changed",
@@ -4149,7 +4147,7 @@ class DeviceSentinelPanel extends HTMLElement {
         : Math.ceil(Math.max(...shown)) + 1;
       // The threshold is drawn once the battery comes within ten points of it.
       // Your threshold is a percentage, so it means nothing against a
-      // reading that is not one: LUX Outdoors reports 186.
+      // reading that is not one, such as a raw lux of 186.
       const showThreshold = percent && lowB <= b.threshold + 10;
       const lowAxis = showThreshold ? Math.max(0, Math.min(lowB, Math.floor(b.threshold) - 1)) : lowB;
       const mid = Math.round((lowAxis + highB) / 2);
