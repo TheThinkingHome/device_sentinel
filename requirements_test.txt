@@ -8,14 +8,13 @@ pytest-homeassistant-custom-component==0.13.372
 # testing_config/www/ across xdist workers, so parallel runs race the
 # daily brief's atomic write and fail intermittently. See pytest.ini.
 # The Lutron library Home Assistant 2026.10 pins, so the Lutron hub tests
-# run against the library itself (0.26.3, 2026-10-14, ruling #663).
+# run against the library itself.
 pylutron-caseta==0.29.0
 # The Hue and SmartThings libraries Home Assistant 2026.10 pins, so the
-# Extended Diagnostics tests read the libraries themselves (0.26.4,
-# 2026-10-15).
+# Extended Diagnostics tests read the libraries themselves.
 aiohue==4.9.0
 pysmartthings==4.0.3
 # The frontend Home Assistant 2026.10.1 pins. Device Sentinel names
-# frontend and panel_custom as dependencies since 0.27.0 (#721), so a
-# test setup brings the frontend up, and it needs its files (2026-10-22).
+# frontend and panel_custom as dependencies (rule DASH-01), so a test
+# setup brings the frontend up, and it needs its files.
 home-assistant-frontend==20260930.3

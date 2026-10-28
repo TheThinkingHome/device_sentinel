@@ -7,13 +7,12 @@ pytest-homeassistant-custom-component==0.13.329
 #
 # Serial only, for the reason requirements_test.txt gives.
 # The Lutron library Home Assistant 2026.5 pins, so the Lutron hub tests
-# run against the library itself (0.26.3, 2026-10-14, ruling #663).
+# run against the library itself.
 pylutron-caseta==0.28.0
 # The Hue and SmartThings libraries Home Assistant 2026.5 pins, so the
-# Extended Diagnostics tests read the libraries themselves (0.26.4,
-# 2026-10-15).
+# Extended Diagnostics tests read the libraries themselves.
 aiohue==4.8.1
 pysmartthings==3.7.3
 # The frontend Home Assistant 2026.5 pins, for the reason
-# requirements_test.txt gives (0.27.0, 2026-10-22).
+# requirements_test.txt gives.
 home-assistant-frontend==20260429.3
