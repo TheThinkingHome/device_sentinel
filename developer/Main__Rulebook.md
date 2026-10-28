@@ -2,16 +2,16 @@
 
 *Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13.*
 
-**What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today; under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings cite a rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))", after the reason in plain words.
+**What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today. Under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings give the reason in plain words, then cite the rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))".
 
-**Status.** Adopted. The code follows these rules, and every comment and docstring cites them by ID. A change to how Device Sentinel behaves changes its rule here first.
+**Status.** Adopted. The code follows these rules, and each comment and docstring cites them by ID. A change to how Device Sentinel behaves changes its rule here first.
 
 ## How the IDs Work
 
-- **A rule ID names a subject and never changes:** [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left) is how long a battery has left, whatever is decided about it later. A change rewrites the rule's text; the ID stays.
+- **A rule ID names a subject and never changes:** [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left) is how long a battery has left, whatever is decided about it later. A change rewrites the rule's text, and the ID stays.
 - **A number is given once.** It is never reused or renumbered. A new rule takes the next free number in its section, so numbers can run out of order on the page.
 - **A retired rule keeps its ID,** marked "Retired." with a pointer to what replaced it, so an old citation never leads nowhere.
-- **One home for each rule.** A rule lives where a reader would look for it first. A rule that touches another section points there by the section's code.
+- **One home for each rule.** A rule lives where a reader would look for it first. When it touches another section, it points there by that section's code.
 
 ## Sections
 

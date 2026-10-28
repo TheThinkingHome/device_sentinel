@@ -2,11 +2,18 @@
 
 *Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
-How Device Sentinel's code is written and checked: the code standard, comments and the rule IDs they cite, the header on each file, the linters and the type checker, and how tests are written, pinned and fed. How a release is proven and shipped is under [REL](Rulebook__19_REL_Releases.md); how stored files are checked is under [STOR](Rulebook__18_STOR_Storage.md).
+This section covers how Device Sentinel's code is written and checked: the code standard, comments and the rule IDs they cite, the header on each file, the linters and the type checker, and how tests are written, pinned and fed. How a release is proven and shipped is under [REL](Rulebook__19_REL_Releases.md); how stored files are checked is under [STOR](Rulebook__18_STOR_Storage.md).
 
 ### CODE-01 Docstrings and Comments
 
-**Each module and each function that is not trivial opens with a docstring in plain English that gives the decision and the reason for it; the same text is never repeated in a comment block. Inline comments say why, never narrate what the line does. Names are written out in full, except the standard Python short names such as `err`, `msg` and `ent`. A comment or docstring stands on its own: the reason comes first in plain words, and the ID of the rule in this rulebook follows at the end as a bookmark, written "(rule [UP-05](Rulebook__07_UP_Upstream_Outages.md#up-05-devices-behind-a-down-upstream))". Comments and docstrings cite rule IDs and nothing else: no decision number, review, release history, person or date, since the rulebook and its record hold those. A version number stays only where the code itself compares with that version. The code's own text, its log lines, report wording, test messages and names, carries no decision number either. `tools/check_comments.py` lists any line that breaks this, a phrase split across two lines included, and `tools/compare_code.py` proves a change to comments alone changes no code, or with `--text`, that a change to words alone changes no logic.**
+**Each module and each function that is not trivial opens with a docstring in plain English that gives the decision and the reason for it.** The same text is never repeated in a comment block.
+- **Inline comments:** say why, never narrate what the line does.
+- **Names:** written out in full, except the standard Python short names such as `err`, `msg` and `ent`.
+- **Standing alone:** a comment or docstring stands on its own. The reason comes first in plain words, and the ID of the rule in this rulebook follows at the end as a bookmark, written "(rule [UP-05](Rulebook__07_UP_Upstream_Outages.md#up-05-devices-behind-a-down-upstream))".
+- **What is cited:** comments and docstrings cite rule IDs and nothing else: no decision number, review, release history, person or date, since the rulebook and its record hold those.
+- **Version numbers:** a version number stays only where the code itself compares with that version.
+- **The code's own text:** its log lines, report wording, test messages and names carry no decision number either.
+- **The tools:** `tools/check_comments.py` lists any line that breaks this, a phrase split across two lines included. `tools/compare_code.py` proves a change to comments alone changes no code, or with `--text`, that a change to words alone changes no logic.
 
 *Proof:* [`test_rule_citations.py`](../tests/test_rule_citations.py).
 
@@ -18,25 +25,33 @@ How Device Sentinel's code is written and checked: the code standard, comments a
 
 ### CODE-03 The Header on Each File
 
-**Each Python, JavaScript and YAML file opens with a header above its docstring: the copyright line, the GPL-3.0-or-later line pointing at the repository's LICENSE, the project line naming The Thinking Home and xeazy.com, the article link where the file has one, the repository link, and the stamp line naming the file, the release and the date. A new file carries it from the start. JSON files have no comments and are covered by the LICENSE and the README.**
+**Each Python, JavaScript and YAML file opens with a header above its docstring.** A new file carries it from the start.
+- **What the header holds:** the copyright line, the GPL-3.0-or-later line pointing at the repository's LICENSE, the project line naming The Thinking Home and xeazy.com, the article link where the file has one, the repository link, and the stamp line naming the file, the release and the date.
+- **JSON files:** these have no comments, and are covered by the LICENSE and the README.
 
 *Proof:* [`tools/check_comments.py`](../tools/check_comments.py) reads the stamp line; no test checks the header.
 
 ### CODE-04 Lint and the Type Checker
 
-**A rule nobody checks is not a rule. GitHub lints the integration and its tests on each push, with the linter's version pinned so a new linter release cannot turn an unrelated push red. The type checker runs on the build and must report no new error against the previous release. A type annotation that no longer describes the code is a defect, fixed by making the code say what it does, never by silencing the checker.**
+**A rule nobody checks is not a rule.**
+- **Lint:** GitHub lints the integration and its tests on each push. The linter's version is pinned, so a new linter release cannot turn an unrelated push red.
+- **The type checker:** runs on the build, and must report no new error against the previous release.
+- **Stale annotations:** a type annotation that no longer describes the code is a defect. It is fixed by making the code say what it does, never by silencing the checker.
 
 *Proof:* `.github/workflows/lint.yml`, `tools/setup_container.sh`.
 
 ### CODE-05 Each Workflow Runs Read-Only
 
-**Each GitHub workflow is limited to reading the repository's contents, so it never holds more access than its check needs, even if the repository's default is widened later. The one exception is the CodeQL workflow, which may also write security events, because it cannot post its findings without that.**
+**Each GitHub workflow is limited to reading the repository's contents. So it never holds more access than its check needs, even if the repository's default is widened later. The one exception is the CodeQL workflow, which may also write security events, because it cannot post its findings without that.**
 
 *Proof:* `.github/workflows/lint.yml`, `test.yml`, `validate.yml`, `codeql.yml`.
 
 ### CODE-06 The Event Loop and Background Jobs
 
-**No file or folder is touched from Home Assistant's event loop. A question about the file system asked during setup goes to a background job, once, with the look and the change in the same job. A background job's own failure is never left to Home Assistant: the code that starts it catches the failure, logs it with what started it, and carries on, so a report that cannot be written is a missing report and not a broken integration. A Daily Brief whose write failed is not emailed.**
+**No file or folder is touched from Home Assistant's event loop.**
+- **At setup:** a question about the file system asked during setup goes to a background job, once, with the look and the change in the same job.
+- **When a job fails:** a background job's own failure is never left to Home Assistant. The code that starts it catches the failure, logs it with what started it, and carries on. So a report that cannot be written is a missing report, not a broken integration.
+- **The Daily Brief:** a Daily Brief whose write failed is not emailed.
 
 *Proof:* [`test_hardening.py`](../tests/test_hardening.py), [`test_reports.py`](../tests/test_reports.py), [`test_www_retired.py`](../tests/test_www_retired.py).
 
@@ -54,7 +69,7 @@ How Device Sentinel's code is written and checked: the code standard, comments a
 
 ### CODE-09 Setup Survives Information That Has Not Arrived
 
-**A feature that reads other entities' states at setup must still work on a boot where those states have not yet arrived. It looks again only while information is still arriving and stops either way once it has; an entity it creates once can be created late, when the feature becomes possible.**
+**A feature that reads other entities' states at setup must still work on a boot where those states have not yet arrived. It looks again only while information is still arriving, and stops either way once it has. An entity it creates once can be created late, when the feature becomes possible.**
 
 *Proof:* [`test_wifi_medium.py`](../tests/test_wifi_medium.py), [`test_wifi_outage.py`](../tests/test_wifi_outage.py).
 
@@ -66,19 +81,24 @@ How Device Sentinel's code is written and checked: the code standard, comments a
 
 ### CODE-11 A File Is Split by Measuring
 
-**A large file is split where counting the calls between its parts shows a seam, not where a guess puts one. Each report is its own file, except the maintainer reports, which share one file, and recording and wording live apart because they never call each other. Before a file is split, the tests are searched for imports from it; where a thing has moved, the test imports it from its new home rather than the old file pretending it is still there. A split is proved by comparing each function before and after, the suite passing, and each report written again from real house data and matching byte for byte.**
+**A large file is split where counting the calls between its parts shows a seam, not where a guess puts one.**
+- **What goes where:** each report is its own file, except the maintainer reports, which share one file. Recording and wording live apart, because they never call each other.
+- **Tests first:** before a file is split, the tests are searched for imports from it. Where a thing has moved, the test imports it from its new home, rather than the old file pretending it is still there.
+- **Proving a split:** each function is compared before and after, the suite passes, and each report is written again from real house data and matches byte for byte.
 
 *Proof:* none found.
 
 ### CODE-12 Tests Are Named for Their Subject
 
-**Each test file is named for the subject it proves, never for a release or a round of work. A large test file is split by subject, with each helper copied to each file that uses it so each file reads on its own; the proof is that the collected test names are the same before and after.**
+**Each test file is named for the subject it proves, never for a release or a round of work. A large test file is split by subject, with each helper copied to each file that uses it, so each file reads on its own. The proof is that the collected test names are the same before and after.**
 
 *Proof:* none found.
 
 ### CODE-13 No Test Depends on the Clock
 
-**A test that reads the time of day is pinned to a clock of its own, or keeps its offsets on the past side of the moment it runs. A pin is proved by running the test at several hours of the day. A test that passes at one hour and fails at another is worse than no test, because it teaches that a red suite can be ignored.**
+**A test that reads the time of day is pinned to a clock of its own, or keeps its offsets on the past side of the moment it runs.**
+- **Proving a pin:** a pin is proved by running the test at several hours of the day.
+- **Why it matters:** a test that passes at one hour and fails at another is worse than no test, because it teaches that a red suite can be ignored.
 
 *Proof:* [`test_brief_stitching.py`](../tests/test_brief_stitching.py), [`test_brief_window.py`](../tests/test_brief_window.py), [`test_learning_rhythm.py`](../tests/test_learning_rhythm.py), [`test_storage_timing.py`](../tests/test_storage_timing.py), [`test_untrusted_gaps.py`](../tests/test_untrusted_gaps.py).
 
