@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_devices.py, Version: 0.27.13 (2026-10-28)
 
 """The Devices tab and each device's page (rules DASH-08, DASH-16).
 
@@ -118,7 +118,19 @@ async def test_the_devices_tab_lists_every_watched_device(hass: HomeAssistant, h
     assert row["rhythm"] == 6030.0
     assert row["window"] == coord._freeze_window(coord.data["devices"][device.id])
     assert row["last_activity"] is not None
+    # The battery's level, for Advanced's BATTERY column (rule DASH-04).
+    assert row["battery"] == 100.0
     assert len(reply["result"]["rows"]) == len(coord._watched)
+
+
+async def test_a_raw_battery_value_is_no_level_on_the_devices_tab(hass: HomeAssistant, hass_ws_client):
+    """A reading outside 0 to 100 is a raw sensor value, not a level (rule BAT-02)."""
+    coord, device, _, _ = await _door(hass)
+    coord.data["devices"][device.id][DEV_BATTERY_VALUE] = 3010.0
+    client = await hass_ws_client(hass)
+    reply = await _call(client, type="device_sentinel/devices")
+    row = next(r for r in reply["result"]["rows"] if r["device_id"] == device.id)
+    assert row["battery"] is None
 
 
 async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_ws_client):
