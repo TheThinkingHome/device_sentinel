@@ -4,14 +4,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/setup_container.sh, Version: 0.25.6 (2026-10-11)
+# File: tools/setup_container.sh, Version: 0.27.10 (2026-10-27)
 #
 # Rebuild the whole test environment in a fresh build container.
 #
-# Every chat starts with an empty container, and rebuilding the two
-# harnesses by hand cost most of an hour and got a detail wrong more
-# than once. This script is the record of what the environment is, so
-# the next session reads one file instead of a transcript.
+# A build container starts empty, and the two harnesses are slow to
+# rebuild by hand and easy to get wrong. This script is the record of
+# what the environment is, in one file.
 #
 # Run it from the repository root. It reads the two pin files that live
 # beside it, so the environment always matches the tree it was cloned
