@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.12 (2026-10-28)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.13 (2026-10-28)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -138,26 +138,30 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
     const heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
     check("nothing empty is drawn as text", !/null|undefined/.test(root.querySelector(".pane").textContent));
     const widths = [...root.querySelectorAll(".pane table col")].map((col) => parseFloat(col.style.width));
-    check("the buttons' column is the widest, so no button breaks a word", widths.length === 3 && widths[1] > widths[0] && widths[1] > widths[2], widths);
+    check("the buttons' column is the widest, so no button breaks a word", widths.length === heads.length && widths.every((w, i) => i === 1 || widths[1] > w), widths);
     check("the buttons stay on one line", !!root.querySelector(".pane tbody .intbuttons"));
-    check("three columns: INTEGRATION, EXCLUDE AND MUTE, TROUBLE", heads.join() === "INTEGRATION,EXCLUDE AND MUTE,TROUBLE", heads);
+    // Advanced adds SET ASIDE and OUTAGES, 14 DAYS; TROUBLE stays last (rule DASH-16).
+    const expected = mode === "simple" ? "INTEGRATION,EXCLUDE AND MUTE,TROUBLE"
+      : "INTEGRATION,EXCLUDE AND MUTE,SET ASIDE,OUTAGES, 14 DAYS,TROUBLE";
+    check(`${mode}: the columns`, heads.join() === expected, heads);
+    const last = (row) => row.cells[row.cells.length - 1];
     const alexa = rowOf(root, "Alexa Media Player");
     check("the name carries the device count and the id", /^Alexa Media Player \(18\) alexa_media/.test(alexa.cells[0].textContent), alexa.cells[0].textContent);
     check("the recommendation reads under the name",
       alexa.cells[0].querySelector(".recommended").textContent === "Recommended: Exclude, Device Sentinel sees its devices only through Amazon's cloud");
     check("five buttons in order", buttonsOf(alexa).map((b) => b.textContent).join() === "Exclude,Mute everything,Mute freeze,Mute battery,Mute signal",
       buttonsOf(alexa).map((b) => b.textContent));
-    check("the trouble is the last column", alexa.cells[2].textContent === "1 never reported", alexa.cells[2].textContent);
+    check("the trouble is the last column", last(alexa).textContent === "1 never reported", last(alexa).textContent);
     const zha = rowOf(root, "ZHA");
     check("trouble says when it went down, then its devices, worst first",
-      /^Down since .+, 2 unavailable, 1 battery low$/.test(zha.cells[2].textContent), zha.cells[2].textContent);
+      /^Down since .+, 2 unavailable, 1 battery low$/.test(last(zha).textContent), last(zha).textContent);
     check("a mute that is on is lit and checked", named(zha, "Mute freeze").classList.contains("on") && named(zha, "Mute freeze").textContent === "âœ“ Mute freeze");
     const cast = rowOf(root, "Google Cast");
     check("an excluded row is greyed, lit Excluded, with the midnight words on hover",
       cast.classList.contains("excluded") && named(cast, "Excluded").classList.contains("on")
       && named(cast, "Excluded").getAttribute("title") === "History deleted at midnight. Press again before then to keep it.");
     check("an excluded row's mutes rest", ["Mute everything", "Mute freeze", "Mute battery", "Mute signal"].every((w) => named(cast, w).getAttribute("aria-disabled") === "true"));
-    check("an excluded row shows no trouble", cast.cells[2].textContent === "");
+    check("an excluded row shows no trouble", last(cast).textContent === "");
     const roomba = rowOf(root, "iRobot Roomba");
     check("Mute everything lights the single mutes and holds them",
       ["Mute freeze", "Mute battery", "Mute signal"].every((w) => named(roomba, w).classList.contains("on") && named(roomba, w).getAttribute("aria-disabled") === "true"));
@@ -198,6 +202,9 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   let { root } = await open({ __mode: "simple", __path: "/battery-trends" });
   let text = root.querySelector(".pane").textContent;
   check("Simple: no TYPICAL LEVEL, LOWEST CELL or WHICH ONE", !/TYPICAL LEVEL|LOWEST CELL|WHICH ONE/.test(text));
+  check("Simple: Other Cells leaves out DAYS RECORDED, STEPS and MODEL, A WEEK", !/DAYS RECORDED|STEPS|MODEL, A WEEK/.test(text));
+  check("Simple: Falling leaves out the weekly levels", !/DAYS AGO|THIS WEEK/.test(text));
+  check("Simple: no Not a Percentage", !/Not a Percentage/.test(text));
   // DEVICE, TYPE and LEVEL stand in the same place in each table, and a
   // short table ends short of the edge (rule DASH-04).
   // The third column counts where it is a level or a cell count; a raw
@@ -207,21 +214,24 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
     .map((col) => (parseFloat(col.style.width) * parseFloat(table.style.width || "100")) / 100);
   const tables = [...root.querySelectorAll(".pane table")];
   const first = placed(tables[0]);
-  check("each Battery Trends table is on one scale", tables.length >= 3 && tables.every((t) => t.dataset.base), tables.length);
+  check("each Battery Trends table is on one scale", tables.length >= 2 && tables.every((t) => t.dataset.base), tables.length);
   check("DEVICE, TYPE and LEVEL line up from table to table",
     tables.every((t) => placed(t).every((w, i) => Math.abs(w - first[i]) < 0.01)), tables.map(placed));
   check("a short table ends short of the edge", parseFloat(tables[0].style.width) < 100, tables[0].style.width);
   ({ root } = await open({ __mode: "advanced", __path: "/battery-trends" }));
   text = root.querySelector(".pane").textContent;
   check("Advanced keeps them", /TYPICAL LEVEL/.test(text) && /LOWEST CELL/.test(text) && /WHICH ONE/.test(text));
+  check("Advanced keeps the measuring columns", /DAYS RECORDED/.test(text) && /STEPS/.test(text) && /MODEL, A WEEK/.test(text));
   ({ root } = await open({ __mode: "simple", __path: "/devices" }));
   let heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
   check("Simple Devices: DEVICE, INTEGRATION, STANDING, PROBLEM", heads.join() === "DEVICE,INTEGRATION,STANDING,PROBLEM", heads);
   check("Simple Devices: no type filter", ![...root.querySelectorAll(".pane select")].some((s) => /All types/.test(s.textContent)));
+  check("Simple Devices: no label filter", ![...root.querySelectorAll(".pane select")].some((s) => /All labels/.test(s.textContent)));
   ({ root } = await open({ __mode: "advanced", __path: "/devices" }));
   heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
   check("Advanced Devices keeps TYPE, LAST REPORT, RHYTHM and WINDOW",
     ["TYPE", "LAST REPORT", "RHYTHM", "WINDOW"].every((h) => heads.includes(h)), heads);
+  check("Advanced Devices adds AREA and BATTERY", heads.includes("AREA") && heads.includes("BATTERY"), heads);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
