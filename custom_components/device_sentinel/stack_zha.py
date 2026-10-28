@@ -110,7 +110,7 @@ def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
     No for ZHA. ZHA's coordinator carries no entities and is already
-    set aside for that reason (rule WATCH-05).
+    set aside for that reason (rule WATCH-03).
 
     Every stack module answers this question so the walk can ask it
     without knowing which stacks exist (rule STACK-01). The signature
@@ -478,8 +478,8 @@ class ZhaJoinObserver:
         info = message.get("device_info")
         if not isinstance(info, dict):
             # `raw_device_initialized` carries its fields at the top
-            # level rather than under device_info, measured 29
-            # August. Both shapes are read rather than one assumed.
+            # level rather than under device_info, as measured. Both
+            # shapes are read rather than one assumed.
             info = message
         registry_id = info.get("device_reg_id")
         ieee = info.get("ieee")

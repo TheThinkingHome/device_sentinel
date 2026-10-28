@@ -238,7 +238,7 @@ REAL_NUMBER = "number, not None"
 TEXT_LIST = "list of strings"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
-# Each entity's outage start and the state it read (rule UNAV-04).
+# The device's saved outage start and the state it read (rule UNAV-04).
 DOWN_SINCE = "None or [moment, state]"
 # The values a device held when its verdict started (rule WATCH-12).
 HELD_VALUES = "None or a mapping of entity registry ids to held values"
@@ -250,7 +250,8 @@ EVIDENCE_LOG = "list of battery evidence rows"
 LIVES_LOG = "list of battery lives"
 # A Wi-Fi outage still open (rule UP-04).
 WIFI_OUTAGE = "a stored Wi-Fi outage"
-# A forecast is said at most as "over a year" (PROJECTION_LONGEST).
+# A forecast's days are held to three years, as PROJECTION_LONGEST
+# holds them.
 FORECAST_DAYS_HIGHEST = 3 * 365
 
 # Every field a record is expected to hold, and what shape it takes.
@@ -818,9 +819,9 @@ EPISODE_SHAPE: dict[str, str] = {
     # An episode is written the moment a silence passes its basis and
     # stays open until the device speaks or something intervenes, so
     # a row that is still running carries None in both of these by
-    # design. Requiring them called healthy in-flight data damage:
-    # any device silent across a load or a fold raised two faults and
-    # a repair card that named nothing wrong (rule STOR-05). They are
+    # design. Requiring them would call healthy in-flight data damage:
+    # any device silent across a load or a fold would raise two faults
+    # and a repair card that named nothing wrong (rule STOR-05). They are
     # checked as types the moment they hold a value, and a closed row
     # is still fully checked, because the closer writes both.
     "at": MOMENT,
@@ -1152,11 +1153,10 @@ def damaged_rows(data: Any) -> dict[str, list[int]]:
 def fill_missing_row_fields(data: Any) -> int:
     """Give every usable table row the nullable fields it lacks.
 
-    The record reconciler has always filled a missing field on a
-    device record so that no reader has to ask whether a key exists.
-    Tables never had that, and a row written by an earlier version
-    that lacks a field a later version reads by name would raise in
-    the reader. A field whose kind allows None is filled with None,
+    The record reconciler fills a missing field on a device record so
+    that no reader has to ask whether a key exists, and this does the
+    same for table rows: a row written by an earlier version that lacks
+    a field a later version reads by name would raise in the reader. A field whose kind allows None is filled with None,
     which is the shape's own allowed value and describes exactly what
     the row said before: nothing. A field whose kind allows no None
     is not filled, because inventing a device or a timestamp would
@@ -1257,7 +1257,7 @@ def check_containers(data: Any) -> list[tuple[str, str, str]]:
     The seam is the clocks merge, not a list of shapes. Seventeen
     record fields arrive from the hot file, so the record check
     cannot run before the merge without faulting every record on a
-    healthy fleet. Everything else can, and does: the containers and
+    healthy house. Everything else can, and does: the containers and
     the top-level scalars.
 
     Containers alone are too narrow. A scalar of the wrong kind

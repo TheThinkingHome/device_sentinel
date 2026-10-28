@@ -150,8 +150,8 @@ from .outage_detail import FAILED, REMOVED, UNWATCHED, parse_detail
 def _plural(count: int) -> str:
     """Return a count of devices as a person would write it.
 
-    The count is known when the sentence is written, so "device(s)"
-    is an evasion rather than a shorthand (rule BRIEF-03).
+    The count is known when the sentence is written, so the sentence
+    never says "device(s)".
     """
     return f"{count} device" if count == 1 else f"{count} devices"
 
@@ -225,10 +225,8 @@ class BriefMixin:
     def _brief_log_moment(epoch: float) -> str:
         """A time to the second, for the Last 24 Hours table.
 
-        The table is the record a tester reads back after a staged
-        outage, where a minute is too coarse to order what happened
-        (rule BRIEF-07). The summary above it keeps minutes, because a
-        person reading it wants the story, not the stopwatch.
+        The table is the log, where a minute is too coarse to order
+        what happened; the summary above it keeps minutes (rule BRIEF-07).
         """
         return dt_util.as_local(
             dt_util.utc_from_timestamp(epoch)
@@ -405,15 +403,11 @@ class BriefMixin:
     ) -> list[tuple[str, str, float, str, str]]:
         """Return the standing state: what is wrong right now.
 
-        Read from the problem list rather than recomputed, so the
-        brief and the list can never disagree. Muted devices are
-        absent because this is a report, and so are acknowledged ones
-        (rule NOTE-08): acknowledgment silences every human-facing
-        channel, and the brief is a notification that happens to be a
-        file, and acknowledging a problem is the statement that the person
-        knows about it and does not want reminding. The diagnostics
-        keep every acknowledged fault, which is where an audit
-        belongs.
+        Read from the Problem List rather than worked out again, so the
+        brief and the list never disagree. Devices muted for everything
+        and acknowledged items are left out, because acknowledgment
+        silences each channel a person reads; the diagnostics keep them
+        (rule NOTE-08).
         """
         now = dt_util.utcnow().timestamp()
         # Name, problem, since, kind and device id, as the annotation
@@ -627,7 +621,7 @@ class BriefMixin:
         if kind == SYS_DEVICE_HANDLED:
             # The device's own name rather than its id, and the plain
             # fact rather than the mechanism: somebody was at it
-            # (rule BRIEF-05). The detail holds "<registry id> <kind>",
+            # (rule DEV-01). The detail holds "<registry id> <kind>",
             # and the id is no use to a person.
             named = str(detail or "").split(" ", 1)[0]
             who = self._device_name(named) if named else "A device"
@@ -669,19 +663,11 @@ class BriefMixin:
                 )
             return f"Maintenance mode ended at {when}{tail}."
         if kind == SYS_UNCLEAN_RESTART:
-            # The restart row above already carried the plain fact
-            # that the system came back, so this one carries what was
-            # different about it (rule FRZ-20). The two read as a pair:
-            # what happened, then why the clocks moved. On the morning
-            # after a real one this is the first sentence read, so it
-            # says the count rather than leaving the reader to find it
-            # in a diagnostics download.
-            # The line says what it cost and stops (rule BRIEF-03):
-            # the gap length and the timers restarted. What that
-            # means for detection is the wiki's job. The moment named
-            # is the shutdown itself, worked back from the resume the
-            # row was written at, because "did not shut down cleanly
-            # at" must point at the stop rather than the start.
+            # The restart row says the system came back; this one says
+            # what was different about it (rule FRZ-20). It says what it
+            # cost and stops: the time unwatched and the timers
+            # restarted (rule BRIEF-03). The moment named is the stop,
+            # worked back from the resume the row was written at.
             gap = row.get(SYS_DURATION) or 0.0
             stopped = self._brief_moment(
                 (row.get(SYS_WHEN) or 0.0) - gap
@@ -708,9 +694,9 @@ class BriefMixin:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
         if kind == SYS_CLOCK_RESET:
-            # A person set the system clock (rule FRZ-21). Every
-            # device clock restarted then, so the brief says why the
-            # day's silences begin at that moment.
+            # The system clock stepped or the host paused (rule FRZ-21).
+            # Each device clock restarted then, so the brief says why
+            # the day's silences begin at that moment.
             extra = f" ({detail})" if detail else ""
             return (
                 f"The system clock was reset, or the system paused, at "
@@ -718,8 +704,8 @@ class BriefMixin:
                 f"restarted then."
             )
         if kind == SYS_CLOCKS_LOST:
-            # Told here in the words of the Repairs card it replaced, so
-            # the repair is not silent (rules LIST-12, STOR-12).
+            # Told here so the lost clocks are not silent; there is no
+            # Repairs card (rules LIST-12, STOR-12).
             count = str(detail or "").split(" ", 1)[0]
             restarted = (
                 f"{count} device clocks restarted then"
@@ -737,8 +723,8 @@ class BriefMixin:
             return f"Settings changed at {when}{extra}."
         if kind == SYS_DEVICE_PAGE:
             # An act from a device's page, with the device it names:
-            # "Button Randy Night Table: battery muted, from its device
-            # page, at 9:14 AM."
+            # "Kitchen Motion: battery muted, from its device page, at
+            # 9:14 AM."
             return f"{self._system_event_who(row)}: {detail or 'changed from its device page'}, at {when}."
         if kind == SYS_FIRST_SEEN_EXCLUDED:
             # Excluded the first time it was seen (rule MUTE-02): "Music
@@ -766,37 +752,28 @@ class BriefMixin:
                 f"{detail or 'changed'}, from its integration page, at {when}."
             )
         if kind == SYS_TRIMMED:
-            # The one destructive act performed on a person's
-            # instruction, so the brief carries it even though the
-            # person did it themselves (rule CFG-10). A week later
-            # the question is why a device's history begins on a
-            # Tuesday, and this is the sentence that answers it.
+            # The one destructive act done on a person's instruction,
+            # so the brief carries it, and it answers later why a
+            # device's history begins that day (rule CFG-10).
             extra = f" ({detail})" if detail else ""
             return (
                 f"Learned history was erased at {when}{extra}. A copy "
                 f"of storage was written first."
             )
         if kind == SYS_STORAGE_REPAIR:
-            # A repair nobody can see afterwards did not happen as
-            # far as the person is concerned (rule STOR-12), so the
-            # sentence names the action and its source. A detail that
-            # carries its own full stop keeps it, so the sentence never
-            # ends in a double full stop, and the guard also repairs
-            # the rows already in the permanent event log with the old
-            # detail inside them.
+            # No repair is silent, so the sentence names the action and
+            # its source (rule STOR-12). A detail that ends in a full
+            # stop keeps it, so the sentence never ends in two, rows
+            # already in the event log included.
             extra = f": {detail}" if detail else ""
             line = f"Storage repaired itself at {when}{extra}"
             return line if line.endswith(".") else f"{line}."
         if kind == SYS_STORAGE_SHAPE:
-            # The check writes what it found rather than a count on
-            # its own, because a person reading this cannot act on a
-            # number and can act on a field name. An older row only
-            # reported and its sentence ended "Nothing was changed.";
-            # a newer one means the write seam refused a row a writer
-            # made, and its detail says the row was dropped (rule
-            # STOR-06). Rows of both kinds can still be in the log, so
-            # the sentence says only what is true of both, and the
-            # detail says the rest.
+            # The detail names the field, since a person can act on a
+            # field name and not on a count. A row may only have
+            # reported, or may record a row the write check refused
+            # and dropped (rule STOR-06), so the sentence says only
+            # what is true of both and the detail says the rest.
             extra = f" ({detail})" if detail else ""
             return (
                 f"The storage check found a record that does not fit "
@@ -1028,10 +1005,9 @@ class BriefMixin:
     def _changed_labels(self, detail: str | None) -> str:
         """The changed settings a row records, by their screen labels.
 
-        In Short named them by label while the Last 24 Hours row and
-        the dashboard's Daily Brief tab printed the raw option keys,
-        "settings changed (repeat_floor)"; every row now reads as In
-        Short does, joined the same way (rule BRIEF-07).
+        In Short, the Last 24 Hours row and the dashboard's Daily Brief
+        tab all name a setting by the label its screen carries, joined
+        the same way (rule BRIEF-07).
         """
         names: list[str] = []
         for key in (detail or "").split(","):
@@ -1072,21 +1048,14 @@ class BriefMixin:
     ) -> list[str]:
         """Return what happened to the house, abnormal only.
 
-        In Short is read rather than scanned, and a paragraph that
-        reports normal behavior is a paragraph nobody finishes
-        (rule BRIEF-03). So an interruption earns a sentence only by
-        lasting longer than BRIEF_NOTEWORTHY_SECONDS, and then only
-        the longest one is told: seven restarts of thirty seconds are
-        not seven events, they are a quiet night, and the Last 24
-        Hours table below carries every one for anyone who wants
-        them.
+        In Short is read rather than scanned, so an interruption earns
+        a sentence only by lasting BRIEF_NOTEWORTHY_SECONDS or more,
+        and then only the longest of each kind is told; the Last 24
+        Hours table carries each one.
 
-        Two things are always said, because neither is ever noise. A
-        storm is somebody's integration misbehaving, already grouped
-        per integration (rule BRIEF-04). A settings change is a person
-        acting on their own system, and it is the reason tomorrow's
-        data will differ from today's, so it is named with what
-        changed.
+        Two things are always said: a storm, grouped per integration,
+        and a settings change, named with what changed, since it is why
+        tomorrow's data differs from today's (rule BRIEF-03).
         """
         rows = sorted(sys_events, key=lambda row: row[SYS_WHEN])
         said: list[str] = []
@@ -1193,13 +1162,14 @@ class BriefMixin:
         it names the condition, not the words, so a line whose count
         moves keeps its tick. Simple shows the lines that stop a missed
         alarm (rule REC-09): a target that is gone or not set, and a
-        family muted for every device.
+        family muted for every device, plus the exclusion cards (rule
+        MUTE-02).
 
         The order is what failing to act costs. A message that goes
-        nowhere is lost the day it matters; a family muted for every
-        device is switched off without saying so; a disabled entity
-        blinds one reading; a router integration and a noisy one only
-        make the rest harder to read (rule REC-02).
+        nowhere is lost the day it matters; a links address that is
+        gone breaks each name in a report; a family muted for every
+        device is switched off without saying so; the rest only make
+        the house harder to read (rule REC-02).
         """
         items: list[tuple[str, str]] = []
         screen = "the Notifications and Daily Brief settings screen"
@@ -1487,10 +1457,10 @@ class BriefMixin:
 
         What the person could change about their own setup, as
         opposed to what is wrong with a device, which is why it is not
-        the problem list. Each line stands until its condition is gone
-        and nothing is stored or dismissed. Worst first, and every
-        line shown: with nothing to dismiss, a cap would hide the lines
-        below it for as long as the ones above it stood (rule REC-02).
+        the Problem List. Each line stands until its condition is gone
+        or it is ticked. Worst first, and each line shown, since a cap
+        would hide the lines below for as long as the ones above stood
+        (rule REC-02).
         """
         # A line or a device a person ticked leaves the Brief (rule
         # REC-07); the emailed Brief is the whole Advanced list (rule
@@ -1713,10 +1683,10 @@ class BriefMixin:
     def _storm_sentences(self, rows: list[dict[str, Any]]) -> list[str]:
         """Return the storm sentences, grouped per integration.
 
-        A storm is an integration republishing its whole fleet, which
-        is never normal and never suppressed. Grouped because a polling
-        integration trips the detector every cycle and can produce
-        twenty in an hour (rule BRIEF-04).
+        A storm is an integration republishing its devices at once,
+        which is never normal and never left out. Grouped because a
+        polling integration can storm twenty times in an hour (rule
+        BRIEF-03).
         """
         storms: dict[str, list[dict[str, Any]]] = {}
         pending: dict[str, int] = {}
@@ -1852,11 +1822,9 @@ class BriefMixin:
         placed: dict[Any, int] = {}
         for opened, resolved in pairs:
             device_id = opened[INC_DEVICE_ID]
-            # An action row is a person's act, told on its own. It is
-            # never a member of a flood: three acknowledgments inside
-            # a restart's window are not "3 devices signal railed",
-            # which is what grouping them produced the moment the
-            # flapping collapse stopped hiding it.
+            # An action row is a person's act, told on its own and never
+            # part of a flood: three acknowledgments inside a restart's
+            # window are not "3 devices signal railed" (rule BRIEF-06).
             if opened.get(INC_EVENT) != INCIDENT_OPENED:
                 told.append(
                     self._compose_episode(opened, resolved)
@@ -1978,8 +1946,7 @@ class BriefMixin:
         # sentence.
         family: dict[str, list[tuple[dict, dict | None]]] = {}
         for (device_id, kind), members in by_bucket.items():
-            # Never reported keeps its own standing sentence, as it did
-            # when buckets were judged one at a time.
+            # Never reported keeps its own standing sentence.
             if (
                 kind in FREEZE_KINDS_FOR_CAUSE
                 and kind != TODO_KIND_NEVER_REPORTED
@@ -2070,11 +2037,10 @@ class BriefMixin:
         failed again, since the second case carries a verdict younger
         than its own fragments.
 
-        A never-reported device is muted, having its own standing
-        sentence already. The case this answers is an unplugged
+        A never-reported device is left out, since it has its own
+        standing sentence. The case this answers is an unplugged
         coordinator told as many recoveries across several restarts
-        while its verdict stood untouched from the moment of the
-        unplug.
+        while its verdict stood from the moment it was unplugged.
         """
         if any(
             opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
@@ -2166,8 +2132,7 @@ class BriefMixin:
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed", "railed"
         # A battery crossing its line is not a silence: the device
-        # reported the whole time. The fourth fleet's brief told a
-        # phone's two overnight low readings as "went silent twice".
+        # reported the whole time.
         if kind == TODO_KIND_LOW_BATTERY:
             return "battery read low", "low"
         if kind == TODO_KIND_FALLING_BATTERY:
@@ -2437,11 +2402,9 @@ class BriefMixin:
     ) -> str:
         """Return which device failed in the same second, or alone.
 
-        The column that earns its place (rule BRIEF-09): devices that
-        fail in the same second usually share a cause, and the prose
-        form read two halves of one problem as two mysteries. "Every
-        time" is said only when it matched every time; anything less
-        is counted rather than overstated.
+        Devices that fail in the same second usually share a cause
+        (rule BRIEF-09). "Every time" is said only when it matched
+        every time; anything less is counted rather than overstated.
 
         One shared second is not a pattern, so a partner is named
         only when it matched more than once, unless one match is the
@@ -2776,17 +2739,9 @@ class BriefMixin:
         # degraded device, so a permanently broken link reads its way
         # back to healthy over a week. Nothing is said here about bad
         # signal days yet either (rule SIG-10).
-        # Battery Trends answers what the threshold cannot: which
-        # cells are going to be low rather than which are (rule
-        # BAT-18). Named here so a person can find it, on the same
-        # footing as signal, which appears in a brief while never
-        # pushing: a document read at an hour a person chose is not an
-        # alert.
-        #
-        # Only what is close. The report lists every cell measurably
-        # falling, which is a third of a real fleet and most of them
-        # a season out; naming those here would be sixteen devices
-        # nobody can act on (rule BAT-14).
+        # Only what is close: the accelerating batteries whose near
+        # end is inside Days Till Low Warning (rule BAT-14), with
+        # Battery Trends named for the rest (rule BAT-18).
         fallers = self._battery_brief_rows()
         battery_lines: list[str] = []
         if fallers:
@@ -2905,10 +2860,8 @@ class BriefMixin:
     def _is_brief_table_rule(line: str) -> bool:
         """Return whether a pipe line is a table's header rule.
 
-        Read from the characters rather than from the row's position.
-        Position was how the older renderer told the rule apart, and
-        it assumed the second line of every table was the separator,
-        which is true only while nothing else ever emits a pipe line.
+        Read from the characters rather than the row's position, since
+        the second line of a table is not always its rule.
         """
         body = line.strip()
         if not body.startswith("|"):
@@ -2935,9 +2888,7 @@ class BriefMixin:
                 cells.append(escape(_markdown_unescaped(text)))
                 continue
             # In composition order, so two devices of one name each
-            # link to themselves: the reference rig has two called
-            # "Dining Shades", and a row naming one of them is where
-            # a person finds out which it was.
+            # link to themselves.
             at = self._brief_cursor.get(text, 0)
             self._brief_cursor[text] = at + 1
             device_id = seen[at] if at < len(seen) else None

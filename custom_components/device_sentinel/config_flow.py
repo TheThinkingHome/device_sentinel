@@ -16,7 +16,8 @@ surface, so it grows without becoming one long form. Eight screens,
 in this order: Notifications and Daily Brief (where messages go, the
 quiet hours, the brief), Exclusions and Muting (what is never
 watched, and what is watched but never judged), then one screen per
-family, Low Battery, Signal Strength and Freeze Detection, each with
+family, Low Battery, Signal Strength and Freeze and Unavailable
+Detection, each with
 its own settings and its own muting; WiFi; Advanced; and Extended
 Diagnostics, where a person volunteers what their hardware says
 (rules CFG-01, STACK-11).
@@ -179,8 +180,8 @@ from .const import (
 )
 
 # The notify domain exposes one service per target; the persistent
-# notification is always available. These are what the engine will
-# eventually call, discovered live so the picker shows real targets.
+# notification is always available. These are what the pushes call,
+# discovered live so the picker shows real targets.
 
 
 def _discover_notify_targets(hass: Any) -> list[str]:
@@ -266,7 +267,7 @@ def _device_options(
 
     A held pick is named by `name_for`, the coordinator's resolver, so
     a nameless device reads as the ladder names it everywhere else
-    (rule DEV-02). Without one, the ladder is asked without a domain.
+    (rule DEV-01). Without one, the ladder is asked without a domain.
     """
     options = [
         selector.SelectOptionDict(
@@ -304,7 +305,7 @@ def _alphabetical(words: str) -> str:
     Đ, Æ, Œ) are read as their plain letters, invisible marks such as a
     zero-width space are dropped, and case is folded, so a Spanish,
     German or Nordic name sits where a reader looks for it
-    (rule DEV-04).
+    (rule CFG-05).
     """
     import unicodedata
 
@@ -396,7 +397,7 @@ def _devices_covered_by(
     catches.
 
     Coverage is positive only: a device is named here because a broader
-    muting demonstrably reaches it. An id we cannot account for, a
+    muting demonstrably reaches it. An id the rows cannot account for, a
     device deleted or belonging to an integration that has not loaded
     yet, is never named, so a pick can only be pruned on proof rather
     than on absence.
@@ -613,8 +614,7 @@ def settle_options(
         keep(integrations, global_integrations)
         keep(labels, global_labels)
         # Rung three: within a section, its own integration and
-        # label picks cover its device picks, which is the one
-        # axis that was already settled and stays settled here.
+        # label picks cover its device picks.
         covered = _devices_covered_by(
             rows, names(integrations), names(labels)
         )
@@ -744,7 +744,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         days its record is held (rule WATCH-07). The screens cannot offer
         it, since the registry no longer names it, so a save would drop
         its pick; it is put back here from the options as they were. A
-        pick whose hold has ended is pruned on the next save, as before.
+        pick whose hold has ended is pruned on the next save, as any
+        other pick of a device Home Assistant no longer has.
         """
         coordinator = self.config_entry.runtime_data
         before = self.config_entry.options
@@ -1349,8 +1350,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     ),
                     # The three muting lists move into a section of their
                     # own (rule CFG-02). Collapsed, because a person
-                    # opening Freeze Detection came for the two
-                    # graces above.
+                    # opening Freeze and Unavailable Detection came
+                    # for the two graces above.
                     vol.Required("freeze_muting"): section(
                         vol.Schema(
                             {
@@ -1569,11 +1570,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             | set(excluded)
         )
         # Offer only integrations that own a watched device. An
-        # integration whose devices are all service-type was never
-        # watched, so muting it would do nothing; listing every
-        # integration in Home Assistant buried the real ones under
-        # service entries. This matches the battery and signal steps,
-        # which already build their picker from their watched rows.
+        # integration whose devices are all service-type is never
+        # watched, so muting it would do nothing, and listing every
+        # integration in Home Assistant would bury the real ones under
+        # service entries. The battery and signal steps build their
+        # pickers from their watched rows the same way.
         integration_domains = sorted(
             {row["integration"] for row in device_rows}
         )
@@ -1610,7 +1611,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             missing_note="excluded",
         )
         # An excluded pick is named with its integration too, as every
-        # other row is, so two listings of one box can be told apart.
+        # other row is, so the same hardware listed by two integrations
+        # can be told apart (rule DEV-04).
         set_aside = self.config_entry.runtime_data._set_aside
         for option in excluded_device_options:
             held = set_aside.get(option["value"])
@@ -1633,14 +1635,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     # The screen splits by verb, and both halves are
                     # sections so both carry a heading and an
                     # explanation above their picker (rule CFG-02).
-                    # A loose field gets its label above the input
-                    # and its help below it, which put the exclude
-                    # list's explanation underneath the chooser while
-                    # the ladder beside it had its own above. Two
-                    # sections and nothing loose departs from the
-                    # Advanced pattern deliberately: this screen has
-                    # no plain settings, only two groups of lists
-                    # that need different explanations.
+                    # A loose field would carry its help below the
+                    # chooser. This screen has no plain settings, only
+                    # two groups of lists that need different
+                    # explanations.
                     vol.Required("exclude"): section(
                         vol.Schema(
                             {
@@ -1679,13 +1677,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                         {"collapsed": False},
                     ),
-                    # The screen splits by verb (rule CFG-02). Exclusion
-                    # stays loose at the top because it is the
-                    # different one: it discards rather than
-                    # silences. The three-tier ladder moves into its
-                    # own section, open rather than collapsed, since
-                    # the lists are what a person opening this screen
-                    # came for.
+                    # The screen splits by verb (rule CFG-02). The
+                    # three-tier ladder has its own section, open
+                    # rather than collapsed, since the lists are what
+                    # a person opening this screen came for.
                     vol.Required("muting"): section(
                         vol.Schema(
                             {
@@ -1768,18 +1763,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         quiet window, and the daily brief. They sit together because
         they are all about who hears, which is a different question
         from how a detector is tuned, and tuning stays on its own
-        detector's screen (rule CFG-02). High-priority targets get a
-        message when a device develops a problem and the brief with
-        its history; normal-priority targets get the brief alone. A
-        target in both is normalized to high on save, so the engine
-        inherits the rule rather than re-deriving it. The brief's own
-        target list carries the whole document, which is why it is
-        separate: the payload differs, not the urgency.
+        detector's screen (rule CFG-02). High-priority targets get each
+        push at any hour, and normal-priority targets each push outside
+        Quiet Hours (rule NOTE-02). A target in both is kept as high
+        priority on save. The brief's own target list carries the whole
+        document and goes to neither tier, which is why it is separate
+        (rule BRIEF-11).
 
-        Quiet hours suppress both tiers; nothing pierces, not even a
-        high-priority message, because an event inside quiet hours is
-        dropped rather than queued and the morning brief carries it
-        instead (rule NOTE-07).
+        A push to a normal-priority target inside Quiet Hours is
+        dropped rather than queued, and the brief carries it instead
+        (rule NOTE-07).
         """
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -2028,7 +2021,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """Hardware a person volunteers for study (rule STACK-11).
 
         Support for a stack or a router cannot be built without
-        seeing how it behaves on a fleet nobody here owns. This
+        seeing how it behaves on hardware the author does not own. This
         screen offers only what is detected on this system, and only
         where support is still being built, so a house without
         Z-Wave is never asked about Z-Wave. Choosing something
@@ -2071,12 +2064,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         detector stays on that detector's own screen, where a person
         adjusting it expects to find it (rule CFG-02).
 
-        Each is a share of something the device already earned, or a
-        plain interval, so no value here can produce a nonsensical
-        result: the bands are enforced by the selectors and clamped
-        again where they are read. One sentence each on the screen and
-        the reasoning on the wiki page, per the standing rule that
-        configuration says what a setting does and the wiki says why.
+        Each value's band is enforced by its selector, so no value here
+        can produce a nonsensical result. One sentence each on the
+        screen and the reasoning on the wiki page (rule CFG-03).
         """
         if user_input is not None:
             # The trim pair arrives nested under its section, and the

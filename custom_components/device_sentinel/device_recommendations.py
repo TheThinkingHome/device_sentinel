@@ -7,7 +7,8 @@
 
 """Recommendations about single devices, for the Recommendations tab.
 
-Each card lists the devices it covers, worst first (rule REC-04): a
+Each card lists the devices it covers by name, and the cards run in
+this order (rule REC-04): a detected battery replacement to confirm, a
 device with no power set, the switched-off sensor cards, one with no
 area, devices sharing a name, a device slow to judge for freeze,
 offered a freeze mute (rule REC-06), and two about types: a device
@@ -100,10 +101,11 @@ class DeviceRecommendationsMixin:
         """The devices Battery Voltage Switched Off lists, with who
         switched each off.
 
-        Only a device with a battery reading whose voltage nothing else
-        reports, such as ZHA's battery_voltage on its battery sensor.
-        One place, so the card and the diagnostics download count the
-        same devices (rule REC-09).
+        Only a device with a battery reading, whose power is not set to
+        mains, USB or PoE, and whose voltage nothing else reports, such
+        as ZHA's battery_voltage on its battery sensor. One place, so
+        the card and the diagnostics download count the same devices
+        (rule REC-05).
         """
         return {
             d: who for d, who in self.switched_off_devices("voltage").items()  # type: ignore[attr-defined]
@@ -370,7 +372,7 @@ class DeviceRecommendationsMixin:
             active = 0
             for row in card["devices"]:
                 default = bool(row.get("by_user"))
-                # A battery replacement is answered, not ticked (rule REC-04).
+                # A battery replacement is answered, not ticked (rule REC-07).
                 row["acknowledged"] = (
                     False if kind == KIND_BATTERY_CONFIRM
                     else bool(own.get(row["device_id"], default))

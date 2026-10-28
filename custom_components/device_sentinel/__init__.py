@@ -99,10 +99,10 @@ async def async_migrate_entry(
     would put a person's whole muted fleet into tomorrow's brief with
     nothing to explain it.
 
-    The steps are numbered rather than applied as a set, because the
-    two audiences arrive differently: a test house takes one step at
-    a time, while a person on the public release jumps several at once. Numbering makes those the
-    same code path, applied in order from wherever the entry sits.
+    The steps are numbered rather than applied as a set, because a house
+    that upgrades one release at a time and one that jumps several
+    arrive differently. Numbering makes those the same code path,
+    applied in order from wherever the entry sits (rule STOR-19).
     """
     if entry.minor_version >= OPTIONS_MINOR_VERSION:
         return True
@@ -224,10 +224,8 @@ def _migrate_retired_sliders(options: dict[str, Any]) -> dict[str, Any]:
     """Step 4: five sliders become constants, and the battery
     threshold keeps its old value for anybody who never set one.
 
-    The five were only ever sliders because their numbers were
-    guesses, and nobody moved one off its default. The stored keys go, so an entry
-    carrying a hand-edited value cannot quietly keep behaving
-    differently from the constant the code now states.
+    The stored keys go, so an entry carrying a hand-edited value cannot
+    quietly behave differently from the constant the code states.
 
     The threshold is the other half and runs the other way. Its
     default moves from twenty to fifteen, so an entry that never
@@ -255,10 +253,9 @@ def _migrate_retired_sliders(options: dict[str, Any]) -> dict[str, Any]:
 def _migrate_ignore_name(options: dict[str, Any]) -> dict[str, Any]:
     """Step 3: the ignore list takes the word muting vacated.
 
-    Same shape as step 2 and deliberately not folded into it: a
-    person on this fleet ran step 2 a day before this one, while a
-    person on the public release runs both in a single load, and one
-    numbered chain makes those the same code rather than two.
+    Same shape as step 2 and kept apart from it, because an entry may
+    have run step 2 alone, and one numbered chain makes that and a load
+    running both the same code rather than two.
     """
     moved: list[str] = []
     for old, new in IGNORE_KEY_RENAMES.items():
@@ -339,13 +336,11 @@ def _retire_www_folder(hass: HomeAssistant) -> str | None:
     config/device_sentinel, which Home Assistant does not serve
     (rule BRIEF-14).
 
-    The whole folder goes, whatever else is in it, and the release note
-    tells a person to copy it first. The
-    current brief is carried across unless one is already there, so
-    the first read after the upgrade finds a brief. Runs in the
-    executor, once per start, and does nothing once the folder is
-    gone. Returns what it did for the log, or None when there was
-    nothing to do.
+    The whole folder goes, whatever else is in it. The current brief is
+    carried across unless one is already there, so the first read after
+    the upgrade finds a brief. Runs in the executor, once per start, and
+    does nothing once the folder is gone. Returns what it did for the
+    log, or None when there was nothing to do.
     """
     folder = Path(hass.config.path(REPORT_WWW_DIR))
     if not folder.is_dir():
@@ -370,8 +365,7 @@ async def _async_retire_www_folder(hass: HomeAssistant) -> None:
     """Run the retirement off the event loop; never fail the setup.
 
     A folder that cannot be deleted leaves the old files where they
-    were, which is how every earlier release left them, so it is
-    logged and the start goes on.
+    were, so it is logged and the start goes on.
     """
     try:
         done = await hass.async_add_executor_job(_retire_www_folder, hass)

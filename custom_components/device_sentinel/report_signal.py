@@ -10,13 +10,12 @@
 The dashboard's Signal Trends tab shows the signal history and reads
 the judgment kept here (rule SIG-12).
 
-The judgment replaces the dwell line. Dwell asked whether a device sat
-near its own floor, and the floor descends to meet a degraded device,
-so a broken link reads its way back to healthy within a week. The
-judgment asks the question a person can act on instead: did this
-device just get worse than it has been (rules SIG-08, SIG-13).
+The judgment asks the question a person can act on: did this device
+just get worse than it has been. No line is drawn from the device's
+own floor, because a floor sinks to meet a failing device and a broken
+link would read healthy again within a week (rules SIG-08, SIG-13).
 
-Still a file split rather than a boundary (rule CODE-11). These
+A file split rather than a boundary (rule CODE-11). These
 methods are mixed into the coordinator and read its state freely,
 so `self` is the coordinator throughout and nothing here stands
 alone.
@@ -101,8 +100,8 @@ class SignalReportMixin:
         """
         full = list(record.get(DEV_SIGNAL_DAILY_P5) or [])
         # The last thirty calendar days, as the device page reads them
-        # (rule SIG-06): thirty rows reached back about sixty days on a
-        # device with silent days.
+        # (rule SIG-06), since thirty rows can reach back about sixty
+        # days on a device with silent days.
         end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
         dates = dates_for(record, FAMILY_SIGNAL, len(full), end)
         first = end - timedelta(days=SIGNAL_DAYS_KEEP - 1)

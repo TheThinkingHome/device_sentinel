@@ -89,9 +89,8 @@ MUTE_KINDS: dict[str, tuple[str, str, str]] = {
     "freeze": (CONF_FREEZE_MUTED_INTEGRATIONS, CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
     "battery": (CONF_BATTERY_MUTED_INTEGRATIONS, CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
     "signal": (CONF_SIGNAL_MUTED_INTEGRATIONS, CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
-    # A device only: no integration or label list, so those two keys
-    # are never set.
-    # By label or device, never integration (rule MUTE-06).
+    # By label or device, never integration, so the integration key is
+    # empty and never set (rule MUTE-06).
     "unavailable": ("", CONF_UNAVAILABLE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_DEVICES),
 }
 
@@ -344,10 +343,8 @@ class DeviceActionsMixin:
         """Run one act, recorded as pressed where `source` says.
 
         A sensor turned on, a power answer or a type set from a
-        Recommendations card was recorded "from its device page", the
-        only place `_page_done` knew of. The command now says where it
-        was pressed, as a mute does, and the record says so (rules
-        BRIEF-07, DEV-07).
+        Recommendations card is recorded with where it was pressed, as
+        a mute is (rules BRIEF-07, DEV-07).
         """
         self._page_source = source
         try:

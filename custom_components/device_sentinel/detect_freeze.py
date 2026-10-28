@@ -18,8 +18,8 @@ margin, never a fixed timeout, because a chatty motion sensor and a
 twice-a-day rain gauge cannot share a number. A device is judged
 frozen only once it has learned enough days; until then it is watched
 for unavailable only. Buttons and remotes that speak only when pressed
-learn a very long rhythm and are almost never called frozen, so the
-watched count always exceeds the learned one (rules FRZ-01, FRZ-07).
+learn a very long rhythm and are seldom called frozen (rules FRZ-01,
+FRZ-07).
 
 One of the subject modules split out of coordinator.py, along the
 seam measured by which methods call which (rule CODE-11). These are
@@ -320,7 +320,7 @@ class FreezeMixin:
     def _connection_only(self, device_id: str) -> bool:
         """Whether an ESPHome device has nothing to report but its connection:
         every entity of its own switched on is a firmware notice or a command
-        button, whatever it has switched off (rule STACK-07).
+        button, whatever it has switched off (rule WATCH-04).
         """
         return (
             self._watched.get(device_id) == "esphome"
@@ -404,7 +404,8 @@ class FreezeMixin:
 
         The minute check asks for every device's wait every minute, but the
         wait changes only when a day folds in, a reset is made, the Freeze
-        Detection settings change, or the record is loaded afresh. Each kept
+        and Unavailable Detection settings change, or the record is loaded
+        afresh. Each kept
         result carries a stamp of its inputs: the day list itself, its length
         and newest day, the count since a reset, and the two settings. The
         fold's append and trim change the length and newest day; every other
@@ -542,7 +543,7 @@ class FreezeMixin:
     def rule_counts_fold(self, now: float) -> None:
         """Write the day's line of the two rules and begin the counts again."""
         trimmed = lognormal = 0
-        # Watched devices only (rules SIG-09, WATCH-09).
+        # Watched devices only (rule WATCH-09).
         for _device_id, record in self.watched_records():
             found = self._freeze_rhythm(record)
             if not found:
@@ -697,12 +698,10 @@ class FreezeMixin:
         own is actively reporting is alive (_reporting_through_others; rules
         UNAV-01, UNAV-02).
         """
-        # A globally-muted device keeps its
-        # clock and rhythm but is never given a verdict of any kind.
-        # Global muting suppresses all judgment, so it is checked
-        # here rather than only filtered from the report: no verdict
-        # is computed or stored for a device the person has told the
-        # integration to exclude.
+        # A device muted for everything keeps its clock and rhythm but is
+        # given no verdict of any kind, so the mute is enforced here where
+        # the judging runs, not by hiding the verdict afterwards (rule
+        # MUTE-01).
         if device_id in self._muted_devices:
             return None
         # Two mutes, each its own kind: the freeze mute silences frozen and
@@ -744,7 +743,7 @@ class FreezeMixin:
         # An ESPHome device with nothing but firmware notices and command
         # buttons, such as a Bluetooth proxy, is judged by its connection alone,
         # its only report: unavailable while it is dropped, never frozen or never
-        # reported (rule STACK-07).
+        # reported (rule WATCH-04).
         if self._connection_only(device_id):
             if self._dropped_esphome(device_id):
                 return None if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
@@ -1057,11 +1056,10 @@ class FreezeMixin:
                     # UNAV-04).
                     record[DEV_FROZEN_SINCE] = self._outage_began(record, now)
                     self._dirty = True
-                    # Critical, not merely dirty. This stamp is what
-                    # the debounce counts from, and its clear below is
-                    # an earlier fix; a crash between one reaching
-                    # disk and the other not is how a device comes
-                    # back reported down for hours.
+                    # Critical, not merely dirty: the debounce counts
+                    # from this stamp and it is cleared below, so a
+                    # crash between one reaching disk and the other
+                    # would bring a device back reported down for hours.
                     self._critical = True
                     return False
                 if (now - since) < FREEZE_UNAVAILABLE_DEBOUNCE:
@@ -1186,9 +1184,8 @@ class FreezeMixin:
             if self._held_by_upstream(device_id, now):
                 continue
             # Guard each device: one malformed record must never kill
-            # the whole sweep, which would stop verdicts, saving, and
-            # refreshing for every device, which once crashed the
-            # sixty-second tick.
+            # the whole sweep, which would stop verdicts, saving and
+            # refreshing for every device.
             try:
                 self._esphome_back(device_id, record)
                 if self._apply_freeze_verdict(device_id, record, now):
@@ -1248,7 +1245,7 @@ class FreezeMixin:
         silence since this start, so the unwatched middle counts against
         nobody. The credit lapses the moment a device reports, and needs no
         cap: a device already silent beforehand carries that silence into the
-        sum and is still caught the instant the system returns.
+        sum and is caught at the first sweep after the startup grace.
         """
         found = self._silence_spans(record, now, device_id, window)
         if found is None:
@@ -1383,7 +1380,7 @@ class FreezeMixin:
         if domain is not None:
             # An integration entry's outage is its own devices' only:
             # one Shelly plug's entry failing says nothing about the
-            # plug beside it on another entry (rule UP-07). A row that
+            # plug beside it on another entry (rule UP-01). A row that
             # names no entry, written before entries were recorded,
             # still covers the integration.
             found.extend(spans.get((SYS_INTEGRATION_UP, domain), []))
@@ -1461,13 +1458,12 @@ class FreezeMixin:
                 began = float(when) - float(duration)
             # Every upstream stores its fall as well as its return. A
             # fall is recorded when it is noticed, which can be minutes
-            # after the outage began (dated from the start of the run,
-            # 3:42 against a fall recorded at 3:47 on the rig), never
-            # hours; a return whose fall is not on record is credited
-            # at most that slack. So a corrupt duration cannot forgive
-            # a silence that began long before: without the bound, a
-            # device frozen for days was credited back under its
-            # window and read as recovered without speaking.
+            # after the outage began (one dated from the start of the
+            # run), never hours; a return whose fall is not on record is
+            # credited at most that slack. So a corrupt duration cannot
+            # forgive a silence that began long before, which would
+            # credit a device frozen for days back under its window and
+            # read it as recovered without speaking.
             recorded_fall = fell.pop(slot, None)
             floors = [returned.get(slot)]
             if recorded_fall is not None:
@@ -1698,8 +1694,8 @@ class FreezeMixin:
         never reported (rule MUTE-06).
 
         The same broad-to-narrow ladder as battery and signal (rule MUTE-04):
-        the device keeps its clock and learned rhythm, so re-including it is
-        instant and arrives with history; it is simply never given a freeze or
+        the device keeps its clock and learned rhythm, so lifting the mute is
+        instant and it returns with its history; it is simply never given a freeze or
         never-reported verdict. Unavailable has its own mute. This is the
         release valve for a device that is intermittent by nature.
         """

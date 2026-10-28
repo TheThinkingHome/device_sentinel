@@ -127,7 +127,7 @@ def clear_raw_battery(record: dict[str, Any], why: str) -> bool:
     record[DEV_BATTERY_RAW_FIRST_DAY] = None
     LOGGER.info(
         "device_sentinel: the raw battery scale mark was cleared after "
-        "%s; the device is measured again (ruling #545)",
+        "%s; the device is measured again",
         why,
     )
     return True
@@ -288,9 +288,9 @@ class BatteryMixin:
             # is the day the rise first appeared, the previous fold.
             dates = dates_for(record, FAMILY_BATTERY, len(series), day - timedelta(days=1))
             # The old cell's history as a day the person entered set it
-            # aside, kept when this rise is that same replacement (found
-            # by review): the device reported its new level after the
-            # person gave the day, and those days are the old cell's too.
+            # aside, kept when this rise is that same replacement: the
+            # device reported its new level after the person gave the
+            # day, and those days are the old cell's too.
             kept_previous: list[Any] = []
             kept_dates: list[Any] = []
             entered = self._battery_answers().get(device_id) if dates else None  # type: ignore[attr-defined]
@@ -328,7 +328,7 @@ class BatteryMixin:
             else:
                 self.battery_life_ended(device_id, record, dates[-1] if dates else None, started)  # type: ignore[attr-defined]
             # A fresh cell can change how often a device reports, so the
-            # Log-Normal Percentile counts again from here (rule FRZ-04).
+            # Log-Normal Percentile counts again from here (rule FRZ-05).
             record[DEV_LOGNORMAL_DAYS] = 0
             # A new battery is measured afresh: the raw mark lasts until
             # the next battery change, and the new cell proves its scale
@@ -378,11 +378,12 @@ class BatteryMixin:
         """Return how a cell reports: smooth, not enough data, or coarse.
 
         Some cells report in 10-point steps, and a trend reads a
-        single step as a steep fall. A cell is coarse after two falls of five points
-        or more with no smaller change in its retained history, which
-        is at least 30 days; a battery that accelerates toward empty
-        shows smaller changes on its way down, so it never qualifies,
-        and neither does one that has never changed. Its forecast is
+        single step as a steep fall. A cell is coarse after two falls of
+        five points or more with no smaller change in its retained
+        history, which is at least 30 days; a battery that accelerates
+        toward empty shows smaller changes on its way down, so it never
+        qualifies, and neither does one that has never changed. Its
+        forecast is
         withheld from the first such fall, and once coarse it is
         judged against the low threshold alone (rule BAT-09).
 
@@ -460,8 +461,8 @@ class BatteryMixin:
         or below the threshold; once flagged, stay flagged until the
         value climbs past threshold plus the clear margin, so a cell
         hovering exactly at the line never flaps. The margin is small
-        (2) because a load-driven rest-rebound is a genuine recovery
-        and is allowed to clear the flag.
+        (3) because a load-driven rest-rebound is a genuine recovery
+        and is allowed to clear the flag (rule BAT-03).
 
         below-threshold-since: the first crossing stamps the time,
         later evaluations carry it, recovery clears it. It lives in
@@ -517,7 +518,7 @@ class BatteryMixin:
                         "device_sentinel: %s reported %s, over 110 on a "
                         "second day (first on %s), so it reports "
                         "Zigbee's raw battery scale of 0 to 200; its "
-                        "readings are halved from now on (ruling #545)",
+                        "readings are halved from now on",
                         battery_entity_id,
                         state.state,
                         first,
@@ -553,8 +554,8 @@ class BatteryMixin:
             # startup window is held, not flagged, because at a restart
             # an entity can restore a stale or transient low before its
             # first real reading corrects it. Freeze judgments hold
-            # through the same window (rules BAT-03, WATCH-10). A cell that is
-            # genuinely low still reads low when the window shuts,
+            # through the same window (rules BAT-03, WATCH-10). A cell
+            # that is genuinely low still reads low when the window shuts,
             # and the next evaluation flags it then. A flag already
             # standing from before the restart is untouched: this
             # holds new flags only, so a real low battery never
@@ -635,7 +636,7 @@ class BatteryMixin:
             if not record or not record.get(DEV_BATTERY_LOW):
                 continue
             device = dev_reg.async_get(device_id)
-            # Named by the ladder, never the raw id (rule DEV-02).
+            # Named by the ladder, never the raw id (rule DEV-01).
             device_name = self._device_name(device_id)
             area_name = "Unassigned"
             if device and device.area_id:
@@ -675,7 +676,8 @@ class BatteryMixin:
 
     @property
     def battery_falling_list(self) -> list[dict[str, Any]]:
-        """Return cells projected to reach empty inside the horizon.
+        """Return accelerating cells that reach their target inside Days
+        Till Low Warning.
 
         The Battery: Falling sensor. A different set from Battery:
         Low and a different question: low is a level that has been

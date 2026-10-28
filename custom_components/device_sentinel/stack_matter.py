@@ -14,8 +14,8 @@ integration domain, and give me a reader.
 
 WHAT IS BUILT. Detection only, and it is the detection this project
 already performs on every rebuild: a device whose integration domain
-is `matter` means Matter is running. That much is proven, because it
-is what the registry walk did before this file existed.
+is `matter` means Matter is running. That much is proven by the
+domain alone.
 
 WHAT IS NOT BUILT, AND WHY. `make_reader` returns None. Matter is
 further back than the other two: it is detected as present and
@@ -29,11 +29,11 @@ outage watcher, one row naming the integration with its devices
 counted; what is missing here is the commissioning window and any
 reading of the stack while it runs.
 
-WHAT IS KNOWN AND UNVERIFIED. Nothing is verified beyond the domain.
-Whether commissioning is observable from Home Assistant, what a
-Matter device's availability looks like, and whether a fabric has any
-coordinator-wide state worth reading, are all open questions rather
-than unverified answers.
+WHAT IS KNOWN AND UNVERIFIED. Beyond the domain, only how a device's
+availability behaves is measured (rule STACK-06). Whether
+commissioning is observable from Home Assistant, and whether a fabric
+has any coordinator-wide state worth reading, are open questions
+rather than unverified answers.
 
 WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
 on, the study in `study_stacks.py` gathers what Matter says about its

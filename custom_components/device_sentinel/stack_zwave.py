@@ -28,12 +28,12 @@ rule. Asleep and awake changes on battery devices are the sensor's
 only other traffic, and say nothing.
 
 WHAT IS NOT BUILT, AND WHY. `make_reader` returns None, so no
-controller state and no inclusion window is read on Z-Wave. There is no
-Z-Wave hardware on the reference fleet, so every claim about its
-inclusion model would be documentation repeated rather than
-measurement, and nothing ships for a stack the author cannot test
-(rule STACK-02). A house on Z-Wave falls to the per-device debounce for
-interventions (rule FRZ-15).
+controller state and no inclusion window is read on Z-Wave. The author
+owns no Z-Wave hardware, so every claim about its inclusion model
+would be documentation repeated rather than measurement, and nothing
+ships for a stack the author cannot test (rule STACK-02). A house on
+Z-Wave has no detector for a person's hand: Maintenance Mode says so,
+and otherwise the outage rule decides (rule FRZ-15).
 
 WHAT IS KNOWN AND UNVERIFIED. The design comes from documentation
 and has never been measured. Inclusion is expected to be observable
@@ -53,8 +53,8 @@ agnostic and covers `zwave_js` like any other: a config entry that
 fails and stays failed is one row naming the integration with the
 devices behind it counted and cleared of blame. A coordinator pulled
 and replugged clears with no false device faults in the window and
-the folded statistics of the Z-Wave devices unchanged (rule UP-03). What is
-missing is the running controller, not the outage.
+the folded statistics of the Z-Wave devices unchanged (rule UP-03).
+What is missing is the running controller, not the outage.
 
 WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
 on, the study in `study_stacks.py` gathers what Z-Wave JS says about

@@ -5,23 +5,17 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: backup.py, Version: 0.27.10 (2026-10-27)
 
-"""A one-shot copy of both storage files, taken before a release removes
-something it cannot put back.
+"""Copies of the storage files: the one-shot copy, last-good, evidence
+copies and the restore.
 
-Why this exists: a release that removes fields from the main file
-closes the way back. Going back would load a file whose clocks stopped
-at the moment of the strip, and every device would come up with an
-activity time hours or days stale. So the release takes a copy of what
-it is about to change, before it changes it.
+The one-shot copy is taken before a step removes something it cannot
+put back. Its caller is the statistics epoch: a change wipes learned
+data, so a copy is taken first, under a suffix naming the epoch, and
+nothing is wiped if the copy fails (rule STOR-19).
 
-Its caller is the statistics epoch: a bump wipes learned data with
-nothing behind it, so it takes a copy first, under a suffix naming the
-epoch, and wipes nothing if the copy fails (rule STOR-19).
-
-The copy is deliberately a byte copy of the files on disk rather than a
-serialization of what is in memory. What a rollback needs is the file
-the older version would have read, and the only thing certain to be
-exactly that is the file itself.
+Each copy is a byte copy of the files on disk rather than of what is in
+memory, since a way back needs the very file an older release would
+read.
 """
 
 from __future__ import annotations
@@ -61,12 +55,9 @@ def _storage_path(hass: HomeAssistant, key: str) -> Path:
 def _copy_one(source: Path, destination: Path) -> bool:
     """Copy one file, reporting whether the copy now exists.
 
-    A missing source is not a failure. The clocks file is the second
-    half of the storage split and does not exist until a version that
-    writes it has saved at least once, and a
-    house that has never run that far has nothing to preserve; the
-    caller's job is to protect what is there, not to invent what is
-    not.
+    A missing source is not a failure: a file that has not been
+    written yet has nothing to preserve, and the caller's job is to
+    protect what is there, not to invent what is not.
     """
     if not source.exists():
         LOGGER.debug(
@@ -81,7 +72,7 @@ def _copy_one(source: Path, destination: Path) -> bool:
 async def async_take_backup(
     hass: HomeAssistant, data: dict[str, Any], suffix: str
 ) -> bool:
-    """Copy both storage files once, under the given suffix.
+    """Copy the storage files once, under the given suffix.
 
     Returns True when the backup is in place or was already taken, and
     False when it could not be made. A caller that is about to remove
@@ -186,7 +177,7 @@ async def async_rotate_last_good(hass: HomeAssistant) -> bool:
 def copy_main_over_last_good(hass: HomeAssistant) -> bool:
     """Copy the live main file over last-good, after a history write.
 
-    The last step of a save that wrote the history file (rule STOR-04):
+    The last step of a save that wrote the history file (rule STOR-03):
     the rotation made last-good the file from before the history
     changed, so the new main file is copied over it, and the main
     last-good copy pairs with the history files again at once. To a
@@ -244,7 +235,7 @@ async def async_delete_clocks_last_good(hass: HomeAssistant) -> bool:
 async def async_copy_evidence(
     hass: HomeAssistant,
 ) -> tuple[str | None, list[str]]:
-    """Copy both storage files and the last-good file aside, raw.
+    """Copy the storage files and their last-good copies aside, raw.
 
     Called before any repair touches anything (rule STOR-11). The live
     pair is the evidence: a repair rewrites the file, so without this
@@ -255,10 +246,9 @@ async def async_copy_evidence(
     no last-good.
 
     Raw bytes, not a re-serialization: `shutil.copy2` of whichever of
-    the four files exist. Nothing in the integration ever reads these
+    the five files exist. Nothing in the integration ever reads these
     copies back; the directory is the person's way back, pruned at
-    the fold by the same retention setting as everything else
-    (rule STOR-13).
+    the fold (rule STOR-13).
 
     Returns the stamp that names the copies and a plain list of what
     was actually written, or (None, []) when nothing could be copied.
@@ -384,8 +374,8 @@ async def async_prune_backups(
         # Home Assistant's own corrupt file, copied aside under the same
         # stamp as "<stamp>-device_sentinel...": one copy with the files
         # its moment wrote, pruned with them (rule STOR-13).
-        # Only a stamp of ours, so a file of the person's own that
-        # happens to hold the name is never pruned.
+        # Only a stamp Device Sentinel writes, so a file of the person's
+        # own that happens to hold the name is never pruned.
         if "-device_sentinel" in name:
             stamp = name.split("-device_sentinel", 1)[0]
             return stamp if _STAMP_SHAPE.fullmatch(stamp) else None
@@ -538,7 +528,7 @@ def _last_good_holds_devices(hass: HomeAssistant) -> bool:
     copy that parses to an empty document is indistinguishable from a
     first install, and promoting it over a genuine first install would
     invent a fleet from nothing. So the question asked is the only one
-    that matters, does it hold device records (rule STOR-04).
+    that matters, does it hold device records (rule STOR-08).
     """
     copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
     try:

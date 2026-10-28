@@ -11,7 +11,8 @@ and Lutron for the stack probe.
 
 Device Sentinel learns a rhythm and judges silence against it, which
 is the only way to read a stack that says nothing about itself.
-Z-Wave and Matter say a great deal, and none of it is used yet.
+Z-Wave and Matter say a great deal, and what this gathers judges
+nothing.
 
 Z-Wave names a node's state outright: alive, asleep, dead or unknown.
 It also says whether a node listens, sleeps or wakes briefly, which is
@@ -147,7 +148,7 @@ def _zwave_status(node: Any) -> str | None:
 # Ethernet. Where the map is absent, the diagnostics cluster the node
 # carries says the same: Thread (0x0035), Wi-Fi (0x0036), Ethernet
 # (0x0037). Read from the node's attribute table, so a node Home
-# Assistant shows as Thread or Wi-Fi reads the same here (rule STACK-06).
+# Assistant shows as Thread or Wi-Fi reads the same here (rule STACK-12).
 _MATTER_FEATURES = ((2, "thread"), (1, "wifi"), (4, "ethernet"))
 _MATTER_DIAGNOSTICS = ((53, "thread"), (54, "wifi"), (55, "ethernet"))
 # Where a version might keep the moment a node was last heard. Read
@@ -380,7 +381,7 @@ _THREAD_ROLES = {
 # Hue, SmartThings, Tuya and Lutron are read as Z-Wave and Matter are:
 # from what Home Assistant already holds in memory, by attribute, with
 # no import and nothing in the manifest. The Lutron session is a
-# private attribute, which only Extended Diagnostics may read, since it
+# private attribute, which Extended Diagnostics may read since it
 # records and never judges (rule STACK-08).
 HUE_DOMAIN = "hue"
 SMARTTHINGS_DOMAIN = "smartthings"
@@ -431,10 +432,10 @@ def _zwave_seen(node: Any) -> float | None:
 def _zwave_status_sensor(hass: HomeAssistant, home_id: Any, node_id: Any) -> str:
     """Whether the node's status sensor is on, off or absent.
 
-    Home Assistant makes one per node, enabled by default, and its
-    change to "dead" is a state change on the device like any other,
-    which Device Sentinel counts as the device speaking (research
-    finding 5). The probe says where it is on.
+    Home Assistant makes one per node, enabled by default. "dead"
+    makes the device unavailable and "alive" after dead counts as
+    contact; otherwise the status is never a report (rule STACK-05).
+    The probe says where it is on.
     """
     unique_id = f"{home_id}.{node_id}.node_status"
     entity_id = er.async_get(hass).async_get_entity_id("sensor", ZWAVE_DOMAIN, unique_id)

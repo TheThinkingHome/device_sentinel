@@ -28,9 +28,9 @@ The identifier is stable across releases, so an issue can gain a fix
 flow later without becoming a different issue and orphaning the one a
 person already has open.
 
-An issue is deleted the moment its condition clears (rule REP-04),
-because a badge lit with nothing behind it hides the next real issue
-inside it.
+An issue is deleted at the first judging moment after its condition
+clears (rule REP-04), because a badge lit with nothing behind it hides
+the next real issue inside it.
 
 Severity is `warning` by default; `error` is reserved for setup and
 storage; `critical` is never used (rule REP-05).
@@ -180,10 +180,10 @@ def delivery_is_configured(entry: Any) -> bool:
 
     The persistent card is deliberately not counted here. A card is
     read only by someone already looking, so it reaches nobody who is
-    away; and counting it would mean this never fires on a system
-    whose card is on and nothing else is set (rule NOTE-11). What the
-    card does is said in the issue's own words, so nothing tells the
-    person their card is off when it is on.
+    away; and counting it would mean the recommendation never shows on
+    a system whose card is on and nothing else is set (rules NOTE-11,
+    REC-02). What the card does is said in the recommendation's own
+    words, so nothing tells the person their card is off when it is on.
     """
     for key in (
         CONF_HIGH_PRIORITY_TARGETS,
@@ -241,7 +241,7 @@ def async_clear_all(hass: HomeAssistant) -> None:
     """Delete every issue this integration can raise.
 
     Called on unload, so an integration that is being removed or
-    reconfigured does not leave a badge lit behind it (rule STOR-24).
+    reconfigured does not leave a badge lit behind it (rule REP-04).
     The issues are not persistent, so a restart would clear them
     anyway; this covers the reload and the uninstall, where there is
     no restart to do it.
@@ -593,8 +593,8 @@ def async_raise_restored(
 
     A persistent notification sits among transient things and is
     dismissed by reflex; a repair card sits in the place a person looks
-    for things that need attention, survives a restart, and carries a
-    severity of its own.
+    for things that need attention, and carries a severity of its
+    own.
 
     A warning rather than an error, because the problem is over by
     the time this is raised: the file has already been replaced and

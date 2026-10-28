@@ -496,7 +496,7 @@ class StudyMixin:
 
         Runs in the minute tick ahead of the freeze judgment, so a
         throw here must not stop that tick: a misbehaving library
-        would leave nothing judged, listed or saved (rule STACK-08).
+        would leave nothing judged, listed or saved (rule STACK-11).
         """
         try:
             self._probe_tick(now)
@@ -725,9 +725,9 @@ class StudyMixin:
     def _probe_migrate(self) -> None:
         """Move probe lines an older release kept in storage into the file, once.
 
-        They were kept in storage and the file was rebuilt from them;
-        now the file is the record. The old file, a copy of those
-        lines newest first, is replaced by them in order.
+        The file is the record, so stored lines are written to it in
+        order, replacing the old file, which held the same lines newest
+        first (rule STOR-19).
         """
         rows = self.data.get(DATA_STACK_PROBE)
         if not rows:

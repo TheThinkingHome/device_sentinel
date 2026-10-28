@@ -183,8 +183,7 @@ class FlapMixin:
         "dropped out 53 times since 7:00 AM": the count and the start
         of the run, because a flap's size is its point. The Daily
         Brief's words, read by the Problem List, the push and the
-        brief alike; the leading "flapping," is gone (rules NOTE-01,
-        LIST-02).
+        brief alike (rules NOTE-01, LIST-02).
         """
         record = self.data[DATA_DEVICES].get(device_id) or {}
         drops = len(record.get(DEV_FLAP_DROPS) or [])

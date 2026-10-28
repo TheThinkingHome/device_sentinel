@@ -155,7 +155,7 @@ def _median(values: list[float]) -> float:
 
 # The states in which Home Assistant says an entry tried to start and
 # failed. An entry in any other unloaded state has not been started,
-# and that is not an outage (rule UP-03).
+# and that is not an outage (rule UP-04).
 _FAILED_SETUP = frozenset(
     {
         ConfigEntryState.SETUP_ERROR,
@@ -328,13 +328,10 @@ class InterventionMixin:
             # same person at the same device: one event, refreshed,
             # rather than five in the brief.
             return
-        # The registry id travels in `detail`, which is a string.
-        # It cannot travel in `devices`: the shape check declares
-        # that field an integer (a count), and writing a list there
-        # would raise a storage fault on the next verify, which is
-        # to say this feature would have raised the repair card
-        # built for real corruption. Found before shipping, and the
-        # shape is the authority.
+        # The registry id travels in `detail`, which is a string, not
+        # in `devices`: the shape check declares that field a count,
+        # so a list there would raise a storage fault and the repair
+        # card on the next verify (rule STOR-06).
         self._record_system_event(
             SYS_DEVICE_HANDLED,
             scope=self._device_stack(device_id) or "",
@@ -528,7 +525,7 @@ class InterventionMixin:
             # outage (rules UP-02, UP-10).
             since = reader.stopped_at
             # A moment the reader cannot vouch for is left to the row's
-            # own stamp, as before, so no row is refused for its date.
+            # own stamp, so no row is refused for its date.
             back = _moment(started)
             if back is not None and back > now:
                 back = None
@@ -618,7 +615,7 @@ class InterventionMixin:
         return state
 
     def _inside_unwatched(self, started: float | None) -> bool:
-        """Return whether a broker start falls in our own dark window.
+        """Return whether a broker start falls while Device Sentinel was down.
 
         A restart of the whole machine takes the broker with it, and
         the restart event already carries the span nothing was
@@ -835,8 +832,8 @@ class InterventionMixin:
             # A watched hub, and the devices it controls, are judged by
             # the hub (rule STACK-10): a hub whose integration cannot
             # start reads down itself, one row, so its entry is not
-            # watched here as well. With no watched hub, this rule covers
-            # them as before. A muted hub keeps its entry and is silent,
+            # watched here as well. With no watched hub, the integration
+            # rule covers them. A muted hub keeps its entry and is silent,
             # with its devices muted with it.
             if self.hub_takes_over(device_id):  # type: ignore[attr-defined]
                 continue
@@ -857,7 +854,7 @@ class InterventionMixin:
             if count == 1
         }
         # That entry failing is that device unavailable, so a mute on
-        # the device silences it, as it always has.
+        # the device silences it.
         muted_only: set[str] = set()
         for entry_id, device_id in self._entry_only_device.items():
             if self._unavailable_muted(device_id):  # type: ignore[attr-defined]
@@ -1282,9 +1279,9 @@ class InterventionMixin:
         """How many devices this integration's outage has down now.
 
         The devices its outage claims that read down, counted as its
-        row counts them. Counted from verdicts, it read zero, since a
-        device's verdict is held while its upstream is down, and the
-        recovering row never appeared (rules UP-08, UP-11).
+        row counts them. Counted from verdicts it would read zero, since
+        a device's verdict is held while its upstream is down, and the
+        recovering row would never appear (rules UP-08, UP-11).
         """
         return self.suppressed_down_counts.get(domain, 0)  # type: ignore[attr-defined]
 
@@ -1524,7 +1521,7 @@ class InterventionMixin:
         """Keep each standing bridge, broker or integration entry
         outage's worst count with its remembered state, so an outage
         open across a restart still ends with the most devices it had
-        down at once (rules UP-11, STOR-15)."""
+        down at once (rule UP-11)."""
         for stack, entry in (self.data.get(DATA_BRIDGE_SEEN) or {}).items():
             if not isinstance(entry, dict):
                 continue
@@ -1647,8 +1644,8 @@ class InterventionMixin:
         so a reader sees "74 of 77" and knows both what has fallen
         and what could. The name is what a row carries, the same four
         kinds `upstream_down_since_for` resolves: the broker, which
-        carries every device on a stack with a reader; a stack; the
-        Wi-Fi key, which carries every tied tracker; or an
+        carries the devices that reach Home Assistant through it; a
+        stack; the Wi-Fi key, which carries every tied tracker; or an
         integration domain, which carries its watched devices.
         """
         if name == BROKER_LABEL:
@@ -2281,7 +2278,7 @@ class InterventionMixin:
                 # itself, which is already recorded and already
                 # explains these devices. Writing a storm here would
                 # give the nightly reboot a second, narrower and
-                # wrong explanation (rule BRIEF-05).
+                # wrong explanation (rule UP-17).
                 # The row is written whatever the verdict, because the
                 # verdict is recomputed from these rows. What a
                 # poller does not get is the system event and the
@@ -2463,15 +2460,14 @@ class InterventionMixin:
         return len(recent) >= STORM_EXEMPT_PER_HOUR
 
     def _trim_storms(self, now: float) -> None:
-        """Drop storms past the person's retention.
+        """Drop raw storm rows older than one hour (rule UP-17).
 
-        The series is kept on the retention setting rather than the
-        judgment window. The polling rule reads only its last hour
-        (`_is_polling_integration`); the rest is kept to be looked back
-        over, which is what the series is for.
+        The polling rule reads only the last hour
+        (`_is_polling_integration`), and the day's tally keeps the
+        longer record.
         """
         storms = self.data.get(DATA_STORMS) or []
-        # Two days, not the retention setting. The only thing that
+        # One hour, not the retention setting. The only thing that
         # reads these rows looks back one hour, and a real reload is
         # already kept for the full retention in the system events
         # log, so a longer window here stores nothing anybody asks
@@ -2550,7 +2546,7 @@ class InterventionMixin:
         Assistant had restarted within STORM_EXPLAINED_SECONDS. Each
         opener is paired with its own closer by kind and scope, so a
         bridge that came back does not close a broker outage that is
-        still open (rule UP-18).
+        still open (rule UP-17).
         """
         opens = {
             SYS_BRIDGE_DOWN: SYS_BRIDGE_UP,
@@ -2602,7 +2598,7 @@ class InterventionMixin:
             # Only a storm nothing explains is tallied: one inside an
             # outage, a maintenance window or a restart is the house
             # recovering, and the tally is what the noisy-integration
-            # advice reads (rule UP-18). The raw row above is kept
+            # advice reads (rules UP-17, UP-18). The raw row above is kept
             # either way, since the polling verdict needs every burst.
             if not self._storm_explained(storm["start"]):
                 self._storm_day.setdefault(
@@ -2673,7 +2669,7 @@ class InterventionMixin:
             # The restore happened inside setup, before the notify
             # platform and the messenger existed, so the notice waits
             # for the window to shut rather than failing silently on a
-            # cold boot (rule STOR-12). The restore is already done; a
+            # cold boot (rule STOR-08). The restore is already done; a
             # report five minutes later is still true.
             self.hass.async_create_task(self._announce_restore())
         LOGGER.debug(

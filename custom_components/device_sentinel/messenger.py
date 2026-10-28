@@ -194,20 +194,20 @@ class MessengerMixin:
     async def async_announce_restore(
         self, headline: str, detail: str
     ) -> int:
-        """Send the restore notice everywhere, ignoring quiet hours.
+        """Send the restore notice to the brief and push targets.
 
-        Two surfaces here: the daily-brief targets,
-        which is where a person's email lives, and the high-priority
-        targets, which is the phone. The durable third is a Repair
+        Two surfaces here: the daily-brief targets, which is where a
+        person's email lives, and the push targets, which are the
+        phones. The durable third is a Repair
         card the caller raises: it sits where a person looks for
         things needing attention, survives a restart, and carries a
         severity (rule REP-08).
 
-        Quiet hours do not apply. A device flapping at three in the
-        morning should stay quiet; a storage file that could not be
-        read is a one-time event about the integrity of everything
-        the integration knows, and a person wants it on waking rather
-        than three days later (rule STOR-12).
+        The brief targets and the high-priority targets get it at any
+        hour, Quiet Hours or not: a storage file that could not be read
+        is a one-time event about everything the integration knows
+        (rule STOR-08). Normal-priority targets get it outside Quiet
+        Hours, as they get a push (rule NOTE-07).
 
         Every target is tried on its own and a failure is a log line:
         the restore already succeeded, and a notify platform that
@@ -220,9 +220,9 @@ class MessengerMixin:
             for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
             if target and target != PERSISTENT_TARGET
         }
-        # The high-priority targets at any hour (rule STOR-12), and the
+        # The high-priority targets at any hour (rule STOR-08), and the
         # normal-priority targets outside Quiet Hours, as every push
-        # reaches them (rule NOTE-02).
+        # reaches them (rule NOTE-07).
         targets.update(self._push_targets())
         for target in sorted(targets):
             call: dict[str, Any] = {}

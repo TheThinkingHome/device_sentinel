@@ -8,7 +8,7 @@
 """What powers each device (rule DEV-06).
 
 Two sources, in this order: what the owner entered on the device page,
-then the Battery Notes device library shipped inside Device Sentinel
+for the device or for its model, then the Battery Notes device library shipped inside Device Sentinel
 (Andrew Jackson's library.json, MIT, see data/BATTERY_LIBRARY_LICENSE.md).
 Nothing here reads an installed Battery Notes.
 
@@ -45,8 +45,8 @@ from .device_fields import device_field
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
 
 # The ten battery types the library names most often, most used first
-# (about 95% of the library's devices), then the two that are not
-# batteries, then Other (rule DEV-08).
+# (about 95% of the library's devices), then the four wired choices,
+# then Other (rule DEV-08).
 BATTERY_CHOICES: tuple[str, ...] = (
     "AA", "AAA", "CR2032", "CR2450", "Rechargeable",
     "CR123A", "CR2", "CR2477", "CR1632", "CR2430",
@@ -663,8 +663,9 @@ class PowerMixin:
     ) -> None:
         """Set the owner's answer from the device page; None clears it.
 
-        The answer covers every device of the same model, and clearing
-        it clears it for all of them (rule DEV-06).
+        The answer covers every device of the same model. Clearing a
+        model answer clears it for all of them; a device's own answer is
+        cleared alone (rule DEV-06).
         """
         self._device(device_id)  # type: ignore[attr-defined]
         entry: dict[str, Any]

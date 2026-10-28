@@ -7,9 +7,8 @@
 
 """A duration in the words a person reads, and in a table cell.
 
-Hours carried past the point of meaning: a battery flat since July
-read "1485.3h" in one report and "61.9d" in another, and a device's
-rhythm chart labelled its axis 1032h. Past two days a duration reads
+Hours lose their meaning past a couple of days: "1485.3h" tells a
+person nothing they can use. Past two days a duration reads
 in days, and past a week and a half in weeks, in halves, rounded down
 so the number is never larger than the truth (rule GEN-09).
 

@@ -11,7 +11,7 @@ Every answer a person types on a device page lives here: what powers
 the device and what the device is. Nothing else in Device Sentinel's
 storage is typed by hand, so this file keeps a last-good copy taken
 before each save and is restored from it at start when it cannot be
-read (rule STOR-04).
+read (rule STOR-20).
 
 The file:
     {"power": {"models": {...}, "devices": {...}},
@@ -24,8 +24,7 @@ The acknowledgments of the Recommendations tab live here too, because
 a person's own tick is an answer (rule REC-07); so does a battery
 replacement's day a person confirmed or entered (rule BAT-07). An older
 release that saves this file writes the power and type answers alone,
-so going back loses the ticks and the battery days; that is said in
-the release note.
+so going back loses the ticks and the battery days.
 
 "models" holds an answer per model, keyed by model_key; "devices" holds
 the answer of a device with no manufacturer or no model.
@@ -33,7 +32,7 @@ the answer of a device with no manufacturer or no model.
 Older releases kept the power answers in device_sentinel.power. The
 first start moves them here, reads the new file back, and only then
 deletes the old file and its last-good copy. A rollback to an older
-release finds no power answers; that is said in the release note.
+release finds no power answers.
 """
 
 from __future__ import annotations
@@ -216,14 +215,13 @@ class AnswersMixin:
             # Missing or unreadable: Home Assistant moves a file it
             # cannot parse aside and answers nothing. The last clean
             # file is the person's own typing, which nothing else can
-            # rebuild (rule STOR-04).
+            # rebuild (rule STOR-20).
             payload = await hass.async_add_executor_job(_read_last_good, hass, ANSWERS_STORE_KEY)
             restored = payload is not None
             if restored:
                 await self._keep_answers_evidence()
                 # A stop between the rename to last-good and the write
-                # leaves no file at all, which is not damage (found by
-                # review).
+                # leaves no file at all, which is not damage.
                 self._answers_notes.append(
                     "the answers set on device pages "
                     + ("could not be read" if on_disk else "were missing")
@@ -272,7 +270,7 @@ class AnswersMixin:
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
         # A file read whole becomes last-good at the next save; a
-        # restored or damaged one never does (rule STOR-04).
+        # restored or damaged one never does (rule STOR-20).
         # A damaged file with no backup is not rotated either: the next
         # save would make it last-good.
         self._answers_rotation_armed = not restored and not dropped and not bad and not damaged
@@ -532,8 +530,8 @@ class AnswersMixin:
 
         An answer stays when its device is excluded or set aside, so it
         is back on the page if the device is watched again. Those are
-        listed here in one place; deleting a device from Home Assistant
-        still deletes its answers.
+        listed here in one place. A device removed from Home Assistant
+        keeps its answers only while its record is held (rule STOR-20).
         """
         return {
             "file": ANSWERS_STORE_KEY,

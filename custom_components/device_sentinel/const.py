@@ -36,10 +36,9 @@ Z2M_BRIDGE_MANUFACTURER = "Zigbee2MQTT"
 # Bridge liveness states, shown by the per-stack bridge sensor. The
 # sensor reads what a coordinator publishes about itself; each stack
 # reports only the states it can. Z2M tells all four from its retained
-# bridge/info and bridge/state topics (rule STACK-03). ZHA reaches its
-# state through its config entry but lands on the same words, since the
-# shared detector only needs to know whether pairing is open (rule
-# FRZ-16).
+# bridge/info and bridge/state topics (rule STACK-03). ZHA reads its
+# state from its config entry and never reads binding, because ZHA keeps
+# no pairing window of its own (rule FRZ-17).
 BRIDGE_RUNNING = "running"  # online, pairing closed
 BRIDGE_BINDING = "binding"  # online, pairing window open
 BRIDGE_DOWN = "down"  # offline, or the retained state has gone stale
@@ -74,13 +73,11 @@ BROKER_SILENCE_MULTIPLE = 6
 BROKER_SILENCE_FLOOR_SECONDS = 30.0
 # How far the computed broker start may wander before it counts as a
 # restart. The start is an arrival minus a value published in whole
-# seconds, so it drifts a little even when nothing happens. Measured
-# across 2,458 intervals of the reference recording: the drift maxes
-# at 2.95 seconds and its p99.9 is 0.34, while the three genuine
-# restarts in the same recording moved the start by 564 seconds at
-# the very least. Thirty sits two orders of magnitude clear of the
-# noise. The cost is that a broker restarting twice inside thirty
-# seconds reports one restart, which is the right trade.
+# seconds, so it drifts a little even when nothing happens. Across 2,458
+# measured intervals the drift peaks at 2.95 seconds and its p99.9 is
+# 0.34, while a real restart moves the start by 564 seconds or more.
+# Thirty sits well clear of the noise. A broker restarting twice inside
+# thirty seconds reports one restart (rule UP-02).
 BROKER_START_TOLERANCE_SECONDS = 30.0
 # The largest uptime worth believing, a hundred years in seconds. A
 # payload beyond it is not a broker that has been up that long, and an
@@ -91,10 +88,6 @@ BROKER_DOWN = "down"
 BROKER_UNKNOWN = "unknown"
 BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
 
-# The name the broker carries when it is the upstream a device is
-# reported under (rule UP-01). Not a stack: no bridge owns it, and it
-# outranks every bridge, because a broker that is down takes them all
-# with it.
 # Wi-Fi's display name, defined here because the map below reads it and
 # a module runs top to bottom. One copy of the string: the problem list
 # resolves Wi-Fi through that map and the sensor reads it directly, and
@@ -125,6 +118,10 @@ STACK_DISPLAY_NAMES = {
     "wifi": WIFI_DISPLAY_NAME,
 }
 
+# The name the broker carries when it is the upstream a device is
+# reported under. Not a stack: no bridge owns it, and it outranks every
+# bridge, because a broker that is down takes them all with it (rule
+# UP-01).
 BROKER_LABEL = "MQTT broker"
 
 # How long an upstream outage settles before it is reported (rule
@@ -267,7 +264,7 @@ TAINT_REASONS = (
     TAINT_UNCLEAN_SHUTDOWN,
 )
 
-# The sensinel_type stem for a bridge sensor; the stack is appended so
+# The sentinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
 SENTINEL_TYPE_BRIDGE = "bridge"
 SENTINEL_TYPE_BROKER = "broker"
@@ -394,8 +391,8 @@ STORAGE_VERSION = 1
 STORAGE_CLOCKS_KEY = f"{DOMAIN}.clocks"
 # The history file: the part of each daily series older than its newest
 # HISTORY_KEEP_ENTRIES entries, and the leading system events and signal
-# stress rows older than the line (rule STOR-03). Written only when that
-# part changes, in four steps (rule STOR-02).
+# stress rows older than the line. Written only when that part changes,
+# in four steps (rule STOR-03).
 STORAGE_HISTORY_KEY = f"{DOMAIN}.history"
 STORAGE_HISTORY_VERSION = 1
 HISTORY_KEEP_ENTRIES = 30
@@ -410,19 +407,12 @@ DATA_HISTORY_LINE = "history_line"
 STORAGE_CLOCKS_VERSION = 1
 
 
-# When each file was last written, stamped into both of them. Since
-# routine saves stopped writing the main file, the hot file is
-# normally the newer of the two and its clocks are the ones to
-# keep. Normally, but not provably: the main file is written first and
-# the hot file second, so a failure between the two leaves a fresh
-# main file beside a stale hot one. Overlaying that backwards would
-# push a device's last-activity into the past, which reads as silence
-# and earns a freeze verdict the device never deserved. The stamp is
-# what lets the merge refuse. It is additive on purpose, so neither
-# store version moves and no migration is owed: a file written before
-# the split simply has no stamp, and a load that cannot compare
-# declines to merge, which is safe because before the split the main
-# file carried everything on its own.
+# When each file was last written, stamped into both. The clocks file
+# is normally the newer. One older than the main file means a write
+# pair was torn; the load uses it anyway and logs it, because a slightly
+# stale clock heals at the device's next report while dropping it
+# restarts every clock. A pair where either file has no stamp is not
+# merged (rule STOR-02).
 DATA_SAVED_AT = "saved_at"
 
 # The clean-stop marker. A stop that was not asked for leaves no stamp,
@@ -494,13 +484,9 @@ DEV_REMOVED_NAME = "removed_name"
 REMOVED_HOLD_DAYS = 30
 DEV_TAINTED = "tainted"
 
-# Provisional tunables from the telemetry layer. Set from reasoning
-# rather than from data, and left open to correction by the soak's own
-# logs; see the project document, Remaining Tunables.
-#
 # Startup grace: stamps update clocks but complete no gaps for
 # learning while the restored-state echo wave and the boot republish
-# pass. Descends from the blueprints' 240 s settling debounce.
+# pass (rule WATCH-10).
 STARTUP_GRACE_SECONDS = 300
 
 # Storm detector: a storm is declared for a config entry when its
@@ -534,8 +520,8 @@ STORM_HISTORY_SECONDS = 3600
 # moving.
 INCIDENT_SETTLE_SECONDS = 60
 
-# Constants, for the same reason: ten minutes and ten percent never
-# needed moving (rule FRZ-14).
+# An outage of the device sets its gap aside at ten minutes plus ten
+# percent of its freeze window. Fixed, not settings (rule FRZ-14).
 TAINT_FLOOR_MINUTES = 10
 TAINT_SHARE_PCT = 10
 
@@ -583,10 +569,8 @@ SIGNAL_DAY_REPAIR_MARK = "0.12.21"
 # than left mixed, because no later analysis could separate the two
 # halves.
 DATA_SIGNAL_WEIGHTING = "signal_weighting"
-# The marker changed value once: the first clearing left the day already
-# accumulating, which had been built by counting readings and carried on
-# by counting minutes. The new value runs the clearing once more, taking
-# the day in progress with it (rule STOR-19).
+# The clearing also takes the day in progress, which mixed both counts,
+# so the marker carries its second value (rule STOR-19).
 SIGNAL_WEIGHTING_MARK = "minutes-2"
 # What a device's page and the Devices tab say when it has no freeze
 # verdict: it is reporting, it has never reported, or nobody is watching
@@ -601,7 +585,7 @@ SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 # "No entities of its own": a device whose only entities another
 # integration added, such as Battery Notes, has nothing that is the
-# device speaking (rule WATCH-02). The stored value is unchanged.
+# device speaking (rule WATCH-02).
 SET_ASIDE_NO_ENTITIES = "no entities"
 SET_ASIDE_EXCLUDED = "excluded"
 # A device whose only entities switched on are firmware notices, command
@@ -619,11 +603,6 @@ SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
 # are its clones (hardware_copies.py, rule WATCH-06). Called "clone" on
 # screen.
 SET_ASIDE_COPY = "clone"
-# What each reason means, in the order the classification ladder tries
-# them: a person's exclusion first, since a decision outranks a fact
-# about the device, then the facts, with no entities last. The key under
-# the Classification tab and in classification.md, so the two say the
-# same thing and a person can see which reasons exist (rule WATCH-03).
 # An integration's standing on the Integrations tab. Service: its
 # devices report themselves as services. No hardware: it owns no device
 # at all and only adds entities to devices other integrations own, as
@@ -659,6 +638,11 @@ STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
         "Its devices have nothing switched on that can report.",
     ),
 )
+# What each reason means, in the order the classification ladder tries
+# them: a person's exclusion first, since a decision outranks a fact
+# about the device, then the facts, with no entities last. The key under
+# the Classification tab and in classification.md, so the two say the
+# same thing and a person can see which reasons exist (rule WATCH-03).
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
     (
         SET_ASIDE_EXCLUDED,
@@ -739,9 +723,9 @@ DEFAULT_EXCLUDED_BEFORE_0277 = tuple(
     name for name in DEFAULT_EXCLUDED_INTEGRATIONS if name not in ("alexa_media", "cast")
 )
 
-# Integrations excluded once, the first time a house is seen with them,
-# as router trackers are, and on a new install's list from the start
-# (rule MUTE-02). Music Assistant adds a player for each speaker it
+# Integrations excluded the first time a new install sees them, as
+# routers are; on a house that already exists, each is recommended for
+# exclusion instead (rule MUTE-02). Music Assistant adds a player for each speaker it
 # drives, a copy of hardware watched through its own integration that
 # nothing ties to it, and its player can bring back a television already
 # excluded through webostv. Televisions and media renderers go away when
@@ -761,12 +745,6 @@ AUTO_EXCLUDED_INTEGRATIONS = (
     "cast",
 )
 
-# The integrations that publish a tracker per client on the network
-# (rule MUTE-02). A router integration registers every client as its own
-# registry device, which duplicates hardware another integration already
-# watches and, worse, lets a device be tied to its own tracker. Seen for
-# the first time on a system that already exists, one is added to the
-# person's exclusion list once, and after that it is theirs.
 # Single devices a person excluded: the integration exclusion's rules
 # applied to one device (rule MUTE-03). Set aside with the same reason,
 # discarded at the same fold, so taking it back before midnight loses
@@ -776,6 +754,12 @@ AUTO_EXCLUDED_INTEGRATIONS = (
 # then is still renamed to muted_devices on load.
 CONF_EXCLUDED_DEVICES = "devices_to_exclude"
 
+# The integrations that publish a tracker per client on the network. A
+# router integration registers every client as its own registry device,
+# which duplicates hardware another integration already watches and lets
+# a device be tied to its own tracker. A new install excludes one when it
+# first sees it; a house that already exists is offered a card instead
+# (rule MUTE-02).
 ROUTER_INTEGRATIONS = (
     "tplink_router",
     "unifi",
@@ -851,7 +835,7 @@ WIFI_HANDBACK_SECONDS = 180.0
 # within minutes of a start; an orphaned tracker reads Home Assistant's
 # placeholder for ever, and without a limit the ladder would be rebuilt
 # every minute for the life of the run. After the window, ties form at
-# the next registry change (rule UP-16).
+# the next registry change (rule UP-13).
 WIFI_TIE_RETRY_SECONDS = 30 * 60.0
 # How long a fallen tracker of an open outage may go without a usable
 # state (none, Home Assistant's placeholder, or unavailable or unknown)
@@ -928,18 +912,13 @@ RETIRED_SIGNAL_KEYS = (
     "signal_last_change",
 )
 
-# The good-state statistics. Percentile thresholding is the weakest of
-# the established methods, and the intended successor judges against a
-# learned anchor rather than a global constant (rule SIG-11). That
-# successor needs each device's mean and standard deviation, so they are
-# recorded ahead of the method that will use them: running accumulators,
-# no samples kept, rolled at midnight into a per-day mean and deviation
-# and then reset (rule SIG-05). The daily maximum rides along so a
-# widening spread is visible, not only a falling floor. Rail values feed
-# none of them, for the same reason they never feed the floor. The
-# accumulators move with every reading, which makes them clock-shaped,
-# so they live in the hot file with the other clocks; the rolled series
-# is history and lives in the main file.
+# The good-state statistics, recorded ahead of any method that judges
+# on them (rule SIG-01): running accumulators, no samples kept, rolled
+# at midnight into a per-day mean and deviation and then reset (rule
+# SIG-05). The daily maximum rides along so a widening spread shows, not
+# only a falling floor. Rail values feed none of them. The accumulators
+# move with every reading, so they live in the clocks file; the rolled
+# series lives in the main file.
 DEV_SIGNAL_SUM = "signal_sum"  # retired; read once for migration (rule SIG-05)
 DEV_SIGNAL_SUM_SQ = "signal_sum_sq"  # retired; read once for migration (rule SIG-05)
 DEV_SIGNAL_COUNT = "signal_count"
@@ -978,8 +957,7 @@ DEV_SIGNAL_DAILY_MAX = "signal_daily_max"
 # the successor method (rules SIG-05, SIG-11): how many real readings
 # the day held (a 6-reading day and a 600-reading day should not weigh
 # the same later), and how many rail readings arrived (a day of thin
-# real statistics should say why). A third, the danger line in effect
-# that day, went with dwell.
+# real statistics should say why).
 DEV_SIGNAL_DAILY_COUNT = "signal_daily_count"
 DEV_SIGNAL_DAILY_RAIL = "signal_daily_rail"
 DEV_SIGNAL_RAIL_COUNT = "signal_rail_count"
@@ -1087,9 +1065,9 @@ RETENTION_DAYS_STEP = 30
 # stays a readable size at any retention.
 DIAGNOSTIC_SERIES_CAP = 30
 
-# Provisional arming floor: a device with at least this many daily
-# maxima counts as rhythm-established for the learning-progress
-# sensor. Arming criteria proper are settled during the soak.
+# The arming floor: a device with at least this many daily maxima has a
+# learned rhythm, for the freeze judgment and the learning-progress
+# sensor (rule FRZ-01).
 LEARNING_MIN_DAYS = 7
 
 # Storage save cadence: at most one write per render tick when dirty.
@@ -1114,20 +1092,16 @@ CONF_FREEZE_DELTA_HIGH = "freeze_delta_high"
 DEFAULT_FREEZE_DELTA_LOW_MIN = 3
 FREEZE_DELTA_LOW_MIN_MIN = 1
 FREEZE_DELTA_LOW_MIN_MAX = 8
-# delta-high: the slow-end grace ceiling, in hours. The slowest devices
-# are still caught in a bounded time. The tops match at 8 on purpose;
-# each default sits toward the end the user rarely moves.
-# The range reaches up, because the ceiling anchors the whole grace
-# curve, and a range that allowed halving the ceiling but barely raising
-# it left devices with a learned rhythm of hours stuck near 1.6x
-# patience. A floor of 2 hours gave a curve too twitchy to be useful.
-# The default of 8 gives a fresh install midrange cover (rule FRZ-06).
+# delta-high: the slow-end grace ceiling, in hours, so the slowest
+# devices are still caught in a bounded time. The ceiling anchors the
+# whole curve, so the range reaches up to 12. Range 4 to 12, default 8
+# (rule FRZ-06).
 DEFAULT_FREEZE_DELTA_HIGH_HR = 8
 FREEZE_DELTA_HIGH_HR_MIN = 4
 FREEZE_DELTA_HIGH_HR_MAX = 12
 # The reference rhythms the two deltas are pinned at when the curve
 # is fit: delta-low grace at 10 seconds, delta-high grace at 24
-# hours. They bracket any real device and are soak-settleable.
+# hours. They bracket any real device (rule FRZ-06).
 FREEZE_REF_RHYTHM_FAST = 10.0
 FREEZE_REF_RHYTHM_SLOW = 24.0 * 3600.0
 
@@ -1155,24 +1129,21 @@ FREEZE_CATEGORY_PRIORITY = (
 # A device that has never reported at all is a different case from
 # one that reported and stopped: it has no rhythm to miss, so the
 # freeze window can never catch it, and it may have no live entity to
-# read as unavailable either (a registry ghost with no entities, a
-# device dead since before install). It is flagged on its own, ahead
-# of the other checks, once it has been watched long enough that
-# silence is not just a slow first report. Forty-eight hours since
-# first-observed clears even a once-a-day device, which will have
-# spoken twice by then, so total silence past it is a device that
-# never started, not one still warming up.
+# read as unavailable either (a stale registry entry, a device dead
+# since before install). It is flagged on its own, ahead of the other
+# checks, once it has been watched long enough that silence is not just
+# a slow first report. Forty-eight hours since first seen clears even a
+# once-a-day device, which will have spoken twice by then (rule FRZ-09).
 FREEZE_CATEGORY_NEVER_REPORTED = "never_reported"
 FREEZE_NOT_REPORTED_SECONDS = 48.0 * 3600.0
 
 # A device mid-transition flips its entities to unavailable in quick
 # succession, usually within seconds. This debounce lets that settle
-# before an unavailable or unknown verdict is published, so a device
-# caught mid-flip is not reported in a half-state. Shares the value
-# of the taint debounce.
+# before an unavailable verdict is published, so a device caught
+# mid-flip is not reported in a half-state (rule UNAV-03).
 FREEZE_UNAVAILABLE_DEBOUNCE = 180.0
 
-# Identity attributes carried on every entity, per blueprint precedent.
+# Identity attributes carried on every entity (rule REL-16).
 ATTR_SENTINEL_TYPE = "sentinel_type"
 ATTR_SENTINEL_VERSION = "sentinel_version"
 ATTR_FIRST_INSTALLED = "first_installed"
@@ -1201,10 +1172,9 @@ ATTR_BRIDGE_AVAILABILITY = "availability_enabled"
 # can carry emphasis (set-aside outliers struck through, the window
 # basis bold).
 REPORT_DIR = "device_sentinel"
-# The subfolder the three maintainer files used to live in. The files
-# now sit a level up, since what a person reads lives elsewhere. The name
-# is kept only so the old folder can be emptied of those three files once
-# and removed if nothing else is in it (rule BRIEF-14).
+# The old subfolder of the three maintainer files, which sit a level
+# up. The name is kept only so the folder can be emptied of those three
+# files once and removed if nothing else is in it (rule BRIEF-14).
 REPORT_DIAGNOSTIC_DIR = "diagnostics"
 # The folder Home Assistant serves at /local, where the brief and the
 # reports once lived. Home Assistant serves it to anyone who asks,
@@ -1232,8 +1202,9 @@ PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}/problem-list"
 # runs is no longer the one served, and offer a reload (rule DASH-14).
 DATA_PANEL_FILE = f"{DOMAIN}_panel_file"
 
-# Days of battery history before a cell's trend can be judged: two whole
-# weeks, the fewest that give one week to compare with another (rule
+# Days of battery history before the battery area of the recording
+# depth reads armed: two whole weeks, the fewest that give one week to
+# compare with another. Judging a battery's trend asks more (rule
 # BAT-10).
 BATTERY_ARMING_DAYS = 14
 # A percentage that cannot be one. A device on Zigbee's raw scale reads
@@ -1335,8 +1306,9 @@ DATA_BATTERY_FORECAST_TALLY = "battery_forecast_tally"
 # with DEV_BATTERY_REPLACED_AT rather than cleared, so a replacement
 # detected, cancelled or dated by a person moves the latch with it.
 DEV_BATTERY_FIRST_LOW = "battery_first_low"
-# A battery's model pace is said only with at least this many other cells
-# of its maker and model to take the middle of (rule BAT-16).
+# A battery's model pace is said only with at least this many other
+# cells of its maker and model, giving the slowest and fastest of them
+# (rule BAT-16).
 BATTERY_MODEL_PACE_MIN_OTHERS = 2
 # Each battery device's day: voltage, its own temperature, its running
 # event count. Recording only; kept for the History setting (rule
@@ -1377,13 +1349,6 @@ SYS_BATTERY_REPLACED = "battery_replaced"
 
 # What the reading can say. Ordered as the rules are tested.
 
-# How near the end a cell has to be before the daily brief names it.
-# Battery Trends lists every cell that is measurably falling, which on a
-# real house is a third of them, most a season away. The brief is read
-# at an hour a person chose and has to be worth that hour, so it names
-# only what is close (rule BAT-14). Shorter than the report's own
-# reading, because a page a person opened is a different thing from a
-# page that arrives.
 # The person's answer to how far ahead a falling cell is called out.
 # Seven to thirty, because under a week is too late to act and past a
 # month the projection is guesswork (rule BAT-14).
@@ -1454,13 +1419,9 @@ CLIP_TARGET_DEVIATIONS = 1.2816
 CLIP_SPREAD_FLOOR = 0.15
 TRIM_MIN_SAMPLES = 7
 
-# Battery detection (value only; liveness is the freeze detector's).
-# The threshold is user-configurable through the options flow because
-# batteries drift slowly: proving detection live means sliding the
-# threshold above a real cell's level. The clear margin is small (2)
-# because a load-driven rest-rebound is a genuine recovery that
-# should clear the flag, not a flap to suppress; widen only if the
-# soak shows flapping.
+# Battery detection judges the level only; liveness is the freeze
+# detector's. The threshold is a setting, so a person can slide it above
+# a real cell's level to see detection work (rule BAT-03).
 CONF_LOW_THRESHOLD = "low_threshold"
 # Fifteen by default. An entry that never stored a value keeps twenty
 # through the migration, so nobody's alerts change without them asking
@@ -1469,7 +1430,7 @@ DEFAULT_LOW_THRESHOLD = 15
 LEGACY_LOW_THRESHOLD = 20
 
 # The option keys step 4 of the migration removes, each now a constant
-# in this file (rule CFG-02).
+# in this file (rule STOR-19).
 RETIRED_SLIDER_KEYS = (
     "settle_share_pct",
     "episode_share_pct",
@@ -1563,9 +1524,10 @@ UNHELD_DEVICE_CLASSES = frozenset({"timestamp", "duration"})
 # the record schema, so a field added later is wiped by default and there
 # is no second list to forget (rule STOR-19).
 #
-# Six fields are wiped: the rolling maxima, today's maximum, the event
-# count, the taint flag, and the freeze verdict with its stamp. The
-# rhythm and the conclusions drawn from it.
+# The wipe takes the rhythm and the conclusions drawn from it: the daily
+# maxima, today's maximum, the Log-Normal day count, the event count,
+# the taint, and the verdict with its stamp, how it began, the saved
+# outage start and the held values.
 #
 # Everything else is kept, because nothing is recoverable. There is no
 # raw layer beneath these records: readings are folded into a daily
@@ -1732,10 +1694,8 @@ DEFAULT_BADDAY_SENSITIVITY = 4.0
 BADDAY_SENSITIVITY_MIN = 2.0
 BADDAY_SENSITIVITY_MAX = 8.0
 
-# How many folded days form the normal a day is judged against. Seven
-# is a starting position rather than a measured one: the analysis
-# that produced this rule had nine days in hand and used every prior
-# day, so the shape of the baseline is the least settled thing here.
+# How many folded days form the normal a day is judged against (rule
+# SIG-08). Seven is a starting figure, not a measured one.
 CONF_BADDAY_BASELINE_DAYS = "badday_baseline_days"
 DEFAULT_BADDAY_BASELINE_DAYS = 7
 BADDAY_BASELINE_DAYS_MIN = 4
@@ -1796,14 +1756,12 @@ CONF_UNAVAILABLE_MUTED_DEVICES = "unavailable_muted_devices"
 CONF_FREEZE_MUTED_INTEGRATIONS = "freeze_muted_integrations"
 CONF_FREEZE_MUTED_LABELS = "freeze_muted_labels"
 
-# The rails. A rail is a value that is flat and at
-# the type's extreme: healthy LQI across the fleet tops out at 224,
-# so a flat 255 is the fill value of a field the device never
-# populated, not a reading. -128 is the dBm rail on the RSSI side.
-# Rail readings never feed the day's statistics; they are counted for
-# the rail detector instead. Recovery was validated by
-# hand (force a report, then power cycle or battery pull, then
-# re-interview or re-bind); removal from tracking is manual only.
+# The rails. A rail is a value that is flat and at the type's extreme:
+# healthy LQI tops out near 224, so a flat 255 is the fill value of a
+# field the device never filled, not a reading. -128 is the dBm rail on
+# the RSSI side. Rail readings never feed the day's statistics; they are
+# counted for the rail detector instead (rule SIG-04). A railed device
+# stays watched until a person mutes it for signal (rule SIG-07).
 SIGNAL_RAIL_LQI = 255.0
 SIGNAL_RAIL_RSSI = -128.0
 # The physical range of the two scales (rule SIG-04). LQI is a byte, 0 to
@@ -1836,12 +1794,12 @@ RAIL_CONFIRM_DAYS = 3
 # Where messages go: the two target lists, the persistent card, the quiet
 # hours and the daily brief. The engine that reads them is `notifier.py`.
 #
-# Two target lists. High-priority targets get a live message when a
-# device develops a problem, and the brief; normal-priority targets get
-# the brief alone (rule NOTE-02). Quiet hours drop live messages for
-# both, and nothing pierces them: the brief carries what they dropped
-# (rule NOTE-07). A target in both lists is treated as high (normalized
-# on save so the engine inherits the rule). Either list may be empty.
+# Two target lists. High-priority targets get each live push at any
+# hour, Quiet Hours included; normal-priority targets get each live push
+# outside Quiet Hours, and the brief goes to neither (rule NOTE-02). A
+# normal-priority push inside Quiet Hours is dropped, and the brief
+# carries the night (rule NOTE-07). A target in both lists is treated as
+# high, normalized on save. Either list may be empty.
 CONF_HIGH_PRIORITY_TARGETS = "high_priority_targets"
 CONF_NORMAL_PRIORITY_TARGETS = "normal_priority_targets"
 CONF_PERSISTENT_ENABLED = "persistent_enabled"
@@ -1857,10 +1815,9 @@ DEFAULT_DASHBOARD_MODE = DASHBOARD_SIMPLE
 CONF_QUIET_ENABLED = "quiet_hours_enabled"
 CONF_QUIET_START = "quiet_hours_start"
 CONF_QUIET_END = "quiet_hours_end"
-# The brief's targets and mode. The two reminder keys keep their
-# original names: they now drive the daily brief rather than
-# Sentinel Notify's reminder, but renaming a stored key costs a
-# migration for a cosmetic gain, so only the visible labels changed.
+# The brief's targets and mode. The two reminder keys below drive the
+# daily brief and keep their stored names, because renaming a stored key
+# costs a migration for a cosmetic gain.
 CONF_BRIEF_TARGETS = "brief_document_targets"
 # Which address the reports put in a link, if any. A report is a file a
 # person shares: attached to an issue, mailed to whoever helps them with
@@ -1873,11 +1830,10 @@ REPORT_LINKS_NONE = "none"
 REPORT_LINKS_EXTERNAL = "external"
 REPORT_LINKS_INTERNAL = "internal"
 DEFAULT_REPORT_LINKS = REPORT_LINKS_NONE
-# Where a target name is parsed rather than merely stored. Both moved
-# here from config_flow: the sending engine has to read a
-# stored target and turn it back into a service call, and a module
-# that composes messages should not import the configuration screens
-# to learn how a target is spelled.
+# Where a target name is parsed rather than merely stored. Kept here
+# because the sending engine turns a stored target back into a service
+# call, and a module that composes messages should not import the
+# configuration screens to learn how a target is spelled.
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
 
@@ -1903,9 +1859,9 @@ RESTORE_NOTICE_TITLE = "Device Sentinel restored its storage"
 #
 # The persistent card: one id, always the current home state, re-sent on
 # every change, never held by quiet hours because a card wakes no one
-# (rule NOTE-11). The per-family high-priority pushes: one id per family
-# so each always shows its most recent event and summary; faults sound on
-# the device's own system sound, recoveries are sent silently (rule
+# (rule NOTE-11). The per-family pushes: one id per family so each
+# always shows its most recent event and summary; faults play the
+# phone's own notification sound, recoveries are sent silently (rule
 # NOTE-04).
 NOTIFY_CARD_ID = "device_sentinel_state"
 
@@ -1948,8 +1904,9 @@ DEFAULT_QUIET_END = "08:00:00"
 DEFAULT_REMINDER_MODE = "none"
 DEFAULT_REMINDER_TIME = "08:00:00"
 
-# A constant, as a share of something the device already earned, which
-# no value could make nonsensical.
+# The share of its device's learned gap a fault waits before it is
+# pushed. A constant, since a share of what the device already earned
+# cannot be set to nonsense (rule NOTE-06).
 SETTLE_SHARE_PCT = 30
 
 # How many unexplained interruptions put a device in the brief's repeat
@@ -1971,29 +1928,27 @@ REPEAT_FLOOR_MAX = 4
 # beneath the table says seven to match: the number is stated in one
 # place and the prose follows it, never the reverse (rule BRIEF-09).
 REPEAT_WINDOW_DAYS = 7.0
-# A constant: it shapes one forensic file and nothing a person is alerted
-# about.
+# The share of the grace a silence passes before its episode opens. A
+# constant: it shapes one record and nothing a person is alerted about
+# (rule FRZ-08).
 EPISODE_SHARE_PCT = 50
 CONF_COALESCE_MINUTES = "storage_write_minutes"
 DEFAULT_COALESCE_MINUTES = 15
 COALESCE_MINUTES_MIN = 1
 COALESCE_MINUTES_MAX = 60
 
-# Daily reminder modes, semantics carried from Sentinel Notify.
+# How Often the brief is sent (rule BRIEF-11).
 REMINDER_MODE_NONE = "none"
 REMINDER_MODE_OVERNIGHT = "overnight"
 REMINDER_MODE_DAILY = "daily"
 
-# The problem list. One todo entity, not
-# one per family: the type lives on each item, so a single list
-# matches the novice-first thesis while losing nothing. Items are
-# stored under their own storage key, separate from per-device
-# telemetry, because they are problem records rather than device
-# statistics. Every item is engine-owned and keyed by
-# device_id: one item per device however many detections tag it, so a
-# device is never duplicated across the frozen, battery, and signal
-# lists. Hand-typed items are gone with the create feature; anything
-# stored without a device_id is purged at setup.
+# The Problem List. One todo entity, not one per family: the kind lives
+# on each item. Items are stored under their own key, apart from
+# per-device telemetry, because they are problem records rather than
+# device statistics. Each item is Device Sentinel's own and keyed by
+# device_id, one per device however many detections tag it. An item
+# stored without a device_id, as a hand-typed one is, is removed at
+# setup (rule LIST-01).
 DATA_TODO_ITEMS = "todo_items"
 
 TODO_UID = "uid"
@@ -2013,12 +1968,9 @@ TODO_KINDS = "kinds"
 TODO_ACKED_AT = "acked_at"
 
 # Item kinds, one per detection family. The freeze family's kinds are
-# its verdict strings: the sync passes a verdict straight through as
-# a kind, so these alias the categories rather than restating them
-# rather than restating them. Aliasing rather than repeating means
-# each string is
-# defined once, and it puts the verdict-becomes-kind relationship at
-# the definition instead of leaving it implied at every use site.
+# its verdict strings: the sync passes a verdict straight through as a
+# kind, so these alias the categories rather than restating them, and
+# each string is defined once.
 # Everything that turns a kind into words keys off these names, so a
 # rename fails at import rather than quietly printing a raw kind
 # into somebody's daily brief.
@@ -2140,11 +2092,8 @@ EVENT_UPSTREAM_DOWN = "device_sentinel_upstream_down"
 EVENT_UPSTREAM_RESTORED = "device_sentinel_upstream_restored"
 
 # What kind of upstream the payload is about. A property of the
-# subject rather than of the action, so it rides in the payload.
-# INTEGRATION was in the contract from the start, before anything fired
-# it, because a contract the README calls permanent is not amended to
-# add a value that was known when it was written; integration outages
-# have fired it since their detection was built.
+# subject rather than of the action, so it rides in the payload (rule
+# UP-10).
 UPSTREAM_BROKER = "broker"
 UPSTREAM_BRIDGE = "bridge"
 UPSTREAM_INTEGRATION = "integration"
@@ -2222,11 +2171,6 @@ WIFI_SCAN_SECONDS = 60.0
 # `study_stacks.py`, for the diagnostics download (rule STACK-11).
 CONF_STUDY_HARDWARE = "study_hardware"
 
-# What may be volunteered for study, and nothing else (rule STACK-11).
-# Only what support is still being built for: TP-Link is supported and
-# proven on hardware, so it is not here, and asking for data nobody needs
-# would waste the one thing this screen spends, a person's willingness
-# to help.
 # The router integrations whose device trackers the tie reader can use,
 # named so the diagnostics can say which one a house runs (rule DEV-16).
 # Wider than what is supported today on purpose: a report from a router
@@ -2244,6 +2188,11 @@ ROUTER_DOMAINS = (
 # that say what the router is.
 INFRASTRUCTURE_DEVICE_CAP = 12
 
+# What may be volunteered for study, and nothing else (rule STACK-11).
+# Only what support is still being built for: TP-Link is supported and
+# proven on hardware, so it is not here, and asking for data nobody needs
+# would waste the one thing this screen spends, a person's willingness
+# to help.
 STUDIABLE = {
     "unifi": "Router: UniFi",
     "fritz": "Router: FRITZ!Box",
@@ -2252,7 +2201,7 @@ STUDIABLE = {
     "mikrotik": "Router: MikroTik",
     "zwave_js": "Z-Wave",
     "matter": "Matter",
-    # The newer stacks (Project__Stack_Readers.md).
+    # Stacks whose support is still being built (rule STACK-11).
     "hue": "Philips Hue",
     "smartthings": "SmartThings",
     "tuya": "Tuya",
@@ -2265,17 +2214,17 @@ STUDIABLE = {
 # recorded when reached rather than silently dropping.
 STUDY_SHAPE_CAP = 200
 
-# Worst first, so kinds[0] is the headline and an automation reads it
-# without a template. Unavailable leads because FREEZE_CATEGORY_PRIORITY
-# puts it above frozen: an unavailable device is honestly absent and a
-# frozen one is lying.
 # How many devices a phone push names before it counts the rest (rule
 # NOTE-05): worst first, then most recent, because fifty devices down
 # would make a push of over two thousand characters. The push only: the
-# brief's In Short names every device and is never capped, because it is
-# the paragraph meant one day to be spoken aloud whole (rule BRIEF-02).
+# brief's In Short names every device and is never capped (rule
+# BRIEF-02).
 SUMMARY_NAMES = 3
 
+# Worst first, so kinds[0] is the headline and an automation reads it
+# without a template. Unavailable leads because FREEZE_CATEGORY_PRIORITY
+# puts it above frozen: an unavailable device is honestly absent and a
+# frozen one is lying (rule LIST-02).
 TODO_KIND_SEVERITY = (
     # First, so a drop while flapping is never announced as news and a
     # return between drops is never a recovery: the flap is the problem, and
@@ -2291,9 +2240,8 @@ TODO_KIND_SEVERITY = (
 )
 
 
-# What the payload says when a device has no area. The reports have
-# said this for as long as they have existed, and a template joining
-# a null into a message renders the word None at a person.
+# What the payload says when a device has no area, because a template
+# joining a null into a message renders the word None at a person.
 UNASSIGNED_AREA = "Unassigned"
 
 # The freeze family covers every liveness kind; a battery or signal
@@ -2348,7 +2296,7 @@ INC_SIGNAL = "signal"
 INC_SINCE = "since"
 # How far before the listing a kept start may lie: the debounce and a
 # late sweep. A start further back, such as one held while an unavailable
-# mute hid the device, keeps the listing time (rule LIST-13).
+# mute hid the device, keeps the listing time (rule BRIEF-07).
 INC_SINCE_MAX_LEAD = 900.0
 # Event types: a problem opening and a problem resolving. What a
 # person does to the list is an ACTION, below.
@@ -2356,9 +2304,7 @@ INCIDENT_OPENED = "opened"
 INCIDENT_RESOLVED = "resolved"
 # One event for everything a person does to the list, with the cause
 # saying which. A person checking a box is not the house producing a
-# fault, and putting item events in the problem timeline made the
-# brief say a device had been discovered at the moment someone
-# deleted a row.
+# fault, so these rows never count as a device failing (rule BRIEF-06).
 INCIDENT_ACTION = "action"
 ACTION_ACKNOWLEDGED = "acknowledged"
 ACTION_UNACKNOWLEDGED = "unacknowledged"
@@ -2377,16 +2323,16 @@ ACTION_REMOVED = "removed"
 # the bus, and the brief never says "recovered" (rule MUTE-07).
 ACTION_MUTED = "muted"
 
-# The kinds whose recovery can name a cause. Only a silence has a lever
-# to credit: a battery rising or a rail clearing has no reconnect or
-# restart behind it, so those resolutions stay silent about why rather
-# than guessing.
 # How far before an incident opened an episode may have ended and still
 # be its explanation. A sampler notices an intervention up to one tick
 # late, so an episode closed a minute early is the same event; one closed
 # on Tuesday is not (rule BRIEF-05).
 CAUSE_EPISODE_SLACK_SECONDS = 120.0
 
+# The kinds whose recovery can name a cause. Only a silence has a lever
+# to credit: a battery rising or a rail clearing has no reconnect or
+# restart behind it, so those resolutions stay silent about why rather
+# than guessing.
 # Named from the constants rather than spelled by hand, so a rename of
 # the kinds cannot leave this set behind and quietly stop crediting a
 # cause to a never-reported recovery (rule LIST-02).
@@ -2404,16 +2350,14 @@ FREEZE_KINDS_FOR_CAUSE = frozenset(
 # happened in the last 24 hours, plain language, no machinery (rule
 # BRIEF-01).
 #
-# What a recovery says when no lever was observed. Not "on its own": the
-# integration sees restarts and reconnects, and sees nothing at all when
-# a person rebinds a device or pulls a battery, so the absence of a known
-# lever is not evidence of self-recovery. A rebind by hand would read as
-# "on its own", the very claim the hang-versus-quiet reading rests on.
-#
 # The trigger that closes a brief's window rather than opening one. Named
 # once, because the writer and the scheduler have to agree, and a typo
 # between them would silently leave every brief in progress.
 BRIEF_TRIGGER = "daily brief"
+# What a recovery says when no lever was observed. Not "on its own":
+# Device Sentinel sees restarts and reconnects, and sees nothing at all
+# when a person rebinds a device or pulls a battery, so the absence of a
+# known lever is not evidence that the device recovered by itself.
 RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
 
 # How a silence ended, in the words the payload uses. Three values,
@@ -2436,7 +2380,7 @@ RECOVERY_CAUSES_INTERVENTION = frozenset(
     {"handled at the device", RECOVERY_CAUSE_PAIRING}
 )
 # Integrations whose reading after a restart or a reconnect is fetched
-# from the device itself, so it is the device answering (rule UNAV-05).
+# from the device itself, so it is the device answering (rule FRZ-11).
 # Each is here only because its source shows it: HomeKit Device polls
 # every characteristic from the accessory when it connects
 # (homekit_controller/connection.py, async_setup), and an ESPHome device
@@ -2445,7 +2389,7 @@ RECOVERY_CAUSES_INTERVENTION = frozenset(
 # Assistant's store, Zigbee2MQTT's broker hands back retained messages,
 # and Matter and Z-Wave serve their own caches, so none of those is here.
 # Any integration not listed gets the literal reading: a value it
-# restores is not the device speaking (rule FRZ-11).
+# restores is not the device speaking (rule UNAV-05).
 FETCHING_INTEGRATIONS = frozenset({"homekit_controller", "esphome"})
 # The restart and outage causes still stored on older incidents,
 # recognized so they are told plainly rather than credited (rule UP-06).
@@ -2453,10 +2397,9 @@ RECOVERY_CAUSES_RESTART = frozenset(
     {"bridge reconnect", "reboot", "restart", "unclean shutdown"}
 )
 RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
-# The wording this replaced, still sitting in stored incidents from
-# before the wording changed. Migrated at load rather than left to
-# age out, because the composer tests for the current string and
-# would otherwise write "revived by a on its own" for two weeks.
+# An older wording still found in stored incidents. Migrated at load,
+# because the composer tests for the current string and would otherwise
+# write "revived by a on its own".
 LEGACY_CAUSE_UNOBSERVED = "on its own"
 
 # The span the live copy of the brief covers, as opposed to the closed
@@ -2466,19 +2409,6 @@ LEGACY_CAUSE_UNOBSERVED = "on its own"
 # events; a rolling day fixes that (rule BRIEF-10).
 BRIEF_LIVE_WINDOW_SECONDS = 86400.0
 
-# The system events log: what happened to the house rather than to a
-# device. Every other record here is device-scoped, so when a bridge
-# reconnect quiets fifty devices at once the record can only tell it
-# through the fifty, and a reader months later sees fifty faults rather
-# than one cause. These rows sit above the device rows and explain them;
-# they never suppress them, because the suppressed evidence is what a
-# person goes looking for afterwards.
-#
-# Kept for the retention the person chose for device statistics rather
-# than the fourteen days an incident keeps. An incident older than two
-# weeks has been fixed or is still standing, but how often this house
-# loses power is a question about the house, answerable only over
-# seasons.
 # The last bridge state each stack was seen in, kept across a restart so
 # an outage that spans one still closes with its real duration. A
 # comparison against the previous boot is the one thing memory cannot
@@ -2505,6 +2435,16 @@ WIFI_OUTAGE_RECOVERING = "recovering"
 BRIDGE_SEEN_STATE = "state"
 BRIDGE_SEEN_SINCE = "since"
 
+# The system events log: what happened to the house rather than to a
+# device. Every other record here is device-scoped, so when a bridge
+# reconnect quiets fifty devices at once the record can only tell it
+# through the fifty. These rows sit above the device rows and explain
+# them; they never suppress them, because the suppressed evidence is
+# what a person goes looking for afterwards (rule STOR-15).
+#
+# Kept for the retention the person chose for device statistics rather
+# than the fourteen days an incident keeps, because how often a house
+# loses power is answerable only over seasons (rule STOR-14).
 DATA_SYSTEM_EVENTS = "system_events"
 SYS_WHEN = "when"
 SYS_KIND = "kind"
@@ -2540,11 +2480,6 @@ SYS_WIFI_UP = "wifi_up"
 SYS_WIFI_RECOVERING = "wifi_recovering"
 SYS_WIFI_RECOVERY_WITHDRAWN = "wifi_recovery_withdrawn"
 SYS_BRIDGE_UP = "bridge_up"
-# The broker going and returning. Its own pair rather than a bridge
-# event, because a bridge reader is blind to it: when the broker dies
-# nothing delivers the bridge's last will, since the broker is the
-# deliverer. A broker outage can take every Zigbee2MQTT device
-# unavailable while bridge_state reads running throughout (rule UP-02).
 # A storm: many devices on one integration reporting at once, most often
 # that integration reloading or its hub reconnecting. Recorded, so the
 # rule that reclassifies a polling integration survives a restart and an
@@ -2565,17 +2500,12 @@ SYS_WORST = "worst"
 # event.
 SYS_DEVICE_ID = "device_id"
 
-# The per-integration storm series, kept on the person's retention rather
-# than the judgment window, because it is there to be looked back over.
-# Nothing is learned from it yet: an integration reloading is not
-# periodic, and inventing a cadence for it would be a global constant
-# (rule UP-17).
 # The state saved with a device's outage start when its stack called its
 # node dead, so the dead word outlives a restart (rule STACK-05).
 NODE_DEAD_STATE = "dead"
 
 # How long a registry rebuild waits after the last one before the next
-# (rule CODE-06). Every device, entity or label change rebuilds Device
+# (rule WATCH-11). Every device, entity or label change rebuilds Device
 # Sentinel's whole view of the registry on Home Assistant's main loop,
 # where nothing else runs meanwhile: on a house of 1,500 devices one
 # rebuild takes about 45 ms, 100 changes hold the loop about 4.5 s, and
@@ -2599,7 +2529,7 @@ STORM_KEEP_SECONDS = 3600.0
 # after one closed or Home Assistant restarted. A whole-house republish
 # by zha and battery_notes begins while the coordinator is pulled or
 # within seconds of its return, and counting those would advise
-# excluding the house's own Zigbee stack (rule UP-18).
+# excluding the house's own Zigbee stack (rule UP-17).
 STORM_EXPLAINED_SECONDS = 300.0
 # The noisy-integration advice: at least this many unexplained storms in
 # a day, on at least this many days within the window. A person testing
@@ -2611,8 +2541,8 @@ FLOOD_WINDOW_DAYS = 7
 # are not faults, grouped by that reason, because a category travels
 # further than a list of names. Shipped as data so the brief can say
 # something useful on the first day, before anything is learned (rule
-# REC-03). Router trackers are not here: they are excluded when first
-# seen (rule MUTE-02) and have a line of their own.
+# REC-03). Router trackers are not here: they have their own exclusion
+# (rule MUTE-02) and a line of their own.
 LIBRARY_FALSE_ALERTS = "false_alerts"
 LIBRARY_NO_DEVICES = "no_devices"
 RECOMMENDATION_LIBRARY: dict[str, tuple[str, ...]] = {
@@ -2644,6 +2574,11 @@ STORM_DOMAIN = "domain"
 STORM_DEVICES = "devices"
 STORM_DURATION = "duration"
 
+# The broker going and returning. Its own pair rather than a bridge
+# event, because a bridge reader is blind to it: when the broker dies
+# nothing delivers the bridge's last will, since the broker is the
+# deliverer. A broker outage can take every Zigbee2MQTT device
+# unavailable while bridge_state reads running throughout (rule UP-02).
 SYS_BROKER_DOWN = "broker_down"
 SYS_BROKER_UP = "broker_up"
 SYS_PAIRING_OPEN = "pairing_open"
@@ -2668,8 +2603,8 @@ SYS_DEVICE_PAGE = "device_page"
 # A person excluded an integration, or took it back, from its page on the
 # dashboard (rule MUTE-03). Its scope is the integration.
 SYS_INTEGRATION_PAGE = "integration_page"
-# An integration added to the exclusion list the first time it is seen,
-# its domain in the scope (rule MUTE-02).
+# An integration added to the exclusion list the first time a new
+# install sees it, its domain in the scope (rule MUTE-02).
 SYS_FIRST_SEEN_EXCLUDED = "first_seen_excluded"
 # On a house that already exists, the same integration recommended for
 # exclusion instead, told once in the brief (rule MUTE-02).
@@ -2688,8 +2623,7 @@ SYS_TRIMMED = "trimmed"
 # One stamped pair per trim, never overwritten, so a sequence of
 # trims cannot bury the state the first one started from, and never
 # the nightly last-good pair, which stays exactly what the fold left.
-# The folder does not clean itself; the help text says so rather than
-# any silent expiry.
+# Old copies are pruned at the fold (rule STOR-13).
 TRIM_BACKUP_DIR = "device_sentinel/trim_backups"
 
 # The two pickers. Both are actions wearing an option's clothes: the
@@ -2729,7 +2663,7 @@ SYS_STORAGE_REPAIR = "storage_repair"
 REPAIR_STORAGE_SHAPE = "storage_shape"
 # The buttonless notice a completed repair raises (rule REP-02).
 REPAIR_STORAGE_REPAIRED = "storage_repaired"
-# Gate 1's notice: a container of the wrong kind, repaired before the
+# The first shape check's notice: a container of the wrong kind, repaired before the
 # load-time steps could crash on it (rule STOR-05).
 REPAIR_CONTAINERS_REPAIRED = "containers_repaired"
 REPAIR_ENTITIES_DISABLED = "entities_disabled"
@@ -2742,13 +2676,12 @@ REPAIR_NO_DELIVERY = "no_delivery_configured"
 # is a warning rather than an error, and its only action is to say it has
 # been read (rule REP-05).
 REPAIR_STORAGE_RESTORED = "storage_restored"
-# The clocks file was missing or discarded at this start, so every
-# device's clock was restarted (rule STOR-10). A notice: nothing is left
-# to decide, and it clears at the next start that loads the file whole.
+# A retired card for a lost clocks file, which the brief tells now
+# (rule LIST-12). Named so an install that still holds one has it
+# cleared (rule REP-02).
 REPAIR_CLOCKS_RESET = "clocks_reset"
-# The system clock moved while Device Sentinel ran (rule FRZ-21). A clock
-# reset is a person's act: the device clocks restart at the moment it is
-# noticed, and this card names the moment and the size.
+# A retired card for a system clock step, which the brief tells now
+# (rule FRZ-21). Named so it can be cleared (rule REP-02).
 REPAIR_CLOCK_RESET = "clock_reset"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
@@ -2791,19 +2724,13 @@ REPAIR_MOMENT_BRIEF = "brief"
 # A card is read in a dialog rather than scrolled, and the full list
 # is already in the log and the diagnostics.
 REPAIR_DETAIL_MAX = 3
-# How many devices the disabled-entities card names for each kind before
-# it counts the rest. A fresh install can list over a hundred under
-# signal alone; ten is enough for a person to recognize their own house
-# without burying the sentence that says what to do (rule REC-05).
+# How many devices the retired disabled-entities card named for each
+# kind. Nothing reads it now.
 REPAIR_NAMED_PER_KIND = 10
 
-# How long an install may go with nowhere to send anything before it is
-# worth saying so (rule REP-07). Seven days rather than at once, because
-# a person setting Device Sentinel up must not be interrupted on their
-# first evening by a badge telling them they have not finished. Seven is
-# the week freeze detection already asks for, and by then a person has
-# missed seven daily briefs, which makes it a settled state rather than
-# one they are passing through.
+# How long the retired no-delivery card let an install go with nowhere
+# to send anything. Nothing reads it now; a house with no target has its
+# recommendation instead (rule REC-02).
 NO_DELIVERY_MIN_DAYS = 7.0
 
 # How long an interruption must last before the daily brief says anything
@@ -2857,9 +2784,8 @@ PROBE_WAS = "was"
 PROBE_NOW = "now"
 PROBE_DETAIL = "detail"
 # Device Sentinel's own view of the node's device at that moment, and
-# whether the stack and it agree the device is quiet: the readers in
-# shadow, recorded before either stack's reader is built. Absent from
-# older lines (rule STACK-12).
+# whether the stack and it agree the device is quiet. Absent from older
+# lines (rule STACK-12).
 PROBE_SENTINEL = "sentinel"
 PROBE_AGREES = "agrees"
 # The probe file: lines are appended to stack_probe.md rather than kept
@@ -2893,12 +2819,6 @@ EP_SIG_VALUE = "value"
 EP_SIG_MEAN = "mean"
 EP_SIG_SD = "sd"
 EPISODE_ENDED_RESUMED = "resumed"
-# A device that came back because a person handled it, not because it
-# recovered (rule FRZ-17). ZHA announces a re-pair, a reconfigure and a
-# removal on its gateway signal, always a few seconds before the device's
-# entities return, so the cause is already known when the recovery
-# arrives. The comment above RECOVERY_CAUSE_UNOBSERVED says why this
-# matters: a rebind by hand would otherwise read as "on its own".
 EPISODE_ENDED_REBOOT = "intervention (reboot)"
 EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 # A storm inside startup grace is the restart itself: every device
@@ -2908,6 +2828,13 @@ EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 # quotes the cause verbatim.
 EPISODE_ENDED_RESTART = "intervention (restart)"
 
+EPISODE_ENDED_UNCLEAN = "intervention (unclean shutdown)"
+
+# A label older rows may carry in the LEARNED cell. An unclean stop
+# learns nothing of the silence before it, so nothing writes it now
+# (rule FRZ-20).
+EPISODE_LEARNED_TRUNCATED = "yes (truncated)"
+
 # Where more than one reason fits a taint, the widest cause wins (rule
 # FRZ-14): a device felled by its bridge should say so rather than report
 # the symptom it showed. The promotion is resolved when the episode
@@ -2916,14 +2843,6 @@ EPISODE_ENDED_RESTART = "intervention (restart)"
 # it trickle back over the following hour, so deciding at the report
 # catches only a few of them. A reboot is absent on purpose, being an
 # intervention but not a reason a gap goes unlearned.
-EPISODE_ENDED_UNCLEAN = "intervention (unclean shutdown)"
-
-# What a truncated gap read in the LEARNED cell while an unclean stop
-# banked the silence before it. Nothing is banked now, because nobody was
-# listening between the last save and the stop (rule FRZ-20). The label
-# remains for older rows, in the same family as the taint reasons.
-EPISODE_LEARNED_TRUNCATED = "yes (truncated)"
-
 TAINT_PROMOTIONS = {
     EPISODE_ENDED_RECONNECT: TAINT_BRIDGE_DOWN,
     EPISODE_ENDED_UNCLEAN: TAINT_UNCLEAN_SHUTDOWN,
@@ -2983,13 +2902,9 @@ DEAD_OPTION_KEYS = (
 # the same order. The entry's minor version records how far it has come;
 # each step below moves it one further (rule STOR-19).
 #
-# Step 2 renames the twelve muting keys from their exclude spellings.
-# The words were backward: excluding sounded like the harsher act and
-# only silenced, while ignoring sounded like the softer one and discarded
-# the record.
-# Step 3 renames the ignore list to the word it vacated. Excluding now
-# means what it looks like, the record discarded, and muting carries the
-# gentler act (rule MUTE-01).
+# Step 2 renames the twelve muting keys from their exclude spellings,
+# and step 3 gives the ignore list the word they vacated, so excluding
+# discards the record and muting only silences (rule MUTE-01).
 # Step 5 writes the persistent card's old default into an install that
 # never saved it, so the new default of off reaches new installs only
 # (rule NOTE-11).
@@ -3000,15 +2915,16 @@ DEAD_OPTION_KEYS = (
 # freeze mute hiding it would be a fault (rule MUTE-06).
 OPTIONS_MINOR_VERSION = 7
 
-# The muting keys, old spelling to new, in the order a person meets
-# them on the screens. Read by the migration and by the guard that
-# rewrites stored history, so there is one list rather than two.
+# Step 3's rename: the ignore list takes the exclude spelling.
 IGNORE_KEY_RENAMES = {
     "ignored_integrations": "excluded_integrations",
 }
 
 
 
+# The muting keys, old spelling to new, in the order a person meets
+# them on the screens. Read by the migration and by the guard that
+# rewrites stored history, so there is one list rather than two.
 MUTING_KEY_RENAMES = {
     "excluded_integrations": "muted_integrations",
     "excluded_labels": "muted_labels",
@@ -3058,7 +2974,7 @@ SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 # re-election (percentage entity vanishing, binary elected instead)
 # cannot dodge it. The integration list makes "everything mobile_app"
 # one tick, covering phones present and future. No entity kind here
-# for the same re-election reason.
+# for the same re-election reason (rule BAT-04).
 CONF_BATTERY_MUTED_DEVICES = "battery_muted_devices"
 CONF_BATTERY_MUTED_INTEGRATIONS = "battery_muted_integrations"
 CONF_BATTERY_MUTED_LABELS = "battery_muted_labels"
@@ -3069,12 +2985,8 @@ CONF_BATTERY_MUTED_LABELS = "battery_muted_labels"
 # files because hassfest rejects a literal URL in strings.json and
 # directs integrations to pass links in as description placeholders,
 # which the flow supplies at render time. One per page a screen links
-# to; a test checks each is a published wiki page.
-#
-# The link text stays the same on every screen while the target
-# differs: a description reading "Full documentation: Device Sentinel
-# wiki" says what the link is, and where it lands is the screen's own
-# business.
+# to, and each screen's link names the page it opens (rule CFG-03); a
+# test checks each is a published wiki page (rule REL-14).
 WIKI_BASE_URL = "https://github.com/TheThinkingHome/device_sentinel/wiki"
 # Each release's notes, by its tag, which is the version itself. The
 # dashboard's foot names the version running and links here (rule
@@ -3135,7 +3047,7 @@ ATTR_SETUP_COUNT = "setup_count"
 # treatment DEAD_OPTION_KEYS gets. Append a sentinel type here when a
 # sensor is retired, and drop it again once every install is past it.
 DEAD_ENTITY_SENTINEL_TYPES: tuple[str, ...] = (
-    # The three retired Enable buttons (rule CFG-08). The unique id is the
+    # The three retired Enable buttons (rule REC-05). The unique id is the
     # entry id and the button's key, so Regenerate Reports and Maintenance
     # Mode, which share the platform, are untouched.
     "enable_signal_entities",
@@ -3153,8 +3065,9 @@ NAME_LENGTH_MAX = 60
 # hardware version are read as a group, so one device's behavior can be
 # told from its model's. Recorded for the diagnostics download: no
 # verdict, list, push, screen or bus event reads the groups yet. The
-# firmware history they draw on has one reader: an update has a device's
-# battery scale measured again (rule BAT-02).
+# firmware history they draw on is read elsewhere: an update restarts
+# the Log-Normal Percentile's count (rule FRZ-05) and has the battery
+# scale measured again (rule BAT-02).
 #
 # The window each device's figures are read over: the battery rate is the
 # same 30-day rate Battery Trends shows, and signal is judged over thirty
@@ -3192,17 +3105,14 @@ BATTERY_FIT_MIN_DAYS = 28
 # agree.
 #
 # The curve passes when it bends down and fits clearly better than the
-# line (an F of BATTERY_CURVE_MIN_F or more); it is still falling today;
-# and the newest BATTERY_CURVE_RECENT_DAYS hold at least
-# BATTERY_CURVE_MIN_FALLS drops from one heard day to the next, so one
-# step down is not a curve. Without the drops, steady cells read
-# accelerating on hundreds of days. A floor of two points a week today
-# stops steady cells above the ceiling and none under it. A smoothed line
-# in front of the test, and the guards of an older knee rule, each cost
-# real calls or added false ones, so neither is used. 42 days was
-# measured against 28, 56 and 84: 28 missed a real bend and called steady
-# cells, and the longer ones only came later. The time left uses this
-# same test to choose the curve.
+# line (an F of BATTERY_CURVE_MIN_F or more); it is still falling today,
+# with no floor on the pace; and the heard days among the newest
+# BATTERY_CURVE_RECENT_DAYS hold at least BATTERY_CURVE_MIN_FALLS
+# day-to-day drops, so one step down is not a curve. Without the drops,
+# steady cells read accelerating on hundreds of days. Measured against
+# 28, 56 and 84 days, 28 missed a real bend and called steady cells, and
+# the longer ones only came later. The time left uses this same test to
+# choose the curve.
 BATTERY_CURVE_MIN_F = 10.0
 BATTERY_CURVE_RECENT_DAYS = 14
 BATTERY_CURVE_MIN_FALLS = 3
@@ -3224,8 +3134,8 @@ READING_FALLING = "falling"
 # a device records an older version and its current one again within the
 # same second. Waiting on the tick rather than the midnight fold means a
 # house that restarts before midnight, or reboots across it, still
-# records an update (rule STOR-17). A flicker lasts under a second; a
-# real update or downgrade holds.
+# records an update. A flicker lasts under a second; a real update or
+# downgrade holds.
 FIRMWARE_HOLD_SECONDS = 600
 # A recorded version replaced within this long by the version before it
 # is a flicker, removed from older histories (rule DEV-15).

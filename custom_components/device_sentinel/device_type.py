@@ -7,9 +7,11 @@
 
 """What each device is, in plain words (rule DEV-10).
 
-Home Assistant keeps no type for a device, so Device Sentinel reads one
-from the device's own entities: the kind of entity Home Assistant made
-for it, and the device class the integration gave it. First match wins.
+Home Assistant keeps no type for a device, so Device Sentinel works one
+out: from a model it knows, the device's role on its network, an
+appliance integration, and then the device's own entities, the kind of
+entity Home Assistant made for it and the device class the integration
+gave it. First match wins.
 Settings and diagnostic entities are left out, since a radio's
 configuration switch says nothing about what the device is. A device
 nothing matches has no type: the page says so and offers the pencil,
@@ -594,8 +596,8 @@ class TypeMixin:
         """Set the owner's type from the device page; None goes back to the entities' answer.
 
         Like the Power row's, the answer covers every device of the
-        same model, and clearing it clears it for all of them
-        (rule DEV-10).
+        same model. Clearing a model answer clears it for all of them; a
+        device's own answer is cleared alone (rule DEV-10).
         """
         self._device(device_id)  # type: ignore[attr-defined]
         key = self._power_key(device_id)  # type: ignore[attr-defined]

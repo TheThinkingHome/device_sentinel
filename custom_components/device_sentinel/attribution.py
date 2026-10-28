@@ -22,8 +22,10 @@ an integration reload.
 
 Scope matters as much. A Zigbee bridge reconnecting cannot revive a
 HomeKit accessory. So a restart covers every device, a broker covers
-the MQTT domain, a bridge or a pairing window covers its own stack,
-and a storm covers only its own integration.
+the MQTT domain, a bridge or a pairing window covers its own stack, a
+storm or an integration outage covers only its own integration, a
+Wi-Fi outage covers every device, and a person handling a ZHA device
+covers that device alone.
 
 Attribution runs at render time because a broker outage is written up
 to a minute after its devices drop, and so incident rows already on
@@ -69,8 +71,8 @@ _PAIRS = {
     SYS_BROKER_DOWN: SYS_BROKER_UP,
     SYS_PAIRING_OPEN: SYS_PAIRING_CLOSED,
     SYS_STORM_OPEN: SYS_STORM_CLOSED,
-    # Without these, every device that failed during an integration or
-    # Wi-Fi outage read as a mystery in the brief.
+    # So a device that fails during an integration or Wi-Fi outage is
+    # explained rather than left a mystery in the brief.
     SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
     SYS_WIFI_DOWN: SYS_WIFI_UP,
 }
@@ -166,7 +168,7 @@ class Window:
             # No edge allowance here (rule FRZ-17). The edge exists
             # because a sampler notices an outage up to a tick late,
             # and a handling is not sampled: it arrives as it happens.
-            # With the allowance, a handling explained recoveries
+            # With the allowance, a handling would explain recoveries
             # before the person touched the device.
             return self.start <= moment <= (self.end or moment)
         if moment < self.start - _EDGE_SECONDS:

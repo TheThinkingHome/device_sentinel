@@ -13,9 +13,9 @@ happened; narrative.py reads it back and turns it into sentences.
 
 Every channel renders over these rows: the push, the brief, the email
 and the card all read them, and none derives its own truth
-(rule NOTE-01). An episode is a silence that passed the device's own
-learned basis, and it records whether the device spoke or something
-made it speak (rule FRZ-08).
+(rule NOTE-01). An episode is a silence that passed the device's
+rhythm in use plus a share of its grace, and it records whether the
+device spoke or something made it speak (rule FRZ-08).
 
 These are mixins on the coordinator and read its state freely, so
 `self` is the coordinator throughout.
@@ -223,7 +223,7 @@ class JournalMixin:
             # and new ones open once grace closes.
             return
         # Through watched_records, the one line every reading surface
-        # shares (rule WATCH-03). The boundary has vouched for the
+        # shares (rule WATCH-09). The boundary has vouched for the
         # records behind it (rule STOR-06).
         for device_id, record in self.watched_records():
             if device_id in self._muted_devices or self._freeze_muted(
@@ -243,8 +243,8 @@ class JournalMixin:
             # The rhythm of the rule in use, the one the freeze line is
             # built from, so the episode always opens before the device
             # is called frozen (rules FRZ-08, BRIEF-16). The 14-Day
-            # Trimmed Maximum alone opened late whenever the 42-Day
-            # Log-Normal Percentile was the shorter.
+            # Trimmed Maximum alone would open late whenever the 42-Day
+            # Log-Normal Percentile is the shorter.
             found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
             basis = found.get("rhythm") if found else None
             if basis is None:
@@ -437,8 +437,7 @@ class JournalMixin:
     def incident_settle_seconds(self) -> float:
         """Return how long a resolved problem stays reopenable.
 
-        A constant, not a setting, because no house ever needed to
-        move it (rule LIST-06).
+        A constant, not a setting (rule LIST-06).
         """
         return float(INCIDENT_SETTLE_SECONDS)
 
@@ -515,8 +514,8 @@ class JournalMixin:
         # brief says "recovered after ?" (rule LIST-11).
         #
         # The trim runs only when a row is written, so the row that
-        # deleted it belonged to some other device: a busy house
-        # trims a quiet device's opening as collateral.
+        # trims an opening may belong to some other device: a busy
+        # house would trim a quiet device's opening as collateral.
         #
         # Released by a permanent removal, not a reversible one. A
         # recovery, a deletion, or a device set aside or excluded
@@ -673,7 +672,7 @@ class JournalMixin:
         events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
         # A damaged row is kept for the repair to drop and count,
         # because the clock repair writes its event before the rows
-        # are repaired, and reading a junk row here failed the save.
+        # are repaired, and reading a junk row here would fail the save.
         kept = [
             row for row in events
             if not isinstance(row, dict)

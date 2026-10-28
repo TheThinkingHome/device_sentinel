@@ -8,11 +8,9 @@
 """The device record shape, and the small helpers that go with it.
 
 Small on purpose. The record's template, the day's signal reset and the
-compact span are the module-level names the coordinator split left
-needing a home of their own: the record
-schema is the authority both the core and the storage module read,
-and putting it in either would have made the other import from it
-and closed a circle (rule CODE-11).
+compact span live here because the record schema is the authority both
+the core and the storage module read, and putting it in either would
+make the other import from it and close a circle (rule CODE-11).
 
 _new_device_record is the one authoritative field set. A key a
 fresh one carries that a stored one does not belongs to a version
@@ -150,7 +148,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_TAINTED: False,
         # None while the device is watched; the moment it was set
         # aside otherwise, so a gap spanning a disabling is refused
-        # rather than learned (rule WATCH-03).
+        # rather than learned (rule FRZ-15).
         DEV_SET_ASIDE_SINCE: None,
         # The outage starts, kept on disk (rule UNAV-04).
         DEV_DOWN_SINCE: None,
@@ -219,11 +217,10 @@ SERIES_MEMO_SIZE = 1024
 def series_key(series: Any) -> tuple[Any, ...]:
     """A small fingerprint of a daily series, for the battery memos.
 
-    The series itself as a key held every version of every cell's
-    history until the memo filled, about 7 MB of days nobody would
-    ask about again. Its length, its
-    hash and its last three values name it as surely at a fraction of
-    the size: two different series agreeing on all three is not a case
+    The series itself as a key would hold every version of every cell's
+    history until the memo filled, megabytes of days nobody asks about
+    again. Its length, its hash and its last three values name it as
+    surely at a fraction of the size: two different series agreeing on all three is not a case
     the arithmetic can meet."""
     values = tuple(series)
     return (len(values), hash(values), values[-3:])

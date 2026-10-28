@@ -13,9 +13,9 @@ ESPHome over MQTT with no Zigbee still has a broker that can fail.
 
 A bridge reader cannot see its own broker die. When the broker stops,
 nothing delivers Zigbee2MQTT's last will, because the broker is the
-deliverer, so the bridge keeps its last state and records nothing.
-Sixteen minutes with the broker stopped took 75 devices unavailable
-while the bridge sensor read running throughout (rules UP-01, UP-02).
+deliverer, so the bridge keeps its last state and records nothing,
+and the bridge sensor reads running while every device behind the
+broker goes unavailable (rules UP-01, UP-02).
 
 Two signals do two jobs. An uptime value lower than the last one seen
 means the broker restarted, and the start is the arrival minus the
@@ -85,9 +85,10 @@ class MQTTBrokerReader:
         Device Sentinel, and the topic is published on an interval, not
         retained, so the first reading arrives when it arrives.
 
-        The MQTT entry is checked for before waiting on its client, because
-        this watch starts on every house, and on a house with no MQTT the
-        wait would never return and setup would never finish (rule STACK-03).
+        A loaded MQTT entry is checked for before waiting on its client,
+        because this watch starts on every house, and where MQTT is not
+        loaded the wait would hold setup for its full timeout (rule
+        STACK-03).
         """
         try:
             if not any(
@@ -167,7 +168,7 @@ class MQTTBrokerReader:
         Unknown until armed, and unknown forever on a broker that
         publishes nothing here. Down once the silence passes the
         learned threshold, which is the only way a broker that dies
-        while we stay alive can be seen at all.
+        while Device Sentinel runs can be seen at all.
         """
         if not self.armed or self._last_heard is None:
             return BROKER_UNKNOWN
@@ -193,9 +194,8 @@ class MQTTBrokerReader:
 
         Computed from an arrival and its uptime rather than observed,
         which is what makes a restart legible after the fact even
-        where nothing was running to watch it happen. It answers a
-        question that had no answer before: whether the broker has
-        been restarting unnoticed.
+        where nothing was running to watch it happen, so a broker
+        restarting unnoticed can be seen.
         """
         return self._started_at
 

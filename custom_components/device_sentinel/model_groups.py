@@ -16,8 +16,9 @@ is built on it.
 
 Two things are recorded. Each device's firmware history is stored,
 because Home Assistant keeps only the current version and a change is
-otherwise lost (rule DEV-15). One behavior reads it: a recorded update
-has a device's battery scale measured again (rule BAT-06). Everything
+otherwise lost (rule DEV-15). Two behaviors read it: a recorded update
+has the device's battery scale measured again (rule BAT-02), and starts
+the Log-Normal Percentile's count again (rule FRZ-05). Everything
 else is worked out when the diagnostics are downloaded, from the device
 registry and the records already kept, and stored nowhere.
 
@@ -251,8 +252,8 @@ def build_model_groups(
 ) -> dict[str, Any]:
     """Return the Model Groups section for the watched devices given.
 
-    Pure: the registry is read by the caller, so the fleets' own
-    diagnostics can stand in for it in a test. Each group of two or
+    Pure: the registry is read by the caller, so a captured
+    diagnostics download can stand in for it in a test. Each group of two or
     more devices is listed; a device alone in its group is counted,
     and so is one that names no maker or no model.
     """
@@ -476,7 +477,7 @@ class ModelGroupMixin:
                 if had:
                     # An update can change the battery scale a device
                     # reports on; it is measured again. A first version on
-                    # record is not an update (rule BAT-06).
+                    # record is not an update (rule BAT-02).
                     clear_raw_battery(record, "a firmware update")
             self._firmware_candidates.pop(device_id, None)
         if changed:

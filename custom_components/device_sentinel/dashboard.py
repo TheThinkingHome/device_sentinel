@@ -412,11 +412,10 @@ class IntegrationViewMixin:
             owner = self._outage_owner(kind, scope)
             if owner is None or row[SYS_WHEN] < since:
                 continue
-            # An older integration outage names no entry, and a run
-            # recorded one afresh after each restart, so it never meets
-            # its return and read "still down" for days while its
-            # devices reported. Closed at the upgrade without a word,
-            # because the entry-named rows tell its outages since.
+            # An older integration outage names no entry and never meets
+            # its return, so it would read "still down" while its devices
+            # report. It is left off, because the entry-named rows tell
+            # its outages (rule UP-05).
             if kind == SYS_INTEGRATION_DOWN and entry is None:
                 continue
             found.append((owner, {
@@ -520,9 +519,9 @@ class IntegrationViewMixin:
     def _problem_text(self, item: dict[str, Any]) -> str:
         """One device's problems, each with its own age.
 
-        One row dated from the older problem hid the newer one, so a
-        short freeze on a device with an old battery fault appeared
-        nowhere.
+        One row dated from the older problem would hide the newer one,
+        so a short freeze on a device with an old battery fault would
+        appear nowhere.
         """
         name = item.get(TODO_SORT_NAME) or ""
         summary = item[TODO_SUMMARY]
@@ -759,9 +758,9 @@ class DeviceViewMixin:
         """The rhythm of the rule the wait is built from.
 
         Showing the Trimmed Maximum's rhythm beside a window built from
-        the Log-Normal Percentile made a plug read "rhythm 3.2h" beside
-        "window 34m". Young devices, with only the Trimmed Maximum, read
-        as before.
+        the Log-Normal Percentile would make a plug read "rhythm 3.2h"
+        beside "window 34m". A young device, with only the Trimmed
+        Maximum, reads that rule's rhythm (rule FRZ-22).
         """
         found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
         if found:
@@ -809,8 +808,8 @@ class DeviceViewMixin:
         ):
             since_reset = int(since_reset)
             # The first day counted since, by the history's own dates, so
-            # a day with no learned gap does not move it (adversarial
-            # round); today when none is counted yet.
+            # a day with no learned gap does not move it; today when
+            # none is counted yet.
             yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
             dates = dates_for(record, FAMILY_GAP, len(daily), yesterday)
             restarted = dates[-since_reset] if since_reset and len(dates) >= since_reset else dt_util.now().date()
@@ -839,7 +838,7 @@ class DeviceViewMixin:
         """The rhythm chart's history laid out one slot a day.
 
         The gap history writes nothing on a day with no learned gap, so
-        the chart, which reads by position, drew those days away. Each
+        the chart, which reads by position, would draw those days away. Each
         entry moves to its day's slot, with an empty slot for a skipped
         day, and the deciding and set-aside marks, which are positions
         in the history, move with their entries.
@@ -964,7 +963,7 @@ class DeviceViewMixin:
         # A device in a flap reads as the flap, the same word the list
         # gives it, whether or not it is down this minute. A device
         # muted for unavailable, or for everything, is off the list and
-        # reads no flap either (rule MUTE-06).
+        # reads no flap either (rule MUTE-10).
         if (
             device_id in self._watched
             and device_id not in self._muted_devices
@@ -986,7 +985,7 @@ class DeviceViewMixin:
         if self._connection_only(device_id) or self.judged_by_hub(device_id):  # type: ignore[attr-defined]
             # Its connection is its report, and it is not down.
             # A device its hub judges is never called never reported,
-            # because a Pico nobody has pressed is fine (rule FRZ-01).
+            # because a Pico nobody has pressed is fine (rule STACK-09).
             return STATUS_REPORTING
         if record.get(DEV_LAST_ACTIVITY) is None:
             return STATUS_NEVER_REPORTED
@@ -1167,8 +1166,8 @@ class DeviceViewMixin:
                         # The sensor's own state is on Zigbee's raw 0 to
                         # 200 scale, so the page shows it as raw beside
                         # the halved percentage Device Sentinel uses
-                        # everywhere else; a bare 182% read as a broken
-                        # cell (rule BAT-02).
+                        # everywhere else; a bare 182% would read as a
+                        # broken cell (rule BAT-02).
                         reading["raw_scale"] = True
                     readings.append(reading)
         rhythm, set_aside = self._device_rhythm(record)
@@ -1296,7 +1295,7 @@ class DeviceViewMixin:
                 "category": self._page_status(device_id, record),
                 # How big the flap is, beside the word.
                 # Not for a device muted for unavailable or for
-                # everything, which reads no flap (rule MUTE-06).
+                # everything, which reads no flap (rule MUTE-10).
                 "flap": (
                     self.flap_words(device_id).removeprefix("flapping, ")
                     if self.is_flapping(device_id)
@@ -1433,8 +1432,8 @@ class DeviceViewMixin:
         target = self.battery_target(current, record)  # type: ignore[attr-defined]
         days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
         # The range a falling cell reaches the low threshold in; the
-        # near end decides Days Till Low, as on the Problem List (rule
-        # BAT-13).
+        # near end decides Days Till Low, as on the Problem List (rules
+        # BAT-13, BAT-14).
         projection = battery_projection(series, current, target) if falling else None
         far = days
         if projection is not None:
@@ -1743,7 +1742,7 @@ class BriefViewMixin:
             # The rows the brief's section is built from, so the tab
             # and the file say the same thing about the same devices.
             # The tab draws the table itself from the rows, because
-            # printing the section's Markdown gave a paragraph of pipes.
+            # printing the section's Markdown would give a paragraph of pipes.
             rows = self._repeat_offender_rows(end)
             repeat["rows"] = [
                 {
@@ -1819,8 +1818,9 @@ class TrendsViewMixin:
 
         Others means the cells of the same maker and model, the grouping
         By Model uses, the cell itself left out. A cell with no weekly
-        fall yet (under four weeks of history, risen or flat) is left out rather than
-        counted as losing nothing, which pulled the pace toward zero.
+        fall yet (under four weeks of history, risen or flat) is left
+        out rather than counted as losing nothing, which would pull the
+        pace toward zero.
         The pace is a range, the slowest and the fastest of the others'
         falls over the last four weeks, points a week. Shown beside a
         battery as context and never used as its time left: a battery
@@ -1891,7 +1891,7 @@ class TrendsViewMixin:
                 "name": self._device_name(device_id),
                 "level": level,
                 # Points a week over the last four weeks, negative for a
-                # fall, as the models table has always sorted: the
+                # fall, as the models table sorts: the
                 # hungriest model first.
                 "rate": -(battery_month_drop(series) or 0.0) / 3,
                 "type": type_of(device_id),
@@ -1959,8 +1959,8 @@ class TrendsViewMixin:
                 else:
                     item["days"] = len(row.get("series") or [])
                     # Points lost over the last four weeks, from the
-                    # first week's average to the last's, in place of a
-                    # rate per day that described a wobble.
+                    # first week's average to the last's, rather than a
+                    # rate per day, which describes a wobble.
                     item["month_drop"] = battery_month_drop(row.get("series") or [])
                 out.append(item)
             return out

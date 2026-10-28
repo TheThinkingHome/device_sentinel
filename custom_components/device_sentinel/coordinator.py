@@ -492,14 +492,15 @@ class DeviceSentinelCoordinator(
         self._muted_down: set[str] = set()
         # Outages an unavailable mute hid after they had lasted past
         # the debounce, by device, keyed to the saved outage start
-        # (rule UNAV-04).
+        # (rules UNAV-02, UNAV-04).
         self._unavailable_under_mute: dict[str, float] = {}
+        # Options a device-page mute just wrote: the update listener
+        # leaves them out of its "Settings changed" row, since the act
+        # records its own (rule BRIEF-07).
+        self._page_option_keys: set[str] = set()
         # The day a fold is folding, and the one a catch-up fold sets
         # for it: the daily histories' new entries take it (rule
-        # STOR-17). Options a device-page mute just wrote: the update
-        # listener leaves them out of its "Settings changed" row, since
-        # the act records its own (rule MUTE-09).
-        self._page_option_keys: set[str] = set()
+        # STOR-17).
         self._folding_day: date | None = None
         self._fold_day_override: date | None = None
         # Rebuilds the registry view at most once per cooldown during a
@@ -520,8 +521,8 @@ class DeviceSentinelCoordinator(
         # the originals are. None when nothing this session repaired
         # anything; self-clears on a clean load (rule STOR-09).
         self._repair_notice: dict[str, str] | None = None
-        # Gate 1's own notice, separate because the two gates answer
-        # different questions (rule STOR-05).
+        # The container check's own notice, kept apart because the two
+        # checks answer different questions (rules STOR-05, STOR-12).
         self._container_notice: dict[str, str] | None = None
         # Whether the live file on disk was last written clean, so
         # the next clean save may rotate it to last-good (rule STOR-04).
@@ -657,8 +658,6 @@ class DeviceSentinelCoordinator(
         # minute, kept until the minute decides.
         self._matured_in_park: dict[tuple[str, str], tuple[str, str]] = {}
         self._park_timer: Callable[[], None] | None = None
-        # When the current burst of cold changes began, so the
-        # debounce can be capped rather than pushed out for ever.
         # What the system could actually watch (rule FRZ-10). Both storage
         # files carry the time they were written, so the newer of the
         # two is the last moment anything was observed, and the gap
@@ -685,11 +684,9 @@ class DeviceSentinelCoordinator(
         # temporary file of a fixed name, so two writes at once would
         # share it and one report would be lost.
         self._report_lock = asyncio.Lock()
-        # One bridge reader per detected coordinator stack that can
-        # report its own liveness and pairing state (rule FRZ-16). Populated in
-        # async_setup after the registry view has found the stacks. Z2M
-        # is the only reader today; ZHA and Z-Wave reach their state
-        # through different doors and are added later.
+        # One bridge reader per detected stack that has one, Zigbee2MQTT
+        # and ZHA; Z-Wave and Matter have none (rule STACK-03). Filled
+        # in at setup, once the registry view has found the stacks.
         self._bridge_readers: dict[str, Any] = {}
         # The last bridge state and pairing flag seen per
         # stack, so the tick can tell a transition from a
@@ -712,7 +709,7 @@ class DeviceSentinelCoordinator(
         # person has been pushed at, this one is whether the bus was
         # told. Held is what the startup grace swallowed and owes an
         # announcement; said is what has been announced and is
-        # therefore owed a recovery (rule NOTE-12).
+        # therefore owed a recovery (rule UP-10).
         # Keyed by the outage, which for an integration is its config
         # entry: several plugs of one integration can each be down at
         # once, and each is owed its own recovery.
@@ -729,9 +726,7 @@ class DeviceSentinelCoordinator(
         # once that has outlived the dwell.
         self._entry_of_device: dict[str, str] = {}
         # The moment of the last command to each device's entities,
-        # read from the bus (rule FRZ-19), and the ESPHome entries
-        # whose deep-sleep flag could not be read (rule STACK-08).
-        # Both live in memory only.
+        # read from the bus, in memory only (rule FRZ-19).
         self._commanded_at: dict[str, float] = {}
         # When each device's latest closed silence began (rule UNAV-07).
         self._silence_began: dict[str, float] = {}
@@ -760,6 +755,8 @@ class DeviceSentinelCoordinator(
         # the saved set; a file from a release that kept none dates no
         # return.
         self._aside_seen: set[str] | None = None
+        # The ESPHome entries whose deep-sleep flag could not be read,
+        # warned of once, in memory only (rule STACK-08).
         self._deep_sleep_unreadable: set[str] = set()
         # Which devices are hubs, which they control, and whether each
         # hub's connection is up (rules STACK-09, STACK-10).
@@ -771,7 +768,7 @@ class DeviceSentinelCoordinator(
         # events log have been taken back this run.
         self._integration_detail: dict[str, str] = {}
         # How many watched devices each failed entry carried when it was
-        # announced, so its recovery says the same (rule UP-11).
+        # announced, so its recovery says the same (rule UP-10).
         self._integration_behind: dict[str, int] = {}
         # Each announced entry's integration, so an entry deleted while
         # down can still be closed under its name.
@@ -825,8 +822,6 @@ class DeviceSentinelCoordinator(
         # should be told the network is back while the settle is
         # still holding its casualties off the list.
         self._wifi_recovering_at: float | None = None
-        # Whether each claimed device read down on the last sweep, so
-        # a device coming back can reset the settle.
         # device_id -> (outage start, when it was handed back), for
         # devices still down when an outage closed (rule UP-08).
         self._wifi_handback: dict[str, tuple[float, float]] = {}
@@ -870,13 +865,6 @@ class DeviceSentinelCoordinator(
         self._wifi_retry_pending = False
         self._wifi_medium_census: dict[str, int] = {}
         self._wifi_wired_skipped: list[str] = []
-        # What each tracker was last judged to be while it was home.
-        # Survives a rebuild that happens mid outage, which a live
-        # reading does not.
-        # Readings the medium scoring discarded this session, per
-        # tracker. The scores themselves live in storage under
-        # DATA_WIFI_MEDIUM (rule UP-14).
-
         # The last_updated stamp last counted per tracker, so a
         # reading is scored once per state update rather than once
         # per look at the state.
@@ -891,7 +879,7 @@ class DeviceSentinelCoordinator(
         # on, and dropped at the fold when one goes off.
         self._study_shapes: dict[str, dict[str, dict]] = {}
         # What each studied stack's nodes last said, so a line is
-        # written when that changes (rule STACK-11).
+        # written when that changes (rule STACK-12).
         self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
         # When each node was first seen in its state, each Hue light's
         # last on or off, and each bridge's or cloud's recent state
@@ -916,7 +904,7 @@ class DeviceSentinelCoordinator(
         # probe tick; None until the first tick (rule STACK-12).
         self._probe_wifi_down: bool | None = None
         # Z-Wave node event subscriptions, each controller's counters
-        # at the last fold, and the Thread border routers (rule STACK-11).
+        # at the last fold, and the Thread border routers (rule STACK-12).
         self._zwave_listeners: dict[tuple[int, str], list[Any]] = {}
         self._zwave_counters: dict[str, dict[str, int]] = {}
         self._thread_discovery: Any = None
@@ -924,7 +912,7 @@ class DeviceSentinelCoordinator(
         self._thread_failed = False
         self._thread_routers: dict[str, tuple[str, str, str]] = {}
         self._meshcop_names: dict[str, str] = {}
-        # Firmware versions seen but not yet held through a fold, by
+        # Firmware versions seen but not yet held ten minutes, by
         # device, with the time each first appeared. Memory only, so
         # a restart forgets a version that never held (rule DEV-15).
         self._firmware_candidates: dict[str, tuple[str, float]] = {}
@@ -1264,17 +1252,12 @@ class DeviceSentinelCoordinator(
             # now (rule STOR-19).
             if not isinstance(loaded.get(DATA_HISTORY_LINE), (int, float)):
                 loaded[DATA_HISTORY_LINE] = fold_line()
-            # The dry-run outbox was retired once the
-            # notifications it previewed had been sending for
-            # several releases. Drop what an older install stored,
-            # so nobody carries a dead key or its bytes.
+            # The dry-run outbox is a retired key: dropped, so no save
+            # carries it (rule STOR-19).
             loaded.pop("outbox", None)
-            # An earlier release renamed the cause an unobserved recovery
-            # carries, and
-            # the entries already stored kept the old wording, which the
-            # composer then failed to recognize and rendered as "revived
-            # by a on its own". Rewritten here so the fleet's history
-            # speaks one vocabulary rather than two.
+            # Incidents stored with the old name for an unobserved
+            # recovery take the current one, since the composer knows
+            # only the current name (rule STOR-19).
             for entry in loaded.get(DATA_INCIDENTS) or []:
                 if not isinstance(entry, dict):
                     # Damage, which the gate repairs after the
@@ -1287,15 +1270,14 @@ class DeviceSentinelCoordinator(
             # And the same treatment for the four kinds renamed later,
             # for the same reason (rule LIST-02).
             self._rename_stored_kinds(loaded)
-            # And the option keys those four kinds' neighbour carries:
-            # a settings-changed row names keys, and the brief resolves
-            # each to its screen label (rule MUTE-10).
+            # And the renamed option keys: a settings-changed row names
+            # keys, and the brief resolves each to its screen label
+            # (rule BRIEF-07).
             self._rename_stored_option_keys(loaded)
-            # The list is engine-owned. Anything stored without a
-            # device_id is a hand-typed item from the pre-sync backbone
-            # (the create feature is gone with this release) and is
-            # purged, so every install lands on a list the sync alone
-            # maintains. Engine items gain the new fields in place.
+            # Device Sentinel owns the list. An item stored without a
+            # device id was typed by hand and is removed, so the list
+            # holds only what the detections write; the rest gain any
+            # missing fields in place (rule LIST-01).
             engine_items = [
                 record
                 for record in loaded[DATA_TODO_ITEMS]
@@ -1315,15 +1297,10 @@ class DeviceSentinelCoordinator(
             for record in engine_items:
                 record.setdefault(TODO_KINDS, {})
                 record.setdefault(TODO_ACKED_AT, None)
-            # The hot file is merged here, and the position is
-            # deliberate. Three of the clock fields are among
-            # what the statistics epoch below wipes, so merging after it
-            # would hand those fields straight back and a declared epoch
-            # would quietly fail to take. Merging first means the wipe
-            # still has the last word.
-            #
-            # One field overlapping would be reason enough for this order
-            # (rule STOR-19).
+            # The clocks file is merged before the statistics epoch,
+            # because three clock fields are among what the epoch wipes:
+            # merged after it, they would come straight back and the
+            # wipe would not take (rule STOR-19).
             # The marker the retired one-time backup wrote. It names a
             # copy this version never takes, so it is dropped rather than
             # carried forever in every save. Any epoch markers beside it
@@ -1388,17 +1365,16 @@ class DeviceSentinelCoordinator(
             # the merge, never healed (rule STOR-10): it rebuilds itself
             # within a day, so a damaged one is treated exactly like a
             # missing one. Damage means a value of the wrong shape or a
-            # record that is not a record; a merely missing field is not
-            # damage, because that is what a version upgrade that adds a
-            # clock field looks like on its first boot, and discarding a
-            # whole fleet's clocks for it would turn every upgrade into a
-            # fleet-wide clock reset. Missing-field faults keep their old
-            # path: latched and reported, never a reason to discard.
+            # record that is not a record; a missing field is not damage,
+            # because that is how an upgrade adding a clock field looks
+            # on its first start, and discarding the file for it would
+            # restart every device's clock at each upgrade. A missing
+            # field is latched and reported, never a reason to discard.
             clock_faults = check_clocks((hot_payload or {}).get("clocks"))
             # A damaged saved outage start is that one field's loss, not
             # the file's: it is cleared, and the device's next outage
             # starts afresh, because discarding the whole file for it
-            # would restart every device's clock (rule UNAV-04).
+            # would restart every device's clock (rule STOR-10).
             for device_id, field, why in list(clock_faults):
                 if field == DEV_DOWN_SINCE and why != "missing":
                     row = ((hot_payload or {}).get("clocks") or {}).get(device_id)
@@ -1431,12 +1407,9 @@ class DeviceSentinelCoordinator(
                 )
             if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
                 # A copy of both files before anything is destroyed. An
-                # epoch bump is the one operation in the integration that
-                # deletes learned data with nothing behind it, and there
-                # is no raw layer to rebuild from: readings are folded
-                # into a daily figure as they arrive and never stored. So
-                # it gets the same protection the clock strip has
-                # (rule STOR-19).
+                # epoch change deletes learned data with nothing to
+                # rebuild it from, since readings are folded into a daily
+                # figure as they arrive and never stored (rule STOR-19).
                 # False means it could not copy, and a caller about to
                 # delete must treat that as a stop: doing nothing is
                 # harmless, wiping without a copy cannot be undone. The
@@ -1469,7 +1442,7 @@ class DeviceSentinelCoordinator(
                                 record[DEV_DAILY_DATES] = None
                         wiped += 1
                     loaded[DATA_STATS_EPOCH] = STATS_EPOCH
-                    # A wiped fleet has no missed day to fold: the
+                    # A wiped house has no missed day to fold: the
                     # day's longest gap so far, which the fold would append, belongs to
                     # the rhythm this wipe just declared invalid, and
                     # appending it hands back what the wipe removed
@@ -1506,9 +1479,8 @@ class DeviceSentinelCoordinator(
             # directions, so a field joining the schema reaches every
             # existing record as surely as a leaving one is removed
             # (rule STOR-19).
-            # The two backup markers were written by earlier releases,
-            # whose one-shot copies have long since been taken. Dropping
-            # them here keeps a retired key from riding every save.
+            # Two retired backup markers are dropped, so no save carries
+            # them.
             loaded.pop("pre_split_backup_taken", None)
             loaded.pop("phase_b_backup_taken", None)
             # Before the reconciler, which is the last moment the legacy
@@ -1572,7 +1544,7 @@ class DeviceSentinelCoordinator(
                             alt_swept += 1
             if alt_swept:
                 LOGGER.info(
-                    "Signal erasure (ruling #322): removed %d retired "
+                    "Signal erasure: removed %d retired "
                     "field(s) from second-scale blocks",
                     alt_swept,
                 )
@@ -1600,8 +1572,8 @@ class DeviceSentinelCoordinator(
             if raw:
                 LOGGER.info(
                     "%d device(s) report Zigbee's raw battery scale of 0 "
-                    "to 200; their stored levels were halved to percent "
-                    "(ruling #545): %s",
+                    "to 200; their stored levels were halved to percent"
+                    ": %s",
                     len(raw),
                     ", ".join(raw[:5]),
                 )
@@ -1609,7 +1581,7 @@ class DeviceSentinelCoordinator(
             if held:
                 LOGGER.info(
                     "%d learned gap(s) were longer than the %d days kept "
-                    "and are held at %d days (ruling #543)",
+                    "and are held at %d days",
                     held,
                     self.retention_days,
                     self.retention_days,
@@ -1769,8 +1741,7 @@ class DeviceSentinelCoordinator(
         if capped[0]:
             LOGGER.info(
                 "%d learned gap(s) on %d device(s) exceeded the time the "
-                "device has been watched and were forgotten (rulings "
-                "#403 and #549)",
+                "device has been watched and were forgotten",
                 capped[0], capped[1],
             )
         self._orphan_episodes = self._count_orphan_episodes(loaded)
@@ -1784,12 +1755,9 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
-        # Is this start an upgrade? Read before the marker is moved
-        # on, because the answer is the difference between what the
-        # file says and what is running. An integration that has just
-        # updated is the moment new diagnostics arrive turned off,
-        # which is the one condition the disabled-entities Repair is
-        # written for (rule REP-02).
+        # Whether this start is an upgrade, read before the stamp moves
+        # on, so the log can name the version that last wrote storage
+        # (rule GEN-10).
         self._version_changed = (
             loaded.get(DATA_LAST_VERSION) != self.version
         )
@@ -1826,19 +1794,14 @@ class DeviceSentinelCoordinator(
         # restoring it. An install upgraded from an older release may
         # still carry one; removed here (rule STOR-19).
         await async_delete_clocks_last_good(self.hass)
-        # Both files stamped, and stamped here rather than at the
-        # first later save. Setup writes storage through the same
-        # seam as every later save (rule STOR-06), and an unstamped
-        # main file beside a stamped hot one is a pair the merge
-        # cannot compare, so it would decline and every clock written
-        # between this moment and the first critical save would be
-        # dropped at the next restart. Writing the stamp now closes
-        # that window to nothing.
+        # Both files are stamped now, through the same checked save as
+        # every later one (rule STOR-06), because an unstamped main file
+        # beside a stamped clocks file is a pair the merge cannot
+        # compare, and the clocks written before the first critical
+        # save would be lost at the next restart.
         await self._save_main()
-        # The hot file is written here too, not only on later
-        # saves, or it did not exist until the first coalesced write
-        # up to a window later and a system restarting inside that
-        # window would never produce one at all.
+        # The clocks file is written now too, so a restart inside the
+        # first write interval still finds one (rule STOR-02).
         await self._clock_store.async_save(self._clocks_to_save())
         self.storage_healthy = True
         # The stamp survives restarts by living on the file rather
@@ -1851,20 +1814,19 @@ class DeviceSentinelCoordinator(
         )
 
         self._rebuild_registry_view(audit=True)
-        # Battery Last Replaced entries are stored before a catch-up fold
-        # can detect a new cell over a replacement not yet stored (found
-        # by review).
+        # Battery Last Replaced entries are stored first, so a catch-up
+        # fold cannot detect a new cell over a replacement not yet
+        # stored (rule BAT-07).
         self._settle_battery_entries()
         await self._fold_if_a_midnight_was_missed()
-        # A router integration seen for the first time is excluded
-        # once, ever, as is Music Assistant or a television
-        # integration (rule MUTE-02). After the registry view, because
-        # the sighting reads the registry, and before the readers
-        # start, so the exclusion is in force for this session rather
-        # than only the next one. After the catch-up fold, so a restart
-        # that spans midnight does not discard the newly excluded
-        # devices' history at once: it goes at the next midnight, as the
-        # brief says.
+        # A router integration seen for the first time, or Music
+        # Assistant or a television integration, is excluded on a new
+        # install and offered on the Recommendations tab on a house that
+        # already exists, once, ever. It runs after the registry view,
+        # which it reads, and before the readers start, so an exclusion
+        # holds for this session; and after the catch-up fold, so a
+        # restart across midnight does not discard the newly excluded
+        # devices' history at once (rule MUTE-02).
         await self._sight_router_integrations()
 
         # The recoveries held inside the last run's grace come back
@@ -1891,9 +1853,8 @@ class DeviceSentinelCoordinator(
             )
         )
         # A command to a watched device's entity, from a device card,
-        # a script or an automation (rule FRZ-19). The first
-        # time Device Sentinel sees a hand on a device: a report that
-        # follows one clears a freeze verdict and teaches nothing.
+        # a script or an automation: a report that follows one clears a
+        # freeze verdict and teaches nothing (rule FRZ-19).
         self._unsubs.append(
             self.hass.bus.async_listen(
                 EVENT_CALL_SERVICE,
@@ -1978,8 +1939,8 @@ class DeviceSentinelCoordinator(
         # before: the detections are rebuilt by the pass, so the sync
         # sees the same problems it saw before the reboot and a
         # still-present problem keeps its item (and its checkbox). A
-        # sync against not-yet-judged lists would read as a fleet-wide
-        # recovery and mass-delete the list at every boot. The write
+        # sync against not-yet-judged lists would read as a house-wide
+        # recovery and empty the list at every start. The write
         # itself waits a few lines, until the readers are up and the
         # remembered upstream state is back (rule UP-04).
 
@@ -2006,15 +1967,11 @@ class DeviceSentinelCoordinator(
         # (rule UP-04).
         self._sync_problem_list()
 
-        # A maintenance window that was open when the process stopped
-        # died with it, correctly, since the window is deliberately
-        # in-memory (rule FRZ-18). But its opening row is persisted, and
-        # an events log where every other pair closes must not carry
-        # one open forever, so the close is written here, before this
-        # session's restart row, stamped at the restart because the
-        # stop is when the declaration actually ended. Duration is
-        # left unknown: the wall time between the press and the stop
-        # is not how long the window stood if the machine was off.
+        # A maintenance window open at the stop ended with it, since the
+        # window lives in memory, but its opening row is stored, so its
+        # closing row is written here, before the restart row and dated
+        # at the restart. Its length is left unknown, because the host
+        # may have been off for part of it (rule FRZ-18).
         if self._started_at is not None:
             self._close_dangling_maintenance(self._started_at)
 
@@ -2027,9 +1984,9 @@ class DeviceSentinelCoordinator(
             when=self._started_at,
         )
         if self._pending_unclean is not None:
-            # A reader meeting a fleet whose clocks all restart at one
-            # moment needs the reason sitting above them, or the reset
-            # is an unexplained jump (rule FRZ-20).
+            # Every clock restarting at one moment needs its reason
+            # beside it, or the reset reads as an unexplained jump
+            # (rule FRZ-20).
             self._record_system_event(
                 SYS_UNCLEAN_RESTART,
                 detail=f"{self._pending_unclean} devices reset",
@@ -2078,7 +2035,7 @@ class DeviceSentinelCoordinator(
             # Rotation is off after a repair, so the last good file
             # stays as it was; a move from the old power file in the
             # same load armed it, so it is turned off here. Every write
-            # arms it again (rule STOR-04).
+            # arms it again (rule STOR-20).
             self._answers_rotation_armed = False
             self._answers_save()
 
@@ -2135,12 +2092,12 @@ class DeviceSentinelCoordinator(
             )
             return None
         except Exception:  # noqa: BLE001 - a report is never worth the tick
-            # Each report is already guarded on its own (rule STOR-06); this is
+            # Each report is already guarded on its own (rule CODE-06); this is
             # the brief, or the writer around them. The midnight fold and
             # the brief's send carry on without it.
             LOGGER.exception(
                 "Device Sentinel could not write its reports (%s); the "
-                "tick carries on (ruling #544)",
+                "tick carries on",
                 trigger or "midnight",
             )
             return None
@@ -2203,27 +2160,21 @@ class DeviceSentinelCoordinator(
         if self._brief_unsub is not None:
             self._brief_unsub()
             self._brief_unsub = None
-        # The clean-stop marker belongs here as much as on the stop
-        # event (rule FRZ-20). An entry unload is every orderly ending that
-        # is not a shutdown: a settings change, a reload, a HACS
-        # update, the integration being disabled. None of those fires
-        # EVENT_HOMEASSISTANT_STOP, so a marker written only there
-        # would make an options change read as a power cut on the
-        # next load and reset the whole fleet's clocks. What the flag
-        # records is that the integration was asked to stop, not which
-        # door it left by.
+        # The clean-stop marker is written here as well as on the stop
+        # event, because an unload (a settings change, a reload, an
+        # update, the integration disabled) fires no
+        # EVENT_HOMEASSISTANT_STOP, and would otherwise read as an
+        # unclean stop and restart every device's clock (rule FRZ-20).
         self.data[DATA_CLEAN_STOP] = True
         # A Wi-Fi outage still open is stored as it stands at the stop,
         # its worst count and announcements included, so the next start
         # resumes it whole (rule UP-04).
         self._remember_wifi_outage()
-        # Unconditional. A routine save writes the hot
-        # file alone and clears the dirty flag, so a stop that waited
-        # for a flag would leave the main file behind by however long
-        # since the last critical change. Writing the pair here bounds
-        # that to one session and means a clean stop always leaves two
-        # files that agree, which is what makes going back to an older
-        # version safe (rule STOR-19). A restore happens at load,
+        # Unconditional. A routine save writes the clocks file alone and
+        # clears the dirty flag, so a stop that waited for the flag
+        # would leave the main file behind; writing both here means a
+        # clean stop always leaves two files that agree (rule STOR-02).
+        # A restore happens at load,
         # before the session reads anything, and the session runs on
         # the restored copy, so its save is the right one (rule
         # STOR-09).
@@ -2344,7 +2295,7 @@ class DeviceSentinelCoordinator(
         identifier of an unexpected shape would otherwise leave it in
         setup_error. A device whose entry cannot be read is answered
         None for that question, stays watched, and is named in one
-        warning per start (rule CODE-09).
+        warning per start.
         """
         try:
             return question(domain, device)
@@ -2484,12 +2435,9 @@ class DeviceSentinelCoordinator(
                 stacks.add(stack)
             if domain in excluded_integrations or device.id in excluded_devices:
                 # The person asked for this integration, or this one
-                # device, never to be watched, so their reason is the one recorded even
-                # where another would also fit. Everything else on
-                # this ladder is a fact about the device; this is a
-                # decision about it, and a decision outranks a fact
-                # when the question is why you cannot see something
-                # (rule MUTE-03).
+                # device, not to be watched, so that reason is recorded
+                # even where another would also fit: a person's decision
+                # outranks a fact about the device (rule WATCH-03).
                 set_aside[device.id] = (name, domain, SET_ASIDE_EXCLUDED)
                 continue
             if device_field(device, "entry_type") is dr.DeviceEntryType.SERVICE:
@@ -2538,7 +2486,9 @@ class DeviceSentinelCoordinator(
             # so the reason recorded is the one that would survive a
             # prune. The integration test uses the primary domain, so
             # an integration mute catches only devices it owns,
-            # never multi-homed hardware it merely sees.
+            # never multi-homed hardware it merely sees. A muted label
+            # mutes the device that carries it, never an entity, since
+            # Device Sentinel judges devices (rule MUTE-05).
             if domain in muted_integrations:
                 muted_devices[device.id] = "integration"
             elif muted_labels & set(device.labels or ()):
@@ -2546,9 +2496,6 @@ class DeviceSentinelCoordinator(
             elif device.id in muted_device_ids:
                 muted_devices[device.id] = "device"
 
-        # One piece of hardware shown as several devices: every watched
-        # copy but the one that reaches the hardware most directly is
-        # set aside, so it is judged once (rule WATCH-06).
         # What other devices hang from, for the Type row: a device
         # others reach Home Assistant through is a hub, and an ESPHome
         # device with a Bluetooth adapter of its own registered under
@@ -2560,7 +2507,10 @@ class DeviceSentinelCoordinator(
             via for d in all_devices
             if (via := device_field(d, "via_device_id")) and self._primary_domain(d) == "bluetooth"
         }
-        copy_of = self._find_hardware_copies(all_devices, watched, ent_reg)
+        # One piece of hardware shown as several devices: every watched
+        # copy but the one that reaches the hardware most directly is
+        # set aside, so it is judged once (rule WATCH-06).
+        copy_of =self._find_hardware_copies(all_devices, watched, ent_reg)
         for copy_id, kept in copy_of.items():
             set_aside[copy_id] = (
                 device_names.pop(copy_id, copy_id),
@@ -2694,17 +2644,10 @@ class DeviceSentinelCoordinator(
                         unheld_own.add(ent.entity_id)
                     else:
                         held_keys[ent.entity_id] = ent.id
-            # A muted label mutes the device that carries it, never an
-            # entity, because Device Sentinel judges devices, and a
-            # label on one entity is often put there for a dashboard or
-            # a voice assistant. Disabling the entity in Home Assistant
-            # is the way to take one entity out (rule MUTE-05).
-            # A switched-off Last Seen has no state, so taking it as the
-            # clock left every report reading as a clock that had not
-            # moved: the device was never heard. It counts as none, and
-            # the device is timed by when its reports arrive; the Last
-            # Seen Sensor Switched Off card still finds it in the
-            # registry (rule WATCH-01).
+            # A switched-off Last Seen has no state, so it is not the
+            # clock: the device is timed by when its reports arrive, and
+            # the Last Seen Sensor Switched Off card still finds it in
+            # the registry (rule WATCH-01).
             if ent.disabled_by is None and self._is_last_seen(ent):
                 if last_seen_entity.get(ent.device_id) is None or (
                     own and not last_seen_own.get(ent.device_id, False)
@@ -2789,11 +2732,9 @@ class DeviceSentinelCoordinator(
             )
             device_names.pop(device_id, None)
 
-        # The name the brief and the railed-signal rows print: the plain
-        # name. It once carried the integration where a name was shared,
-        # "Bluetooth Proxy (esphome)"; the integration belongs on the
-        # Settings lists alone, once, and the brief and the dashboard
-        # keep the plain name (rule DEV-04).
+        # The name the brief and the railed-signal rows print is the
+        # plain name; the integration is added on the Settings lists
+        # alone (rule DEV-04).
         display_names = dict(device_names)
 
         self._display_names = display_names
@@ -2812,7 +2753,7 @@ class DeviceSentinelCoordinator(
         self._rebuild_hubs(all_devices)
         # A hub muted from everything mutes the devices it controls
         # with it. Derived here, never saved, so unmuting the hub
-        # unmutes them, and a device's own mute stands (rule MUTE-04).
+        # unmutes them, and a device's own mute stands (rule STACK-09).
         for member, hub in self._hub_of.items():
             if hub in muted_devices and hub in watched:
                 muted_devices.setdefault(member, "hub")
@@ -2861,8 +2802,8 @@ class DeviceSentinelCoordinator(
         self._node_status_ids = set(node_status_entity.values()) | stack_words
         self._device_entries = device_entries
         # Another integration's signal reading is used only where the
-        # device has none of its own (rule WATCH-02): both fed the one
-        # series before, so two scales mixed in one day.
+        # device has none of its own, since feeding both into one series
+        # would mix two scales in one day (rule WATCH-02).
         with_own = {signal_device_of[e] for e in signal_own_entities if e in signal_device_of}
         signal_entities = {
             e for e in signal_entities
@@ -2874,7 +2815,7 @@ class DeviceSentinelCoordinator(
         # Kept so the diagnostics can say which reading each device
         # is using and whether it is the device's own, so a series that
         # changed source can be told from a cell that was changed (rule
-        # BAT-01).
+        # WATCH-02).
         self._battery_own = battery_own
         self._last_seen_own = last_seen_own
         self._signal_own_entities = signal_own_entities
@@ -3102,8 +3043,8 @@ class DeviceSentinelCoordinator(
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=dt_util.UTC)
         # Never ahead of now: a device clock running fast would
-        # otherwise push our clock into the future and suppress every
-        # gap behind it.
+        # otherwise push the device's clock into the future and hide
+        # every gap behind it (rule FRZ-11).
         return min(parsed.timestamp(), now)
 
     def _seed_from_last_seen(self, device_id: str) -> float | None:
@@ -3736,8 +3677,8 @@ class DeviceSentinelCoordinator(
         nothing, and neither does an absence on a device already
         tainted.
 
-        The taint carries the reason rather than a flag, so a muted gap
-        says what the device actually did (rule FRZ-14). A taint raised
+        The taint carries the reason rather than a flag, so a gap set
+        aside says what the device actually did (rule FRZ-14). A taint raised
         inside the startup grace window is held in the grace set
         instead of logged, so the grace release can tell the two apart.
         """
@@ -3750,7 +3691,7 @@ class DeviceSentinelCoordinator(
         # Device Sentinel's own stops inside the absence are not the
         # device's, as for a gap: an entity written unavailable as Home
         # Assistant shuts down and back as it starts is a restart, not
-        # an outage (rules UP-06, UNAV-04).
+        # an outage (rules UP-06, FRZ-14).
         gone = now - began - self._stopped_within(began, now)
         if began <= self._taint_consumed_at.get(device_id, 0.0):
             return
@@ -3972,7 +3913,7 @@ class DeviceSentinelCoordinator(
         fetches its readings from the device itself (FETCHING_INTEGRATIONS),
         whose reading is the device answering. And one Device Sentinel
         had judged unavailable: its stack now saying it is available is
-        a genuine recovery (rule UNAV-05).
+        a genuine recovery (rule UP-06).
         """
         if old_state is None or old_state.state not in BAD_STATES:
             return False
@@ -4144,7 +4085,7 @@ class DeviceSentinelCoordinator(
 
         A device with no Last Seen clock is heard whenever anything
         arrives, so the question does not arise and the reading
-        counts, as it did. So does one still learning its rhythm,
+        counts. So does one still learning its rhythm,
         which has no window to be overdue against.
         """
         if device_id not in self._last_seen_entity:
@@ -4191,9 +4132,8 @@ class DeviceSentinelCoordinator(
                 # float() accepts nan, inf, -inf, infinity and 1e999
                 # and raises on none of them, and ESPHome and MQTT
                 # sensors publish nan for a reading that failed. One
-                # such value would reach the day's extremes and the P2
-                # estimator, and every statistic computed from them
-                # afterwards would be nan. A reading that is not a
+                # such value would reach the day's statistics, and every
+                # figure worked out from them would be nan. A reading that is not a
                 # finite number is not a reading (rules SIG-04, BAT-02).
                 LOGGER.debug(
                     "device_sentinel: %s reported %s, which is not a "
@@ -4235,8 +4175,8 @@ class DeviceSentinelCoordinator(
         if stamp is None or (last is not None and stamp <= last):
             # The protocol clock has not moved, so this event carries
             # no evidence that the device spoke: a republish, a
-            # restored state, or an entity of ours reacting to
-            # something else. Count it as seen and change nothing
+            # restored state, or an entity reacting to something
+            # else. Count it as seen and change nothing
             # about liveness. The silence keeps running, which is
             # what makes the muting rules unnecessary here.
             record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
@@ -4292,8 +4232,8 @@ class DeviceSentinelCoordinator(
             )
 
         # A taint is consumed by a stamp the protocol vouches for:
-        # the outage ended here, and the spanning gap is muted
-        # because it covers time we could not observe.
+        # the outage ended here, and the gap across it is set aside
+        # because Device Sentinel could not hear all of it (rule FRZ-14).
         tainted = record[DEV_TAINTED]
         taint_seconds = None
         if tainted:
@@ -4327,14 +4267,13 @@ class DeviceSentinelCoordinator(
             if stopped > 0.0:
                 learned_gap = max(0.0, gap - stopped)
                 downtime_note = LEARNED_DOWNTIME_OUT
-            # No cap on a gap that ends under a freeze verdict (rule
-            # FRZ-12): the Trimmed Maximum sets
-            # aside its longest day and the Log-Normal Percentile its
-            # days far above normal, so a single long day cannot
-            # stretch the wait in use. A device that goes quiet for
-            # long spells on most days does learn them: a slow reporter
-            # learns the quiet spells it really has. A hand on the device is read below, from
-            # the command that preceded the report.
+            # No cap on a gap that ends under a freeze verdict: the
+            # Trimmed Maximum sets aside its longest day and the
+            # Log-Normal Percentile its days far above normal, so one
+            # long day cannot stretch the wait in use, and a slow
+            # reporter learns the quiet spells it really has (rule
+            # FRZ-12). A hand on the device is read below, from the
+            # command that preceded the report.
             # Held at the retention (rule FRZ-13): a silence longer
             # than the history kept is learned as the retention and
             # shown as more than it.
@@ -4391,9 +4330,9 @@ class DeviceSentinelCoordinator(
             # The device was set aside for part of this gap, so the
             # silence is a disabled entity or integration rather than
             # the device's own rhythm (rule FRZ-15). Same treatment as
-            # pairing and maintenance: refused and retracted, so a
-            # two weeks switched off cannot teach a two-week
-            # window of normal silence. The stamp is cleared by the
+            # pairing and maintenance: refused and retracted, so two
+            # weeks switched off cannot teach a two-week window of
+            # normal silence. The stamp is cleared by the
             # device's own report, below.
             learned = LEARNED_DISABLED
             if not tainted and learned_gap is not None:
@@ -4479,9 +4418,8 @@ class DeviceSentinelCoordinator(
 
         # Recovery is live: a device the protocol has heard from is
         # alive, so any standing freeze verdict clears the instant it
-        # speaks. A republish no longer clears one, which is the
-        # behaviour that let a four-second bridge blip erase a
-        # nine-hour silence.
+        # speaks. A republish does not clear one, or a few seconds'
+        # bridge blip would erase hours of silence (rule FRZ-11).
         self._clear_freeze_verdict(device_id, record)
 
     # ------------------------------------------------------------ timers
@@ -4529,15 +4467,14 @@ class DeviceSentinelCoordinator(
         if self.data.get(DATA_BRIEF_CLOSED_DAY) == today:
             LOGGER.info(
                 "device_sentinel: the brief for %s was already sent; "
-                "a second firing in a repeated hour sends nothing "
-                "(ruling #539)",
+                "a second firing in a repeated hour sends nothing",
                 today,
             )
             return
         # Dirty, not critical: the day is read again an hour later at
         # the earliest, in the repeated hour, and a routine save writes
-        # it long before then. Forcing a write here raced the minute
-        # check's own save when both fell on the brief minute.
+        # it long before then. Forcing a write here would race the
+        # minute check's own save when both fall on the brief minute.
         self.data[DATA_BRIEF_CLOSED_DAY] = today
         self._dirty = True
         text = await self._write_reports_guarded(BRIEF_TRIGGER)
@@ -4545,8 +4482,8 @@ class DeviceSentinelCoordinator(
             await self.async_send_brief(text)
         # After the send, not before it, so a Repair raised here
         # cannot delay or fail the delivery it travels beside
-        # (rule REP-07). The fold keeps the storage shape check,
-        # the copy, and the heal; only the judging moved.
+        # (rule REP-07). The fold still runs the storage shape check,
+        # the copy and the repair; only the judging is here.
         self._evaluate_repairs(REPAIR_MOMENT_BRIEF)
 
     @staticmethod
@@ -4561,8 +4498,8 @@ class DeviceSentinelCoordinator(
         paused or suspended reads the same way, because the monotonic
         clock stops with it: a virtual machine paused for a backup
         comes back with its wall clock ahead. Nobody was watching in
-        either case, so both restart the clocks, and the card names
-        both. Between one minute check and the next the wall clock and
+        either case, so both restart the clocks, and the system event
+        names both. Between one minute check and the next the wall clock and
         a monotonic clock
         advance together; when they disagree by more than the
         threshold, the wall clock was set. Backward, every report is
@@ -4620,7 +4557,7 @@ class DeviceSentinelCoordinator(
                 isinstance(since, (int, float)) and not isinstance(since, bool)
             ):
                 # Clearly past its window, so the verdict holds on
-                # this check and every one after it (rule STOR-10).
+                # this check and every one after it (rule FRZ-21).
                 record[DEV_LAST_ACTIVITY] = (
                     wall - self._lost_clock_window(record) - 60.0
                 )
@@ -4654,8 +4591,8 @@ class DeviceSentinelCoordinator(
         )
         LOGGER.warning(
             "device_sentinel: the system clock moved %s between two "
-            "minute checks; %d device clocks restarted and a Repair "
-            "card raised (ruling #538)",
+            "minute checks; %d device clocks restarted and a system "
+            "event written",
             _shift(drift),
             restarted,
         )
@@ -4756,8 +4693,7 @@ class DeviceSentinelCoordinator(
             return
         LOGGER.info(
             "device_sentinel: the brief time %02d:%02d does not exist "
-            "today, the clock skipped it; closing the brief now "
-            "(ruling #539)",
+            "today, the clock skipped it; closing the brief now",
             hour,
             minute,
         )
@@ -5087,7 +5023,7 @@ class DeviceSentinelCoordinator(
 
         Instead the clock restarts honestly, the path an unclean
         restart already takes: set to now, taint cleared because the
-        gap that taint was waiting to mute no longer exists. No
+        gap that taint was waiting to set aside no longer exists. No
         silence is banked into today's maximum, because a value that
         carries no information gives nothing to measure the silence
         from; the difference from the unclean-restart path is that
@@ -5442,8 +5378,8 @@ class DeviceSentinelCoordinator(
         that spans 00:00 means it never fires and nothing notices.
         Yesterday's accumulated maximum then merges into today and
         the next fold records one sample spanning both days, no
-        battery level is sampled for the missed day, and the whole
-        fleet loses a day of learning silently. A person who reboots
+        battery level is sampled for the missed day, and every device
+        loses a day of learning silently. A house that restarts
         nightly at midnight would lose it every night (rule STOR-17).
 
         Judged on the local date of the last save against today's,
@@ -5474,8 +5410,7 @@ class DeviceSentinelCoordinator(
         LOGGER.info(
             "Storage was last saved on %s and today is %s, so a "
             "midnight passed while Device Sentinel was not running; "
-            "folding the missed day once before resuming "
-            "(ruling #406)",
+            "folding the missed day once before resuming",
             last.isoformat(),
             today.isoformat(),
         )
@@ -5488,8 +5423,9 @@ class DeviceSentinelCoordinator(
 
         Today's gaps, signal statistics and battery level join their
         daily series, every series is held to the retention (rule STOR-14),
-        the day's storm tally and the shadow's daily line are
-        written, and the reports are rewritten for the new day.
+        the day's storm tally and the daily count of each wait rule
+        in use are written, and the reports are rewritten for the new
+        day.
         """
         now = dt_util.utcnow().timestamp()
         # The day being folded (rule STOR-16): the day that just
@@ -5616,11 +5552,9 @@ class DeviceSentinelCoordinator(
         # No midnight verify: every row in memory arrived through the
         # gate or the seam, and the save that just ran checked the
         # whole outgoing document (rule STOR-06).
-        # The evidence directory is bounded by the same retention
-        # setting as every daily series, one retention idea rather
-        # than two (rule STOR-13). No file is special: a copy older
-        # than the window describes a fleet state older than anything
-        # the integration still remembers.
+        # Each copy in trim_backups is deleted 30 days after it was
+        # taken, except the newest, which is kept for the full History
+        # retention (rule STOR-13).
         pruned = await async_prune_backups(
             self.hass,
             int(
@@ -5804,8 +5738,8 @@ class DeviceSentinelCoordinator(
         The freeze sweep runs here rather than on a per-device timer:
         at 60-second granularity a window that closes is caught within
         a minute, which is immaterial against windows of minutes to
-        hours, and one sweep is simpler than 125 scheduled callbacks
-        to cancel and re-arm. Detection is still live in the sense
+        hours, and one sweep is simpler than a scheduled callback per
+        device to cancel and re-arm. Detection is still live in the sense
         that matters, a freeze shows on the next tick after its window
         closes, and clears the instant the device reports (that half
         runs in the report path, not here).
@@ -5865,8 +5799,8 @@ class DeviceSentinelCoordinator(
 
         Walks a copy of the list. The Wi-Fi sensor's adder removes
         itself from the list the moment it runs, and removing from the
-        list being walked skipped the listener after it, which on a
-        live system is the problem list, for that one refresh.
+        list being walked would skip the listener after it, the
+        Problem List on a live system, for that one refresh.
         """
         for update_callback in list(self._listeners):
             update_callback()
@@ -5933,7 +5867,7 @@ class DeviceSentinelCoordinator(
         For one device, an area's complete days is
         the length of its shortest series, since a set that gained a
         series yesterday has one day of complete history however deep
-        its older members run; fleet-wide it is the highest of those,
+        its older members run; house-wide it is the highest of those,
         because the question is how long this system has recorded the
         area, not whether every device is mature.
 
@@ -5942,12 +5876,11 @@ class DeviceSentinelCoordinator(
         and it is empty, so it is the shortest, so the area reads zero
         on its own.
 
-        device_days is the fleet's total volume in the area, which is
-        the number a person has otherwise had to read out of
-        diagnostics.
+        device_days is the house's total volume in the area, which a
+        person would otherwise have to read out of the diagnostics.
         """
         # Through watched_records, the one-line rule every surface
-        # follows (rule WATCH-03), which also holds out a record with a
+        # follows (rule WATCH-09), which also holds out a record with a
         # standing shape fault, so a held record whose series is an
         # integer cannot crash this (rule STOR-09).
         devices = [record for _device_id, record in self.watched_records()]
@@ -6083,7 +6016,7 @@ class DeviceSentinelCoordinator(
 
     @property
     def repairs_at_load(self) -> int:
-        """How many fields this session's load repaired."""
+        """How many repairs this session's load made (rule STOR-12)."""
         return self._repairs_at_load
 
     @property
@@ -6097,7 +6030,7 @@ class DeviceSentinelCoordinator(
 
         Read through watched_records rather than the raw store,
         which is the one-line rule every surface follows (rule
-        WATCH-03), so a damaged record cannot reach the coverage
+        WATCH-09), so a damaged record cannot reach the coverage
         sensor and crash it. Such a record is repaired at the gate
         too (rule STOR-09), and the one-line rule still stands here.
         """
@@ -6263,7 +6196,7 @@ class DeviceSentinelCoordinator(
         await self._save_now()
 
     async def async_options_updated(self) -> None:
-        """Re-judge the fleet under new options, live, no restart."""
+        """Re-judge the house under new options, live, no restart."""
         # Home Assistant has already replaced the entry's options by
         # the time this runs, so the comparison is against a copy
         # taken when they were last applied rather than against the
@@ -6273,7 +6206,7 @@ class DeviceSentinelCoordinator(
         after = dict(self.entry.options)
         self._options_seen = after
         # The trim runs before anything re-judges, so the rest of
-        # this method sees the fleet as it is after the deletion
+        # this method sees the house as it is after the deletion
         # rather than judging records that are about to vanish
         # (rule CFG-10).
         await self._apply_trim_selection(after)
@@ -6336,7 +6269,7 @@ class DeviceSentinelCoordinator(
         told to choose; a filter keyed on holding a record would
         hide the case the feature exists for.
 
-        The integration is shown beside the name because a fleet can
+        The integration is shown beside the name because a house can
         carry the same name on two registry devices, and the person
         has to pick the right one first time (rule DEV-04).
         """
@@ -6541,10 +6474,10 @@ class DeviceSentinelCoordinator(
     def _recovered_during_maintenance(self, now: float) -> bool:
         """Return whether a maintenance window is open at this moment.
 
-        Fleet-wide by design (rule FRZ-18): the button is global, and the
+        House-wide by design (rule FRZ-18): the button is global, and the
         cost of the width is one discarded learning sample for a
-        genuine self-recovery that lands inside the person's ten
-        minutes, the same conservative trade pairing already makes.
+        genuine self-recovery that lands inside the window, the same
+        conservative trade pairing makes.
         No grace tail, unlike pairing: the window's end is declared
         rather than observed late, so it is exact.
         """

@@ -105,8 +105,8 @@ _EVENT_WORD = {
     TODO_KIND_LOW_BATTERY: "low",
 }
 # A device problem's push line says what the device did in the Daily
-# Brief's words, "At 3:04 pm, Kitchen Motion stopped reporting.", where
-# it read "was detected frozen" (rules NOTE-01, UNAV-08).
+# Brief's words, "At 3:04 pm, Kitchen Motion stopped reporting." (rules
+# NOTE-01, UNAV-08).
 
 # The kinds whose push line is written rather than assembled from
 # _EVENT_WORD. A battery forecast cannot use the shared shape: "was
@@ -164,9 +164,7 @@ class ProblemListMixin:
         Only rows a consumer can use. A damaged row is repaired out of
         the store at the boundary, so this filter is the readers' own
         safety for a row made some other way; the to-do entity, the
-        sensors and the brief all read through here, the way every
-        record surface reads through watched_records (rules STOR-09,
-        WATCH-03).
+        sensors and the brief all read through here (rule STOR-09).
         """
         return [
             record
@@ -246,12 +244,9 @@ class ProblemListMixin:
                 mark = getattr(self, "_mark_changed", None)
                 if mark is not None:
                     mark()
-                # The checkbox lands on the timeline in both
-                # directions. Recording only the check left a brief
-                # saying a device was acknowledged and never saying
-                # the acknowledgment had been taken back, so the
-                # record told half the story and read as though the
-                # silence still held.
+                # The checkbox lands on the timeline both ways, so the
+                # brief tells an acknowledgment taken back as well as
+                # one given.
                 cause = (
                     ACTION_ACKNOWLEDGED
                     if status == "completed"
@@ -318,10 +313,9 @@ class ProblemListMixin:
         re-add lands in the journal like any other, so it is
         announced again.
 
-        Both halves reach the timeline now. Without the deletion on
-        the record, a reader saw the same device detected twice with
-        nothing between, which reads as a flapping fault rather than
-        as somebody clearing a row that came straight back.
+        The deletion is recorded too, so a device detected twice in a
+        row reads as a person clearing a row that came straight back,
+        not as a flapping fault.
         """
         for record in self.data[DATA_TODO_ITEMS]:
             if record[TODO_UID] not in uids:
@@ -676,8 +670,7 @@ class ProblemListMixin:
         person reads the row rather than the tie table.
 
         A house with no network configured is named for the house,
-        and a house with several names them all. The plural form is
-        untested on a real house.
+        and a house with several names them all.
         """
         if self.wifi_recovering_at is not None:
             return self._wifi_recovering_text(devices)
@@ -819,8 +812,8 @@ class ProblemListMixin:
             phrase = self.reachability_phrase(device_id)
             if phrase:
                 lines.append(phrase)
-        # The item no longer adds that a battery device needs a person
-        # at it, as the push no longer does (rule NOTE-10).
+        # No line says the device runs on a battery, here or in the
+        # push (rule NOTE-10).
         return summary, " ".join(lines)
 
     def _journal_addition(
@@ -848,20 +841,20 @@ class ProblemListMixin:
         """Whether a person's mute is what silenced this kind.
 
         A mute is a person's act, not a recovery: an item or a kind
-        that leaves the list because its device, its freeze or its
-        battery was muted, by device, integration or label, has
-        nothing to announce (rule MUTE-07). Read per kind, because a
-        freeze mute takes only frozen and never reported, the
-        unavailable mute every down kind, and a battery mute only the
-        battery kinds, and the other family on the same item may still
-        be a genuine recovery. A whole-device mute takes every kind.
+        that leaves the list because a mute covers it, by device,
+        integration or label, has nothing to announce (rule MUTE-07).
+        Read per kind, because a freeze mute takes only frozen and
+        never reported, the unavailable mute the other down kinds, and
+        the battery and signal mutes their own family, and the other
+        family on the same item may still be a genuine recovery. Mute
+        everything takes every kind.
         """
         if device_id in getattr(self, "_muted_devices", {}):
             return True
         family = TODO_KIND_FAMILIES.get(kind)
         if family == "down":
             # A freeze mute takes what is judged from silence; the
-            # unavailable mute takes every down kind, dropping out
+            # unavailable mute takes the other down kinds, dropping out
             # included (rule MUTE-06).
             if self._kind_muted_plain(device_id, kind):
                 return True
@@ -906,7 +899,7 @@ class ProblemListMixin:
         missing from the source for a moment while the verdict stands,
         and that absence is not a return: after a restart the grace
         keeps never-reported devices off the source until it closes
-        (rule WATCH-10), and without this hold such devices were told
+        (rule WATCH-10), and without this hold such devices would read
         recovered at every reload. Such an item is held, as a held
         upstream's devices are. A device that is unwatched or muted is
         not, since those do leave the list (rule LIST-09).
@@ -1106,7 +1099,7 @@ class ProblemListMixin:
         because the fault it guards has been overtaken, but nothing is
         announced, since a cell that dropped through the threshold has
         not stopped running down in any sense a person would accept
-        (rule NOTE-10).
+        (rule LIST-07).
         """
         # A drop inside a flap is recorded, never announced: the flap
         # was, once, and will be again when it ends. Otherwise a
@@ -1129,8 +1122,8 @@ class ProblemListMixin:
         when = moment.strftime("%-I:%M %p").lower()
         # The brief's words where they depend on the device: a hub
         # "went down", and a device dropping out says how often, as the
-        # brief does (rules NOTE-01, UNAV-08). The push no longer adds
-        # that a battery device needs a person at it (rule NOTE-10).
+        # brief does (rules NOTE-01, UNAV-08). The push adds no line
+        # that the device runs on a battery (rule NOTE-10).
         said = None
         if not recovery and kind == TODO_KIND_UNAVAILABLE:
             words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
@@ -1138,8 +1131,9 @@ class ProblemListMixin:
         elif not recovery and kind == TODO_KIND_FLAPPING:
             said = self.flap_words(device_id)  # type: ignore[attr-defined]
         elif not recovery and kind == TODO_KIND_LOW_BATTERY:
-            # A low battery reads as the brief says it, "battery fell
-            # to 12%", not "was detected low" (rule NOTE-10).
+            # A low battery reads as the brief says it, "battery
+            # crossed the threshold on <date>. Its current level is
+            # 12%" (rule NOTE-10).
             said = self._battery_phrase(device_id, False)  # type: ignore[attr-defined]
         line = self._event_line(kind, name, when, recovery, left, said)
         if recovery:
@@ -1323,8 +1317,8 @@ class ProblemListMixin:
                     cause=ACTION_REMOVED if removed else ACTION_SET_ASIDE,
                 )
             if withdrawn:
-                # The answer the untick event promises, without the
-                # word "recovered" (rule NOTE-12).
+                # The withdrawal closes the fault on the bus without
+                # the word "recovered" (rule NOTE-12).
                 self.fire_withdrawn(
                     device_id, name, withdrawn,
                     WITHDRAWN_REASON_REMOVED if removed else WITHDRAWN_REASON_SET_ASIDE,
@@ -1429,9 +1423,8 @@ class ProblemListMixin:
                     began = self._silence_began.get(device_id)  # type: ignore[attr-defined]
             elif kind == TODO_KIND_FROZEN:
                 # A freeze that cleared with no report: the wait grew.
-                # Not across a stretch the device was set aside, which
-                # keeps the opening, as the report path does (round
-                # thirteen).
+                # It counts from the last report, unless the record
+                # shows a stretch set aside.
                 devices = self.data.get(DATA_DEVICES) if isinstance(self.data, dict) else None  # type: ignore[attr-defined]
                 record = devices.get(device_id) if isinstance(devices, dict) else None
                 if isinstance(record, dict) and record.get(DEV_SET_ASIDE_SINCE) is None:
@@ -1572,11 +1565,10 @@ class ProblemListMixin:
     ) -> dict[str, Any]:
         """Build the todo row for a device detected for the first time.
 
-        A row a person deleted while the fault still stood comes back,
-        and that return is the list re-adding an item, not the house
-        producing a new fault. Calling it opened put a second opening
-        on a key that already had one pending, which orphaned the
-        first and left a real episode rendering as never resolved.
+        A row a person deleted while the fault still stood comes back
+        as the list re-adding an item, not as a new fault, so it is
+        recorded as a re-addition and opens no second incident on a
+        key that already has one open.
         """
         kinds = {
             kind: (since if since is not None else now)
@@ -1639,7 +1631,7 @@ class ProblemListMixin:
         family = TODO_KIND_FAMILIES.get(kind, kind)
         if family != "down":
             # A battery crossing from running down to low is pushed
-            # (rule NOTE-10): only the not-reporting family is said once.
+            # (rule LIST-06): only the not-reporting family is said once.
             return False
         same = [
             k for k in standing
@@ -1770,11 +1762,10 @@ class ProblemListMixin:
             ):
                 # A row the sync cannot use is carried through
                 # untouched and skipped, never judged and never
-                # dropped: the shape check has named it on the card,
-                # Verify changes nothing (rule STOR-05), and a reader
-                # that raises on it takes the whole list down with
-                # it. Kept as the reader's safety behind the repair at
-                # the storage boundary (rule STOR-09).
+                # dropped, because a reader that raises on it takes
+                # the whole list down. The storage boundary repairs
+                # such a row; this is the reader's own safety (rule
+                # STOR-09).
                 kept.append(record)
                 continue
             device_id = record.get(TODO_DEVICE_ID)
@@ -2084,13 +2075,12 @@ class ProblemListMixin:
 
     @property
     def notification_debounce(self) -> float:
-        """Return the configured notification debounce, as a fraction.
+        """Return the notification debounce, as a fraction.
 
-        Live from options: a fault waits this much of the device's own
-        learned reporting gap before it reaches a phone, so a problem
-        that heals inside the delay is never announced at all (rule
-        NOTE-06). Clamped to the band the screen offers, so a
-        hand-edited entry cannot hold an alert for a week.
+        A fault waits this fixed share of the device's own learned
+        reporting gap before it reaches a phone, so a problem that
+        heals inside the delay is never announced at all (rule
+        NOTE-06).
         """
         return SETTLE_SHARE_PCT / 100.0
 

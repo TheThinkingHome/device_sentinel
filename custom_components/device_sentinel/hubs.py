@@ -37,8 +37,7 @@ stand HUB_DOWN_CONFIRM_SECONDS or more apart, which rides past the
 library's own reconnect of a few seconds; a reading with no opinion
 between them confirms nothing (rule STACK-09). Its entity changes only
 at a restart, so its silence is not judged either. A hub whose
-integration failed to start falls to the integration outage rule
-(rule UP-03).
+integration failed to start reads not connected (rule STACK-09).
 """
 
 from __future__ import annotations
@@ -464,7 +463,7 @@ class HubMixin:
                 "type": self.type_words(member) or device_kind(self._model_text(member)).capitalize(),  # type: ignore[attr-defined]
                 "standing": (
                     # Muted by its hub alone, it says so in those words
-                    # (rule STACK-09).
+                    # (rule STACK-10).
                     "Muted with its hub" if (muted := self.mute_text(member))  # type: ignore[attr-defined]
                     and all("with its hub" in part for part in muted.split("; "))
                     else f"Watched, muted: {muted}" if muted

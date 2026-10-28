@@ -341,9 +341,8 @@ class SignalMixin:
     ) -> bool:
         """Close the day's signal distribution into the daily series.
 
-        Mean and standard deviation are what the Bayesian successor to
-        the current thresholding needs (rule SIG-11), so they are recorded
-        ahead of it: the day's Welford accumulators
+        Mean and standard deviation are what a later judgment will
+        need, so they are recorded ahead of it (rule SIG-01): the day's Welford accumulators
         become one mean and one deviation, the day's maximum rides
         beside them, the P-Square estimators become the
         day's time-weighted 5th percentile and median, and everything
@@ -413,10 +412,9 @@ class SignalMixin:
                 # values through the same clock, so it is the
                 # estimators crossing: two independent approximations
                 # of numbers that a flat day makes nearly equal. The
-                # marker states are written down because the reset
-                # below destroys them, and one instance in seventy-nine
-                # devices was not reproducible from the folded figures
-                # alone.
+                # marker states are logged because the reset below
+                # destroys them, and the folded figures alone cannot
+                # reproduce the crossing.
                 LOGGER.info(
                     "Signal percentiles crossed on a fold: P5 %.2f "
                     "above P50 %.2f, over %d minutes and %d reading(s). "
@@ -453,9 +451,7 @@ class SignalMixin:
             # is no statistic to record and there is evidence to
             # keep, so the row is written with the rail count real
             # and every statistic null (rule SIG-05). The count
-            # entry is 0 because zero real readings arrived, which
-            # is also what the one-time trim keys on, so the trim
-            # skips rows whose rail entry is above zero.
+            # entry is 0 because zero real readings arrived.
             for key in (
                 DEV_SIGNAL_DAILY_MEAN,
                 DEV_SIGNAL_DAILY_SD,
@@ -477,9 +473,8 @@ class SignalMixin:
             ]
             for field in trimmed:
                 del record[field][:-self.retention_days]
-        # The naive accumulators are legacy: the fold removes them so a
-        # migrated record sheds them at its first midnight rather than
-        # carrying zeros forever (rule SIG-05).
+        # The day's accumulators and estimators start again for the
+        # new day (rule SIG-05).
         _reset_signal_day(record)
         record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
@@ -775,9 +770,8 @@ class SignalMixin:
         """
         for record in self.todo_items:
             if record.get(TODO_DEVICE_ID) == device_id:
-                # By the kind's name, because the kinds have one
-                # vocabulary; the old name, "signal", would read "for ?"
-                # (rule LIST-02).
+                # By the kind's stored name, because the kinds have
+                # one vocabulary (rule LIST-02).
                 return (record.get(TODO_KINDS) or {}).get(TODO_KIND_RAILED_SIGNAL)
         return None
 
@@ -848,13 +842,12 @@ class SignalMixin:
         Nothing notifies from this. A device drops off the next
         morning its signal holds, with no acknowledgment and no
         record, because it is a reading rather than an incident
-        (rule SIG-10).
+        (rules SIG-09, SIG-10).
         """
         railed = {row["device_id"] for row in self.signal_problem_list}
         weak = []
-        # Watched devices only: a set-aside device with a bad last day
-        # stayed counted for as long as it was set aside (rules SIG-09,
-        # WATCH-09).
+        # Watched devices only, so a set-aside device with a bad last
+        # day is not counted (rules SIG-09, WATCH-09).
         for device_id, record in self.watched_records():
             if device_id in railed or self.is_held(device_id):  # type: ignore[attr-defined]
                 continue
@@ -893,8 +886,8 @@ class SignalMixin:
         suppresses judgment, not observation: the device keeps
         recording its readings and daily statistics, so re-inclusion is
         instant and arrives with history; it simply stops being
-        reported. This is the manual removal from tracking for a device
-        that resists every recovery."""
+        reported. It is how a person quiets a device whose signal
+        cannot be fixed."""
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
             CONF_SIGNAL_MUTED_INTEGRATIONS, []
@@ -913,7 +906,7 @@ class SignalMixin:
     def detected_signals(self) -> list[dict[str, Any]]:
         """Return every device with a signal reading, for the signal
         options picker: pick-from-detected, what you see is what is
-        being judged. Muted devices are present, because an
+        being judged. Muted devices are present, because a
         muted device is exactly the thing this picker exists to
         un-tick.
 

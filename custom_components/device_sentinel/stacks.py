@@ -12,17 +12,13 @@ Adding a stack touches one new file and one line of registration
 else in the package asks its questions here and never names a stack,
 so a fifth stack changes no detector, no sensor and no registry walk.
 
-The registry deliberately holds no knowledge of its own. Every
-question is answered by asking each stack module in turn, and the
-answers come from the module rather than from a table here, because
-a table here would be the fourth place stack knowledge lived and
-this file exists to end the other three.
+The registry holds no knowledge of its own. Each question is answered
+by asking each stack module in turn, never from a table here, so each
+stack's knowledge lives in one place.
 
-Order is the order the registry walk used before this file existed:
-ZHA, Z-Wave, Matter, then Z2M. It does not matter today, since a
-device's integration domain can satisfy only one stack, but the
-order is kept rather than sorted so that the behaviour of the walk
-is unchanged by inspection as well as by proof.
+Order is ZHA, Z-Wave, Matter, then Z2M. It does not matter today, since
+a device's integration domain can satisfy only one stack, and it is
+kept rather than sorted so the walk's behavior does not change.
 """
 
 from __future__ import annotations
@@ -96,8 +92,7 @@ def radio_owner(domain: str, device: dr.DeviceEntry) -> str | None:
 
     Deliberately not `device_key`, which ZHA, Z-Wave and Matter all
     answer with None because their identifiers are unverified. A
-    device they own is owned whether or not they can name it (rule
-    STACK-02).
+    device they own is owned whether or not they can name it.
     """
     for module in STACK_MODULES:
         if not module.owns_domain(domain):
@@ -129,8 +124,8 @@ def make_join_observer(
 
     Asked the same way a reader is: the caller names no stack, and a
     stack with nothing to observe returns None and costs
-    nothing. Only ZHA answers today, because only ZHA has a pairing
-    window that cannot be seen any other way (rule STACK-01).
+    nothing. Only ZHA answers today: it keeps no pairing window, and
+    names each device a person handles instead (rule FRZ-17).
     """
     for module in STACK_MODULES:
         if module.STACK != stack:

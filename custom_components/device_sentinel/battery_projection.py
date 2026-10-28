@@ -5,7 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.10 (2026-10-27)
 
-"""When a falling cell runs empty, as a range (rule BAT-13).
+"""When a falling cell reaches its target, as a range (rule BAT-13).
 
 A level over its pace is one straight line and one number. A coin
 cell's fall speeds up near the end, and a straight line through a
@@ -13,28 +13,29 @@ curve misses it by months: about 91 days where the curve says about a
 month.
 
 The projection is for a cell Device Sentinel already calls falling or
-accelerating, which it does only at or under twice the low threshold
-(rule BAT-10): with no battery yet watched from new to replaced, a date
+accelerating, which it does only at or under three times the low
+threshold (rule BAT-10): with no battery yet watched from new to replaced, a date
 further out is a guess that misses on the slow side 84 percent of the
 time, since most falling cells rest between steps.
 
 - The last six weeks of heard days are fitted twice, with a straight
   line and with a curve (a second-order fit). The curve is used only
-  when it fits clearly better (an F of 10 or more) and bends downward,
-  a fall that is speeding up; otherwise the straight line, at any
-  level the cell is judged at.
+  when the cell reads accelerating (rule BAT-12): it fits clearly
+  better and bends downward, a fall that is speeding up; otherwise the
+  straight line, at any level the cell is judged at.
 - The range comes from the cell's own data, not a fixed allowance.
   Each day's miss from the fit is kept, the misses are reshuffled a
   week at a time, so a run of low readings stays a run, and the fit is
   made again on each of 200 reshuffled histories. Each is projected
-  from today's reading to empty. The near and far ends are the 10th
+  from today's reading to the target: the low threshold, or empty for
+  a cell already under it. The near and far ends are the 10th
   and 90th percentiles of those days. The reshuffle is seeded from the
   history, so the same history always gives the same range.
 - Worked out once for each history and reading, and kept, as the line
   is, so the minute check does not pay for it.
 
-The near end decides Days Till Low, for the chart and for the
-falling forecast on the Problem List (rule BAT-13).
+The near end is weighed against Days Till Low, for the chart and for
+the falling forecast on the Problem List (rule BAT-14).
 """
 
 from __future__ import annotations
@@ -60,8 +61,9 @@ from .records import SERIES_MEMO_SIZE, series_key
 PROJECTION_RESAMPLES = 200
 PROJECTION_NEAR = 0.10
 PROJECTION_FAR = 0.90
-# Days further than this are said as "over a year" and drawn no
-# further: past it the arithmetic is guesswork (rule BAT-13).
+# Days further than this are cut to it and drawn no further: past it
+# the arithmetic is guesswork. Over a year is said as "over a year"
+# (rule BAT-13).
 PROJECTION_LONGEST = 3 * 365
 
 _MEMO: dict[tuple[Any, ...], dict[str, Any] | None] = {}
@@ -131,7 +133,7 @@ def battery_projection(
     None for a day the device was not heard (rule STOR-16). Returns None when
     fewer than four weeks were heard, or when no path empties. The
     caller has already judged the cell falling, which is only at or
-    under twice the low threshold (rule BAT-10).
+    under three times the low threshold (rule BAT-10).
     """
     key = (tuple(series[-BATTERY_FIT_WINDOW_DAYS:]), round(float(level), 2), round(float(target), 2))
     if key in _MEMO:
@@ -212,7 +214,7 @@ def _project(series: list[Any], level: float, target: float = 0.0) -> dict[str, 
         "far": round(min(far_days, PROJECTION_LONGEST), 1) if far_days is not None else None,
         "centre": round(min(centre, PROJECTION_LONGEST), 1),
         # The fitted pace today, points a week, positive for a fall: what
-        # the sentence above the chart says of a curved fall (rule BAT-17).
+        # the sentence above the chart says of a curved fall (rule BAT-12).
         "pace": round(-slope * BATTERY_WEEK_DAYS, 1),
         # Each end's path from today, level + slope d + curve d², so the
         # chart draws what was fitted rather than fitting again.

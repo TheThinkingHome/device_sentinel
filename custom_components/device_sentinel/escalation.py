@@ -83,7 +83,7 @@ def _rank(kind: Any) -> int:
 
 
 def _family(kind: Any) -> str | None:
-    """Return a kind's family, or None for a kind this release lacks."""
+    """Return a kind's family, or None for a kind it does not know."""
     return TODO_KIND_FAMILIES.get(kind) if isinstance(kind, str) else None
 
 

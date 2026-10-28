@@ -8,8 +8,8 @@
 """What a device is called, when the registry does not say.
 
 Home Assistant lets an integration register a device with no name.
-UniFi does it for every client it has not been told about, so a
-router fleet carries dozens. Every human surface used to fall back to
+UniFi does it for every client it has not been told about, so a house
+with a router can carry dozens. Without a name, a surface would show
 ``device.id``, a hash that answers nothing and cannot be looked up
 anywhere. This module answers instead, in a fixed order, and every
 surface asks it.
@@ -30,8 +30,8 @@ The order (rule DEV-01):
    and is the last resort rather than the first.
 
 The integration is named by the same map the problem list uses for
-upstreams (rule UP-11) where it has an entry, and by its domain
-otherwise.
+upstreams where it has an entry, and by its domain otherwise (rule
+GEN-07).
 """
 
 from __future__ import annotations
@@ -72,8 +72,8 @@ def _fit(name: str) -> str:
 
     The longest real name seen is 54 characters, so the cut reaches no
     real name. It stops a name of any length, which a registry allows,
-    from reaching every report, page and message whole: a 10,000-character
-    name made a 10,409-character telemetry row.
+    from reaching every report, page and message whole, where a name
+    of 10,000 characters would make a telemetry row longer still.
     """
     if len(name) <= NAME_LENGTH_MAX:
         return name

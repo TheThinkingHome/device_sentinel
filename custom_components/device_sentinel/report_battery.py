@@ -300,10 +300,10 @@ class BatteryReportMixin:
 
         Theil-Sen rather than a least-squares fit, because the shape
         this has to survive is a cell sagging under load and
-        recovering: the device that proved it dropped ten points and
-        came back eight and a half the next day. A fit is dragged by
-        both. A median of every pairwise slope puts them in the tails
-        and returns what the other nineteen pairs agree on.
+        recovering: a cell can drop ten points and come back eight and
+        a half the next day. A fit is dragged by both. A median of every
+        pairwise slope puts them in the tails and returns what the
+        other pairs agree on.
 
         Negative means falling, which is the ordinary direction.
         """

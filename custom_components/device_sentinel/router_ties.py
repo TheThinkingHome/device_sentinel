@@ -37,23 +37,23 @@ is one product's private spelling. Trackers also lead: a router can
 report nine watched trackers not_home inside sixty seconds while the
 slowest integration takes four minutes to notice, so the outage is
 declared before most of the devices behind it know, and their
-unavailability arrives already explained (rule UP-13).
+unavailability arrives already explained (rule UP-12).
 
 The tie ladder binds a tracker to the watched device it shadows,
-because on a real fleet they are separate registry devices. Two rungs,
+because they are separate registry devices. Two rungs,
 both deterministic, neither a name: a normalized MAC shared between
 the tracker and the device's registry connections, then the tracker's
 full twelve-hex MAC embedded in one of the device's identifiers (the
 shape NSPanel-class devices actually have). Names are never used
 because people rename devices to be descriptive, and a wrong tie
 suppresses an innocent device's verdicts, which is the one direction
-this feature must never fail in. Devices no rung can claim wait for
-the picker, honestly unclaimed until then.
+this feature must never fail in. Devices no rung can claim stay
+unclaimed; there is no picker (rule UP-13).
 
-Trigger and hold: three or more tied trackers not_home
-inside a sliding sixty-second window starts a sixty-second hold; at
-its end the outage is declared only if three or more are still gone,
-dated from the first fall of the burst. A flap clears inside the hold
+Trigger and hold: three tied trackers, or a tenth of the tied set if
+that is more, going not_home inside a sliding sixty-second window
+starts a sixty-second hold; at its end the outage is declared only if
+as many are still gone, dated from the first fall of the burst. A flap clears inside the hold
 and nothing is said. Entity confirmation, how many claimed devices
 already read unavailable at declaration, rides in the event and the
 log as evidence and is never a gate, because a fleet whose Wi-Fi
@@ -165,8 +165,8 @@ _HEX_ONLY = re.compile(r"[^0-9a-f]")
 # own name; Fritz publishes `connection_type`, whose wired value is
 # its own CONNECTION_TYPE_LAN constant. No integration publishes a
 # positive "wifi" marker, which is why this is an exclusion rather
-# than an allow list: an allow list would have emptied the reference
-# fleet's entire tie set.
+# than an allow list: an allow list would empty the tie set (rule
+# UP-14).
 #
 # Unifi, Asuswrt, Netgear, Ubus and Huawei publish no marker at all.
 # Unifi and Huawei filter instead, offering a setting for whether to
@@ -266,7 +266,7 @@ def _no_router_state(state: Any) -> bool:
     """Whether a tracker has no state from its router yet: none at all,
     Home Assistant's restored placeholder, or unavailable or unknown
     with no source type, as a router integration that loaded but cannot
-    reach its router publishes (rule UP-16)."""
+    reach its router publishes (rule CODE-09)."""
     if state is None or state.attributes.get("restored"):
         return True
     return (
@@ -472,8 +472,7 @@ class RouterTiesMixin:
                 # A wired client cannot be taken down by a Wi-Fi
                 # outage, and counting one toward the floor lets a
                 # switch reboot declare a network outage that never
-                # happened. Found on the reference fleet, where four
-                # PoE cameras and a printer tied themselves in.
+                # happened (rule UP-14).
                 wired.append(entry.entity_id)
                 continue
             if mac is not None and mac not in tracker_by_mac:
@@ -521,11 +520,10 @@ class RouterTiesMixin:
         # placeholder, written at its start for an integration not yet
         # loaded, is no state from the router either, nor is a plain
         # unavailable from one that cannot reach its router; otherwise
-        # a router answering late never ties again (rule UP-16). The
+        # a router answering late never ties again (rule CODE-09). The
         # retry runs only for WIFI_TIE_RETRY_SECONDS after the first
-        # look, then stops whatever it reads: an orphaned tracker reads
-        # the placeholder for ever, and the ladder was rebuilt every
-        # minute for the life of the run.
+        # look, then stops whatever it reads, because an orphaned
+        # tracker reads the placeholder for ever.
         now = dt_util.utcnow().timestamp()
         if self._wifi_retry_until is None:
             self._wifi_retry_until = now + WIFI_TIE_RETRY_SECONDS
@@ -677,7 +675,7 @@ class RouterTiesMixin:
     def exclusion_offers(self) -> dict[str, str]:
         """Each integration recommended for exclusion, "open" while its
         card stands and "closed" once it was excluded (rule MUTE-02).
-        Read defensively: the shape is this release's own."""
+        Read defensively: the shape is Device Sentinel's own."""
         found = self.data.get(DATA_EXCLUSION_OFFERS)
         if not isinstance(found, dict):
             return {}
@@ -704,8 +702,8 @@ class RouterTiesMixin:
         pinned = False
         if stored is None and self._pin_before_0277:  # type: ignore[attr-defined]
             # A house that already exists and never saved its list
-            # follows the default, so the names this release adds to it
-            # would exclude without asking: the list it already used is
+            # follows the default, so names added to the default would
+            # exclude without asking: the list it already used is
             # written as its own, once (rule MUTE-02).
             stored = list(DEFAULT_EXCLUDED_BEFORE_0277)
             pinned = True
@@ -764,8 +762,7 @@ class RouterTiesMixin:
         for name in told:
             self._record_system_event(SYS_FIRST_SEEN_EXCLUDED, scope=name)  # type: ignore[attr-defined]
         # Each one recommended is told once, pointing to its card: only
-        # one with devices has a card to point to (second adversarial
-        # round of 0.27.7).
+        # one with devices has a card to point to (rule MUTE-02).
         registry = dr.async_get(self.hass)
         for name in offered:
             if any(
@@ -839,8 +836,8 @@ class RouterTiesMixin:
         recovery (rule UP-16).
 
         A bare share with no floor, because a floor of three on a three
-        device outage requires all three back, which is the hours-long
-        hold this rule exists to remove. Closing early is the cheap
+        device outage requires all three back, which can hold the
+        outage open for hours. Closing early is the cheap
         error, because whatever is still away goes back to per-device
         detection rather than being forgotten (rule UP-16).
         """
@@ -897,9 +894,7 @@ class RouterTiesMixin:
         station leaving, and counting it would let a router reload
         declare a network outage. During the startup grace nothing is
         counted, because Home Assistant restoring tracker states is
-        exactly the outage's shape in miniature (the fully_kiosk
-        lesson: 31 entities through unavailable and back in one
-        second, with the startup tag the only thing separating them).
+        exactly the outage's shape in miniature (rule UP-12).
         """
         new_state = event.data.get("new_state")
         entity_id = event.data.get("entity_id")
@@ -976,9 +971,8 @@ class RouterTiesMixin:
 
         The safety net, swept on the tick rather than driven by an
         event. A state change says a tracker returned; it does not say
-        the router has finished re-reporting its attributes, and on
-        the reference fleet those arrived in scan batches thirty five
-        seconds apart. Reading them a minute later reads them settled,
+        the router has finished re-reporting its attributes, and those
+        can arrive in scan batches thirty five seconds apart. Reading them a minute later reads them settled,
         and a tie that recovers within a minute is indistinguishable
         from one that recovers at once, because nothing is said about
         an outage for sixty seconds anyway.
@@ -1255,7 +1249,7 @@ class RouterTiesMixin:
         recovery runs against an empty one.
 
         A tracker already away before the outage began is left out
-        (rule UP-15): it is not a casualty and must not vote against
+        (rule UP-16): it is not a casualty and must not vote against
         recovery. Anything the scan route cannot date is taken as
         part of the outage, because the scan knows the network went
         and knows nothing about when each tracker followed.
@@ -1743,10 +1737,9 @@ class RouterTiesMixin:
             return WIFI_KEY, since
         # And so is anything else that failed inside the window, tie
         # or no tie. Without this the claim reaches only hardware the
-        # router happens to track, and the devices that most need
-        # explaining are the ones it does not: the reference fleet's
-        # three presence sensors carry no tracker at all and were
-        # listed individually through every outage it has had.
+        # router tracks, and a device with no tracker, such as a
+        # presence sensor, is listed on its own through each outage
+        # (rule UP-15).
         record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
         began = record.get(DEV_FROZEN_SINCE)
         if began is not None and began >= since:
@@ -1890,9 +1883,8 @@ class RouterTiesMixin:
     def wifi_diagnostics(self) -> dict[str, Any]:
         """The tie table and outage state, for a diagnostics download.
 
-        Added after the day its absence cost a question a download
-        should have answered: whether the ladder tied anything on a
-        live system was unknowable without a template.
+        Without it, whether the ladder tied anything on a live system
+        cannot be known from a download.
         """
         return {
             "ties": len(self._wifi_ties),

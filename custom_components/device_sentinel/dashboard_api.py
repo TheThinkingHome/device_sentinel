@@ -261,10 +261,10 @@ def ws_problem_list(
 ) -> None:
     """Return the Problem List tab: every to-do item, acknowledged too.
 
-    Read from the to-do items themselves, in their own order, which is
-    worst first with the acknowledged block after it. The brief's Now
-    table leaves acknowledged items out; the to-do list shows them,
-    and this tab is the to-do list.
+    Read from the to-do items themselves, in their own order: open items
+    by device name, then the acknowledged block (rule LIST-04). The
+    brief's Now table leaves acknowledged items out; the to-do list
+    shows them, and this tab is the to-do list.
     """
     coordinator = _coordinator(hass)
     if coordinator is None:
@@ -754,10 +754,9 @@ def ws_device_turn_on(
 ) -> None:
     """Switch on one device's own entities of one kind (rule REC-05).
 
-    Admin only, one device and one kind: the only way left to switch on
-    another integration's entity since the Enable buttons went. Recorded
-    with where it was pressed, its device page or a Recommendations
-    card (rule BRIEF-07).
+    Admin only, one device and one kind, since nothing switches on a
+    whole kind at once. Recorded with where it was pressed, its device
+    page or a Recommendations card (rule BRIEF-07).
     """
     _page_act(
         hass, connection, msg,
@@ -900,7 +899,7 @@ async def ws_signal_trends(
 
     Built in the executor, as the reports are, because the tab judges
     every stored day of every device, about 100 ms, and on the event
-    loop all of Home Assistant would wait while it did (rule CODE-06).
+    loop all of Home Assistant would wait while it did.
     It reads the same records the report writer reads from the
     executor, and its list of watched records is a copy taken when it
     starts.

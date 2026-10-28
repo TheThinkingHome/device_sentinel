@@ -26,7 +26,7 @@ coordinator owns the list: items appear the moment a detection fires,
 follow the problems as they come and go, and are deleted the moment the
 last one clears.
 
-The acknowledgment lifecycle, carried from Sentinel Notify:
+The acknowledgment lifecycle (rule LIST-03):
 
 - Checking an item is the acknowledgment. It stays on the list,
   marked done, and nothing is sent about it while it sits checked:
@@ -36,7 +36,8 @@ The acknowledgment lifecycle, carried from Sentinel Notify:
   meaning, and the deletion is the automatic re-arm: the next
   failure is a new incident and a fresh item.
 - Hand-deleting an item whose device is still down is the hard
-  un-acknowledge: the next sync re-adds and re-announces it.
+  un-acknowledge: the next sync re-adds it and its fault fires on the
+  bus again.
 
 There is no add box: the list is maintained by detections alone, so
 the create feature is not offered. Text edits do not stick either; the sync rewrites the
@@ -176,10 +177,10 @@ class DeviceSentinelTodoList(TodoListEntity):
         the wording.
         """
         # A status Home Assistant did not send is not a status of
-        # needs_action. The coordinator already ignores a status of
-        # None; folding None into needs_action here defeated that
-        # guard before it could help, so any future caller that
-        # updates text alone would have silently reopened the item.
+        # needs_action. The coordinator ignores a status of None;
+        # folding None into needs_action here would defeat that guard,
+        # and a caller that updates text alone would silently reopen
+        # the item.
         status: str | None = None
         if item.status is not None:
             status = (

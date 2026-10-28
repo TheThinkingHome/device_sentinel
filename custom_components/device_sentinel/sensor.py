@@ -18,12 +18,12 @@ and no sensor has a state a user could not act on (rule CFG-07).
 The names themselves live in strings.json, under each sensor's
 translation key (rule CFG-06).
 
-Identity attributes on all, per blueprint precedent.
+Identity attributes on all (rule REL-16).
 
 Which sensors ship enabled follows one test (rule CFG-08): a person reads
 it daily or acts on it in their first week. Status, the coverage
-pair, the maintenance timestamp, and the detected bridge and broker
-are on; the per-family counts are off, because the problem list
+pair, the maintenance timestamp and each detected bridge are on, and
+the broker where a stack was found; the per-family counts are off, because the problem list
 already carries what is wrong and their audience is a dashboard
 builder, who enables exactly what they chart. Detection, the brief,
 and every report run regardless of what is enabled here.
@@ -272,10 +272,10 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
     """How many devices Device Sentinel is watching.
 
-    Named for what it counts rather than for the abstraction:
-    "Coverage: 125" left a user to guess the unit and the population.
-    The rest of the split rides in attributes. The colon form matches
-    every other sensor's Category: State pattern. It is diagnostic,
+    Named for what it counts, so a person need not guess the unit or the
+    population; the rest of the split rides in attributes. The colon
+    form matches every other sensor's Category: State pattern (rule
+    CFG-06). It is diagnostic,
     because how many devices are watched and how many have learned is
     bookkeeping about the integration, not news about the house
     (rule CFG-09).
@@ -472,9 +472,8 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     """How many devices have a low battery right now.
 
-    The battery member of the Problems family, merging the former
-    Battery Low Count and Battery Low List into one sensor: state is
-    the count, the device rows ride in attributes. Value-only, because
+    The battery member of the Problems family: the state is the count,
+    and the device rows ride in attributes. Value-only, because
     an unavailable battery is a freeze matter, not a low one,
     so this stays clean for dashboards and automations.
     """
@@ -510,12 +509,14 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
-    """How many cells are projected to reach empty inside the horizon.
+    """How many accelerating cells reach their target inside Days Till
+    Low Warning.
 
     A different set from Battery: Low and a different question. Low is
     a level that has been crossed; falling is a level that is going to
-    be (rule BAT-14). A cell is judged falling only at or under three
-    times the low threshold (rule BAT-10).
+    be. Only a cell speeding up is counted here (rule BAT-14). A cell is
+    judged falling only at or under three times the low threshold (rule
+    BAT-10).
 
     The count is read from the battery rows Battery Trends shows, so
     this sensor, that page and the daily brief cannot disagree about which
@@ -631,16 +632,13 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     unknown forever and costs one disabled entity.
 
     A primary sensor rather than a diagnostic one (rule CFG-09), for the
-    same reason as the bridge: a broker that has stopped is the
-    single most consequential thing this integration can tell a
-    person, since every MQTT device goes quiet behind it. Its
-    default follows detection (rule CFG-08): enabled where a bridge
-    stack was found, because that house demonstrably runs on this
-    broker and the sensor belongs on its first page; disabled
-    otherwise, so a house without MQTT never meets a dead sensor. The
-    watch itself runs off the subscription either way, so a person who
-    never enables it still gets the broker events in the log and the
-    brief (rule UP-02).
+    same reason as the bridge: a broker that has stopped takes every
+    MQTT device quiet behind it. Its default follows detection: enabled
+    where any stack was found, and disabled otherwise, so a house with
+    no stack never meets a dead sensor (rule CFG-08). The watch itself
+    runs off the subscription either way, so a person who never enables
+    it still gets the broker's outages in the brief and on the bus
+    (rule UP-02).
     """
 
     _attr_icon = "mdi:transit-connection-variant"
@@ -651,10 +649,10 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
         """Initialize the broker sensor, defaulting on with a bridge.
 
-        Detection rather than the reader decides (rule CFG-08): a house
-        whose registry shows a bridge stack runs on this broker even
-        if the reader could not start, and the default is a statement
-        about the house rather than about this session's wiring.
+        Detection rather than the reader decides (rule UP-02): a house
+        whose registry shows a stack is on by default even if a reader
+        could not start, since the default is a statement about the
+        house rather than about this session's wiring.
         """
         super().__init__(coordinator)
         self._attr_translation_key = "broker"
@@ -671,8 +669,8 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return when the broker came up, and how it is being judged.
 
-        broker_started answers a question that had no answer before:
-        whether the broker has been restarting unnoticed. The cadence
+        broker_started says whether the broker has been restarting
+        unnoticed. The cadence
         and threshold are shown because the threshold is learned
         rather than set, so a person can see what it settled on.
         """
@@ -686,24 +684,18 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     """One per detected coordinator bridge: is it running, in binding
     mode, or down.
 
-    This is the visible surface of the intervention-detection work and,
-    just as much, the acceptance test for each stack. Reading a stack's
-    pairing state is the hard, stack-specific part; when this sensor
-    flips to binding as a pairing window opens, the reader underneath
-    is proven, and the shared detector follows: a device that comes
-    back while that window is open came back because of the hand on
-    it, so its silence is set aside rather than learned as the
-    device's normal rhythm (rule FRZ-16).
+    On Zigbee2MQTT it reads binding while pairing is open, and a device
+    that comes back then has its silence set aside rather than learned
+    (rule FRZ-16). ZHA keeps no pairing window, so its sensor never
+    reads binding (rule FRZ-17).
 
     A primary sensor rather than a diagnostic one (rule CFG-09): a
-    coordinator that has stopped is news about the house rather than
-    news about this integration's plumbing, and it belongs beside
-    the counts a person reads. Enabled by default (rule CFG-08): a bridge
-    sensor is only created where its stack was detected, so its very existence is the
-    condition that used to justify keeping it off, and the house it
-    appears in demonstrably runs that coordinator. Intervention
-    detection works whether or not it is enabled, because the reader
-    and the detector run off the subscription, not off this entity.
+    coordinator that has stopped is news about the house, and it
+    belongs beside the counts a person reads. Enabled by default,
+    because a bridge sensor is created only where its stack was
+    detected (rule CFG-08). Detection works whether or not it is
+    enabled, because the reader and the detector run off the
+    subscription, not off this entity.
     """
 
     _attr_icon = "mdi:zigbee"
@@ -717,9 +709,6 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
         self._stack = stack
         self.sentinel_type = f"{SENTINEL_TYPE_BRIDGE}_{stack}"
         super().__init__(coordinator)
-        # A stack-specific display name. Z2M reads as its full product
-        # name to match the wiki and reports; other stacks name their
-        # own coordinator when they arrive.
         # A stack with a name of its own is translated; any other
         # stack's bridge keeps the name built from it.
         if stack in BRIDGE_TRANSLATION_KEYS:
@@ -774,9 +763,8 @@ class DeviceSentinelWifiSensor(DeviceSentinelBaseSensor):
     the devices behind it the network is exactly what a bridge is:
     the thing that carries them, whose failure explains theirs. It
     is not a stack and has no reader; the state comes from the tie
-    ladder and the tracker burst in wifi.py. Created only where at
-    least one tie exists, so its very existence says the capability
-    is real in this house.
+    ladder, the tracker burst and the host's radio (rule UP-12).
+    Created only where at least one tie exists.
 
     Two states rather than four: a network is running or it is down,
     and there is no pairing window and no unknown, because a house

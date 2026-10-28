@@ -176,10 +176,10 @@ class NarrativeMixin:
     }
 
     # Each kind carries its own duration template rather than sharing
-    # a suffix. The wordings differ in tense (one past, three present
-    # perfect) and only the past-tense one joins correctly with "ago",
-    # which is how "has been unavailable 4.0h ago" reached a live
-    # brief. The second form is used when no duration is known.
+    # a suffix. The wordings differ in tense (one past, the others present
+    # or present perfect) and only the past-tense one joins correctly with "ago";
+    # a shared suffix would read "has been unavailable 4.0h ago". The
+    # second form is used when no duration is known.
     _STATE_TEMPLATE = {
         TODO_KIND_FLAPPING: (
             "has been dropping out for {ago}",
@@ -249,8 +249,8 @@ class NarrativeMixin:
                     on = f" on {crossed}" if crossed else ""
                 return f"battery crossed the threshold{on}. Its current level is {shown}"
             # Back above the line. The level it fell to is not stored,
-            # so no number is given: "now 55%" read as if 55 were the
-            # low reading. A cell back at the level the replacement
+            # so no number is given: "now 55%" would read as if 55 were
+            # the low reading. A cell back at the level the replacement
             # rule calls full may be new or recharged, and the brief
             # does not claim which (rule BAT-06).
             if level >= BATTERY_REPLACED_LANDS:
@@ -604,11 +604,9 @@ class NarrativeMixin:
     def _compose_device_line(self, device_id: str) -> str | None:
         """Return what is wrong with one device, right now.
 
-        The shape a phone holds: one line per device, replaced in
-        place as things change, tagged by device id so its line
-        always says where that device is now rather than piling up a
-        history (rule NOTE-03). So it describes a state rather than an
-        event and carries no timestamp. Several problems at once are
+        One line per device, saying where that device is now rather
+        than piling up a history, so it describes a state rather than
+        an event and carries no timestamp (rule NOTE-01). Several problems at once are
         named by the worst with the rest counted, because the line has
         room for one fact.
         """
@@ -658,8 +656,8 @@ class NarrativeMixin:
                 with_age, without_age = "has been down for {ago}", "is down"
             clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
-        # The same device, so say so: "and 1 more problem" read as a
-        # second device.
+        # The same device, so say so: "and 1 more problem" alone would
+        # read as a second device.
         tail = (
             f", and {extra} more problem{'s' if extra != 1 else ''} "
             "on the same device"

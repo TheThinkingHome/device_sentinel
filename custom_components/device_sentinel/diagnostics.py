@@ -19,7 +19,7 @@ It complements device_telemetry.md rather than repeating it: the
 Markdown file is human triage for the owner, this is the complete
 machine-readable record for the maintainer. Device names are included
 because a report without them is unreadable. Network addresses are
-not: testers attach this file to public issues, so every MAC address
+not: the file is often attached to a public issue, so every MAC address
 keeps only its maker's half and every home-network address becomes a
 stand-in, the same one throughout the file (rule STOR-21). The config entry
 is redacted as a matter of course, since it carries the user's
@@ -100,7 +100,7 @@ from .device_fields import device_field
 # nothing to a diagnosis and are redacted by default. The brief's
 # targets are redacted too, because a notify service is often named
 # after an email address, as notify.someone_gmail_com, and the
-# diagnostics are what testers attach to public issues.
+# download is often attached to a public issue.
 TO_REDACT = {
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -228,7 +228,7 @@ def _infrastructure(
     or a router did. None of it says what any of them are, so a
     report describing a stack misbehaving cannot be matched against
     that hardware's own documentation, and the only way to learn the
-    model has been to ask (rule DEV-16).
+    model would be to ask (rule DEV-16).
 
     Read live from the registry and the config entries, stored
     nowhere. One entry per domain that carries the house: the stacks
@@ -274,7 +274,7 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
     """One stack's study for the download, or what stopped it.
 
     The study reads a library's live objects, and one that throws must
-    not fail the whole download, which is how a tester sends what
+    not fail the whole download, which is how a person sends what
     Extended Diagnostics found. The error is recorded in its place.
     """
     try:
@@ -287,8 +287,8 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
 
 
 
-# Network addresses are redacted from the download, because testers
-# attach it to public GitHub issues. Each distinct address gets a
+# Network addresses are redacted from the download, because it is
+# often attached to a public GitHub issue. Each distinct address gets a
 # numbered stand-in, the same wherever it appears, so a device still
 # reads as the same device in every section and a fault can still be
 # traced. A MAC keeps its first half, which names only the maker
@@ -434,7 +434,7 @@ async def async_get_config_entry_diagnostics(
             "sw_version": device_field(device, "sw_version"),
             "hw_version": device_field(device, "hw_version"),
             # A set-aside device's integration comes from why it was set
-            # aside: the fourth fleet's excluded Spook devices read None.
+            # aside, and reads None where none was recorded.
             "integration": coordinator._watched.get(device_id)
             or (coordinator._set_aside.get(device_id) or (None, None, None))[1],
             # Entities other integrations added to this device, by
@@ -604,8 +604,7 @@ async def async_get_config_entry_diagnostics(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),
             "study": coordinator.study_diagnostics,
-            # Stacks whose own words could carry a detector, for
-            # detectors that cannot be built yet. Each is
+            # Stacks whose own words could carry a detector. Each is
             # gathered only behind its own Extended Diagnostics switch
             # (rule STACK-11), and each is empty where the stack is not
             # in the house.
@@ -626,7 +625,7 @@ async def async_get_config_entry_diagnostics(
             ),
             # Each Hue bridge's event stream and each device's link, and
             # each SmartThings location's event stream and each device's
-            # availability, as the minute check reads them (rule STACK-08).
+            # availability, as the minute check reads them (rule STACK-11).
             "hue": await _studied(lambda: coordinator.stack_diagnostics(HUE_DOMAIN)),
             "smartthings": await _studied(
                 lambda: coordinator.stack_diagnostics(SMARTTHINGS_DOMAIN)
@@ -656,7 +655,7 @@ async def async_get_config_entry_diagnostics(
         # of those a person switched off themselves (rule REC-05), so a
         # card on a house can be supported from a download. Battery
         # Voltage Switched Off is counted from the card's own list, so
-        # the count matches what the card shows (rule REC-09).
+        # the count matches what the card shows.
         "switched_off": {
             kind: {
                 "devices": len(found),
@@ -711,7 +710,8 @@ async def async_get_config_entry_diagnostics(
         # The silence episodes behind silence_episodes.md: a feed
         # belongs in the download, where a maintainer can read the
         # raw timestamps the report renders. An episode is a silence
-        # that passed the device's own learned basis, and it records
+        # that passed the device's rhythm in use plus a share of its
+        # grace, and it records
         # whether it ended because the device spoke or because
         # something made it speak (rule FRZ-08).
         "silence_episodes": coordinator.data.get(DATA_EPISODES, []),
@@ -721,13 +721,9 @@ async def async_get_config_entry_diagnostics(
         # (rule NOTE-01).
         "incidents": coordinator.data.get(DATA_INCIDENTS, []),
         # The signal stress table: each silence's signal when it opened
-        # and how it ended, the evidence a later signal alert needs,
-        # carried in testers' files (rule SIG-11).
+        # and how it ended, the evidence a later signal alert needs
+        # (rule SIG-11).
         "signal_stress": coordinator.data.get(DATA_SIGNAL_STRESS, []),
-        # What the engine would have said, composed but never sent
-        # while the dry run lasts. One composer serves every channel,
-        # so an event cannot be described differently by two of them
-        # (rule NOTE-10).
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal. The split keeps the
         # fast-changing clock fields in a small companion file
@@ -736,7 +732,7 @@ async def async_get_config_entry_diagnostics(
         "split": {
             "clock_fields": list(CLOCK_FIELDS),
             "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
-            # No phase field: the main file is always written without
+            # No field for the file's shape: the main file is always written without
             # the clock fields, so a field reporting which shape is in
             # use would have one answer forever.
             #
@@ -752,7 +748,7 @@ async def async_get_config_entry_diagnostics(
         # how many silence episodes came back with no ending because
         # their closing died with the machine (rules FRZ-20, STOR-18).
         # Together these answer, from a
-        # download alone, whether a fleet whose clocks all start at
+        # download alone, whether a house whose clocks all start at
         # one moment was reset deliberately, and whether any silence
         # episode lost its closing before it reached disk. The orphan
         # figures are observation only: nothing acts on them, and a

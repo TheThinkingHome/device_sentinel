@@ -35,8 +35,7 @@ from when the delay expired, so what is reported is the real length.
 
 Absent everywhere it cannot work: no Supervisor, no wireless adapter,
 or no networks chosen, and this file does nothing at all. On such a
-system `router_ties.py` keeps its own trigger, exactly as it did
-before this existed.
+system `router_ties.py` keeps its own trigger (rule UP-12).
 """
 
 from __future__ import annotations

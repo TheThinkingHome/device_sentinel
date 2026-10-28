@@ -10,7 +10,7 @@
 SwitchBot, TP-Link and Brother make one config entry per device, so
 an outage named by the integration alone reads one dead device as the
 whole integration down, cannot tell two such devices apart, and closes
-one's outage when the other comes back (rule UP-03).
+one's outage when the other comes back (rule UP-10).
 
 The entry, the one watched device it carries when it carries one, and
 whether it failed to start or went down after running, travel in the
@@ -28,7 +28,7 @@ from typing import Any
 FAILED = "failed"
 DOWN = "down"
 # An entry deleted from Home Assistant while it was down: its outage is
-# closed as removed, never told as back (rule UP-11).
+# closed as removed, never told as back (rule UP-10).
 REMOVED = "removed"
 # An entry still in Home Assistant whose devices Device Sentinel stopped
 # watching while it was down, excluded or set aside.
@@ -58,8 +58,8 @@ def parse_detail(detail: Any) -> tuple[str | None, str | None, str | None]:
 def pair_key(kind: Any, scope: Any, detail: Any) -> tuple[Any, Any, str | None]:
     """The key an opener and its closer are paired by.
 
-    Kind and scope, as ever, and for an integration outage the entry
-    too, so two entries of one integration are two outages. Rows with
-    no entry pair as they always did.
+    Kind and scope, and for an integration outage the entry too, so two
+    entries of one integration are two outages. Rows with no entry pair
+    by kind and scope alone.
     """
     return kind, scope, parse_detail(detail)[0]

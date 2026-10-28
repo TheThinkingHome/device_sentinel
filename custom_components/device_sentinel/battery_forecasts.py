@@ -11,8 +11,8 @@ A forecast can only be checked against the day a battery really runs
 down, so each one is recorded at the fold and scored later (rule BAT-15).
 
 At each midnight, each battery Device Sentinel judges falling or
-accelerating, at or under three times the low threshold, gains one row
-on its record: the day, its level, whether it was accelerating, the
+accelerating, at or under three times the low threshold, and gives a
+time left from its six-week range, gains one row on its record: the day, its level, whether it was accelerating, the
 level the time left runs to (the threshold) and the range in days.
 When the battery reaches that level, each of its open rows is scored:
 inside the range, earlier than its near end, or later than its far

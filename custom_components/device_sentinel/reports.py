@@ -80,8 +80,8 @@ class ReportWritingMixin(
     can be read.
 
     The four report modules are inherited rather than imported and
-    called, so the coordinator sees one mixin and every method keeps
-    the name it always had. No caller anywhere changed.
+    called, so the coordinator sees one mixin and each method keeps
+    its own name.
     """
 
     @staticmethod
@@ -138,7 +138,7 @@ class ReportWritingMixin(
         """Format a gap for the report.
 
         A gap held at the retention reads "more than" it: the silence
-        was at least that long, and how much longer is no longer kept
+        was at least that long, and how much longer is not kept
         (rule FRZ-13).
         """
         if seconds is None:
@@ -295,12 +295,9 @@ class ReportWritingMixin(
         shown alone because it covers everything and a globally
         muted device is never offered to the section lists. BAT,
         SIG, FRZ and UNAV are the section muting, listed in column
-        order when more than one applies.
-
-        A todo icon lived here for one release and moved to the
-        Devices With a Fault section: the same state shown twice was
-        redundant and confusing, and that section is where a fault's
-        whole story reads, list state included.
+        order when more than one applies. The Problem List state shows
+        only in Devices With a Fault, so it is never shown twice (rule
+        BRIEF-15).
         """
         if device_id in self._muted_devices:
             return "Muted (GLB)"
@@ -360,7 +357,7 @@ class ReportWritingMixin(
     ) -> None:
         """Write one report, and if it fails, log it and carry on.
 
-        A file error is logged as a warning, as before. Anything else
+        A file error is logged as a warning. Anything else
         is a fault in the report or in what it read, and is logged with
         its traceback once per report per start, so the person can
         report it, without stopping the reports after it.
@@ -381,7 +378,7 @@ class ReportWritingMixin(
             LOGGER.exception(
                 "Device Sentinel could not write %s; the other reports "
                 "and the brief are written without it. Said once per "
-                "start (ruling #544)",
+                "start",
                 name,
             )
 
@@ -404,8 +401,8 @@ class ReportWritingMixin(
                 os.remove(stale_path)
         # The maintainer files live beside the brief, not in the old
         # diagnostics subfolder (rule BRIEF-14). The old subfolder's
-        # three files are removed once; anything else in it, the rig
-        # log included, is not this integration's to touch.
+        # three files are removed once; anything else in it is not
+        # this integration's to touch.
         old_diagnostics = os.path.join(
             report_directory, REPORT_DIAGNOSTIC_DIR
         )

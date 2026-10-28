@@ -18,8 +18,8 @@ gated by quiet hours, the same reason the problem list is not.
 The per-family pushes. One push per family (battery, signal, freeze),
 each carrying the triggering event line and then the current state of
 that family, so an admin reading the latest push for a family sees both
-what just happened and what is true now. A fault plays the device's own
-system sound; a recovery is sent silently.
+what just happened and what is true now. A fault plays the phone's own
+notification sound; a recovery is sent silently.
 
 The upstream push. A coordinator, the broker, the Wi-Fi network or a
 whole integration going down silences everything behind it at once,
@@ -180,9 +180,7 @@ class NotifierMixin:
 
         High-priority targets get every push, Quiet Hours included;
         normal-priority targets get every push except during Quiet
-        Hours. Quiet Hours once stopped every push, high priority
-        included, and normal-priority targets were sent nothing at all
-        (rules NOTE-02, NOTE-07).
+        Hours (rules NOTE-02, NOTE-07).
         """
         targets = self._high_priority_targets()
         if not _in_quiet_hours(
@@ -390,11 +388,10 @@ class NotifierMixin:
     def _upstream_down_words(self, name: str, count: int) -> str:
         """The down push, in the Problem List row's own words.
 
-        The push built its own text and named the upstream by its key,
-        "z2m is down", where the row says "Zigbee2MQTT down: 3 of 77
-        total devices unavailable". Reading the row's summary names it
-        as a person would and states the total behind it, devices
-        muted for unavailable included (rules UP-09, UP-11).
+        Reading the row's summary names the upstream as a person would,
+        "Zigbee2MQTT down: 3 of 77 total devices unavailable", never by
+        its key, and states the total behind it, devices muted for
+        unavailable included (rules UP-09, UP-11).
         """
         since = self.upstream_down_since_for(name)  # type: ignore[attr-defined]
         summary, _ = self._upstream_item_text(  # type: ignore[attr-defined]

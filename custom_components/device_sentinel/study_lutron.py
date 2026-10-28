@@ -5,11 +5,10 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: study_lutron.py, Version: 0.27.10 (2026-10-27)
 
-"""What a Lutron house shows, for a detector Device Sentinel cannot build yet.
+"""What a Lutron house shows, gathered for Extended Diagnostics.
 
-A probe on two Caseta hubs settled the shape of a Lutron outage. A
-hub's session drops while
-`is_connected()` stays True throughout. No entity moves: the lights
+In a Lutron outage the hub's session drops while `is_connected()`
+stays True throughout. No entity moves: the lights
 hold their last state and refuse commands, and nothing reads
 unavailable. A Lutron light reports only when a person uses it, so its
 silence says nothing; a device's health is its hub's health. A restart
@@ -18,11 +17,9 @@ config entry then sits in setup_retry. Every Pico button entity is
 disabled, so a Pico has no entity at all and its presses arrive only as
 a bus event.
 
-The probe could not settle whether any of that is visible from a
-surface an integration may use. Nothing is sent to the hub; its session
-says whether it is connected (rules STACK-11, STACK-13). So this
-gathers the evidence from any Lutron house that turns Extended
-Diagnostics on:
+Nothing is sent to the hub; its session says whether it is connected
+(rules STACK-11, STACK-13). So this gathers the evidence from any
+Lutron house that turns Extended Diagnostics on:
 
 - each hub's config entry, its state, host and port, and how many
   devices sit behind it;
@@ -33,8 +30,8 @@ Diagnostics on:
 - the entity picture per hub: how many entities are enabled, how many
   disabled, and which devices have none, the Pico case.
 
-It detects nothing and changes no verdict. Lutron support will be built
-on this evidence (rule STACK-09).
+It detects nothing and changes no verdict; the hub reader judges the
+hub (rule STACK-09).
 """
 
 from __future__ import annotations

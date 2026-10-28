@@ -96,7 +96,7 @@ def sort_kinds(kinds) -> list[str]:
     leads because FREEZE_CATEGORY_PRIORITY already puts it above
     frozen, and this order agrees with it.
 
-    A kind this release has never heard of sorts last rather than
+    A kind this code has never heard of sorts last rather than
     first. A record written by a later version should not be able to
     make its unknown kind the headline of an older one.
     """
@@ -142,8 +142,8 @@ class EventMixin:
 
         Unassigned rather than None, because a template joining a null
         into a message renders the word None at a person, and the
-        reports have said Unassigned for as long as they have existed.
-        An automation tests for the word rather than for a null.
+        reports say Unassigned. An automation tests for the word rather
+        than for a null.
         """
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
@@ -364,12 +364,9 @@ class EventMixin:
         their storage write. The failure is logged and the sync
         carries on.
 
-        A badly written automation is not this guard's doing and the
-        docstring should not claim it: Home Assistant dispatches
-        listeners away from the caller, so a listener that throws can
-        never reach here. What this covers is the narrower case the
-        integration is responsible for, the fire call failing on its
-        own account.
+        A listener that throws can never reach here, because Home
+        Assistant dispatches listeners away from the caller. This
+        covers the fire call failing on its own account.
         """
         # A withdrawal is a fact about the house, not an echo of the
         # restart: a device removed or set aside while Home Assistant was
@@ -386,7 +383,7 @@ class EventMixin:
                 self._held_recoveries.append(payload)
                 # Kept in the stored file too, saved at once, so a
                 # reload or restart inside the grace does not lose it
-                # (rules WATCH-10, LIST-08).
+                # (rule WATCH-10).
                 self.data[DATA_HELD_RECOVERIES] = list(self._held_recoveries)  # type: ignore[attr-defined]
                 self._dirty = True
                 self._critical = True

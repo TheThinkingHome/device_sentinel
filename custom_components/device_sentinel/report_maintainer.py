@@ -407,9 +407,8 @@ class MaintainerReportMixin:
         be the same value styled twice, because the operative rhythm
         is by definition chosen after the outliers are removed.
         """
-        # The series holds up to a year; this cell shows the same
-        # two weeks it always has, and the indices below are into
-        # that window.
+        # The series holds up to a year; this cell shows the last two
+        # weeks, and the indices below are into that window.
         daily_maximum_gaps = list(daily_maximum_gaps)[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return "-"
@@ -594,8 +593,8 @@ class MaintainerReportMixin:
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"All series read newest first. SIGNAL is each device's "
-            f"daily low, its time-weighted 5th percentile (rulings "
-            f"#253, #322), over the last {SIGNAL_DAYS_KEEP} days. A bad "
+            f"daily low, its time-weighted 5th percentile, over the "
+            f"last {SIGNAL_DAYS_KEEP} days. A bad "
             f"day, one whose low fell below that day's bad-day line, is "
             f"~~struck~~; the lowest day is **bold**; a rail-only day "
             f"shows as a dash. ITS NORMAL and BAD-DAY LINE are today's, "
@@ -620,8 +619,8 @@ class MaintainerReportMixin:
             "judgment, not observation.",
             "",
             f"Rule: a device's freeze window is the shorter of two "
-            f"rhythms, plus the grace margin (ruling #542, amended in "
-            f"0.24.0). TRIMMED is the **Trimmed Maximum**: of the last "
+            f"rhythms, plus the grace margin. TRIMMED is the "
+            f"**Trimmed Maximum**: of the last "
             f"{DAILY_MAX_KEEP} days' longest gaps, the top {TRIM_TOP_K} "
             f"are ~~set aside~~ and the longest of the rest is the "
             f"rhythm. {sample_note}",
@@ -670,8 +669,8 @@ class MaintainerReportMixin:
         ]
         rows = []
         for device_id, record in self.watched_records():
-            # Named by the ladder every surface asks (rule DEV-01); the
-            # registry name alone left a nameless device as its id.
+            # Named by the ladder every surface asks, so a nameless
+            # device never shows as its id (rule DEV-01).
             device_name = self._device_name(device_id)
             integration = self._watched.get(device_id, "?")
             device_label = f"{self._report_cell(device_name)} ({integration})"
@@ -700,9 +699,8 @@ class MaintainerReportMixin:
             )
         # Alphabetical by the device label, case-insensitive: the table
         # is a reference chart a person scans by name, so strict
-        # alphabetical is what they expect (the descending-gap order
-        # that suited the soak is gone; the Devices With a Fault
-        # section above already surfaces what is in trouble).
+        # alphabetical is what they expect. The Devices With a Fault
+        # section above already shows what is in trouble.
         rows.sort(key=lambda row: row[0].lower())
         for (
             device_label,
@@ -804,7 +802,7 @@ class MaintainerReportMixin:
 
         Shown on Classification so a device muted for battery alone
         does not read as if nothing were muted. In the order freeze,
-        battery, signal (rule MUTE-10).
+        battery, signal, unavailable (rule MUTE-10).
         """
         options = self.entry.options
         found = []
@@ -848,7 +846,7 @@ class MaintainerReportMixin:
         The one builder behind classification.md and the dashboard's
         Classification tab, so the two can never disagree. A watched
         device's MUTED cell holds every mute that applies to it, the
-        global one first and then freeze, battery and signal, each
+        global one first and then freeze, battery, signal and unavailable, each
         naming its source; a set-aside device carries why it was set
         aside, and an exclusion names the integration excluded
         (rule WATCH-03). `muted_global` keeps the global mute alone,
@@ -925,7 +923,7 @@ class MaintainerReportMixin:
         Watched check, with the reason alongside it. COPIES flags a
         name shared by more than one registry device. The MUTED cell
         holds every mute on a device, global first and then freeze,
-        battery and signal, each with its source, in the same words
+        battery, signal and unavailable, each with its source, in the same words
         `classification_rows` gives the dashboard. The INTEGRATION
         column names the integration as the tab and the Daily Brief
         do, not by its id (rule GEN-07).

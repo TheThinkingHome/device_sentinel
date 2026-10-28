@@ -8,16 +8,17 @@
 """One piece of hardware shown as several devices (rule WATCH-06).
 
 Since Home Assistant 2026.8 a device belongs to one integration, so a
-box that several integrations know becomes one registry device each.
+piece of hardware that several integrations know becomes one registry
+device each.
 A Bluetooth proxy can be four: ESPHome, Bluetooth, BlueSight and
 UniFi. Judged one by one, a dead proxy is several
 problems, and a copy that is quiet by nature reads frozen while the
-box is fine.
+hardware is fine.
 
-Two devices are copies of one box only on evidence Home Assistant
+Two devices are copies of one piece of hardware only on evidence Home Assistant
 recorded, never on a name:
 
-1. **The same connection.** Each integration records the box's
+1. **The same connection.** Each integration records the hardware's
    addresses (a network MAC, a Bluetooth address, a Zigbee IEEE). Two
    devices of different integrations holding the same address are the
    same hardware. Devices of one integration sharing an address are
@@ -27,7 +28,7 @@ recorded, never on a name:
    Bluetooth integration registers each proxy's adapter as a device of
    its own and points it at the proxy's device (via_device).
 3. **An identifier that is another device's address.** Some integrations record no connection and name the device
-   by the box's address instead: BlueSight registers each proxy as
+   by the hardware's address instead: BlueSight registers each proxy as
    ("bluesight", "<the proxy's Bluetooth address>"), so its devices
    never meet rule 1. An identifier part shaped like a MAC address is pooled with
    every connection and every other identifier holding that address,
@@ -52,7 +53,7 @@ from .device_fields import device_field, identifier_values
 
 # How directly an integration reaches its hardware, from its manifest's
 # iot_class: a push from the device itself beats polling, local beats
-# the cloud. A copy that only tracks the box on the network ranks
+# the cloud. A copy that only tracks the hardware on the network ranks
 # below all of them (see rank()).
 IOT_RANK = {
     "local_push": 4,
@@ -77,7 +78,7 @@ def _connections(device: Any) -> set[tuple[str, str]]:
 # digits bare: the shapes a MAC or Bluetooth address takes in a
 # connection or an identifier.
 _MAC_SHAPE = re.compile(r"^(?:[0-9a-f]{2}([:-])(?:[0-9a-f]{2}\1){4}[0-9a-f]{2}|[0-9a-f]{12})$")
-# Addresses that name no box: unset and broadcast.
+# Addresses that name no hardware: unset and broadcast.
 _NO_BOX = {"000000000000", "ffffffffffff"}
 
 
@@ -107,7 +108,7 @@ def find_groups(devices: Iterable[Any], domain_of: Callable[[Any], str | None]) 
 
     A group never holds two devices of one integration. An address that
     one integration gives to two of its devices (a hub and a child) says
-    nothing about which box it is, so it joins nothing; and a join that
+    nothing about which hardware it is, so it joins nothing; and a join that
     would put two devices of one integration together through some
     other path is refused, so a chain of addresses cannot make a hub
     and its child copies.
@@ -218,19 +219,20 @@ def rank_of(
 
     First, whether it has entities of its own at all. Then whether it is
     more than a network tracker: a device with a tracker of its own is a
-    router's view of the box, which describes the network, not the box.
+    router's view of the hardware, which describes the network, not the
+    hardware.
     Then whether it records an address of its own: a device joined only because its identifier names
-    another device's address, as BlueSight's are, is a view of the box
+    another device's address, as BlueSight's are, is a view of the hardware
     from outside, and it carries more entities than a plain ESPHome
     proxy, so on entity count alone it would be the copy kept.
-    Then whether it carries the box's battery reading: a copy set aside
+    Then whether it carries the hardware's battery reading: a copy set aside
     has its readings dropped with it, so keeping the one without the
     battery would stop the battery being watched. Then how
-    directly its integration reaches the box. Then how many entities it
+    directly its integration reaches the hardware. Then how many entities it
     has.
     """
     has_own = 1 if own_count else 0
-    # Any tracker of its own marks a router's view of the box, whatever
+    # Any tracker of its own marks a router's view of the hardware, whatever
     # else that integration adds.
     not_tracker = 0 if "device_tracker" in own_domains else 1
     return (

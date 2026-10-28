@@ -23,10 +23,10 @@ can read as empty and the empty-looking device is exactly the one a
 person will be told to pick. A trim that refused the second time
 would make the support instruction unreliable.
 
-It never touches the nightly last-good pair. The copy it takes is its
-own stamped file, so a sequence of trims cannot bury the state the
-first one started from, and the pair the fold maintains stays exactly
-what the fold left.
+It never touches the last-good copies. The copy it takes is its own
+stamped file, so a sequence of trims cannot bury the state the first
+one started from, and the last-good copies stay exactly what the saves
+left.
 
 It erases history and nothing else. Muting and exclude entries
 survive, because a trimmed device is rediscovered within seconds and
@@ -62,10 +62,8 @@ def _stamp(directory: str, now: datetime) -> str:
     """Return a filename stamp no existing copy already uses.
 
     Local time to the second, and then a suffix if that second is
-    taken. Two trims inside one second sounded impossible when this
-    was written and the comment said so; the adversarial pass did it
-    on the first attempt, and a person saving the screen twice in
-    quick succession does the same. The copy is the only way back,
+    taken. Two trims inside one second happen when a person saves the
+    screen twice in quick succession. The copy is the only way back,
     and the case where somebody trims twice in a hurry is exactly
     the case where they are most likely to want the first one, so a
     silent overwrite is the wrong failure. The suffix keeps the
@@ -121,9 +119,8 @@ def trim_devices(
     pass because it is derived from the records at save time, so
     deleting the record deletes the clock entry with it. The device is
     rediscovered on its next event with a fresh record, learning from
-    nothing, and its never-reported clock starts again, so it is
-    exempt from a freeze verdict for the next forty-eight hours
-    whatever it does.
+    nothing, so it is not judged frozen until it has learned again
+    (rule FRZ-01).
 
     System events are not filtered. They belong to the house rather
     than to any device, and a restart that happened is still a
@@ -190,12 +187,10 @@ def describe(
         for label, value in removed.items()
         if value
     )
-    # "Nothing recorded" said on its own read as a failed trim on the
-    # first live one, when an excluded television was picked and had
-    # no record to delete because an excluded device's record goes at
-    # the fold. The trim did exactly what it should; the sentence has
-    # to say that rather than leave a person wondering whether the
-    # tool works.
+    # "Nothing recorded" on its own reads as a failed trim, as for an
+    # excluded device whose record already went at the fold. The trim
+    # did what it should, and the sentence says so rather than leave a
+    # person wondering whether the tool works.
     outcome = counts or "nothing was recorded for it, so nothing went"
     return f"{'; '.join(picked)}: {outcome}"
 
@@ -208,8 +203,9 @@ def log_result(
     The one destructive act the integration performs, so it says so
     plainly, says what actually went, and names the file that holds
     the way back. A person reading this line after a trim that
-    matched a device with no record needs to see the zero rather
-    than infer it from a name with nothing beside it (rule CODE-08).
+    matched a device with no record needs to see "nothing recorded"
+    rather than infer it from a name with nothing beside it (rule
+    GEN-10).
     """
     went = (
         ", ".join(
