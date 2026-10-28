@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 27 October 2026, on Device Sentinel 0.27.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What a device is called, what kind of device it is, what powers it, how it connects, which other devices it is grouped with, and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md); where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md); the Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 

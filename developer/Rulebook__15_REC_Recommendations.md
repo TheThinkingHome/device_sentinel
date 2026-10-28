@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 27 October 2026, on Device Sentinel 0.27.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md); the dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -12,15 +12,15 @@ What Device Sentinel suggests a person change about their own setup: the Recomme
 
 ### REC-02 The Written Recommendations
 
-**A written recommendation is about the house's setup rather than one device. Each line opens with its condition, a colon, then what it costs and where to change it, and stands until its condition is gone. All lines show, worst first: a notification target that no longer exists, no target set at all, a Links in Reports address Home Assistant no longer holds, a detection family muted or excluded for all the devices it judges, a wireless adapter with no network chosen and no router ties, Zigbee2MQTT availability switched off, a router integration watched again, a polling integration worth excluding, and the library's integrations ([REC-03](#rec-03-the-library)). Each line can be ticked Acknowledged ([REC-07](#rec-07-acknowledged)); nothing else dismisses it.**
+**A written recommendation is about the house's setup rather than one device. Each line opens with its condition, a colon, then what it costs and where to change it, and stands until its condition is gone. All lines show, worst first: a notification target that no longer exists, no target set at all, a Links in Reports address Home Assistant no longer holds, a detection family muted or excluded for all the devices it judges, a wireless adapter with no network chosen and no router ties, Zigbee2MQTT availability switched off, a router integration watched again with no card of its own, and a polling integration worth excluding. Each integration Device Sentinel recommends excluding has a card of its own instead ([REC-03](#rec-03-integrations-worth-excluding)). Each line can be ticked Acknowledged ([REC-07](#rec-07-acknowledged)); nothing else dismisses it.**
 
 *Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py).
 
-### REC-03 The Library
+### REC-03 Integrations Worth Excluding
 
-**Device Sentinel carries a short list, as data, of integrations whose devices come and go for reasons that are not faults. Presence trackers and televisions (ping, mobile_app, webostv, androidtv, samsungtv, apple_tv, dlna_dmr, samsung_infrared) give one line naming them as Home Assistant shows them and suggesting they be excluded. Integrations that own no devices (spook) give a second line with each one's device count. An integration already excluded or muted is left alone. Router trackers are not in the list; they have a line of their own.**
+**Device Sentinel carries, as data, the one list of integrations whose devices come and go for reasons that are not faults ([MUTE-02](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-02-excluded-integrations)). Each one with a watched device, neither excluded nor muted for everything, has its own card: "Google Cast Is Usually Excluded: Device Sentinel found the Google Cast integration, with 2 devices. It is usually excluded because its devices go unavailable whenever they are switched off. Exclude it here, or tick the box to keep watching it.", its devices listed by name, an Exclude button and the tick. Only the tick silences a card; one excluded and taken back comes back. The Integrations tab shows the same recommendation under the integration's name and stops when the card is ticked or the integration is muted for everything. A tick given to one of the three lines that once named several of these integrations together answers the card of each integration it named. A poller measured on the house keeps its own line ([REC-02](#rec-02-the-written-recommendations)).**
 
-*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py).
+*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_integrations_tab.py`](../tests/test_integrations_tab.py).
 
 ### REC-04 The Device Cards
 
@@ -54,13 +54,13 @@ What Device Sentinel suggests a person change about their own setup: the Recomme
 
 ### REC-09 What Simple Shows
 
-**Simple shows what Device Sentinel needs to work at its best, and nothing extra: Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), and Confirm Battery Replacement. Simple's device page offers no sensor to turn on, so each such sensor has its card here. All other cards and lines are Advanced only.**
+**Simple shows what Device Sentinel needs to work at its best, and nothing extra: Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement. Simple's device page offers no sensor to turn on, so each such sensor has its card here. All other cards and lines are Advanced only.**
 
 *Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js).
 
 ### REC-10 In the Emailed Daily Brief
 
-**The emailed Daily Brief, and its file in `/config/device_sentinel/`, carries a Recommendations section above Last 24 Hours: each written recommendation not ticked, then one line per device card with its title, its count of rows not ticked in brackets, and a link opening that card on the tab where Links in Reports allows one. It counts as Advanced does. Slow Reporting Devices, Type Not Set and Model With More Than One Type stay out, because a slow device or a missing or mixed type is not a fault; a card whose rows are all ticked stays out too. The dashboard's Daily Brief tab carries the count of [REC-08](#rec-08-counts) and, under it, the Confirm Battery Replacement card's line while that card has a row not answered ("Battery replaced on X, detected Oct 18. Confirm it on the Recommendations tab."); it carries no other recommendation lines.**
+**The emailed Daily Brief, and its file in `/config/device_sentinel/`, carries a Recommendations section above Last 24 Hours: each written recommendation not ticked, then one line per device card with its title, its count of rows not ticked in brackets, and a link opening that card on the tab where Links in Reports allows one. It counts as Advanced does. Each integration's exclusion card not ticked is there every morning until it is answered ([REC-03](#rec-03-integrations-worth-excluding)). Slow Reporting Devices, Type Not Set and Model With More Than One Type stay out, because a slow device or a missing or mixed type is not a fault; a card whose rows are all ticked stays out too. The dashboard's Daily Brief tab carries the count of [REC-08](#rec-08-counts) and, under it, the Confirm Battery Replacement card's line while that card has a row not answered ("Battery replaced on X, detected Oct 18. Confirm it on the Recommendations tab."); it carries no other recommendation lines.**
 
 *Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py).
 
