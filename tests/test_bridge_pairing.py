@@ -303,8 +303,8 @@ async def test_stacks_reach_diagnostics(hass: HomeAssistant):
 # ==================================================================
 
 async def test_nothing_heard_reads_unknown(hass: HomeAssistant):
-    """Before any message, the bridge state is unknown, not down: we
-    genuinely do not know yet, and unknown is the honest word."""
+    """Before any message, the bridge state is unknown, not down:
+    nothing is known yet, and unknown is the honest word."""
     r = _reader(hass)
     assert r.state == BRIDGE_UNKNOWN
     assert r.pairing_open is False
@@ -430,7 +430,7 @@ async def test_bridge_sensor_is_created_per_stack_and_enabled(
 async def test_button_james_long_self_recovery_is_learned(
     hass: HomeAssistant, freezer
 ):
-    """The lost-data case, now fixed. A 9h self-recovery on a device
+    """A 9h self-recovery on a device
     with a ~6.3h basis, its unavailable blip a few seconds, is
     learned: the debounce (floor + share) is far longer than the
     blip, so no taint is set and the real gap reaches the maximum."""
@@ -454,7 +454,7 @@ async def test_button_james_long_self_recovery_is_learned(
 async def test_door_master_real_outage_stays_discarded(
     hass: HomeAssistant, freezer
 ):
-    """The false-flag case, still correct. A device with a ~3.7h
+    """A device with a ~3.7h
     basis, unavailable well past its debounce before it returns, has
     that gap discarded: the taint fires and the completed gap is
     excluded from learning."""
@@ -802,7 +802,7 @@ async def test_the_z2m_reader_does_not_wait_for_absent_mqtt(
     its full timeout before giving up, so a house with a Zigbee2MQTT
     bridge device would block Device Sentinel's setup for fifty seconds
     whenever MQTT was not yet up. The reader asks first whether MQTT is
-    loaded, as the broker transport does (rule CODE-09).
+    loaded, as the broker transport does (rule STACK-03).
     """
     _device(hass, "mqtt", "b1", "SLZB-06M Zigbee2MQTT Bridge")
     started = time.monotonic()

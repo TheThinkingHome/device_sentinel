@@ -9,8 +9,8 @@
 
 A device with no name has one resolver, and every surface asks it,
 including the two maintainer reports, the low-battery list and the
-settings pickers. A surface that reads the registry name and falls
-back to the raw id shows UniFi clients as 32-character ids.
+settings pickers. A surface that read the registry name and fell back
+to the raw id would show UniFi clients as 32-character ids.
 
 The device here is shaped like those clients: an empty registry name, a
 manufacturer, no model, and a MAC, so the ladder names it by its
@@ -42,7 +42,7 @@ LADDER_NAME = f"{DOMAIN} {MAC}"
 
 
 def _nameless(hass: HomeAssistant, entity: str | None = "sensor"):
-    """Register a device the way the second fleet's six are held.
+    """Register a device shaped like those clients.
 
     The entry has no title because Home Assistant fills an empty
     device name from it, which would hide the case.

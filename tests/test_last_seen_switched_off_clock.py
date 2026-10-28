@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_last_seen_switched_off_clock.py, Version: 0.27.4 (2026-10-25)
+# File: test_last_seen_switched_off_clock.py, Version: 0.27.10 (2026-10-27)
 
 """A switched-off Last Seen sensor is never the device's clock (rule WATCH-01).
 
-A switched-off entity has no state, so taking it as the clock left
-every report reading "the clock has not moved": the device was never
-heard, and one that had already learned was called frozen while it
-reported. A device whose Last Seen is switched off is judged by when
+A switched-off entity has no state, so taking it as the clock would
+leave every report reading "the clock has not moved": the device would
+never be heard, and one that had already learned would be called
+frozen while it reported. A device whose Last Seen is switched off is judged by when
 its reports arrive, as a device with no Last Seen is.
 """
 

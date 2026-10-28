@@ -8,9 +8,9 @@
 """Battery Trends' CELL column names the battery each device takes
 (rules BAT-16, BAT-18).
 
-A column that named only a lithium cell was blank both for a battery
-known not to be lithium, such as the AAA cells of a Third Reality door
-sensor, and for one nobody had set: one blank meant two things. Each
+The column names every battery, not only a lithium cell, so a blank
+never means two things: a battery known not to be lithium, such as the
+AAA cells of a Third Reality door sensor, reads as its cells. Each
 row carries the words its Power row shows, from the owner's answer or
 the Battery Notes library, or None when neither knows, which the panel
 shows as "Not set".
@@ -65,7 +65,7 @@ async def test_the_library_names_a_battery_nobody_set(hass: HomeAssistant):
 
 
 async def test_one_answer_names_every_device_of_the_model(hass: HomeAssistant):
-    """The pencil on one device answers for its model (rule DEV-08)."""
+    """The pencil on one device answers for its model (rule DEV-06)."""
     coord = await setup_coordinator(hass)
     first, _ = register_device(hass, "m1", "Leak Sink")
     second, _ = register_device(hass, "m2", "Leak Bath")

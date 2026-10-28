@@ -100,7 +100,7 @@ def _silent_past_window(coord, device_id, frozen=False):
 
 
 async def test_an_available_matter_lamp_is_never_frozen(hass: HomeAssistant):
-    """L20 and L21, quiet for a day while plugged in."""
+    """A Matter lamp, quiet past its window while plugged in."""
     lamp, light = _device(hass, "matter", "l20")
     other, other_light = _device(hass, "test", "plain")
     coord = await setup_coordinator(hass)
@@ -140,8 +140,8 @@ async def test_a_matter_lamp_with_a_battery_is_spared_too(hass: HomeAssistant):
 
 
 async def test_a_matter_sensor_keeps_the_freeze_rule(hass: HomeAssistant):
-    """S87: a sensor silent while Matter called it available, caught only
-    by its frozen verdict. On a battery and on mains alike."""
+    """A sensor can go silent while Matter calls it available, and only
+    its frozen verdict catches it. On a battery and on mains alike."""
     sensors = {
         uid: _device(hass, "matter", uid, battery=battery, sensor=True)
         for uid, battery in (("s87", True), ("mains", False))
@@ -175,8 +175,8 @@ async def test_the_owner_type_decides_in_any_spelling(hass: HomeAssistant):
 
 async def test_a_cover_on_mains_is_spared_as_in_0_26_8(hass: HomeAssistant):
     """A cover, fan, valve, lock, siren, appliance, vacuum or Matter
-    Bridge reports when used, so a device of these types spared before
-    on mains is not called frozen on the upgrade (rule STACK-06)."""
+    Bridge reports when used, so a device of these types is spared
+    (rule STACK-06)."""
     blind, entity = _device(hass, "matter", "blind", main="cover")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity, "open")
@@ -192,8 +192,8 @@ async def test_a_cover_on_mains_is_spared_as_in_0_26_8(hass: HomeAssistant):
 
 async def test_a_sensor_with_a_switch_keeps_the_freeze_rule(hass: HomeAssistant):
     """Its entities read Switch, but it measures a temperature, and a
-    silent sensor is what S87 was. The owner's own type is trusted
-    (rule STACK-06)."""
+    sensor can go silent while available. The owner's own type is
+    trusted (rule STACK-06)."""
     sensor, entity = _device(hass, "matter", "s87switch", sensor=True)
     switch = er.async_get(hass).async_get_or_create(
         "switch", "matter", "s87switch_switch", device_id=sensor.id,
@@ -331,8 +331,8 @@ def _button(hass, uid, battery="100", foreign_battery=None):
 
 
 async def test_a_button_never_pressed_is_not_frozen(hass: HomeAssistant):
-    """B13 to B15: buttons that read unknown and a battery at 100%,
-    silent past their window, on Matter over Thread."""
+    """A button that reads unknown and a battery at 100%, silent past
+    its window, on Matter over Thread."""
     button = _button(hass, "b13")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()
@@ -356,7 +356,7 @@ async def test_a_button_never_pressed_is_said_spared(hass: HomeAssistant):
 
 
 async def test_a_button_frozen_before_stays_frozen_until_it_reports(hass: HomeAssistant):
-    """A verdict standing at the upgrade is not told as a recovery (rule LIST-08)."""
+    """A verdict already standing is not told as a recovery (rule LIST-08)."""
     button = _button(hass, "b15")
     coord = await setup_coordinator(hass)
     coord._rebuild_registry_view()

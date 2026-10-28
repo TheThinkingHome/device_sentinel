@@ -8,12 +8,11 @@
 """Figures a person can read: long spans, a running silence, a scale
 (rules GEN-09, FRZ-13).
 
-Hours carried past the point of meaning are unreadable: a battery flat
-for months reading 1485.3h in one report and 61.9d in another, a
-silence cut by the nightly reboot showing 8.22h and 11.13h in two
-columns and its real 19.3h in none, a rhythm chart with an axis of
-1032 hours against a rhythm of 1.6, so every ordinary day lies flat on
-the floor.
+Hours carried past the point of meaning are unreadable: 1485.3h in one
+report and 61.9d in another for the same flat battery, a silence cut
+by a restart shown as two pieces and never as its whole, a rhythm
+chart with an axis of 1032 hours against a rhythm of 1.6, so every
+ordinary day lies flat on the floor.
 """
 
 from __future__ import annotations
@@ -57,8 +56,8 @@ DAY = 86400.0
         (264, "a week and a half"),  # rounded down (rule GEN-09)
         (336, "2 weeks"),
         (432, "2 and a half weeks"),
-        (1032, "6 weeks"),           # the vibration sensor's absence
-        (1485.3, "8 and a half weeks"),  # the battery flat since July
+        (1032, "6 weeks"),           # a long absence
+        (1485.3, "8 and a half weeks"),  # a battery flat for months
     ],
 )
 def test_a_long_span_reads_in_days_then_weeks(hours: float, said: str):
@@ -83,7 +82,8 @@ async def test_a_report_reads_a_long_duration_in_words(hass: HomeAssistant):
 
 
 async def test_a_running_silence_shows_the_whole_silence(hass: HomeAssistant):
-    """The truncated lower bound said nothing useful; the total does."""
+    """A running silence shows its whole length, not a truncated lower
+    bound."""
     device, _entities = register_device(hass, "d2", name="Watering Kit")
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()

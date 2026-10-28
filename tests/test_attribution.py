@@ -576,8 +576,8 @@ async def test_a_poller_is_recognized_once_and_stays_recognized(
     An integration read as a poller and never fed again stops
     accruing history, its rows age out of the hour, the verdict
     lapses, and it storms ten more times: exactly ten storms an hour,
-    which is the exemption threshold rather than anything the router
-    is doing.
+    which is the exemption threshold rather than anything the
+    integration is doing.
 
     Four hours of a burst every 36 seconds, the integration's own
     cadence.
@@ -842,7 +842,8 @@ def test_an_observed_pair_is_not_marked_inferred():
 
 
 def test_an_inferred_end_never_claims_a_recovery():
-    """We know it ended. We do not know it came back."""
+    """Device Sentinel knows it ended, not that it came back
+    (rule STOR-18)."""
     events = [
         {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
         {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system",
@@ -942,10 +943,9 @@ def test_a_type_corrupted_row_is_skipped_not_fatal() -> None:
 
     Three shapes: a string timestamp crashes the sort, a string
     duration crashes the restart arithmetic, and a list kind crashes
-    the pairing lookup. The shape check names such damage but removes
-    nothing, so the builder must survive it: the row is skipped, one
-    attribution is lost, and everything readable still builds
-    (rule STOR-12).
+    the pairing lookup. Storage repairs such damage where it is found
+    (rule STOR-09); a row that reaches the builder anyway is skipped,
+    one attribution is lost, and everything readable still builds.
     """
     log = [
         _row(SYS_BRIDGE_DOWN, "z2m", T0),

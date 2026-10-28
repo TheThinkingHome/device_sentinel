@@ -5,17 +5,17 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: test_hardening.py, Version: 0.27.10 (2026-10-27)
 
-"""Audit hardening, old-field cleanup, and the per-screen wiki links
-(rules CODE-06, CODE-07, CODE-14, STOR-19, CFG-03).
+"""Report edges, old-field cleanup, and the per-screen wiki links hold
+(rules CODE-06, CODE-07, CODE-10, CODE-14, STOR-19, CFG-03).
 
-The audit fixes guard the edges: report cells escape pipes and newlines
-in a device name so a table keeps its column count, the hot-path
-handlers survive an entity missing from the map, a since ahead of the
-clock prints a zero age rather than a negative one, and a signal line
-whose name lookup misses falls back to the device id. Two idempotent
-cleanups keep the store and the registry tidy: the storage prune drops
-any stored field the current schema no longer holds, and the dead-types
-sweep removes registry entities whose sentinel type was retired. Every
+Report cells escape pipes, newlines and angle brackets in a device name
+so a table keeps its column count, the hot-path handlers survive an
+entity missing from the map, a since ahead of the clock prints a zero
+age rather than a negative one, and a signal line whose name lookup
+misses falls back to the device id. Two idempotent cleanups keep the
+store and the registry tidy: the storage prune drops each field the
+code retired, and the dead-types sweep removes registry entities whose
+sentinel type was retired. Every
 settings screen links to its own wiki page rather than the front door,
 with the page names pinned as constants because a typo would render as
 a create-this-page screen rather than an error.
@@ -88,11 +88,11 @@ def _freeze(coord, device_id, since=1_000_000.0):
 
 
 # ==================================================================
-# The four audit hardening fixes.
+# Report cells and the hot path at their edges.
 # ==================================================================
 
 async def test_pipe_in_name_stays_in_one_cell(hass: HomeAssistant):
-    """S1: a pipe in a device name is escaped everywhere it appears,
+    """A pipe in a device name is escaped everywhere it appears,
     so the tables keep their column count."""
     device, eid = _register(hass, "p1", "Weird | Name")
     coord = await setup_coordinator(hass)
@@ -119,7 +119,7 @@ async def test_pipe_in_name_stays_in_one_cell(hass: HomeAssistant):
 
 
 async def test_newline_in_name_is_flattened(hass: HomeAssistant):
-    """S1: a newline in a name cannot break a report row."""
+    """A newline in a name cannot break a report row."""
     assert (
         DeviceSentinelCoordinator._report_cell("Two\nLines") == "Two Lines"
     )
@@ -128,11 +128,9 @@ async def test_newline_in_name_is_flattened(hass: HomeAssistant):
 async def test_pipe_in_name_keeps_its_row_in_the_brief_page(
     hass: HomeAssistant,
 ):
-    """The Markdown kept the pipe escaped, but the brief's page split
-    its rows on every pipe, the escaped one included: a device named
-    "A|B Sensor" gained a cell, shifted its row's columns, and lost its
-    link and area. Each row keeps its header's width and the name reads
-    whole."""
+    """A pipe in a name, escaped in the Markdown, does not split the
+    brief page's row: each row keeps its header's width, its link and
+    its area, and the name reads whole (rule CODE-10)."""
     device, eid = _register(hass, "p2", "A|B Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -163,10 +161,9 @@ async def test_pipe_in_name_keeps_its_row_in_the_brief_page(
 async def test_markup_in_a_name_is_inert_in_the_markdown_reports(
     hass: HomeAssistant,
 ):
-    """A name holding markup reached the Markdown reports as markup,
-    where anything that renders them would draw it. The angle brackets
-    are escaped the way the pipe already was, and the brief's page reads
-    the name as written."""
+    """Markup in a name is escaped in the Markdown reports, as the pipe
+    is, so nothing that renders them draws it, and the brief's page
+    reads the name as written (rule CODE-10)."""
     name = "Door <img src=x onerror=alert(1)>"
     device, eid = _register(hass, "m1", name)
     coord = await setup_coordinator(hass)
@@ -199,7 +196,7 @@ async def test_the_cell_escape_covers_angle_brackets():
 
 
 async def test_hot_path_survives_unmapped_entity(hass: HomeAssistant):
-    """C1: a state event for an entity not in the map returns quietly
+    """A state event for an entity not in the map returns quietly
     instead of raising."""
     coord = await setup_coordinator(hass)
     fake = SimpleNamespace(
@@ -213,7 +210,7 @@ async def test_hot_path_survives_unmapped_entity(hass: HomeAssistant):
 
 
 async def test_future_since_prints_zero_age(hass: HomeAssistant):
-    """C2: a since ahead of the clock clamps to zero, no negatives."""
+    """A since ahead of the clock clamps to zero, no negatives."""
     device, eid = _register(hass, "f1", "Future Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -225,7 +222,7 @@ async def test_future_since_prints_zero_age(hass: HomeAssistant):
 
 
 async def test_signal_line_falls_back_to_device_id(hass: HomeAssistant):
-    """C3: a missing name prints the device id, never None."""
+    """A missing name prints the device id, never None."""
     device, eid = _register(hass, "n1", "Named Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -256,7 +253,7 @@ def test_prune_drops_legacy_keys_keeps_current():
     """A record carrying old frozen fields loses them; every current
     field survives."""
     record = _new_device_record("2026-07-19T00:00:00+00:00", 1000.0)
-    # Inject the 0.4.x fields the rail rework removed.
+    # Inject fields a retired rail design wrote.
     record["signal_frozen_verdict"] = True
     record["signal_repeat_count"] = 5
     record["signal_frozen_at"] = "2026-07-18T00:00:00+00:00"
@@ -430,7 +427,7 @@ PUBLISHED_PAGES = {
 
 # Every wiki link the integration carries, read from const so a link
 # added later is pinned by these tests without anyone listing it (rule
-# REL-14): three links in use were left out of a hand-kept list.
+# REL-14).
 ALL_LINKS = {
     name: getattr(_const, name)
     for name in dir(_const)
@@ -618,7 +615,7 @@ async def test_the_threshold_range_comes_from_the_constants(
     """The battery threshold's range comes from named constants.
 
     The options dialog is the one way in, and a named range is
-    checkable where a literal buried in a selector is not (rule BAT-14).
+    checkable where a literal buried in a selector is not (rule BAT-03).
     """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, "battery")
@@ -632,7 +629,7 @@ async def test_the_threshold_range_comes_from_the_constants(
 
 async def test_the_number_platform_is_gone(hass: HomeAssistant):
     """The device page carries no threshold slider, because the setting
-    has one door: the options dialog (rule BAT-14).
+    has one door: the options dialog (rule CFG-02).
     """
     from custom_components.device_sentinel import PLATFORMS
 

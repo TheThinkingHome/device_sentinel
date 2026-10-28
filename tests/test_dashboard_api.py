@@ -107,7 +107,7 @@ async def test_minutes_outside_the_steps_are_refused(hass: HomeAssistant, hass_w
 
 async def test_the_enable_actions_are_gone(hass: HomeAssistant, hass_ws_client):
     """The action command runs Maintenance only; the three house-wide
-    enable actions are refused (rule DASH-09)."""
+    enable actions are refused (rule REC-05)."""
     await setup_coordinator(hass)
     client = await hass_ws_client(hass)
     for action in ("enable_signals", "enable_last_seen", "enable_battery"):
@@ -247,7 +247,7 @@ async def test_classification_is_the_files_rows(hass: HomeAssistant, hass_ws_cli
     assert result["watched"] == len(watched)
     assert result["watched"] + result["set_aside"] == len(result["rows"])
     assert set(result) >= {"rows", "watched", "set_aside", "deviceless"}
-    assert "muted_entities" not in result, "devices are muted, never entities (ruling #642)"
+    assert "muted_entities" not in result, "devices are muted, never entities"
 
 
 async def test_classification_names_the_mute_and_the_reason_set_aside(hass: HomeAssistant, hass_ws_client):

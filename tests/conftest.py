@@ -198,7 +198,7 @@ def read_brief():
 
 # The fleets are real houses' storage, anonymized and committed under
 # tests/fleets/ by tools/anonymise_fleet.py: reference/, second/ and
-# fourth/, a folder for each tester after them, and under upgrade/ the
+# fourth/, a folder for each further house, and under upgrade/ the
 # first two houses as they stood before the history file. They are the
 # set the Test Baseline counts, and the set continuous integration runs.
 # Point DEVICE_SENTINEL_FLEET_DIR at another directory laid out the same

@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_log_lines.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_log_lines.py, Version: 0.27.10 (2026-10-27)
 
 """Home Assistant's log is for errors and debugging (rule GEN-10). An
 ordinary first start writes nothing above debug but the storage it
-created, and the routine counts it used to write, the signal census and
-the set-aside total, are gone."""
+created, and no routine count, such as a signal census or a set-aside
+total, is written."""
 
 from __future__ import annotations
 

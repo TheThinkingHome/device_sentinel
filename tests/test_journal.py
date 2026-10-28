@@ -299,8 +299,8 @@ async def test_acknowledgement_is_recorded(hass: HomeAssistant):
 
 async def test_unacknowledgement_is_recorded_too(hass: HomeAssistant):
     """Unticking the box is a thing a person did and the record has
-    to say so. Recording only the check left a brief saying a device
-    was acknowledged with nothing to say it had been taken back."""
+    to say so, or a brief would say a device was acknowledged with
+    nothing to say it had been taken back."""
     device, entity_id, _ = _register(hass, "u1", "Unacked Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "21.5")
@@ -357,9 +357,9 @@ async def test_the_re_add_is_a_re_add_and_not_a_new_detection(
     hass: HomeAssistant,
 ):
     """The fault never stopped, so nothing opened. Calling the return
-    an opening put a second opening on a key that already had one
-    pending, which orphaned the first and left a real episode
-    rendering as though it had never resolved."""
+    an opening would put a second opening on a key that already has
+    one, orphaning the first and leaving a real episode reading as
+    though it had never resolved."""
     device, entity_id, _ = _register(hass, "d2", "Readded Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "21.5")
@@ -504,8 +504,8 @@ async def test_startup_storm_is_named_a_restart(hass: HomeAssistant):
 async def test_no_episodes_open_during_startup_grace(
     hass: HomeAssistant,
 ):
-    """The other folded fix: stale clocks after a restart must not
-    manufacture a batch of rows about the restart."""
+    """Stale clocks after a restart must not manufacture a batch of
+    rows about the restart."""
     device, entity_id, _ = _register(hass, "g1", "Grace Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "1")
@@ -522,7 +522,7 @@ async def test_a_storm_only_stamps_its_own_integration(
     hass: HomeAssistant,
 ):
     """A Zigbee reconnect cannot revive a HomeKit accessory, and
-    crediting it with one put a false cause in a live brief."""
+    crediting it with one would put a false cause in the brief."""
     zigbee, _, zigbee_entry = _register(hass, "z1", "Zigbee Thing")
     homekit, _, _ = _register(hass, "h1", "HomeKit Thing")
     coord = await setup_coordinator(hass)
@@ -612,9 +612,9 @@ async def test_an_opening_survives_while_its_problem_is_listed(
 ):
     """An opening is kept while its problem is still listed (rule LIST-11).
 
-    A sensor down twenty days read "recovered after ?" because the
-    incident log trims each row by its own age, so the opening aged
-    out while the fault was still on the list. An opening whose
+    Without this, a sensor down twenty days would read "recovered
+    after ?", because the incident log trims each row by its own age
+    and the opening would age out while the fault was still listed. An opening whose
     problem is still listed is current state that happens to be old.
     It ages normally once the problem leaves the list for good.
     """

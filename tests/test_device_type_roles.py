@@ -46,7 +46,7 @@ def test_a_known_model_wins_over_its_entities():
 
 
 def test_tims_water_shutoff_is_a_valve():
-    """Z-Wave shows the EcoNet EVC200 as a switch; it is an appliance."""
+    """Z-Wave shows the EcoNet EVC200 as a switch; it is a valve."""
     assert type_for_device([_e("switch")], model=("EcoNet Controls", "EVC200", ""), domain="zwave_js") == (
         "Valve", "known model")
 
@@ -60,7 +60,7 @@ def test_a_role_wins_over_entities():
     ({"domain": "ipp"}, [], "Printer"),
     ({"domain": "esphome", "bluetooth_proxy": True}, [_e("sensor", "signal_strength")], "Bluetooth Proxy"),
     ({"domain": "esphome"}, [_e("sensor", "signal_strength")], "ESPHome Device"),
-    # An ESPHome board whose entities say what it is keeps that.
+    # An ESPHome device whose entities say what it is keeps that.
     ({"domain": "esphome", "bluetooth_proxy": True}, [_e("sensor", "temperature")], "Temperature Sensor"),
     ({"domain": "esphome"}, [_e("switch")], "Switch"),
     ({"domain": "mqtt", "zigbee_router": True}, [_e("sensor", "signal_strength")], "Zigbee Router"),

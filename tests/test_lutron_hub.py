@@ -10,9 +10,9 @@
 A Lutron hub is up or down from its library's session, which the
 library clears when the hub stops answering its minute check. The
 devices it controls, registered "via" it, are never judged frozen or
-"never reported"; a Pico press counts as the Pico reporting. Shaped on
-a real house: a Basement hub with dimmers and Picos, and a Garage hub
-with two switches, each its own config entry.
+"never reported"; a Pico press counts as the Pico reporting. The test
+house has a Basement hub with dimmers and Picos, and a Garage hub with
+two switches, each its own config entry.
 """
 
 from __future__ import annotations
@@ -714,7 +714,7 @@ async def test_a_hub_controlled_device_with_a_standing_unknown_is_not_told_recov
     assert _item(c, h.kitchen.id) is not None, "precondition: the 0.26.5 unknown item stands"
     back = record_events(hass, EVENT_RECOVERED)
     await _tick(hass, freezer, n=3)
-    assert not _mine(back, h.kitchen.id), "a rule change is not a recovery (#529)"
+    assert not _mine(back, h.kitchen.id), "a rule change is not a recovery"
     assert _item(c, h.kitchen.id) is not None
 
 

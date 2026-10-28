@@ -5,7 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: helpers.py, Version: 0.27.10 (2026-10-27)
 
-"""Shared test helpers, one version of each (rule CODE-12).
+"""Shared test helpers, one version of each.
 
 One copy of each helper, so a test's behavior never depends on which
 copy its file holds. Each extra parameter defaults to the simplest
@@ -253,10 +253,10 @@ def record_events(hass: HomeAssistant, event_type: str) -> list:
 
     A plain function or lambda passed to `hass.bus.async_listen` is not
     a callback, so Home Assistant runs it as a job off the event loop,
-    and a burst of events can be recorded out of order. Measured on 16
-    September: fifty down and up pairs arrived interleaved in up to
-    eleven runs of twenty. A callback runs in the loop, in firing
-    order, which is the order a test about events needs.
+    and a burst of events can be recorded out of order: fifty down and
+    up pairs were measured arriving interleaved in up to eleven runs of
+    twenty. A callback runs in the loop, in firing order, which is the
+    order a test about events needs.
     """
     seen: list = []
 
@@ -291,7 +291,7 @@ def probe_lines(coord, node=None):
 
     The probe renders each line at once and appends it to
     stack_probe.md at the next tick, so a test reads the rendered
-    lines, keyed as the stored rows once were; DEVICE is the name
+    lines, keyed by the probe's own column names; DEVICE is the name
     (rule STACK-12).
     """
     from custom_components.device_sentinel.const import (

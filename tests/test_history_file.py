@@ -394,7 +394,7 @@ async def test_a_history_copy_of_another_generation_is_never_joined(
     hass: HomeAssistant, hass_storage, caplog
 ):
     """No match: the main file's thirty days, said in the log, nothing
-    doubled (rule STOR-04)."""
+    doubled (rule STOR-03)."""
     entry, coord, ids = await furnished(hass, n=40)
     await coord._save_now()
 

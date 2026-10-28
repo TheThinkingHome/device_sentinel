@@ -134,7 +134,7 @@ async def test_a_section_saves_and_returns_to_the_menu(
 
     Creating the entry would write the options and end the flow in one
     call, closing the dialog and dropping the person back in Home
-    Assistant halfway through six screens (rule CFG-01).
+    Assistant halfway through its screens (rule CFG-01).
     """
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -218,8 +218,8 @@ async def test_the_menu_says_a_section_saves_on_submit(
     """A person who submits and then closes the dialog has to be
     able to know their work was kept.
 
-    Home Assistant labels the button Submit and gives us no say in
-    it, so the menu's own description carries the promise instead.
+    Home Assistant labels the button Submit, so the menu's own
+    description carries the promise instead.
     """
     package = pathlib.Path(
         __import__(
@@ -245,7 +245,7 @@ async def test_the_excludes_live_in_a_section_and_store_flat(
     A Home Assistant section renders its name, then its description,
     then its fields, so the heading and its explanation sit above the
     pickers. Each screen keeps its plain settings loose at the top and
-    moves its exclude ladder into a section, as Advanced does for Data
+    moves its mute lists into a section, as Advanced does for Data
     Trim.
 
     Storage does not change. Every reader of these options, and every
@@ -339,11 +339,11 @@ async def test_each_section_carries_a_heading_and_an_explanation(
 
 
 async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
-    """Both halves of Global Exclusions carry a heading (rule CFG-02).
+    """Both halves of Exclusions and Muting carry a heading (rule CFG-02).
 
     A loose field renders its label above the input and its help below
-    it, which would leave the ignore list explained underneath its
-    chooser while the exclude ladder beside it has its explanation
+    it, which would leave the exclusion list explained underneath its
+    chooser while the mute lists beside it have their explanation
     above. This screen has no plain settings, only two groups of lists
     that need different explanations, so it has two sections and
     nothing loose.
@@ -380,7 +380,7 @@ async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
 async def test_both_halves_carry_a_heading_and_an_explanation(
     hass: HomeAssistant,
 ):
-    """The whole point of giving ignore a section of its own."""
+    """The whole point of giving the exclusion list a section of its own."""
     package = pathlib.Path(
         __import__(
             "custom_components.device_sentinel.const", fromlist=["const"]

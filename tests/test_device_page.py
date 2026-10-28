@@ -123,8 +123,8 @@ async def test_status_reads_watching_once_a_device_is_established(
 async def test_status_keeps_the_setup_count_as_an_attribute(
     hass: HomeAssistant,
 ):
-    """The count still proves the storage round-trip; it just stopped
-    being the thing a user reads."""
+    """The count proves the storage round-trip, kept as an attribute
+    rather than the word a person reads (rule CFG-07)."""
     await setup_entry(hass)
     state = hass.states.get("sensor.device_sentinel_status")
     assert state.attributes["setup_count"] == 1
@@ -168,7 +168,7 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
 
 
 async def test_status_carries_no_unit(hass: HomeAssistant):
-    """Status is a word now, so a unit would be nonsense."""
+    """Status is a word, so a unit would be nonsense."""
     await setup_entry(hass)
     state = hass.states.get("sensor.device_sentinel_status")
     assert "unit_of_measurement" not in state.attributes

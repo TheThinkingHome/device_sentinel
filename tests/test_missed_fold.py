@@ -84,11 +84,8 @@ async def test_a_restart_across_midnight_folds_the_missed_day(
 ):
     """Saved at 23:59 yesterday, started today.
 
-    Without this the day's maximum merged into today and the next
-    fold recorded one sample spanning both days, no battery level
-    was sampled for the missed day, and the whole fleet lost a day
-    of learning with nothing said. A nightly reboot at midnight lost
-    it every night.
+    The banked day is folded as its own sample, with its battery level,
+    so a nightly restart at midnight costs no day of learning.
     """
     device, _ = register_device(hass, "m", "Midnight")
     yesterday = (
@@ -132,7 +129,7 @@ async def test_a_week_down_folds_once_and_not_seven_times(
     """The accumulators hold one day's worth however long the gap.
 
     Folding once per missed midnight would append six samples no day
-    produced, which is worse than the fault it was fixing.
+    produced.
     """
     device, _ = register_device(hass, "w", "Week Down")
     week_ago = (dt_util.now() - datetime.timedelta(days=7)).timestamp()

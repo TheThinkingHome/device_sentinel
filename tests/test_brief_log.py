@@ -7,7 +7,7 @@
 
 """The brief's Last 24 Hours table as a tester's log (rule BRIEF-07).
 
-A tester should not have to take screenshots to know what the Problem
+A person should not have to take screenshots to know what the Problem
 List did. The table lists every row opened and cleared with its cause,
 gives each time to the second, and records the moment a Wi-Fi outage
 starts recovering, which is otherwise visible only on the row itself.

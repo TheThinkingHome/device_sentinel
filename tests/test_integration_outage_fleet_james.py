@@ -5,20 +5,20 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_integration_outage_fleet_james.py, Version: 0.27.10 (2026-10-27)
 
-"""The integration outage, driven against the reference fleet
+"""The integration outage, driven against a real house's record
 (rule UP-05).
 
-Not a unit test. Each case loads the fleet's own record into a live
-coordinator, plants its devices across the integrations the fleet
-actually runs, and puts them through the shapes a house produces.
-The second fleet's cases live in their own file; the split is by
-fleet because every case pays that fleet's full registry build.
+Not a unit test. Each case loads the house's own record into a live
+coordinator, plants its devices across the integrations the house
+runs, and puts them through the shapes a house produces. Each house's
+cases live in their own file, because every case pays that house's
+full registry build.
 
 Two questions are asked throughout. Does the integration rung report
 the integration where nothing else can, and does it leave alone
 everything that works without it.
 
-Skips whole when the fleet files are absent, as every fleet case does.
+Skips whole when the house files are absent.
 """
 
 from __future__ import annotations
@@ -112,11 +112,11 @@ async def test_an_integration_that_will_not_settle(
 async def test_the_zigbee_stack_still_answers_for_itself(
     hass: HomeAssistant,
 ):
-    """A bridge outage is a bridge outage, exactly as before.
+    """A bridge outage is still a bridge outage (rule UP-01).
 
-    The Zigbee devices carry the bulk of both fleets. If the new rung
+    The Zigbee devices are most of a house. If the integration rung
     reached them, every bridge outage would be reported twice or
-    reported wrongly, so this is the regression that matters most.
+    reported wrongly.
     """
     coord, entries, behind, now = await _fleet(hass, JAMES, JAMES_SHAPE)
     seen = _heard(hass)
@@ -133,7 +133,7 @@ async def test_the_zigbee_stack_still_answers_for_itself(
     for device, _ in behind["mqtt"]:
         assert coord.upstream_down_since(device.id) is None
 
-    # Now the bridge itself goes, which is the old path.
+    # Now the bridge itself goes.
     coord._bridge_readers["z2m"] = _stub(BRIDGE_DOWN)
     coord._sample_bridges()
     await hass.async_block_till_done()

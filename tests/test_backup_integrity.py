@@ -233,7 +233,7 @@ async def test_fault_ids_name_the_right_file(hass: HomeAssistant):
     )
 
 
-# The signal census was a routine count, kept out of the log
+# The signal census is a routine count, kept out of the log
 # (rule GEN-10).
 
 

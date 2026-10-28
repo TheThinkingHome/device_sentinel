@@ -5,22 +5,19 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: test_exclusions.py, Version: 0.27.10 (2026-10-27)
 
-"""Exclusion: watched and recorded, but not judged or reported
+"""Excluding and muting, and the ladder that settles them
 (rules MUTE-01, MUTE-03, MUTE-04, MUTE-07, WATCH-08).
 
-An excluded device keeps its clock and statistics and never stops being
-observed; exclusion only suppresses judgment and reporting, and the
-STATUS column names why. Exclusion comes in a global kind and three
-per-family kinds (battery, signal, freeze), applies live through
-options with no restart, and respects the primary owner for an
-integration-level exclude so a multi-homed device is caught only by
-its owning domain. The exclude pickers tag each option with its
-integration so two devices sharing a friendly name can be told apart.
-This file holds the exclusion surface, the STATUS column, the live
-application, the disambiguated pickers, and the priority ladder:
-integration over label over device over entity, broadest first, with a
-pick that a broader kind covers pruned on save, plus the retirement of
-dead option keys that no code reads.
+A muted device keeps its clock and history and is still watched; a mute
+stops only judging and reporting, and the STATUS column names why. Mute
+everything sits above each family's mute, a mute applies live through
+options with no restart, and an integration-level pick catches a
+multi-homed device only through its owning domain. Excluding a device
+or an integration stops the watching. The pickers tag each option with
+its integration so two devices sharing a name can be told apart. Each
+save settles the ladder, integration over label over device, broadest
+first, removing a pick a broader one covers, and setup clears option
+keys no code reads.
 """
 
 from datetime import timedelta
@@ -152,7 +149,7 @@ def _ghost_record():
     return record
 
 
-# ------------------------------------------ the global exclude surface
+# ------------------------------------------ the Mute everything surface
 
 async def test_excluded_device_keeps_learning_never_reported(
     hass: HomeAssistant, freezer
@@ -202,14 +199,14 @@ async def test_integration_exclude_respects_primary_owner(
         device_id=device.id, config_entry=owner,
     )
 
-    # Excluding the tracker does not catch the camera.
+    # Muting the tracker does not catch the camera.
     entry = await setup_entry(
         hass, {CONF_MUTED_INTEGRATIONS: ["router_tracker"]}
     )
     coord = entry.runtime_data
     assert device.id not in coord._muted_devices
 
-    # Excluding the owner does, applied live through options.
+    # Muting the owner does, applied live through options.
     hass.config_entries.async_update_entry(
         entry,
         options={CONF_MUTED_INTEGRATIONS: ["camera_brand"]},
@@ -229,8 +226,8 @@ async def test_classification_shows_excluded(hass: HomeAssistant):
     text = open(
         hass.config.path("device_sentinel/classification.md")
     ).read()
-    # One combined table: the excluded device carries a Watched
-    # check and names why in the EXCLUDED column.
+    # One combined table: the muted device carries a Watched check
+    # and names why in the EXCLUDED column.
     assert "WATCHED" in text
     assert "Global (device)" in text
     assert "Excl Device 4" in text
@@ -330,14 +327,14 @@ async def test_detected_batteries_picker_source(hass: HomeAssistant):
     )
 
 
-# ----------------------------------- exclusion relationship + STATUS
+# ----------------------------------- muting and STATUS
 
 async def test_globally_muted_device_is_not_judged(hass: HomeAssistant):
-    """A globally excluded device gets no verdict: the sweep skips it,
-    rather than computing a verdict that the report then hides."""
+    """A device muted for everything gets no verdict: the sweep skips it,
+    rather than working out a verdict the report then hides (rule MUTE-01)."""
     device = _register(hass, "gx", "Excluded Ghost")
     coord = await setup_coordinator(hass)
-    # Exclude it globally.
+    # Mute it for everything.
     hass.config_entries.async_update_entry(
         coord.entry, options={CONF_MUTED_DEVICES: [device.id]}
     )
@@ -349,14 +346,14 @@ async def test_globally_muted_device_is_not_judged(hass: HomeAssistant):
 
 
 async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
-    """STATUS is reported when nothing excludes, global when globally
-    excluded (alone), and the section tags otherwise."""
+    """STATUS reads Reported when nothing mutes the device, GLB alone when
+    it is muted for everything, and the family tags otherwise (rule MUTE-10)."""
     device = _register(hass, "st", "Status Device")
     coord = await setup_coordinator(hass)
-    # Nothing excludes: Reported.
+    # Nothing mutes it: Reported.
     assert coord._device_status(device.id) == "Reported"
 
-    # Section excludes: tags, no global.
+    # Family mutes: tags, no GLB.
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
@@ -368,7 +365,7 @@ async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
     assert status == "Muted (BAT, FRZ)"
     assert "GLB" not in status
 
-    # Global exclude wins and shows alone.
+    # Mute everything wins and shows alone.
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
@@ -624,13 +621,11 @@ def test_battery_prune_drops_superseded_device_pick():
     assert pruned[CONF_BATTERY_MUTED_DEVICES] == []
 
 
-# The freeze and signal pruners are siblings of the battery one and
-# were the only two saves the suite never exercised. Each has two
-# jobs the battery test could not prove for it: round its own
-# sliders to the type the option is (the deltas and three signal
-# knobs are integers, the lift is a float), and settle its own
-# exclusion ladder on save the way battery does. Both are checked
-# here so a regression in either save cannot pass unnoticed.
+# The freeze and signal pruners are siblings of the battery one. Each
+# has two jobs the battery test cannot prove for it: round its own
+# sliders to the option's type (the deltas, the two drops and the
+# baseline days are integers, the sensitivity a float), and settle its
+# own ladder on save the way battery does.
 
 _FREEZE_ROWS = [
     {
@@ -753,10 +748,9 @@ _SIGNAL_ROWS = [
 
 
 def test_signal_prune_rounds_the_sliders_to_their_types():
-    """Trim, margin, the two drops and the baseline days are
-    integers; the lift and the bad-day sensitivity are floats. Each
-    arrives from its slider as a float and is stored as the type the
-    option declares (rule SIG-08 for the four bad-day sliders)."""
+    """The two drops and the baseline days are integers; the bad-day
+    sensitivity is a float. Each arrives from its slider as a float and
+    is stored as the type the option declares (rule SIG-08)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
             CONF_BADDAY_DROP_LQI: 25.0,
@@ -1106,8 +1100,8 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
         assert isinstance(entry.options[key], int), key
     assert entry.options[CONF_BADDAY_SENSITIVITY] == 4.0
     assert isinstance(entry.options[CONF_BADDAY_SENSITIVITY], float)
-    # The three line shapers are constants, so the form cannot carry
-    # them and the entry must not gain them (rule SIG-08).
+    # The three line shapers are retired, so the form cannot carry
+    # them and the entry must not gain them (rule SIG-13).
     for gone in ("signal_margin", "signal_lift", "signal_sensitivity"):
         assert gone not in entry.options, gone
 
@@ -1161,7 +1155,7 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
 
 
 async def test_excluding_clears_the_global_mute(hass: HomeAssistant):
-    """The reported case, driven through the real dialog.
+    """Excluding clears a mute it covers, driven through the real dialog.
 
     An integration is muted, then excluded on the same save, and the
     mute is gone from stored options rather than sitting underneath
@@ -1291,9 +1285,7 @@ async def test_a_pick_a_higher_rung_does_not_reach_survives(
     first.add_to_hass(hass)
     covered, _ = _ladder_device(hass, first, 23)
     # A device's integration is its config entry's domain, not its
-    # identifiers, so a genuinely separate integration needs its own
-    # entry. The first draft of this test used identifiers alone and
-    # built a second device of the same integration.
+    # identifiers, so a separate integration needs its own entry.
     second = MockConfigEntry(domain="keeper")
     second.add_to_hass(hass)
     other = dr.async_get(hass).async_get_or_create(
@@ -1412,8 +1404,8 @@ async def test_a_device_returns_when_its_exclusion_is_lifted(
 
     A person excludes a noisy integration, sees later that it was the
     wrong one, and takes it off the list. The device must return to the
-    watched set with its record still there, because setting a device
-    aside clears its judgment and never its history (rule LIST-09).
+    watched set with its record still there, because an exclusion taken
+    back before midnight loses nothing (rule MUTE-01).
     """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -1452,7 +1444,7 @@ async def test_a_device_returns_when_its_muting_is_lifted(
     Muting and excluding differ in exactly this: a muted device is
     still watched and still recorded, so when the muting lifts it has
     a full history rather than starting again. That difference is the
-    reason both settings exist, and nothing asserted it.
+    reason both settings exist (rule MUTE-01).
     """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -1533,8 +1525,8 @@ def _kinds(coord, device_id):
 
 @pytest.mark.parametrize("option", list(MUTES))
 async def test_a_mute_is_not_a_recovery(hass: HomeAssistant, freezer, option):
-    """S73 on the second house's person's week: muted while frozen,
-    announced recovered. Every mute setting, every surface silent."""
+    """A device muted while frozen is never announced recovered: every
+    mute setting, every surface silent (rule MUTE-07)."""
     source = MockConfigEntry(domain="zwave_js", title="zwave_js")
     source.add_to_hass(hass)
     source.mock_state(hass, ConfigEntryState.LOADED)
@@ -1601,7 +1593,7 @@ async def test_a_mute_is_not_a_recovery(hass: HomeAssistant, freezer, option):
     ]
     assert not [b for b in bus if b[0] == "recovered"], bus
     # Only what the mute sends: a storage notice an earlier test in the
-    # same run leaves behind reaches the same phone and is not ours.
+    # same run leaves behind reaches the same phone and is not this test's.
     about_it = [
         c.data.get("message")
         for c in phone
@@ -1772,8 +1764,8 @@ async def test_saving_settings_excludes_and_keeps_its_mutes(hass: HomeAssistant)
     assert entry.options[CONF_EXCLUDED_DEVICES] == [drop.id]
     assert drop.id not in coord._watched
     assert entry.options[CONF_FREEZE_MUTED_DEVICES] == [drop.id], "the excluded device's mute was dropped"
-    # The global mute added in the same save took keep's section mute,
-    # as it always has; the exclusion took nothing.
+    # The global mute added in the same save took keep's section mute;
+    # the exclusion took nothing.
     await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: []})
     assert drop.id in coord._watched
     assert drop.id in entry.options[CONF_FREEZE_MUTED_DEVICES]

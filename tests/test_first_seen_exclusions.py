@@ -79,7 +79,7 @@ async def _existing_house(hass, saved):
 
 
 async def test_an_existing_house_gets_music_assistant_excluded_once(hass: HomeAssistant):
-    """A house's real list, before Music Assistant joined the default."""
+    """A saved list that lacks Music Assistant, on a house in its first run."""
     player = _player(hass)
     rig = ["fully_kiosk", "spook", "ping", "androidtv", "webostv", "mobile_app", "tplink_router"]
     coord = await _existing_house(hass, rig)
@@ -181,7 +181,7 @@ async def test_each_one_added_is_told_in_the_brief(hass: HomeAssistant):
 
 async def test_a_list_never_saved_is_told_too(hass: HomeAssistant):
     """A house that never submitted its Configure screen has the default,
-    which already holds the seven: still told."""
+    which already holds the nine: still told."""
     from custom_components.device_sentinel.const import DATA_SYSTEM_EVENTS, SYS_FIRST_SEEN_EXCLUDED, SYS_KIND, SYS_SCOPE
 
     _player(hass)

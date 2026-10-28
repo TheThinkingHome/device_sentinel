@@ -143,8 +143,8 @@ def test_one_step_down_is_not_a_curve():
 
 
 def test_a_steady_fall_with_a_pause_is_falling_not_accelerating():
-    """S71: the first weekly rule flipped it to accelerating on one day,
-    because the week it compared against was the pause."""
+    """S71: a week compared against its pause would read accelerating
+    on one day; the curve reads it falling (rule BAT-12)."""
     trend = battery_trend(S71, 61.5, True)
     assert trend["reading"] == "falling"
     assert [ago for ago, _ in trend["fit"]["line"]] == [38, 0]
@@ -217,8 +217,8 @@ B01 = [80.5, 80.5, 80.5, 80.5, 80.5, 84.0, 80.5, 84.0, 80.5, 80.5, 80.5, 80.5,
 
 
 def test_one_step_is_not_two_fast_weeks():
-    """With one week allowed after its knee, the old rule read this
-    single step as accelerating; the curve does not."""
+    """A single step is not two fast weeks: the curve through it does
+    not read accelerating (rule BAT-12)."""
     assert battery_trend(S57, 34.0, True)["reading"] != "accelerating"
 
 
@@ -244,8 +244,8 @@ from custom_components.device_sentinel.diagnostics import (  # noqa: E402
 
 from .helpers import registry_settled, register_device, setup_coordinator  # noqa: E402
 
-# S63's shape carried down to 21.5 percent, so it is projected empty
-# inside a month, which belongs on the Problem List (rule BAT-14).
+# S63's shape carried down to 21.5 percent, so it reaches the low
+# threshold inside a month, which belongs on the Problem List (rule BAT-14).
 S63_LOW = [round(level - 36.0, 1) for level in S63]
 
 
@@ -320,7 +320,7 @@ async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):
 
 async def test_the_diagnostics_download_carries_a_week_with_no_average(hass: HomeAssistant):
     # A week the device was never heard has no average, so rounding it
-    # must not fail the whole download (rule BAT-18).
+    # must not fail the whole download (rule STOR-21).
     from datetime import timedelta
 
     from homeassistant.util import dt as dt_util

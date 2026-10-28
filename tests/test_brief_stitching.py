@@ -7,7 +7,7 @@
 
 """A silence the restarts segmented is told as one silence (rule BRIEF-06).
 
-Each restart closes the open episode as an intervention (rule FRZ-20),
+Each restart closes the open episode as an intervention (rule FRZ-08),
 so a device unplugged for three days could be told as twenty-one
 recoveries in one morning brief, "silent for 19.9h in total". Those
 fragments are stitched back into one sentence.
@@ -59,9 +59,9 @@ def _pairs(
 ) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
     """Return interruption pairs spaced back from now.
 
-    Every resolution carries no cause, which is what the live
-    journal writes: of the fleet's 462 rows, 452 have none. A
-    fixture that supplied one would prove nothing about the house.
+    Every resolution carries no cause, as nearly every row the live
+    journal writes does. A fixture that supplied one would prove
+    nothing.
     """
     now = dt_util.utcnow().timestamp()
     start = now - count * spacing - 60.0
@@ -183,11 +183,9 @@ async def test_a_device_with_no_standing_verdict_is_not_stitched(
 async def test_an_open_problem_with_no_recovery_claimed_is_untouched(
     hass: HomeAssistant,
 ):
-    """Nothing to correct, so the ordinary sentence stands.
-
-    This is the shape that refused the first version of this rule: a
-    single open problem, no resolution anywhere, which must keep
-    reading as a device that stopped reporting.
+    """Nothing to correct, so the ordinary sentence stands: a single
+    open problem, no resolution anywhere, keeps reading as a device
+    that stopped reporting.
     """
     device, _ = register_device(hass, "op1", "Open Only")
     coord = await setup_coordinator(hass)
@@ -289,9 +287,9 @@ async def test_the_table_drops_the_bookkeeping_rows(
 async def test_one_silence_split_across_kinds_is_one_sentence(
     hass: HomeAssistant, freezer
 ):
-    """A real brief's rows: one silence from 4:35 PM.
+    """The rows of one silence from 4:35 PM.
 
-    The bridge's outage at the 3:40 AM reboot escalated frozen to
+    A bridge outage at a 3:40 AM reboot escalated frozen to
     unavailable, and at 3:47 AM, still silent, it was frozen again. The
     unavailable piece carried the claimed recovery and is stitched; the
     two frozen pieces carried none and must not be told as "went silent

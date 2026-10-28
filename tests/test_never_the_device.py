@@ -78,8 +78,9 @@ async def test_2_update_entity_change_is_not_a_recovery(hass: HomeAssistant, fre
 DIAG = ("sensor", EntityCategory.DIAGNOSTIC)
 
 
-# A. Rule 9: an update entity's same-value write (state_reported, as a
-# coordinator refresh writes it) moves the device's clock.
+# A. An update entity's same-value write (state_reported, as a
+# coordinator refresh writes it) does not move the device's clock
+# (rule WATCH-04).
 async def test_a_update_same_value_write_does_not_move_clock(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r11a", extras=(DIAG, ("update", None)))
     hass.states.async_set(ids["x1"], "off")
@@ -91,7 +92,7 @@ async def test_a_update_same_value_write_does_not_move_clock(hass: HomeAssistant
     assert record[DEV_LAST_ACTIVITY] == before, "update entity write moved the clock"
 
 
-# A2. The same write ends a standing frozen verdict, with a recovery.
+# A2. Nor does the same write end a standing frozen verdict (rule WATCH-04).
 async def test_a2_update_same_value_write_does_not_end_freeze(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r11b", extras=(DIAG, ("update", None)))
     hass.states.async_set(ids["x1"], "off")
@@ -109,8 +110,9 @@ async def test_a2_update_same_value_write_does_not_end_freeze(hass: HomeAssistan
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_FROZEN, record[DEV_FROZEN_CATEGORY]
 
 
-# B. Rule 9: a device with no main entity (update + diagnostic only), down;
-# the update entity comes back while the diagnostic stays unavailable.
+# B. A device with no main entity (update + diagnostic only), down;
+# the update entity comes back while the diagnostic stays unavailable,
+# and the device stays unavailable (rules WATCH-04, UNAV-01).
 async def test_b_no_main_update_back_does_not_end_unavailable(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r11c", main="update", extras=(DIAG,))
     assert not coord._main_entities.get(device.id)
@@ -300,8 +302,8 @@ async def test_r15_2_only_a_switched_off_notice_is_set_aside_truthfully(hass: Ho
 
 
 # 4. An integration whose set-aside devices are one notices-only and one
-# with no entities reads "Service only" ("Its devices report themselves as
-# services"), true of neither.
+# with no entities reads "Nothing switched on to read", true of both,
+# never "Service only" (rule WATCH-04).
 async def test_r15_4_mixed_set_aside_integration_standing(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _loaded(hass, "broadlink")
@@ -320,9 +322,9 @@ async def test_r15_4_mixed_set_aside_integration_standing(hass: HomeAssistant, f
     assert rows["broadlink"]["standing"] == "notices_only", (rows["broadlink"]["standing"], reasons)
 
 
-# 4. Rule 9: an integration whose only device has no entities at all, no
-# notice and no button, reads "Nothing switched on to read", whose meaning
-# says its devices have firmware notices or command buttons switched on.
+# 4. An integration whose only device has no entities at all, no notice
+# and no button, reads "Nothing switched on to read", in words true of it
+# (rule WATCH-04).
 async def test_r17_4_bare_integration_standing_words(hass: HomeAssistant, freezer):
     from custom_components.device_sentinel.const import STANDING_MEANINGS
 
@@ -458,7 +460,7 @@ async def test_r20_1_hue_light_back_through_the_light(hass: HomeAssistant, freez
     assert len(_mine(back, device.id)) == 1
 
 
-# 2. Rule 1 on a Hue light: freeze-muted, still reported unavailable.
+# 2. A freeze-muted Hue light is still reported unavailable (rule MUTE-06).
 async def test_r20_2_freeze_muted_hue_light_reported(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _hue(hass, freezer, "r20b", options={CONF_FREEZE_MUTED_DEVICES: "SELF"})
     faults = record_events(hass, EVENT_FAULT)
@@ -543,8 +545,8 @@ async def test_r20_7_restart_while_hue_light_down(hass: HomeAssistant, freezer):
 
 
 # 5. A Hue light whose light entity is switched off and whose bridge word
-# is switched on: not set aside (rule 9 names only notices and buttons),
-# so it must be judged. Silent for days, then the bridge loses it.
+# is switched on is set aside (rule WATCH-04); watched, it must be
+# judged. Silent for days, then the bridge loses it.
 async def test_r21_5_hue_word_only_device_is_judged_or_set_aside(hass: HomeAssistant, freezer):
     from homeassistant.config_entries import ConfigEntryState
     from homeassistant.const import EntityCategory

@@ -13,7 +13,7 @@ Real files through Home Assistant's own storage code (the real_disk
 fixture). A stop is a save that raises at a chosen step: the files on
 disk at that moment are kept, the integration is stopped, the files are
 put back as the stop left them, and the next start must join a whole
-history with no day doubled or lost. Both reference houses are split
+history with no day doubled or lost. Each committed house is split
 and joined day for day at the end.
 """
 
@@ -336,7 +336,7 @@ async def test_a_damaged_main_file_after_the_history_file_went_restores_thirty_d
     """Retention down to thirty removes both history files; the main file's
     last-good is then the main file of that save, so a damaged main file
     restores the thirty days rather than a copy that asks for a history
-    file no longer there (rule STOR-23)."""
+    file no longer there (rule STOR-03)."""
     entry, coord, ids = await house(hass)
     for device_id in ids:
         for field in SERIES_FIELDS:

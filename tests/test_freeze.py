@@ -19,7 +19,8 @@ inside its grace window is left alone. Detection is live: a verdict
 flips once, clears the instant the device reports, is debounced for
 the unavailable case, and survives a reboot because the window is
 measured from the device's own stored last-activity clock. A
-freeze-excluded device is watched but never given a verdict, every menu
+freeze-muted device is watched but never called frozen or never
+reported, every menu
 step carries a label so no screen renders blank, and an old record
 missing the freeze fields is judged without crashing the sweep.
 """
@@ -103,7 +104,7 @@ def _pre_050_record(first_observed_iso):
 # The margin curve.
 # ==================================================================
 
-async def test_margin_curve_hits_the_ruling_85_anchors(
+async def test_margin_curve_hits_its_anchors(
     hass: HomeAssistant,
 ):
     """The default curve passes through its anchors: a 1-hour device
@@ -459,19 +460,19 @@ async def test_a_device_that_reported_once_is_not_not_reported(
 
 
 async def test_freeze_exclude_suppresses_every_verdict(hass: HomeAssistant):
-    """A freeze-excluded device is watched but never given a verdict,
-    even one it would otherwise earn."""
+    """A freeze-muted device is watched but given no never-reported
+    verdict, though it would otherwise earn one (rule MUTE-06)."""
     device, _ = register_device(hass, "fx1")
     coord = await setup_coordinator(hass, {CONF_FREEZE_MUTED_DEVICES: []})
     record = _never_reported_record("2026-07-08T00:00:00+00:00")
     coord.data["devices"][device.id] = record
     now = 1_784_600_000.0
-    # Without the exclude it would be not_reported.
+    # Without the mute it would be not_reported.
     assert (
         coord._device_down_category(device.id, record, now)
         == FREEZE_CATEGORY_NEVER_REPORTED
     )
-    # Add the device to the freeze exclude and it goes quiet.
+    # Mute the device for freeze and it goes quiet.
     hass.config_entries.async_update_entry(
         coord.entry,
         options={CONF_FREEZE_MUTED_DEVICES: [device.id]},
@@ -712,10 +713,10 @@ def _freeze_window_of(coord, record):
 async def test_an_outage_is_not_counted_against_a_device(
     hass: HomeAssistant, freezer
 ):
-    """The fault a six-minute power cut exposed. A device that kept
-    reporting to its bridge throughout was blamed for the silence the
-    system could not hear, and the fastest reporters crossed their
-    windows first, purely by arithmetic."""
+    """A device that kept reporting to its bridge while the system was
+    stopped is not blamed for the silence the system could not hear;
+    otherwise the fastest reporters would cross their windows first,
+    purely by arithmetic."""
     device, entities = register_device(hass, "dt1", entity_count=1)
     coord = await setup_coordinator(hass)
     # Settle the entity first: setting a state re-arms the
@@ -836,8 +837,8 @@ async def test_an_unstamped_pair_credits_nothing(
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-# A second house's committed files, so its cases run everywhere and
-# not only on the first house.
+# A second set of committed house files, so these cases run on more
+# than one house's data.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
 CLOCKS_FOR = {
@@ -876,7 +877,7 @@ def _fleet(path: Path) -> list[dict]:
 async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
     """A hostile record in memory can only arrive through a load,
     and the load repairs what the check cannot vouch for
-    (rule STOR-09). The repair is run here the way the gate runs it,
+    (rule STOR-09). The repair is run here the way the load runs it,
     then the sweep must finish on the repaired fleet, and a
     never-reported verdict must still only land on a device that
     owns an entity."""
@@ -898,7 +899,7 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
                 ["2026-07-08T00:00:00+00:00", "yesterday", None, 7, ""]
             )
         coord.data[DATA_DEVICES][device.id] = record
-    # Repaired the way the gate repairs at load (rule STOR-09):
+    # Repaired the way the load repairs (rule STOR-09):
     # non-records dropped, damaged fields reset to defaults.
     coord._repair_records()
     for _ in range(5):
@@ -1095,7 +1096,7 @@ async def test_an_awake_device_reading_unknown_is_not_down_and_not_frozen(hass: 
     assert coord._device_down_category(device.id, record, now) is None
     record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
     assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN, (
-        "a verdict already standing waits for the device to report (#529)"
+        "a verdict already standing waits for the device to report"
     )
 
 

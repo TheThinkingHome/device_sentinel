@@ -444,12 +444,12 @@ async def test_running_windows_keep_their_real_time_through_a_reset(hass: HomeAs
     assert abs((coord._maintenance_until - now) - (maintenance_left - 60)) < 2, coord._maintenance_until - now
 
 
-# The startup grace attacked: no device without entities judged never reported, nothing listed inside the grace, and a set-aside retire makes no sound.
+# The startup grace across random restarts: no device without entities judged never reported, nothing listed inside the grace, and a set-aside retire makes no sound.
 
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-# The second fleet's committed house.
+# A real house's committed storage file.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
@@ -577,8 +577,8 @@ async def _run_round(hass: HomeAssistant, records: list[dict], seed: int):
 
     restarts = rng.randint(1, 3)
     for restart in range(restarts):
-        # The restart: grace opens, the rebuild runs while the owner
-        # may or may not have finished loading, the judge runs some
+        # The restart: grace opens, the rebuild runs while each
+        # integration may or may not have finished loading, the judge runs some
         # number of times inside the window.
         house.open_grace()
         house.rebuild()
@@ -680,7 +680,7 @@ async def _settle(hass, freezer, minutes: int) -> None:
 async def test_a_device_that_reported_without_a_learned_day_keeps_a_clock(
     hass: HomeAssistant, hass_storage, freezer
 ):
-    """The fourth fleet's case: 22 events, three days old, no fold yet."""
+    """A device with 22 events, three days old, and no fold yet."""
     device, entities = register_device(hass, "nc1", name="Pico Remote")
     hass.states.async_set(entities[0] if isinstance(entities, list) else entities, "1")
     entry = await setup_entry(hass)
@@ -730,7 +730,7 @@ async def test_a_young_device_keeps_no_clock(
 # cancels its timer, not a check already running, and waiting for the
 # house to settle does not wait for it. A check that finishes after the
 # stop must not write this session's storage again, over the final save
-# or over a new session's files after a reload (rule STOR-18).
+# or over a new session's files after a reload (rule STOR-02).
 
 
 async def _hold_a_minute_check(hass, coordinator, monkeypatch):

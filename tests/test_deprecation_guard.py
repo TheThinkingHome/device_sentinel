@@ -11,8 +11,8 @@
 A guard that has never been seen to fail proves nothing. These check
 both halves: the matching, against the exact text Home Assistant
 writes, and the collection, against a warning Home Assistant's own
-reporter emits for this integration. And the registry walk that once
-raised a warning raises none.
+reporter emits for this integration. And the registry walk raises
+none.
 """
 
 from __future__ import annotations

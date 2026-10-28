@@ -11,10 +11,10 @@
 Enabled means a person reads it daily or acts on it in their first
 week. The table below is that rule as an assertion, so flipping a
 default edits this file rather than slipping by. The broker sensor is
-the one conditional: enabled where a bridge stack was detected, off
-where the house has no MQTT to watch.
+the one conditional: enabled where a stack was detected, off where the
+house has none (rule UP-02).
 
-Removing the integration removes both storage files, every backup
+Removing the integration removes its four storage files, every backup
 beside them, and every file it wrote in the reports folder and the old
 www folder, so an uninstall leaves nothing for a person to find later.
 Only its own: a file another tool keeps in the reports folder stays,
@@ -62,13 +62,13 @@ EXPECTED_DEFAULTS = {
     "sensor.device_sentinel_battery_falling": False,
     "sensor.device_sentinel_device_frozen": False,
     "sensor.device_sentinel_devices_set_aside": False,
-    # The conditional: this test house has no bridge stack, so the
+    # The conditional: this test house has no stack, so the
     # broker sensor ships off. The other branch has its own test.
     "sensor.device_sentinel_broker_mqtt": False,
 }
 
 
-async def test_every_entity_default_matches_the_ruling(
+async def test_every_entity_default_matches_the_table(
     hass: HomeAssistant, entity_registry
 ):
     """The whole table, so a flip is always a decision (rule CFG-08)."""
@@ -283,7 +283,7 @@ def test_every_translation_key_has_its_name():
     assert set(re.findall(r'key="([a-z_]+)"', (root / "button.py").read_text())) == set(strings["button"])
     assert strings["sensor"]["bridge_zigbee2mqtt"]["name"] == "Bridge: Zigbee2MQTT"
     assert strings["sensor"]["bridge_zha"]["name"] == "Bridge: ZHA"
-    # No entity is named in code any more.
+    # No entity is named in code.
     for platform in ("sensor.py", "button.py", "todo.py"):
         assert not re.search(r'_attr_name = "', (root / platform).read_text()), platform
 

@@ -226,7 +226,7 @@ async def test_power_and_type_answers_share_the_file_and_survive_a_restart(hass:
 
 async def test_a_save_keeps_the_previous_file_as_last_good(hass: HomeAssistant, hass_storage, _no_files):
     """Before each save the file about to be replaced becomes last-good
-    (rule STOR-04)."""
+    (rule STOR-20)."""
     device = _model_device(hass)
     coord = await setup_coordinator(hass)
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
@@ -842,7 +842,7 @@ async def test_disk_an_evidence_copy_is_dated_today_so_the_pruning_keeps_it(
     hass: HomeAssistant, real_disk, _no_evidence
 ):
     """A copy is dated today, not with the answers file's own old time,
-    so the nightly pruning keeps it (rule STOR-11)."""
+    so the nightly pruning keeps it (rule STOR-20)."""
     _model_device(hass)
     _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
     old = 1_600_000_000
@@ -923,7 +923,7 @@ async def test_disk_a_damaged_file_with_no_backup_is_never_made_last_good(
 
 async def test_disk_a_repair_is_written_back_and_not_repeated(hass: HomeAssistant, real_disk, _no_evidence):
     """A load repair is saved, so the next start does not find the same
-    damage, copy it again and say so again (rule STOR-09)."""
+    damage, copy it again and say so again (rule STOR-20)."""
     device = _model_device(hass)
     _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
         "power": {"models": {KEY: _power("CR2450", 1, device.id), "not a key": 7}, "devices": {}},

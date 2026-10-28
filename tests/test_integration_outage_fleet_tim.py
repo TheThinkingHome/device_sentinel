@@ -5,17 +5,17 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_integration_outage_fleet_tim.py, Version: 0.27.10 (2026-10-27)
 
-"""The integration outage, driven against the second fleet (rule UP-05).
+"""The integration outage, driven against a committed house with a
+controller integration (rule UP-05).
 
-Not a unit test. Each case loads the fleet's own record into a live
-coordinator, plants its devices across the integrations the fleet
+Not a unit test. Each case loads the house's own record into a live
+coordinator, plants its devices across the integrations the house
 actually runs, and puts them through the shapes a house produces.
-The reference fleet's cases live in their own file; the split is by
-fleet because every case pays that fleet's full registry build.
+Each house's cases live in their own file, because every case pays
+that house's full registry build.
 
-This fleet holds the case the whole feature was built for: a
-controller integration with seventeen devices behind one entry,
-which nothing on the reference fleet can produce.
+This house holds a controller integration with seventeen devices
+behind one entry.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 """
@@ -41,11 +41,10 @@ from tests.test_upstream_events_fleet import _heard
 async def test_a_controller_falls_on_the_second_fleet(
     hass: HomeAssistant, freezer
 ):
-    """The case this was built for, on the fleet that has it.
+    """A controller falling, with seventeen devices behind one entry.
 
     Z-Wave and Matter reload their entry when the controller
-    disconnects, which is the one shape the reference fleet cannot
-    produce. Seventeen devices behind one entry.
+    disconnects.
     """
     coord, entries, behind, now = await _fleet(hass, TIM, TIM_SHAPE)
     seen = _heard(hass)
@@ -84,7 +83,7 @@ async def test_a_controller_falls_on_the_second_fleet(
 
 @pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 async def test_every_integration_falls_at_once(hass: HomeAssistant):
-    """Seven integrations down together on a 234 device fleet.
+    """Seven integrations down together on a 234 device house.
 
     One event each, naming its own devices, and no device is claimed
     by the wrong one.
@@ -131,7 +130,7 @@ async def test_an_upgrade_reloads_everything_and_says_nothing(
 
     This is what a Home Assistant upgrade looks like, and it is the
     reason the dwell exists. Without it an upgrade would announce an
-    outage per integration on every fleet, every time.
+    outage per integration on every house, every time.
     """
     coord, entries, behind, now = await _fleet(hass, TIM, TIM_SHAPE)
     seen = _heard(hass)

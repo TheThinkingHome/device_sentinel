@@ -83,7 +83,7 @@ async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
 def _class_device(hass, uid, name, entities=1):
     """Build a registry device with N enabled entities.
 
-    An entity is not decoration here: a device with nothing enabled is set
+    An entity is not decoration here: a device with no entities is set
     aside, because it has no way to speak, so a fixture without one is not
     a watched device (rule WATCH-03).
     """
@@ -257,7 +257,7 @@ async def test_setting_the_bridge_aside_still_detects_the_stack(
 
     Detection runs earlier in the same walk than the set-aside ladder,
     so the house is still known to run Zigbee2MQTT. If this broke, a
-    fleet would lose its bridge sensor and its pairing-window discard
+    house would lose its bridge sensor and its pairing-window discard
     the moment the duplicate was cured.
     """
     source = MockConfigEntry(domain="mqtt")
@@ -341,9 +341,8 @@ async def test_the_classification_row_keeps_its_columns(
     coord = await setup_coordinator(hass)
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
-    # A set-aside device, so the reason column carries a word. Two
-    # empty cells cannot tell a swap from a correct row, which is how
-    # the first draft of this test passed against the swap.
+    # A set-aside device, so the reason column carries a word: two
+    # empty cells cannot tell a swap from a correct row.
     dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
         identifiers={("test", "r4svc")},

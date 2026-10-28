@@ -5,9 +5,9 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: outage_helpers.py, Version: 0.27.10 (2026-10-27)
 
-"""Helpers for the outage and unwatched-time tests (rules UNAV-04, WATCH-08): a
-device armed with a dated rhythm,
-minute walks, reloads and restarts.
+"""Helpers for the outage and unwatched-time tests (rules UNAV-04,
+WATCH-08): a device armed with a dated rhythm, minute walks, reloads
+and restarts.
 """
 from __future__ import annotations
 
@@ -158,7 +158,7 @@ async def restart(
     fresh one starts from the stored files.
 
     `unload=True` is the other door: an entry reloaded or disabled from
-    the Integrations page, whose unload writes as it always has.
+    the Integrations page, whose unload writes as usual.
     """
     entry = entry_of(hass)
     if not unload:

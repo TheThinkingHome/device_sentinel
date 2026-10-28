@@ -9,7 +9,7 @@
 
 A fall that is speeding up is projected on a curve, a steady one on a
 straight line; the range comes from the cell's own week-to-week
-swings; the near end decides Days Till Empty, on the Problem List as
+swings; the near end decides Days Till Low Warning, on the Problem List as
 on the chart; and every days-left figure reads the range in words. The
 sentence above the chart agrees with the range (rule BAT-17).
 """
@@ -125,7 +125,7 @@ async def test_the_near_end_decides_the_falling_forecast(hass: HomeAssistant):
 
 
 def test_the_curve_is_used_at_any_level():
-    """A cell is judged only at or under twice the threshold, so a
+    """A cell is judged only at or under three times the threshold, so a
     bending fall is curved wherever it is judged, with no other level
     limit (rules BAT-10, BAT-12)."""
     high = [v + 70.0 for v in DOOR]
@@ -134,7 +134,7 @@ def test_the_curve_is_used_at_any_level():
 
 
 def test_each_end_of_the_range_has_its_own_unit():
-    """A near end inside Days Till Empty never reads as months
+    """A near end inside Days Till Low Warning never reads as months
     (rule BAT-13)."""
     assert time_left_range(3, 75) == "under a week to about 11 weeks"
     assert time_left_range(13, 72) == "about 2 to 10 weeks"

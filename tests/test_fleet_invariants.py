@@ -5,12 +5,12 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_fleet_invariants.py, Version: 0.27.10 (2026-10-27)
 
-"""The changed paths stay consistent, and every report still renders
-(rule DEV-01).
+"""The retire path, the verdict lifecycle, the grace rules and the
+incident log stay consistent, and every report still renders (rules
+LIST-09, WATCH-03, DEV-01).
 
-The retire path, the verdict lifecycle, the grace rules and the
-incident log meet in many places. This campaign drives randomized days
-against both fleets and, after every step, checks invariants that tie
+These pieces meet in many places. This campaign drives randomized days
+against two captured houses and, after every step, checks invariants that tie
 those pieces together:
 
   1  a recovery event fires only for a device in the watched set
@@ -84,7 +84,7 @@ from tests.conftest import FLEET_ABSENT, fleet_data, fleet_path
 from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
-# The second fleet's committed house, so both fleets are checked.
+# A second captured house, so the checks run on two.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 # The newest copy of each fleet, for the forward simulation below. The
 # dated pair above is the campaign's fixed ground; these move.
@@ -118,14 +118,14 @@ def _fleet(path: Path) -> list[dict]:
 def _check_invariants(coord, recoveries, bare_ids, step: str) -> None:
     watched = set(coord._watched)
     # A device that keeps dropping out is listed for that (rule UNAV-06),
-    # and the three problem lists do not hold it. The second fleet's records
+    # and the three problem lists do not hold it. The captured records
     # carry real flaps.
     problems = coord._problem_device_ids() | {
         row["device_id"] for row in coord.flapping_list
     }
 
     # 1: recoveries only for watched devices. The event is fired at
-    # the moment of retirement, so we check against the watched set
+    # the moment of retirement, so the check reads the watched set
     # recorded on the event by the spy below.
     for r in recoveries:
         assert r["_watched_at_fire"], (
@@ -285,10 +285,10 @@ async def test_consistency_tim(hass: HomeAssistant, seed):
     await _round(hass, TIM, 60_000 + seed)
 
 
-# Forward simulation: both real fleets through the current readers.
+# Forward simulation: both captured houses through the current readers.
 #
 # The campaign above drives synthetic rounds. This drives the real
-# thing: each reference fleet's own storage loaded into a live
+# thing: each captured house's own storage loaded into a live
 # coordinator, every device registered, every report written and read
 # back. A replay over existing data proves what wrote it; only rendering
 # the whole output surface proves what reads it.
@@ -399,7 +399,7 @@ def _check_pages(pages):
 async def test_the_reference_fleet_renders_every_page(
     hass: HomeAssistant,
 ):
-    """The whole output surface, over the first fleet's own record."""
+    """The whole output surface, over the first captured house's own record."""
     carried, pages = await _render_fleet(hass, JAMES_LIVE)
     assert carried > 90, carried
     _check_pages(pages)
@@ -409,7 +409,7 @@ async def test_the_reference_fleet_renders_every_page(
 async def test_the_second_fleet_renders_every_page(
     hass: HomeAssistant,
 ):
-    """The same, on a fleet twice the size and differently shaped."""
+    """The same, on a house twice the size and differently shaped."""
     carried, pages = await _render_fleet(hass, TIM_LIVE)
     assert carried > 200, carried
     _check_pages(pages)
@@ -420,14 +420,14 @@ async def test_the_fourth_fleet_renders_every_page(
     hass: HomeAssistant,
 ):
     """The same, on a Lutron, Z-Wave and Frigate house four days old
-    when captured, the youngest record any fleet holds."""
+    when captured, the youngest record held."""
     carried, pages = await _render_fleet(hass, FOURTH_LIVE)
     assert carried > 100, carried
     _check_pages(pages)
 
 
 async def test_the_worst_night_a_fleet_could_have(hass: HomeAssistant):
-    """Everything at once, on a fleet with two stacks.
+    """Everything at once, on a house with two stacks.
 
     Restarts, a bridge outage, freezes, a bank at the floor, signal
     falls, and one device nobody can explain. The single question is

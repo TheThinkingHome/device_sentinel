@@ -48,7 +48,7 @@ def test_then_the_integration_s_name():
 
 
 def test_make_model_and_mac_when_nameless():
-    """The second fleet's case: UniFi registers unknown clients with no name."""
+    """UniFi registers unknown clients with no name."""
     dev = Dev(manufacturer="Ubiquiti", model="UAP-AC-Pro", connections=_mac())
     assert display_name(dev, "unifi", DEVICE_ID) == f"Ubiquiti UAP-AC-Pro {MAC}"
 
@@ -96,8 +96,7 @@ def test_never_a_bare_hash():
 
 
 def test_a_real_name_is_never_cut():
-    """The longest real name on the five houses measured, 54 characters,
-    on the second house."""
+    """The longest real name measured, 54 characters, is never cut."""
     from custom_components.device_sentinel.naming import _fit
 
     longest = "TP-LINK_Power Strip_36D8 Grumpy Desk light enable (p1)"

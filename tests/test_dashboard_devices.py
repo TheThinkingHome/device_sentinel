@@ -5,7 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_dashboard_devices.py, Version: 0.27.10 (2026-10-27)
 
-"""The Devices tab and each device's page (rules DASH-06, DASH-08).
+"""The Devices tab and each device's page (rules DASH-08, DASH-16).
 
 The page answers every question about one device in one place: who it
 is (with the fields a battery library matches on), how it is doing
@@ -123,7 +123,7 @@ async def test_the_devices_tab_lists_every_watched_device(hass: HomeAssistant, h
 
 async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_ws_client):
     """A rhythm from five days and no window yet says learning, not a
-    blank cell (rule FRZ-05)."""
+    blank cell (rule DASH-16)."""
     coord, device, _, _ = await _door(hass)
     record = coord.data["devices"][device.id]
     record[DEV_DAILY_MAX] = list(GAPS[:5])
@@ -144,7 +144,7 @@ async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_w
     assert (row["window"], row["window_learning"]) == (None, True)
     # A hub, or a device its hub judges, is never judged by a window, so
     # it is not learning one: a Lutron Caseta hub. The row says how it
-    # is judged (rule STACK-10; tests/test_judged_by.py).
+    # is judged (rule STACK-10).
     coord.judged_by_hub = lambda device_id: True
     rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
     row = next(r for r in rows if r["device_id"] == device.id)
@@ -206,7 +206,7 @@ async def test_a_devices_page_carries_everything_known(hass: HomeAssistant, hass
     assert identity["event_count"] == 10270
     # What powers it: the shipped Battery Notes library knows this
     # sensor with hardware version 2 as a CR1632, and no owner entry
-    # exists (rule DEV-07).
+    # exists (rule DEV-06).
     assert identity["power"]["words"] == "CR1632"
     assert identity["power"]["source"] == "library"
     assert identity["power"]["report_url"] is None

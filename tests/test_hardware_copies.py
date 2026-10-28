@@ -116,7 +116,8 @@ async def test_a_proxy_is_watched_once_through_its_esphome_device(hass: HomeAssi
     assert same["watched_through"] == esphome.id
     assert [row["device_id"] for row in same["devices"]][0] == esphome.id
     assert {row["domain"] for row in same["devices"]} == {"esphome", "bluesight", "unifi", "bluetooth"}
-    # The name shown elsewhere, not the domain (rule DEV-02).
+    # Each integration named as the rest of the page names it, not by
+    # its domain (rule WATCH-06).
     names = {row["domain"]: row["integration"] for row in same["devices"]}
     assert names["unifi"] == "UniFi Network"
 
@@ -389,8 +390,8 @@ async def test_a_battery_on_one_copy_decides_which_is_watched(hass: HomeAssistan
 # BlueSight records no connection: it registers each proxy as
 # ("bluesight", "<the proxy's Bluetooth address>"), the address Home
 # Assistant's Bluetooth integration records as the connection of the
-# proxy's adapter device. The shapes below come from a real house's
-# classification report and BlueSight's source: D11's adapter is
+# proxy's adapter device. The shapes below follow a real registry and
+# BlueSight's source: D11's adapter is
 # "d11 Grumpy BT proxy (1C:9D:C2:C3:42:72)" and BlueSight's entities for
 # it are named d11_1c_9d_c2_c3_42_72_*. An RTOS nano carries its network
 # address in BlueSight's identifier instead.
@@ -593,7 +594,7 @@ async def test_the_bluesight_service_device_stays_watched(hass: HomeAssistant):
 # ---- a copy with nothing but notices, and a connection-only proxy
 
 
-# 5. Two copies of one piece of hardware: the more direct one (local
+# Two copies of one piece of hardware: the more direct one (local
 # push) has nothing switched on but a firmware notice and a command
 # button, the other a real sensor. Notices are never the device, so the
 # hardware must not end up watched through nothing (rules WATCH-04,
@@ -623,7 +624,7 @@ async def test_r15_5_notice_copy_kept_over_real_copy(hass: HomeAssistant, freeze
     )
 
 
-# 3. A Bluetooth proxy with only a firmware notice and a restart button
+# A Bluetooth proxy with only a firmware notice and a restart button
 # switched on, and the Bluetooth adapter Home Assistant registers under
 # it, are one piece of hardware: watched once, not as two devices with
 # two items when it drops (rules WATCH-04, WATCH-06).

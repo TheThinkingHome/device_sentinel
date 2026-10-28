@@ -8,9 +8,8 @@
 """Sending the brief, and the page a mail client renders
 (rules BRIEF-11, BRIEF-12).
 
-One of the files split out of a larger brief test file by subject.
 Helpers are carried to every file that calls them rather than pooled,
-so each file reads on its own.
+so each file reads on its own (rule CODE-12).
 """
 
 
@@ -311,7 +310,7 @@ async def test_a_device_name_cannot_inject_markup_into_the_brief(
     )
     assert "<script>alert(1)</script>" not in page
     assert "&lt;script&gt;" in page
-    # And the sender's fallback is now the same document, so a
+    # And the sender's fallback is the same document, so a
     # mismatched stash cannot reintroduce a second rendering.
     assert coord._render_brief_html(coord._last_brief_text) == page
 
@@ -319,7 +318,7 @@ async def test_a_device_name_cannot_inject_markup_into_the_brief(
 async def test_the_separator_is_told_by_its_characters(
     hass: HomeAssistant,
 ):
-    """The merged renderer reads the rule row rather than counting to
+    """The renderer reads the rule row rather than counting to
     it, so a pipe line arriving anywhere else is still data."""
     coord = await setup_coordinator(hass)
     html = coord._render_brief_html(
@@ -346,7 +345,7 @@ async def test_the_email_carries_the_closed_day_not_the_new_window(
 
     This walks that exact two-write sequence and pins the emailed body to
     the closed day's own rendering. The second assertion is the one that
-    catches a regression, because after the roll the file is the
+    matters, because after the roll the file is the
     in-progress page by design, and a stash updated by that write matches
     it.
     """

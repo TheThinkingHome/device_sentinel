@@ -86,8 +86,7 @@ def _battery_device(hass: HomeAssistant, name: str, level: float):
 
     The low list is read from the battery entity's state rather than
     the stored record, so a fixture that writes only the record can
-    never cross the threshold. That is exactly what defeated the
-    first attempt to reproduce the crossing.
+    never cross the threshold.
     """
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
@@ -202,7 +201,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     in one pass. Both are battery, one push per family survives, and
     the recovery is collected second, so without the crossing rule
     the phone would read "no longer running down" at the moment the
-    cell went low (rule NOTE-10).
+    cell went low (rule LIST-06).
     """
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 24.0)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
@@ -245,7 +244,8 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
 
 
 async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
-    """The card said all clear while the list said otherwise."""
+    """The card names a falling cell, never an all-clear while the list
+    says otherwise (rule NOTE-10)."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
@@ -311,9 +311,8 @@ async def test_every_kind_reaches_the_card(hass: HomeAssistant):
     """The guard the card could not have, being no table.
 
     Each kind is driven through the summary on the list that carries
-    it. A kind with no route to the card is the fault this release
-    corrects, and it was invisible because there was nothing to
-    compare a missing key against.
+    it, since a kind with no route to the card leaves no missing key
+    to compare against (rule NOTE-10).
     """
     coord = await setup_coordinator(hass)
     assert set(CARD_SOURCE) == set(TODO_KINDS_ALL), (

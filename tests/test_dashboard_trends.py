@@ -160,8 +160,8 @@ async def test_signal_trends_measure_each_link_against_its_own_normal(hass: Home
 async def test_signal_trends_carry_the_two_middles_the_change_is_taken_between(
     hass: HomeAssistant, hass_ws_client
 ):
-    """A row adds up: the last seven days' middle less the whole history's
-    is the change, so the latest reading is not shown beside it
+    """A row adds up: the last seven days' middle less the middle of the
+    days before them is the change, so the latest reading is not shown beside it
     (rule SIG-12).
     """
     coord, _, falling, _, _ = await _fleet(hass)
@@ -197,9 +197,9 @@ async def test_signal_trends_are_built_off_the_event_loop(
     hass: HomeAssistant, hass_ws_client
 ):
     """The tab judges every stored day of every device, about 100 ms on
-    the fleets held, and while it ran on the event loop the whole of
-    Home Assistant waited. It is built in the executor, as the reports
-    are, and the reply is unchanged."""
+    a real house, which on the event loop would hold up the whole of
+    Home Assistant. It is built in the executor, as the reports are,
+    and the reply is the same (rule CODE-06)."""
     coord, *_ = await _fleet(hass)
     expected = coord.signal_trends()
     loop_thread = threading.get_ident()

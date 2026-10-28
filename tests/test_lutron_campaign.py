@@ -10,8 +10,8 @@
 Home Assistant's own Lutron Caseta integration and the Lutron library it
 pins, with only the network faked: each hub's connection is a fake that
 answers while the hub is up and fails while it is down, and the
-library's own monitor loop drops and retries the session as it does on
-a real house. The two hubs are a tester's, with names and serials
+library's own monitor loop drops and retries the session as it does in
+a house. The two hubs come from a real house, with names and serials
 replaced (tests/fixtures/lutron_two_hubs.json): a Basement hub with
 dimmers, a switch and three Picos, a Garage hub with two switches.
 
@@ -254,7 +254,7 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
         hub.plug_in()
         await _settle_library()
         assert hub.bridge._leap is not None
-        # Back within a minute check of its return, before his next
+        # Back within a minute check of its return, before the next
         # unplug; its row waits a minute before it leaves (rule LIST-06).
         await _until(hass, freezer, _at(back) + timedelta(seconds=75))
         assert set(_items(coord)) <= set(coord._parked)

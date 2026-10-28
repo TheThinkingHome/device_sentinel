@@ -7,9 +7,9 @@
 
 """One battery level, said the same way everywhere (rule BAT-03).
 
-The Daily Brief, both dashboards and the phone's summary once rounded
-the same reading three ways: 15.5%, 16% and 15%. The level is said as
-reported, one decimal at most.
+The Daily Brief, both dashboards and the phone's summary say a reading
+as reported, one decimal at most, so one reading never reads as 15.5%,
+16% and 15% in three places.
 """
 
 from __future__ import annotations

@@ -5,12 +5,12 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_forward_outage_shape.py, Version: 0.27.10 (2026-10-27)
 
-"""Forward simulation of the stored outage shape on both fleets
-(rules UP-11, BRIEF-05).
+"""Forward simulation of the stored outage shape on both captured
+houses (rules UP-11, BRIEF-05).
 
 Each ended outage carries a worst figure, and a Wi-Fi recovery writes
-two event kinds. A replay over data the fleets already hold proves the
-writers; this puts the shape onto each fleet's own events, passes it
+two event kinds. A replay over data the houses already hold proves the
+writers; this puts the shape onto each house's own events, passes it
 through the storage check, and renders every report over it, which
 proves the readers.
 """

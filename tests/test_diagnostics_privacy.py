@@ -7,7 +7,7 @@
 
 """Network addresses leave the diagnostics download (rule STOR-21).
 
-Testers attach the download to public GitHub issues, and a house's
+The download is often attached to a public GitHub issue, and a house's
 download can carry dozens of MAC addresses and the router's address.
 Each distinct address becomes a numbered stand-in, the same wherever it
 appears, so a device still reads as the same device in every section;

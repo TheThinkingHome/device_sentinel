@@ -386,7 +386,7 @@ async def test_the_status_and_the_devices_tab_show_the_rhythm_in_use(hass: HomeA
     """Two long silences in the last fortnight: the Trimmed Maximum keeps the
     second at 3.2 hours, the Log-Normal Percentile sets both aside and is
     in use. The bar shows the rhythm of the rule in use, never "rhythm
-    3.2h" beside "window 34m" (rule FRZ-05)."""
+    3.2h" beside "window 34m" (rule FRZ-22)."""
     from custom_components.device_sentinel.const import DATA_DEVICES
 
     device, _ = register_device(hass, "plug", "Plug James Night Light")

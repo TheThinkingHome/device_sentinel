@@ -12,7 +12,7 @@ interval. Copies of them in the main file served only as a rollback
 net, so they are removed.
 
 The merge rule. With no copies in the main file, a merge that falls
-back to the main file would load a fleet with no clocks at all. So
+back to the main file would load a house with no clocks at all. So
 whether the main file still carries clocks is read from the records
 themselves, and the same code is correct on a stripped install, on one
 whose backup failed, and on an old file with no stamps.
@@ -120,7 +120,7 @@ def _seed(hass_storage, device_id, *, cold_clocks, hot, hot_at=None):
 async def test_the_main_file_sheds_the_clocks(
     hass: HomeAssistant, hass_storage
 ):
-    """The point of the phase, asserted on the file itself.
+    """The main file carries no clocks, asserted on the file itself.
 
     After setup's own save, no device record in the main file carries
     any of the clock fields, while the hot file carries all it
@@ -144,15 +144,13 @@ async def test_the_main_file_sheds_the_clocks(
 async def test_a_stale_hot_file_is_used_once_the_main_file_is_bare(
     hass: HomeAssistant, hass_storage
 ):
-    """The merge's changed exit, and the reason Phase C waited on it.
+    """A stale clocks file is used once the main file is bare.
 
-    A hot file older than the main file means the last write pair was
-    torn. While the main file carried copies, refusing the hot file
-    was right, because the newer copies were sitting right there.
-    Once it is bare there is nothing to fall back to: a slightly
-    stale clock heals on the device's next report, while discarding
-    it resets the whole fleet, so the hot file is used whatever its
-    age.
+    A clocks file older than the main file means the last write pair
+    was torn. With no clocks in the main file there is nothing to fall
+    back to: a slightly stale clock heals on the device's next report,
+    while discarding it restarts every device's clock, so the clocks
+    file is used whatever its age (rule STOR-01).
     """
     device, _ = register_device(hass, "pc4", "Phase C Device")
     _seed(
@@ -176,7 +174,7 @@ async def test_a_bare_main_file_with_no_hot_file_starts_over(
     """The one state with nothing to offer, taken gracefully.
 
     A stripped main file beside a hand-deleted clocks file has no
-    clock anywhere. The fleet starts its clocks from this boot, with
+    clock anywhere. Every device starts its clock from this boot, with
     a warning naming the only way this can happen, and nothing
     crashes.
     """
@@ -196,8 +194,8 @@ async def test_round_trip_restores_every_clock(
 ):
     """Save stripped, reload, and the clocks come back from the hot file.
 
-    This is the whole design in one motion: the main file no longer
-    carries them, the hot file does, and a reload of the entry sees
+    This is the whole design in one motion: the main file does not
+    carry them, the clocks file does, and a reload of the entry sees
     every value it saved.
     """
     device, _ = register_device(hass, "pc7", "Phase C Device")

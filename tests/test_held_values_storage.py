@@ -173,8 +173,8 @@ async def test_a_field_that_is_not_a_mapping_is_reset(
 async def test_first_start_after_the_upgrade_from_0_27_5(
     hass: HomeAssistant, freezer, hass_storage
 ):
-    """A 0.27.5 file has no held values: it loads clean, and a verdict
-    standing from it holds nothing until its next start, as 0.27.5 did."""
+    """A file written before held values existed loads clean, and a
+    verdict standing from it holds nothing."""
     coord, device, eid, key = await _frozen(hass, freezer)
 
     def as_0275():

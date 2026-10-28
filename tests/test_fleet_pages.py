@@ -46,9 +46,8 @@ HOUSES = [
     fleet_param("second", "device_sentinel_storage.json", id="second",
                 clocks=("second", "device_sentinel_clocks.json")),
 ]
-# The fourth fleet is left out: its records predate each day keeping
-# its date, and this test seats records as the page reads them, past the
-# load that would date them.
+# A house whose records carry no day dates is left out: this test seats
+# records as the page reads them, past the load that would date them.
 
 
 def _real(value) -> bool:

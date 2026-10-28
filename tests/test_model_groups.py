@@ -105,7 +105,7 @@ async def test_the_firmware_a_device_gives_is_recorded_at_the_start(
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="2.3.0")
     entry = await setup_entry(hass)
-    # A version waits for the fold, held an hour at least (rule DEV-15).
+    # A version is recorded only once it has held ten minutes (rule DEV-15).
     assert _history(entry, panel) == []
     entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     history = _history(entry, panel)
@@ -122,8 +122,8 @@ async def test_an_update_is_recorded_once_and_a_repeat_is_not(hass: HomeAssistan
     await hass.async_block_till_done()
     registry.async_update_device(panel.id, name_by_user="James's panel")
     await hass.async_block_till_done()
-    # Held until the fold: the start's 2.3.0 was replaced before any fold,
-    # so only 3.4.0 is written (rule DEV-15).
+    # The start's 2.3.0 was replaced before it held ten minutes, so
+    # only 3.4.0 is written (rule DEV-15).
     entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     assert [version for version, _ in _history(entry, panel)] == ["3.4.0"]
     registry.async_update_device(panel.id, name_by_user="James's other panel")

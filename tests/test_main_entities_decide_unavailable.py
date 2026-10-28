@@ -184,7 +184,7 @@ async def test_an_unknown_problem_standing_at_the_upgrade_is_not_announced_recov
     assert _items(coord, device.id), "precondition: the 0.26.5 unknown item stands"
     back = record_events(hass, EVENT_RECOVERED)
     await walk(hass, freezer, 10 * 60)
-    assert not _mine(back, device.id), "a rule change is not a recovery (#529)"
+    assert not _mine(back, device.id), "a rule change is not a recovery"
     assert _items(coord, device.id)
 
 

@@ -517,8 +517,8 @@ async def test_a_genuine_report_advances_and_learns(
 async def test_an_unavailable_contact_entity_stops_the_clock(
     hass: HomeAssistant, freezer
 ):
-    """Door Master's read unavailable for the ten hours it was
-    wedged. That is information, not a missing value."""
+    """A last-contact entity reading unavailable is information, not a
+    missing value."""
     device, entity_id, contact, _src = _contact_device(hass, "c4", "Wedged")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
@@ -538,7 +538,8 @@ async def test_an_unavailable_contact_entity_stops_the_clock(
 async def test_a_republish_does_not_clear_a_freeze_verdict(
     hass: HomeAssistant, freezer
 ):
-    """A four-second bridge blip erased a nine-hour silence once."""
+    """A four-second bridge blip does not erase a nine-hour silence
+    (rule FRZ-11)."""
     device, entity_id, contact, _src = _contact_device(hass, "c5", "Still Frozen")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
@@ -571,7 +572,7 @@ async def test_a_clock_never_runs_backwards_or_ahead(
     await hass.async_block_till_done()
     first = _record(coord, device.id)[DEV_LAST_ACTIVITY]
 
-    # A device clock running fast must not push ours into the future.
+    # A device clock running fast must not push the stored one into the future.
     hass.states.async_set(contact, _iso(3600))
     await hass.async_block_till_done()
     assert _record(coord, device.id)[DEV_LAST_ACTIVITY] <= (
@@ -620,9 +621,9 @@ async def test_without_a_contact_entity_arrival_time_counts(
 async def test_a_gap_completed_inside_grace_is_learned(
     hass: HomeAssistant, freezer
 ):
-    """The reversal that matters. The nightly restart is part of the
-    home, and discarding what it completes left quiet devices with
-    baselines describing half a night."""
+    """The nightly restart is part of the home, so a gap it completes is
+    learned; discarding it would leave quiet devices with baselines
+    describing half a night (rule FRZ-12)."""
     device, entity_id, _none, _src = _contact_device(
         hass, "n2", "Quiet Overnight", with_contact=False
     )
@@ -706,7 +707,8 @@ async def _pass_grace(hass, freezer):
 
 
 async def test_grace_now_learns_its_gaps(hass: HomeAssistant, freezer):
-    """Events inside the startup grace never complete gaps."""
+    """Events inside the startup grace complete gaps, and they are
+    learned (rule FRZ-12)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     _, (eid,) = _make_device(hass, source, 1)
@@ -956,7 +958,7 @@ async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
 
 
 # A gap is learned minus the time Device Sentinel was stopped
-# (rule UP-06).
+# (rule FRZ-12).
 
 
 HOUR = 3600.0
@@ -966,7 +968,7 @@ def _restart(when: float, downtime: float) -> dict:
 
 async def test_a_gap_is_learned_minus_the_time_stopped(hass: HomeAssistant, freezer):
     """A 16.5-minute clean stop is not learned as every device's longest
-    gap of the day (rule UP-06)."""
+    gap of the day (rule FRZ-12)."""
     coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
     now = dt_util.utcnow()
     record = coord.data[DATA_DEVICES][device.id]
@@ -1027,8 +1029,8 @@ async def test_a_gap_with_no_stop_inside_is_learned_whole(hass: HomeAssistant, f
 
 
 async def test_a_gap_longer_than_the_retention_is_learned_as_the_retention(hass, freezer):
-    """A real device sat silent 42.9 days. On a house keeping 30, that
-    day is learned as 30 and reported as more than 30."""
+    """A device silent 42.9 days, on a house keeping 30, is learned as
+    30 and reported as more than 30."""
     coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
     from homeassistant.util import dt as dt_util
 

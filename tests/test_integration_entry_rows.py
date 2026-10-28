@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_entry_rows.py, Version: 0.27.6 (2026-10-26)
+# File: tests/test_integration_entry_rows.py, Version: 0.27.10 (2026-10-27)
 
 """An integration's row, count, phase and push when it has several
 config entries (rules UP-05, UP-09, UP-10, UP-11).
@@ -205,7 +205,7 @@ async def test_over_push_goes_while_a_one_device_entry_stays_down(hass: HomeAssi
     single.mock_state(hass, ConfigEntryState.LOADED)
     multi.mock_state(hass, ConfigEntryState.LOADED)
     coord._sample_integrations(now)
-    # A one-device entry dead for good (the second fleet's freezers).
+    # A one-device entry dead for good.
     single.mock_state(hass, ConfigEntryState.SETUP_RETRY)
     coord._sample_integrations(now + 1)
     freezer.tick(INTEGRATION_DOWN_DWELL_SECONDS + 5)
@@ -322,7 +322,7 @@ async def test_entry_that_fell_with_several_devices_keeps_its_row_when_one_is_ex
     await walk(hass, freezer, 300)
     assert a.entry_id in coord._integration_told  # still down on the bus
     assert a.state is ConfigEntryState.SETUP_RETRY
-    # UP-09: pushed when down, and when it is over. It is not over.
+    # Pushed when down, and when it is over; it is not over (rule UP-09).
     assert [(n, r) for n, r, _s in sent] == [(DOMAIN, False)], sent
 
 

@@ -225,7 +225,7 @@ async def test_every_surface_renders_a_child_without_a_deprecated_read(
     hass: HomeAssistant, hass_storage, hass_ws_client
 ):
     """A named child, a nameless child and an area, through every
-    surface a person or a tester reads: the reports, the diagnostics,
+    surface a person or a maintainer reads: the reports, the diagnostics,
     each dashboard reply and each settings screen. The autouse guard
     fails this test on any read of a field a child does not carry."""
     source, registry, entities, parent = _boiler(hass)
@@ -289,7 +289,7 @@ async def test_every_surface_renders_a_child_without_a_deprecated_read(
 async def test_a_child_device_keeps_its_integrations_name(hass: HomeAssistant, hass_storage):
     """A child device carries no identifiers of its own, so the Zigbee2MQTT
     naming never asks about it: the Devices tab and its page name its
-    integration as before, without a deprecation line."""
+    own integration, without a deprecation line (rule GEN-07)."""
     source, registry, entities, parent = _boiler(hass)
     child, _, _ = _child(hass, source, registry, entities, parent)
     entry = await setup_entry(hass)

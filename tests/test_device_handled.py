@@ -347,9 +347,9 @@ async def test_a_handling_is_told_on_the_devices_own_line(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     for kind, words in (("device_joined", "re-paired by hand"),
                         ("raw_device_initialized", "reconfigured by hand"),
-                        # A full init with no join before it is a reconfigure;
-                        # a re-pair is
-                        # filed as one (rule FRZ-05).
+                        # A full init with no join before it reads as a
+                        # reconfigure; a join followed by its setup is filed
+                        # as a re-pair (rule FRZ-05).
                         ("device_fully_initialized", "reconfigured by hand"),
                         ("re-pair", "re-paired by hand"),
                         ("device_removed", "removed by hand")):

@@ -8,7 +8,7 @@
 """A cell is judged falling only at or under three times the low
 threshold (rule BAT-10).
 
-No method tried could place a far-off date, so a cell above three
+A far-off date cannot be placed with any confidence, so a cell above three
 times the threshold keeps its weekly history and is judged nothing: not
 falling, not accelerating, no time left, nothing on the Problem List or
 the Battery: Falling sensor. At or under it, the warning days setting

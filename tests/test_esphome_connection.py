@@ -551,7 +551,7 @@ async def test_a_restart_before_esphome_connects_costs_no_gap(hass: HomeAssistan
     not connected for a few seconds. That is not a drop to date from its
     last report: the gap its first report ends, two quiet hours and a
     three-minute restart, is learned with the downtime taken out, whichever
-    came first (rule UP-07)."""
+    came first (rule FRZ-12)."""
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
     device, eids = _esp_device(hass, source, f"boot{connected_at_setup}", ("sensor", "binary_sensor"))
@@ -646,8 +646,8 @@ async def test_3_esphome_proxy_buttons_and_update_recovers_on_reconnect(hass: Ho
     )
 
 
-# 4. The same proxy, newly added: never reported after the wait, though
-# its connection has been up the whole time.
+# 4. The same proxy, newly added: not never reported after the wait,
+# because its connection has been up the whole time (rule WATCH-04).
 async def test_4_new_esphome_proxy_is_not_never_reported(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -691,9 +691,9 @@ async def test_7_esphome_sensor_down_on_a_live_device_is_not_back_on_reconnect(
     assert not [e for e in back if e.get("device_id") == device.id]
 
 
-# A. Rule 9: an ESPHome device whose only entities switched on are a
-# firmware notice and a command button is judged by its connection
-# alone, never frozen, whatever it has switched off.
+# A. An ESPHome device whose only entities switched on are a firmware
+# notice and a command button is judged by its connection alone, never
+# frozen, whatever it has switched off (rule WATCH-04).
 async def test_a_esphome_proxy_with_a_switched_off_sensor_is_not_frozen(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -712,7 +712,7 @@ async def test_a_esphome_proxy_with_a_switched_off_sensor_is_not_frozen(hass: Ho
     )
 
 
-# B. The same proxy newly added: never reported after the wait.
+# B. The same proxy newly added: not never reported after the wait.
 async def test_b_new_esphome_proxy_with_a_switched_off_sensor_is_not_never_reported(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -754,10 +754,10 @@ async def test_c_esphome_proxy_with_a_switched_off_sensor_drop_and_return(hass: 
     assert record[DEV_FROZEN_CATEGORY] is None, ("reconnected, still listed", record[DEV_FROZEN_CATEGORY])
 
 
-# 1. Rule 9: a connected ESPHome proxy whose only switched-on entities are a
+# 1. A connected ESPHome proxy whose only switched-on entities are a
 # firmware notice and a command button is never "never reported". Its
-# verdict says so; the Devices tab and its page must not show the red
-# "Never reported" word either.
+# verdict says so, and the Devices tab and its page do not show the red
+# "Never reported" word either (rule WATCH-04).
 async def test_r15_1_connection_only_proxy_page_not_never_reported(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -783,7 +783,7 @@ async def test_r15_1_connection_only_proxy_page_not_never_reported(hass: HomeAss
 
 # 3. An ESPHome device with everything switched off, no notice or button at
 # all: it is judged by its connection and never told it never reported
-# (rule STACK-07).
+# (rule WATCH-04).
 async def test_r15_3_esphome_all_switched_off_is_judged_by_its_connection(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     source = _source(hass, _Runtime(False))
@@ -796,15 +796,15 @@ async def test_r15_3_esphome_all_switched_off_is_judged_by_its_connection(hass: 
     await past_grace(hass, freezer)
     record = coord.data[DATA_DEVICES][device.id]
     await walk(hass, freezer, 50 * HOUR, step=1800)
-    # Connected, so never "never reported" (rule STACK-07).
+    # Connected, so never "never reported" (rule WATCH-04).
     assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED
     assert coord._connection_only(device.id)
 
 
-# 2. Rule 9: a connection-only ESPHome proxy that drops and reconnects.
-# The outage start saved at the drop is never cleared (_down_now reads
-# nothing on a device with no real entity), so the next drop, days later,
-# is dated from the first and published with no debounce.
+# 2. A connection-only ESPHome proxy that drops and reconnects. The
+# outage start saved at the drop clears at the reconnect, so the next
+# drop, days later, is dated from itself and waits its debounce
+# (rules UNAV-03, UNAV-04).
 async def test_r16_2_connection_only_outage_start_clears_on_reconnect(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     runtime = _Runtime(False)
@@ -842,10 +842,9 @@ async def test_r16_2_connection_only_outage_start_clears_on_reconnect(hass: Home
     )
 
 
-# 3. Rule 9: a connected Bluetooth proxy reads as reporting, but its page's
-# line under the word reads "Last report never." (panel.js ago(null)), and
-# "Still learning its rhythm, so it is not yet judged for freezing", for a
-# device that is never judged for freezing.
+# 3. A connected Bluetooth proxy reads as reporting, and its page says it
+# is judged by its connection, not that it is still learning a rhythm
+# (rule WATCH-04).
 async def test_r17_3_connection_only_page_last_report(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)
@@ -862,13 +861,13 @@ async def test_r17_3_connection_only_page_last_report(hass: HomeAssistant, freez
     await walk(hass, freezer, 50 * HOUR, step=1800)
     page = coord.dashboard_device(device.id)
     assert page["status"]["category"] == "reporting"
-    # Judged by its connection: the page says so (rule STACK-07).
+    # Judged by its connection: the page says so (rule WATCH-04).
     assert page["status"]["connection"] == "connected"
 
 
 # 2. A Bluetooth proxy carried over with a learned rhythm. Its page says
-# it is judged by its connection, with no window bar, but the payload
-# still carries a window, so the bar's scale row is drawn.
+# it is judged by its connection and carries no window, so no window
+# bar is drawn (rule WATCH-04).
 async def test_r18_2_connection_only_page_carries_window(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)
@@ -888,8 +887,9 @@ async def test_r18_2_connection_only_page_carries_window(hass: HomeAssistant, fr
     assert page["status"]["window"] is None, ("window shown on a page judged by connection", page["status"]["window"])
 
 
-# 3. Rule 9: a connection-only proxy whose connection cannot be read holds a
-# standing unavailable verdict; its page says "connected".
+# 3. A connection-only proxy whose connection cannot be read holds a
+# standing unavailable verdict, and its page does not say "connected"
+# (rule WATCH-04).
 async def test_r18_3_connection_only_unreadable_says_connected(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)
@@ -916,7 +916,8 @@ async def test_r18_3_connection_only_unreadable_says_connected(hass: HomeAssista
 
 
 # 4. A connection-only proxy carried over with a frozen verdict, its
-# connection unreadable: the verdict ends with no report (rule LIST-08).
+# connection unreadable: the verdict never ends as a recovery with no
+# report (rule LIST-08).
 async def test_r18_4_connection_only_frozen_cleared_without_report(hass: HomeAssistant, freezer):
 
     freezer.move_to(PIN)
@@ -945,8 +946,8 @@ async def test_r18_4_connection_only_frozen_cleared_without_report(hass: HomeAss
         "frozen verdict ended as a recovery with no report", _mine(back, device.id))
 
 
-# 3b. As 3, a deep-sleep proxy asleep (connection down): its page says
-# "connected".
+# 3b. As 3, a deep-sleep proxy asleep (connection down): its page does
+# not say "connected".
 async def test_r18_3b_connection_only_asleep_says_connected(hass: HomeAssistant, freezer):
     from homeassistant.helpers import device_registry as dr
 

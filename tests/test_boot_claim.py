@@ -12,11 +12,10 @@ list must not come up holding a row for every Zigbee device, each
 "unavailable since 3:21 PM", only for the first tick to replace them
 all with the single Zigbee2MQTT row.
 
-The cause is the order at setup: every device is judged and the
-problem list written before the bridge readers start and before the
-remembered outage is restored, so at that moment no device can be
-matched to its bridge and nothing claims it. It shows only with devices
-already down behind a bridge across a restart.
+So the problem list is first written only after the bridge readers
+start and the remembered outage is restored: written earlier, no device
+could be matched to its bridge and nothing would claim it. It shows
+only with devices already down behind a bridge across a restart.
 """
 
 from __future__ import annotations
@@ -185,7 +184,7 @@ async def test_the_bridge_claims_them_from_the_first_write(
 async def test_a_device_broken_on_its_own_still_reaches_the_list(
     hass: HomeAssistant, hass_storage, _quiet_mqtt
 ):
-    """The fix must not silence a device nothing explains.
+    """The hold must not silence a device nothing explains.
 
     Its own integration is running and says nothing about it, so no hold
     applies (the hold waits only on an upstream that reads down or failed

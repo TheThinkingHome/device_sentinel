@@ -119,7 +119,7 @@ async def test_an_unavailable_muted_device_back_inside_the_grace_is_not_called_f
     hass: HomeAssistant, freezer
 ):
     """Its return inside the grace is the device back, not the stack
-    republishing, so it is not called frozen (rule MUTE-06)."""
+    republishing, so it is not called frozen (rule UNAV-05)."""
     coord, device, ids, record = await _ready(hass, freezer, "u4", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"})
     for eid in ids.values():
         hass.states.async_set(eid, "unavailable")
@@ -203,7 +203,7 @@ async def test_unavailable_mute_does_not_turn_a_frozen_device_going_unavailable_
 
 async def _stepped_back(hass, freezer, uid):
     """An unavailable item held over a verdict that stepped back to
-    frozen while the entities are not loaded (rule LIST-07)."""
+    frozen while the entities are not loaded (rule LIST-06)."""
     coord, device, ids, record = await _ready(hass, freezer, uid)
     for eid in ids.values():
         hass.states.async_set(eid, "unavailable")
@@ -232,7 +232,7 @@ async def test_a_freeze_mute_on_a_held_unavailable_item_is_not_a_recovery(
     coord = coord.entry.runtime_data
     await past_grace(hass, freezer)
     await walk(hass, freezer, 120)
-    assert not _mine(back, device.id), "a mute is not a recovery (#537)"
+    assert not _mine(back, device.id), "a mute is not a recovery"
 
 
 # (d) The hold never keeps a down kind the person has muted, so an
@@ -337,7 +337,7 @@ async def test_an_unavailable_mute_keeps_the_freeze_of_a_device_now_reading_unkn
         hass.states.async_set(eid, "unknown")
     await hass.async_block_till_done()
     await walk(hass, freezer, 5 * 60)
-    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "precondition: held (#529)"
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "precondition: held"
     since = record[DEV_FROZEN_SINCE]
     assert since is not None
     coord.page_set_mute(device.id, "unavailable", True, "problem_list")
@@ -345,7 +345,7 @@ async def test_an_unavailable_mute_keeps_the_freeze_of_a_device_now_reading_unkn
     coord = coord.entry.runtime_data
     await past_grace(hass, freezer)
     record = coord.data[DATA_DEVICES][device.id]
-    assert record[DEV_FROZEN_CATEGORY] is not None, "the freeze is not muted (#529)"
+    assert record[DEV_FROZEN_CATEGORY] is not None, "the freeze is not muted"
     for _ in range(5):
         await walk(hass, freezer, 60)
         record = coord.data[DATA_DEVICES][device.id]
@@ -375,7 +375,7 @@ async def test_an_unavailable_mute_does_not_turn_a_held_drop_into_a_new_freeze(
         hass.states.async_set(eid, "unknown")
     await hass.async_block_till_done()
     await walk(hass, freezer, 5 * 60)
-    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "precondition: held (#529)"
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "precondition: held"
 
     coord.page_set_mute(device.id, "unavailable", True, "problem_list")
     await hass.async_block_till_done()
@@ -421,7 +421,7 @@ async def test_a_mute_set_while_the_upstream_holds_the_device_takes_its_item_off
     await walk(hass, freezer, 10 * 60)
     assert not _items(coord, device.id), "muted for unavailable, the item must leave"
     assert device.id not in {r["device_id"] for r in coord.reportable_down_rows}
-    assert not _mine(back, device.id), "a mute is not a recovery (#537)"
+    assert not _mine(back, device.id), "a mute is not a recovery"
 
 
 # A mute from the Problem List takes the item off at once, not at the
@@ -443,7 +443,7 @@ async def test_a_mute_from_the_problem_list_takes_the_item_off_at_once(
 
 
 # A device muted for unavailable mid-flap reads no flap on its page, as
-# it is off the list (rule MUTE-07).
+# it is off the list (rule MUTE-10).
 async def test_an_unavailable_muted_device_does_not_read_flapping(
     hass: HomeAssistant, freezer
 ):
@@ -463,7 +463,7 @@ async def test_an_unavailable_muted_device_does_not_read_flapping(
 
 # 1. A device muted for unavailable shows no flapping on its page: not
 # the status word, and not the "dropped out N times since" suffix the
-# panel appends to it (rule MUTE-07).
+# panel appends to it (rule MUTE-10).
 async def test_r16_1_unavailable_muted_page_has_no_flap_words(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(
         hass, freezer, "r16a", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"}
@@ -499,7 +499,7 @@ async def test_r21_3_freeze_muted_flapping_device_is_listed(hass: HomeAssistant,
 
 
 # 4. Unavailable-muted device: the page reads no flap and no down word,
-# and the problem list API offers nothing (rule MUTE-07).
+# and the problem list API offers nothing (rules MUTE-07, MUTE-10).
 async def test_r21_4_unavailable_muted_page(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r21d", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"})
     await _flap(hass, freezer, ids)
@@ -707,7 +707,7 @@ async def test_a_freeze_label_does_not_prune_an_unavailable_pick(hass: HomeAssis
 
 # (a) Settling the options prunes the unavailable mute like every other:
 # a globally muted device, or one Home Assistant no longer has, leaves
-# it (rule MUTE-03).
+# it (rule MUTE-04).
 async def test_settle_prunes_the_unavailable_mute_like_every_other(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "zz7")
     settled = settle_options(hass, coord, {
@@ -953,7 +953,7 @@ async def test_f2_went_unavailable_under_mute_dated_from_going(hass: HomeAssista
 
 
 # G. With the "everything" mute: a held device muted for everything
-# still shows its down word on the page (rule MUTE-09).
+# leaves the list, and its page does not read unavailable (rule MUTE-01).
 async def test_g_held_globally_muted_device_page_status(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r8g")
     await _gone(hass, freezer, ids)
@@ -1078,7 +1078,7 @@ async def test_the_twin_never_muted_holds_unavailable(hass: HomeAssistant, freez
 
 async def test_muting_unavailable_on_a_frozen_then_gone_device_lists_it_frozen_with_one_push(hass: HomeAssistant, freezer):
     """Frozen, then gone: muting unavailable shows it frozen again, with
-    one push, because there is no quiet move between kinds (rule MUTE-06)."""
+    one push, because there is no quiet move between kinds (rule MUTE-08)."""
     coord, device, ids, record = await _ready(hass, freezer, "u23c")
     await walk(hass, freezer, 6 * HOUR, step=600)
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_FROZEN
@@ -1304,7 +1304,7 @@ async def test_b5_never_reported_first_report_then_down(hass: HomeAssistant, fre
     coord.page_set_mute(device.id, "freeze", True, source="problem_list")
     await hass.async_block_till_done()
     await walk(hass, freezer, 15 * 60)
-    # Shown as unavailable now, with one push (rule MUTE-06).
+    # Shown as unavailable now, with one push (rule MUTE-08).
     assert len(_mine(faults, device.id)) == 1
     faults = record_events(hass, EVENT_FAULT)
     await _report(hass, ids, 1)

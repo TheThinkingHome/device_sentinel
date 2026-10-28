@@ -8,8 +8,8 @@
 """Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
 A threshold answers which cells are low; the battery rows answer which
-are going to be. The shapes below come from a real house, including a
-cell that sat ten days flat at 32 percent, then dropped ten points and
+are going to be. The shapes below include a recorded cell that sat ten
+days flat at 32 percent, then dropped ten points and
 rebounded eight and a half on consecutive days, then fell to 21.
 
 The rows are what Battery Trends, the Battery: Falling sensor, the
@@ -50,7 +50,7 @@ DYING = [
 # A healthy cell drifting down at half a point a day.
 HEALTHY = [91.0, 92.0, 92.5, 92.0, 91.5, 92.0, 91.5, 91.0,
            91.0, 91.0, 89.5, 88.5, 87.0, 86.0, 84.0, 82.5]
-# S63 carried down to 21.5 percent: steady, then speeding up.
+# A recorded cell carried down to 21.5 percent: steady, then speeding up.
 SPEEDING = [round(level - 36.0, 1) for level in [
     73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
     74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
@@ -100,7 +100,7 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 ):
     """Both cells are falling. One is at 12 percent and its last week
     averaged 6.6 points below the week before, about two weeks left;
-    the other is at 82 percent and fell 4.7, about four months. Their
+    the other is at 82 percent and fell 4.7, about a month. Their
     paces are within two points a week of each other, and time
     remaining still tells them apart (rule BAT-13).
     """
@@ -120,7 +120,7 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     falling = coord._battery_rows()["falling"]
     assert _names(falling) == ["Door 2nd Bedroom", "Soil Moisture"]
     # The six-week line's pace, four weeks being always held
-    # (rule BAT-10).
+    # (rule BAT-11).
     assert round(falling[0]["slope"], 3) == -1.031
     assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
     # Flat, the sag, then the fall: a bend, called accelerating
@@ -195,7 +195,8 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     going to be, and the two rarely name the same device (rule BAT-14).
 
     The dying cell is at 12 percent and is counted low. The healthy
-    faller is at 82 and is counted by neither, being two months out.
+    faller is at 82, above three times the threshold, so it is not
+    judged and is counted by neither (rule BAT-10).
     A third at 21.5 percent speeding up is the case that belongs in
     falling and nowhere else. A cell falling at a steady pace is a
     battery to watch, not on the sensor.
@@ -248,7 +249,7 @@ async def test_an_interrupted_write_leaves_no_fragment(
         handle.write("the whole previous report")
 
     # A directory where the temporary file wants to be, so the write
-    # fails at the point the old code would already have truncated
+    # fails at the point a direct write would already have truncated
     # the destination.
     os.makedirs(f"{target}.tmp", exist_ok=True)
     with pytest.raises(OSError):

@@ -93,7 +93,7 @@ def _card(coord):
 
 async def test_a_detected_replacement_waits_for_a_person(hass: HomeAssistant):
     """Used at once, and waiting on a card in Simple and a Brief line
-    naming the device and the day (rule BAT-06)."""
+    naming the device and the day (rule BAT-07)."""
     _entry, coord, device, record = await _detected(hass)
     assert record[DEV_BATTERY_DAILY_PREVIOUS] == [40.0, 39.0, 38.0, 37.0]
     assert record[DEV_LOGNORMAL_DAYS] == 0
@@ -194,7 +194,8 @@ async def test_a_day_given_stands_however_old(hass: HomeAssistant):
 async def test_a_day_given_while_a_rise_waits_ends_it(hass: HomeAssistant):
     """A day given the morning after a cell is swapped, its rise still
     waiting for a second night: the next midnight confirms nothing over
-    the person's answer and the run does not stop (rule BAT-06)."""
+    the person's answer, and the 42-day count does not start again
+    (rules BAT-07, FRZ-05)."""
     _entry, coord, device, record = await _house(hass)
     record[DEV_LOGNORMAL_DAYS] = 20
     _fold(coord, record, device.id, [40, 39, 38, 100], _start())

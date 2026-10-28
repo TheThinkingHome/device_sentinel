@@ -66,7 +66,7 @@ async def test_a_battery_device_with_its_voltage_off_is_listed_in_simple_and_adv
     assert [row["device_id"] for row in card["devices"]] == [door.id]
     assert card["simple"] is True and card["active"] == 1
     assert "Battery Voltage Switched Off (1): " in "\n".join(coord._recommendations_section())
-    # The card's body, word for word as agreed (rule REC-05).
+    # The card's body, word for word (rule REC-05).
     assert "This device has a battery voltage entity which can be used for more accurate battery reporting and forecasting." in card["body"]
 
 

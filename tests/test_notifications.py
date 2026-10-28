@@ -84,7 +84,7 @@ MANIFEST_VERSION = json.loads(
 
 
 # ==================================================================
-# The config-flow backbone (Step 1).
+# The config-flow backbone.
 # ==================================================================
 
 async def test_flow_creates_entry_with_zero_questions(hass: HomeAssistant):
@@ -120,8 +120,8 @@ async def test_setup_creates_status_sensor(hass: HomeAssistant):
     state = hass.states.get("sensor.device_sentinel_status")
     assert state is not None
     # Status answers its own name. With no device yet established, a
-    # fresh install reads learning; the setup count that used to be
-    # the state now rides as an attribute, still proving persistence.
+    # fresh install reads learning; the setup count rides as an
+    # attribute, proving persistence (rule CFG-07).
     assert state.state == "learning"
     assert state.attributes["setup_count"] == 1
     assert state.attributes["sentinel_type"] == "status"
@@ -200,7 +200,8 @@ async def test_two_lists_and_both_means_high(hass: HomeAssistant):
     )
     assert result["step_id"] == "notifications"
 
-    # Mine is high; wife is normal; a shared target is listed in both.
+    # One target is high, another normal; a shared target is listed in
+    # both.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -370,7 +371,7 @@ class _Harness(NotifierMixin):
 
     @property
     def battery_falling_list(self):
-        """The card reads two battery sources, not one (rule NOTE-10)."""
+        """The card reads two battery sources, not one (rule BAT-14)."""
         return self._falling
 
     @property
@@ -430,7 +431,7 @@ async def test_family_summary_reads_the_lists():
     assert "Battery X 20%" in summary
     assert "Battery U low" in summary
 
-    # The card reads two battery sources (rule NOTE-10). A cell that is
+    # The card reads two battery sources (rule BAT-14). A cell that is
     # both reads level then direction in one entry; a cell that is only
     # falling stands on its own.
     h = _Harness(
@@ -571,7 +572,7 @@ def test_signal_summary_says_railed_not_low():
         ],
     )
     summary = h._family_summary("signal")
-    # The Daily Brief's words, "signal railed" (rule NOTE-01).
+    # The Daily Brief's words, "signal railed" (rule NOTE-10).
     assert "Window Living Room Left signal railed" in summary
     assert "low" not in summary
 
@@ -667,7 +668,7 @@ async def test_card_suppressed_and_dismissed_when_toggle_off():
 
 
 async def test_card_created_when_toggle_on():
-    """With the toggle on (the default), the card is created as before."""
+    """With the toggle on, the card is created."""
     from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
 
     h = _Harness(
@@ -950,7 +951,7 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
     assert coord._held_events == {}
 
 
-# The moment the moved tests measure from.
+# The moment these tests measure from.
 T0 = 1786000000.0
 
 
@@ -982,12 +983,9 @@ async def test_a_fault_line_and_a_recovery_line_stay_apart(
 async def test_the_earliest_stamp_survives_a_missing_one(
     hass: HomeAssistant,
 ) -> None:
-    """The fault announcement takes the earliest stamp it has.
-
-    The guard used to sit inside a comprehension where nothing could
-    see it. It now binds the value it tested, which is the same
-    behavior and is the point: a kind carrying no stamp is skipped
-    rather than crashing the announcement.
+    """The fault announcement takes the earliest stamp it has, and a
+    kind carrying no stamp is skipped rather than crashing the
+    announcement.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "r4a", "Half Stamped")
@@ -1014,10 +1012,10 @@ async def test_the_earliest_stamp_survives_a_missing_one(
 # ==================================================================
 # The card is written when its message changes, and only then.
 # ==================================================================
-# Two testers saw the card rewrite itself every thirty seconds with
-# the same "All devices reporting", which Home Assistant shows as a
-# fresh notification each time. What a person sees can only change
-# when the message does, so a write that repeats it is noise.
+# Home Assistant shows each write of the card as a fresh notification,
+# even with the same "All devices reporting". What a person sees can
+# only change when the message does, so a write that repeats it is
+# noise (rule NOTE-11).
 
 
 def _creates(h):

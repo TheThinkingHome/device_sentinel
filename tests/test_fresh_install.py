@@ -49,8 +49,8 @@ async def test_a_fresh_install_claims_nothing_it_has_not_learned(
 ):
     """The first minutes are the ones most likely to lie: no rhythm,
     no floor, no history, and every sensor still has to say something
-    true. Nothing is frozen, nothing is weak, and the Data sensors
-    say zero rather than implying a depth they do not have.
+    true. Nothing is frozen, nothing is weak, and the recording depth
+    says zero rather than implying a depth it does not have.
     """
     register_device(hass, "fi2", "Quiet Device")
     coord = await setup_coordinator(hass)
@@ -87,7 +87,7 @@ async def test_the_first_readings_do_not_produce_a_verdict(
 async def test_the_first_midnight_records_a_day(hass: HomeAssistant):
     """The fold is where an empty install becomes a recording one.
     One day of history, in every series that had something to say,
-    and the Data sensors move off zero the moment it lands.
+    and the recording depth moves off zero the moment it lands.
     """
     device, (entity_id,) = register_device(hass, "fi4", "Folding Device")
     coord = await setup_coordinator(hass)

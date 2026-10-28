@@ -8,8 +8,8 @@
 """A device that keeps dropping out is one problem, not fifty
 (rule UNAV-06).
 
-A tilt sensor that goes unavailable for three to four and a half
-minutes dozens of times a day, each drop past the three-minute wait,
+A device that goes unavailable for three to four and a half minutes
+dozens of times a day, each drop past the three-minute wait,
 would open and close a problem every time. Three drops in two hours
 make a flap; the longest time back between drops is learned from the
 current run; the device stays listed until it has been back longer
@@ -67,7 +67,7 @@ async def _shed(hass: HomeAssistant, freezer):
 
 
 async def _drop(hass, coord, freezer, entity_id, down: int = 4, back: int = 30):
-    """One of S73's drops: down four minutes, then back for a while."""
+    """One drop: down four minutes, then back for a while."""
     hass.states.async_set(entity_id, "unavailable")
     await _minutes(hass, coord, freezer, down)
     hass.states.async_set(entity_id, "closed")
@@ -125,7 +125,8 @@ async def test_it_clears_after_holding_on_longer_than_the_flap(
     for _ in range(4):
         await _drop(hass, coord, freezer, entity_id, back=30)
     assert coord.is_flapping(device.id)
-    # Back for as long as it ever was between drops: still a flap.
+    # Back longer than its longest stay between drops, but inside the
+    # grace for it: still a flap.
     await _minutes(hass, coord, freezer, 20)
     assert coord.is_flapping(device.id)
     # Back far past its learned flap and the grace for it.
@@ -176,9 +177,9 @@ async def test_the_pages_say_flapping(hass: HomeAssistant, freezer):
 
 
 async def test_the_fault_report_counts_a_device_that_keeps_dropping_out(hass: HomeAssistant, freezer):
-    """A device standing on the problem list after hundreds of drops,
+    """A device standing on the problem list as dropping out, and
     acknowledged, is listed under Dropping Out and counted, not left out
-    of "Devices With a Fault".
+    of "Devices With a Fault" (rule BRIEF-15).
     """
     coord, device, entity_id, _phone = await _shed(hass, freezer)
     for _ in range(4):

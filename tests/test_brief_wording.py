@@ -307,7 +307,7 @@ async def test_regenerated_brief_says_it_is_incomplete(
 async def test_muted_devices_never_reach_the_brief(
     hass: HomeAssistant,
 ):
-    """It is a report, so exclusion suppresses it here."""
+    """A device muted for everything is left out of the brief (rule BRIEF-08)."""
     device, entity_id, _ = _register(hass, "x1", "Hidden Sensor")
     coord = await setup_coordinator(
         hass, {CONF_MUTED_DEVICES: [device.id]}
@@ -370,9 +370,8 @@ async def test_a_standing_problem_is_never_called_nothing(
 async def test_settings_with_commas_in_their_names_stay_countable(
     hass: HomeAssistant, read_brief
 ):
-    """Two of the signal labels carry commas of their own, so a
-    comma-separated list read as five settings where three were
-    changed."""
+    """Two of the signal labels carry commas of their own, so the
+    labels are joined with semicolons and stay countable (rule BRIEF-07)."""
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
     coord.data[DATA_SYSTEM_EVENTS] = [
@@ -456,8 +455,8 @@ async def test_battery_level_agrees_everywhere(hass: HomeAssistant):
 async def test_present_perfect_kinds_take_for_not_ago(
     hass: HomeAssistant,
 ):
-    """"has been unavailable 4.0h ago" reached a live brief. Three of
-    the four wordings are present perfect and need "for"."""
+    """A present perfect wording takes "for", never "ago": "has been
+    unavailable for 4.0h"."""
     device, entity_id, _ = _register(hass, "g1", "Grammar Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -567,8 +566,8 @@ async def test_recovery_of_an_acknowledged_device_is_news(
 async def test_an_unobserved_recovery_says_so_plainly(
     hass: HomeAssistant,
 ):
-    """A rebind by hand read as "on its own" in a live brief. We can
-    say we saw no intervention; we cannot say there was none."""
+    """A recovery with no intervention seen says so, never "on its own":
+    Device Sentinel can say it saw none, not that there was none."""
     coord = await setup_coordinator(hass)
     row = {
         INC_DEVICE_ID: "d",
@@ -647,8 +646,8 @@ async def test_the_recovery_clock_time_is_dropped_from_a_pair(
 async def test_a_pair_holds_together_across_other_devices(
     hass: HomeAssistant, read_brief
 ):
-    """The failure this fixes: strict time order split every pair as
-    soon as a second device broke in between."""
+    """A pair holds together when a second device breaks in between,
+    rather than being split by strict time order."""
     coord = await setup_coordinator(hass)
     _seed(coord, [
         ("d1", "First Device", INCIDENT_OPENED, {}),
@@ -705,8 +704,8 @@ async def test_two_breaks_in_one_window_give_two_episodes(
 async def test_a_recovery_older_than_the_window_stands_alone(
     hass: HomeAssistant, read_brief
 ):
-    """Door Master's case: the silence began before the window opened,
-    so there is no opening to pair with and the lone wording stays."""
+    """A silence that began before the window opened has no opening to
+    pair with, so the lone wording stays."""
     coord = await setup_coordinator(hass)
     _seed(coord, [
         ("d1", "Door Master", INCIDENT_RESOLVED,
@@ -860,7 +859,7 @@ async def test_one_long_outage_is_the_only_thing_said(
 async def test_every_system_event_kind_has_a_sentence(
     hass: HomeAssistant,
 ):
-    """No event kind may render as its own name (rule STOR-18).
+    """No event kind may render as its own name (rule BRIEF-01).
 
     A kind with no branch in either renderer falls back to printing
     the raw kind, so the brief would read "storage_shape at Aug 17,
@@ -1093,8 +1092,8 @@ async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
     """"18 over 6 days" and "15 all on one day" read differently.
 
     The reader must not need arithmetic to tell a failing device
-    from one bad afternoon (rule BRIEF-09), so the line carries the
-    count, the days, and the worst day.
+    from one bad afternoon (rule BRIEF-09), so the row carries the
+    count and the days.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "ro3", name="One Bad Day")
@@ -1333,7 +1332,7 @@ async def test_kinds_flap_separately_on_one_device(hass: HomeAssistant):
     """A device flapping in two kinds gets one sentence per kind.
 
     Buckets carry the kind beside the device, so a rail and an
-    unavailability no longer share one sentence and one verb.
+    unavailability do not share one sentence and one verb.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "two_kinds", name="Plug Office")
@@ -1954,7 +1953,7 @@ async def test_a_frozen_device_is_told_from_when_it_went_quiet(hass: HomeAssista
     silence. "Stopped reporting at 2:20 AM and recovered 3.7h later"
     would put the recovery at about 6 AM. The device went quiet at
     10:37 PM the evening before and reported again at 2:21 AM
-    (rule BRIEF-02).
+    (rule UNAV-07).
     """
     coord = await setup_coordinator(hass)
     local = dt_util.get_default_time_zone()

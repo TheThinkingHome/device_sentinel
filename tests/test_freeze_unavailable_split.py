@@ -8,7 +8,8 @@
 """Freeze and unavailable, muted apart (rules MUTE-06, UNAV-02).
 
 A freeze mute silences only what is judged from silence: frozen and
-never reported. Unavailable has its own mute, set on a device only. A
+never reported. Unavailable has its own mute, set by label or device,
+never by integration. A
 device's main entities, the ones Home Assistant puts in no category,
 decide whether it is down, and unknown counts as nothing.
 """
@@ -188,7 +189,7 @@ async def test_the_unavailable_mute_is_set_from_the_device_page_and_leaves_silen
     coord = coord.entry.runtime_data
     await walk(hass, freezer, 120)
     assert not any(i["device_id"] == device.id for i in coord.todo_items)
-    assert not _mine(back, device.id), "a mute is not a recovery (#537)"
+    assert not _mine(back, device.id), "a mute is not a recovery"
     assert coord.page_mutes(device.id)["unavailable"] == {"on": True, "source": "device", "here": True}
     assert "unavailable" in coord.mute_text(device.id)
 
@@ -289,7 +290,7 @@ async def test_unknown_beside_unavailable_is_unavailable(hass: HomeAssistant, fr
 
 async def test_an_unknown_problem_standing_at_the_upgrade_waits_for_the_device(hass: HomeAssistant, freezer):
     """No new unknown is raised; one already standing is held until the
-    device reports, as any down problem is (rule LIST-08)."""
+    device reports, as any down problem is (rule UNAV-02)."""
     coord, device, ids, record = await _ready(hass, freezer, "uk4")
     for eid in ids.values():
         hass.states.async_set(eid, "unknown")

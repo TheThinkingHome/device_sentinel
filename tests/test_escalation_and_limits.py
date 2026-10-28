@@ -107,7 +107,8 @@ async def test_a_real_recovery_still_reads_as_one(hass: HomeAssistant):
 async def test_a_push_names_the_worst_few_and_counts_the_rest(
     hass: HomeAssistant,
 ):
-    """Fifty devices down made a message of 2,160 characters."""
+    """Fifty devices down would make a message of 2,160 characters, so a
+    push names three and counts the rest (rule NOTE-05)."""
     devices = [
         register_device(hass, f"e{index}", name=f"Sensor Number {index:02d} In The Back Room")[0]
         for index in range(50)
@@ -166,8 +167,9 @@ async def test_a_battery_outside_a_percentage_is_not_drawn_as_one(
 
 
 def test_a_negative_gap_is_refused_at_the_boundary():
-    """A negative today_max folded into the day's series at midnight
-    and had the whole record refused on the next load."""
+    """A negative today_max is named at its field by the shape check,
+    so it is repaired there rather than folded into the day's series
+    (rule STOR-07)."""
     record = _new_device_record("2026-09-23T00:00:00+00:00", TIME_BASE)
     record["today_max"] = -50.0
     faults = check_records({"a" * 32: record})

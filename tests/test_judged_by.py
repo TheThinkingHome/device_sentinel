@@ -94,7 +94,7 @@ async def test_an_ordinary_device_carries_none(hass: HomeAssistant):
 
 async def test_a_device_its_hub_judges_is_never_called_never_reported(hass: HomeAssistant, freezer):
     """A Pico nobody has pressed has no report, and is fine: its page
-    reads reporting, never never reported (the device-page plan)."""
+    reads reporting, never never reported (rule FRZ-09)."""
     from custom_components.device_sentinel.const import DATA_DEVICES, DEV_LAST_ACTIVITY
 
     h = await _house(hass, freezer)

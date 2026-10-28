@@ -30,7 +30,8 @@ from .helpers import register_device, registry_settled, setup_coordinator
 
 # A straight half point a day for six weeks, ending at 40.
 STEADY = [round(61.0 - 0.5 * day, 1) for day in range(43)]
-# A real S63 cell carried down to 21.5 percent: steady, then speeding up.
+# A recorded cell, moved down to end at 21.5 percent: steady, then
+# speeding up.
 S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
        74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
        68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,

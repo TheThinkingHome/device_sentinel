@@ -3,14 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_action_source.py, Version: 0.27.4 (2026-10-25)
+# File: test_action_source.py, Version: 0.27.10 (2026-10-27)
 
 """Each action is logged with where it was done (rules BRIEF-07, DEV-07).
 
 A sensor turned on, a power answer or a type set from a
-Recommendations card was logged "from its device page", since the three
-commands carried no source. They carry it now, as mutes do, and the
-log says "from the Recommendations tab" or "from its device page".
+Recommendations card carries where it was pressed, as a mute does, and
+the log says "from the Recommendations tab" or "from its device page".
 """
 
 from __future__ import annotations

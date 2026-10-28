@@ -59,12 +59,11 @@ async def _coordinator(hass: HomeAssistant, options: dict | None = None):
 async def test_the_default_list_applies_before_the_screen_is_saved(
     hass: HomeAssistant,
 ):
-    """A fresh install starts with the four, without storing them.
+    """A fresh install starts with the default list, without storing it.
 
     The list is the person's, so it is not written into their options
     behind them. Until the screen is submitted the default stands in
-    for it, which is what makes an upgrade and a fresh install behave
-    the same way.
+    for it (rule MUTE-02).
     """
     coordinator, _entry = await _coordinator(hass)
     assert coordinator.excluded_integrations == frozenset(
@@ -226,8 +225,7 @@ async def test_the_picker_hides_an_integration_already_set_aside(
     hass: HomeAssistant,
 ):
     """Offering it would change nothing, and it buries the real
-    choices under add-ons and dashboard cards. On the reference fleet
-    this took the list from thirty-two entries to fifteen."""
+    choices under add-ons and dashboard cards."""
     coordinator, _entry = await _coordinator(
         hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
@@ -323,15 +321,9 @@ async def test_the_fold_discards_and_then_folds_the_survivors(
 ):
     """The seam between the two halves of midnight.
 
-    Both halves were proven on their own and their joint was not: the
-    discard was only ever called directly, and every other test of the
-    rollover runs with nothing ignored. So the one thing no test
-    covered was the order they run in, with the discard deleting
-    records out of the very dictionary the fold is about to walk.
-
-    Nothing here waits for a real midnight. A fold happens once and
-    proves the seam for that night; a test proves it on every release
-    after this one.
+    The discard deletes records out of the very dictionary the fold
+    is about to walk, so the two run here in their real order, with
+    something ignored. Nothing here waits for a real midnight.
     """
     keeper, _ = register_device(hass, "door", name="Door Master")
     goner, _ = register_device(hass, "phone", name="James S24+")
@@ -436,7 +428,7 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
         "tile",
     ]
 
-    # And Advanced no longer offers it.
+    # And Advanced does not offer it.
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "advanced"}

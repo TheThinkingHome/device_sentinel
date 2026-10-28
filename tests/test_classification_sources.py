@@ -80,7 +80,7 @@ async def test_a_global_mute_by_device_needs_no_source(hass: HomeAssistant):
 
 
 async def test_a_family_mute_shows_in_the_same_cell(hass: HomeAssistant):
-    """A battery mute alone was invisible on the tab: an empty cell."""
+    """A battery mute alone shows on the tab, not as an empty cell."""
     device, _ = register_device(hass, "d", name="Delta Phone")
     coord = await setup_coordinator(hass, {CONF_BATTERY_MUTED_DEVICES: [device.id]})
     assert _row(coord, "Delta Phone")["muted"] == "battery (device)"
@@ -137,9 +137,9 @@ async def test_the_report_names_an_exclusion_too(hass: HomeAssistant):
 async def test_the_integrations_tab_counts_only_global_mutes(hass: HomeAssistant):
     """A battery-only mute is not the integration's device muted.
 
-    The Integrations tab counted a device as muted when its row's
-    cell was not empty. The family mutes now fill that cell, and a
-    phone muted for battery alone must not read as a muted device.
+    The family mutes fill the row's cell too, so the count reads the
+    global mute alone, and a phone muted for battery alone does not read
+    as a muted device (rule DASH-16).
     """
     device, _ = register_device(hass, "j", name="Juliet Phone")
     coord = await setup_coordinator(hass, {CONF_BATTERY_MUTED_DEVICES: [device.id]})
@@ -162,7 +162,8 @@ async def test_the_integration_page_shows_every_mute(hass: HomeAssistant):
 
 
 async def test_the_device_page_shows_every_mute(hass: HomeAssistant):
-    """A device muted for battery alone read "Watched" on its own page."""
+    """A device muted for battery alone says so on its own page (rule
+    MUTE-10)."""
     device, _ = register_device(hass, "m", name="Mike Phone")
     coord = await setup_coordinator(hass, {CONF_BATTERY_MUTED_DEVICES: [device.id]})
     page = coord.dashboard_device(device.id)
@@ -232,8 +233,9 @@ async def test_the_disabled_entities_advice_is_gone(hass: HomeAssistant):
 async def test_a_renamed_label_is_named_by_its_new_name(hass: HomeAssistant):
     """Renaming a label moves nothing in the device or entity registry.
 
-    Without a listener on the label registry the cell kept the old
-    name until something else happened to rebuild the view.
+    So the label registry has a listener of its own, or the cell would
+    keep the old name until something else rebuilt the view (rule
+    WATCH-11).
     """
     device, _ = register_device(hass, "l", name="Lima Plug")
     label_id = _label(hass, device, "Garage spares")

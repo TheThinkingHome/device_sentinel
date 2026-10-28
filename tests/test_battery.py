@@ -117,7 +117,7 @@ async def test_binary_fallback_and_on_is_low(hass: HomeAssistant):
 
 
 async def test_threshold_and_hysteresis(hass: HomeAssistant):
-    """Flag at or below 20; clear only above 22 (threshold + 2).
+    """Flag at or below 20; clear only above 23 (threshold + 3).
 
     The threshold is set here rather than taken from the default,
     because the hysteresis is under test, so the number it hinges on
@@ -178,7 +178,7 @@ async def test_unavailable_battery_holds_verdict(hass: HomeAssistant):
 
     hass.states.async_set(eids["pct"], "unavailable")
     await hass.async_block_till_done()
-    assert rec[DEV_BATTERY_LOW] is True  # verdict held; liveness is Step 4
+    assert rec[DEV_BATTERY_LOW] is True  # verdict held; silence is the freeze rules' job
 
 
 async def test_options_change_applies_live(hass: HomeAssistant):
@@ -234,8 +234,8 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert state is not None
     coord._notify()
     await hass.async_block_till_done()
-    # Low Batteries merges the old count and list: state is the count,
-    # rows and thresholds ride in attributes.
+    # Battery: Low carries the count as its state, with the rows and
+    # thresholds in its attributes.
     state = hass.states.get("sensor.device_sentinel_battery_low")
     assert state.state == "2"
     rows = state.attributes["devices"]
@@ -243,9 +243,8 @@ async def test_list_shape_and_order(hass: HomeAssistant):
         "Battery Device 6", "Battery Device 7",
     ]
     row = rows[0]
-    # The problem kinds share one vocabulary, so the old kind field,
-    # written here and read nowhere, is gone. Asserted absent so
-    # nothing puts it back for the shape's sake (rule LIST-02).
+    # The problem kinds share one vocabulary, so the row carries no
+    # kind field of its own (rule LIST-02).
     assert "kind" not in row
     assert row["level"] == 10.0
     assert row["since"] is not None
@@ -276,7 +275,7 @@ async def test_since_survives_reload(hass: HomeAssistant, hass_storage):
 
 
 async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
-    """The dashboard slider writes the same setting as the dialog."""
+    """The threshold set in the options dialog applies at once."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 9)
@@ -289,8 +288,8 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     await hass.async_block_till_done()
     assert coord.battery_low_count == 0
 
-    # There is no dashboard slider, so the options dialog is the one
-    # door (rule BAT-14).
+    # There is no dashboard slider: the threshold sits on the Low
+    # Battery screen (rule CFG-02).
     hass.config_entries.async_update_entry(
         coord.entry,
         options={**coord.entry.options, CONF_LOW_THRESHOLD: 35},
@@ -319,7 +318,7 @@ async def test_the_retired_slider_is_swept_from_the_registry(
     )
 
 
-# ------------------------------------- the daily recorder (rules BAT-05, BAT-11)
+# ------------------------------------- the daily recorder (rule BAT-05)
 
 async def test_rollover_appends_the_daily_level(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
@@ -373,8 +372,8 @@ async def test_series_is_bounded(hass: HomeAssistant):
 async def test_lithium_cliff_is_visible_in_the_series(
     hass: HomeAssistant,
 ):
-    """The shape the velocity flag will later catch: flat, then a
-    sudden acceleration."""
+    """The shape the accelerating reading catches: flat, then a
+    sudden fall (rule BAT-12)."""
     coord = await setup_coordinator(hass)
     record = _record()
     for level in (100, 100, 100, 100, 99, 99, 80, 60, 30):
@@ -382,7 +381,7 @@ async def test_lithium_cliff_is_visible_in_the_series(
         coord._roll_battery(record)
     series = record[DEV_BATTERY_DAILY]
     deltas = [a - b for a, b in zip(series[:-1], series[1:])]
-    # Flat early, steep late: the cliff is legible without a flag yet.
+    # Flat early, steep late: the cliff is legible in the series itself.
     assert max(deltas[:4]) <= 1
     assert max(deltas[-3:]) >= 20
 
@@ -623,7 +622,7 @@ async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
         )
         assert not record[DEV_BATTERY_LOW], f"{hostile} flagged low"
 
-    # And the card, which is what actually crashed, survives it.
+    # And the card survives it.
     await coord.async_update_card()
     await hass.async_block_till_done()
 
@@ -670,8 +669,8 @@ async def test_a_smaller_rise_that_lands_full_is_a_replacement(
 async def test_the_largest_natural_rise_on_record_is_not_a_replacement(
     hass: HomeAssistant,
 ):
-    """Door 2nd Bedroom: a sag to 12 and a recovery to 23.5 the next
-    day. A rise of 11.5 that lands nowhere near full (rule BAT-06)."""
+    """A sag to 12 and a recovery to 23.5 the next day: a rise of 11.5
+    that lands nowhere near full (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     record = _record()
     _roll_levels(coord, record, [21.0, 12.0, 23.5, 24.0])
@@ -682,8 +681,8 @@ async def test_the_largest_natural_rise_on_record_is_not_a_replacement(
 
 
 async def test_a_drift_up_near_full_is_not_a_replacement(hass: HomeAssistant):
-    """Motion Hall went 94 to 99.5 on its own. Landing above 95 only
-    counts from at or below 90 (rule BAT-06)."""
+    """A cell drifting from 94 to 99.5 on its own is not new: landing
+    at or over 95 counts only from at or below 90 (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     record = _record()
     _roll_levels(coord, record, [95.0, 94.0, 99.5])
@@ -814,7 +813,8 @@ def _read(hass, coord, battery, reading):
 
 
 async def test_a_raw_device_is_marked_on_its_second_day(hass, freezer):
-    """LUX Outdoors read 200 down to 178 under a "%" unit."""
+    """A device reading 200 down to 178 under a "%" unit is marked raw on
+    its second day (rule BAT-02)."""
     freezer.move_to("2026-09-29 15:00:00+00:00")
     coord, device, battery = await _raw_house(hass)
     record = coord.data["devices"][device.id]

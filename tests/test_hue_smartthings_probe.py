@@ -676,8 +676,8 @@ def _matter_server(hass, connected):
 
 async def test_an_ignored_zwave_or_matter_discovery_writes_nothing_each_minute(hass: HomeAssistant):
     """An ignored add-on or USB discovery is an entry of the same domain.
-    It shared the controller's or server's key, and the line flipped
-    between the two every minute for good."""
+    Sharing the controller's or server's key, its line would flip
+    between the two every minute for good (rule STACK-12)."""
     zwave = _zwave_network(hass, 0)
     matter = _matter_server(hass, True)
     MockConfigEntry(domain="zwave_js", source="ignore", unique_id="usb-1").add_to_hass(hass)
