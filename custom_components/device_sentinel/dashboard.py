@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.11 (2026-10-28)
+# File: dashboard.py, Version: 0.27.13 (2026-10-28)
 
 """What the dashboard reads from the coordinator.
 
@@ -818,6 +818,13 @@ class IntegrationViewMixin:
         }
 
 
+def _battery_percent(level: Any) -> float | None:
+    """A battery reading as a percentage, or None for none or a raw value."""
+    if isinstance(level, bool) or not isinstance(level, (int, float)):
+        return None
+    return float(level) if 0.0 <= float(level) <= BATTERY_READABLE_MAX else None
+
+
 def _middle(values: list[float]) -> float:
     """The median, the true one: an even count averages the two middles."""
     ordered = sorted(values)
@@ -1181,6 +1188,9 @@ class DeviceViewMixin:
                 # By its hub or by its connection, in place of a window.
                 "judged_by": judged_by,
                 "type": self.type_words(device_id),
+                # The battery's level now, a percentage only: a raw
+                # sensor value is no level (rule BAT-02).
+                "battery": _battery_percent(record.get(DEV_BATTERY_VALUE)),
                 # For the tab's Area and Label filters (rule DASH-12).
                 **self._area_and_labels(device_id),
             })
