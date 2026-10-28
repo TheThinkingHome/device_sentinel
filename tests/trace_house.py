@@ -59,7 +59,7 @@ class TraceHouse:
         self.hass = hass
         self.coord = coord
         self.devices = devices      # recorded name -> registry device
-        self.trackers = trackers    # recorded entity_id -> our entity_id
+        self.trackers = trackers    # recorded entity_id -> the test's entity_id
         self.macs = macs
         self.unavailable: set[str] = set()
 
@@ -134,12 +134,10 @@ def load_ties() -> dict[str, str]:
     """The recorded device to tracker map.
 
     The probe names devices and trackers separately and never says
-    which belongs to which, so a trace alone cannot be tied
-    faithfully. Pairing them by sorted index looked harmless and was
-    not: it tied devices to trackers at random, so devices recovered
-    while unrelated trackers were still away and the replay reported
-    orphans the real house never had. The map comes from a
-    diagnostics capture of the same fleet.
+    which belongs to which, so the map comes from a diagnostics
+    capture of the same house. Pairing them by sorted index would tie
+    devices to trackers at random, and the replay would report orphans
+    the real house never had.
     """
     return json.loads((TRACES / "reference_ties.json").read_text())
 

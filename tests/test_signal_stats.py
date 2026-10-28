@@ -9,11 +9,12 @@
 signal sensors (rules SIG-05, SIG-07, SIG-09, SIG-10, SIG-11).
 
 The running mean and standard deviation are recorded ahead of any alert
-that uses them: sum, sum of squares, and count per device, rolled at
-midnight into one mean, one deviation, and the day's maximum, then
-reset. They are clock-shaped, so they live in the hot file, and
-CLOCK_FIELDS membership is asserted here because that single tuple
-drives the hot write, the merge and the strip all at once.
+that uses them: a count, a running mean and M2 per device, weighed by
+minutes held and rolled at midnight into one mean, one deviation, and
+the day's maximum, then reset. They change with every reading, so they
+live in the clocks file, and CLOCK_FIELDS membership is asserted here
+because that single tuple drives the clocks write, the merge and the
+strip all at once.
 
 A weak signal raises no alert yet (rule SIG-10): rails and weak links
 are counted on their own sensors, and the brief carries no weak-signal
@@ -82,10 +83,10 @@ def _brief_text(hass: HomeAssistant) -> str:
 
 
 async def test_the_accumulators_live_in_the_clock_fields():
-    """One tuple drives the hot write, the merge, and the strip.
+    """One tuple drives the clocks write, the merge, and the strip.
 
     The accumulators move with every reading, which makes them
-    clock-shaped; membership here is what routes them to the hot file
+    clock-shaped; membership here is what routes them to the clocks file
     and keeps them out of the stripped main file, with no further
     wiring anywhere.
     """
@@ -202,7 +203,7 @@ async def test_a_held_value_cannot_fabricate_a_day(
     assert len(record.get(DEV_SIGNAL_DAILY_MEAN) or []) == 1
 
     # Silence through day two: the held value accrues weight but no
-    # reading arrives, which is the exact state that fabricated rows.
+    # reading arrives, the state that would fabricate a row.
     coord._roll_signal_stats(record, 2 * 86400.0)
 
     assert len(record.get(DEV_SIGNAL_DAILY_MEAN) or []) == 1
@@ -219,7 +220,7 @@ async def test_a_rail_only_day_writes_the_rail_and_nulls(
     Three consecutive rail days are what confirms a rail (rule SIG-07),
     so the day cannot be dropped; and there is no statistic to record,
     so the row carries the rail count, a zero reading count, and
-    null in every statistic, keeping the eight series aligned.
+    null in every statistic, keeping the seven series aligned.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st5", "Railed Device")
@@ -442,7 +443,7 @@ async def test_weak_links_are_counted_apart_from_rails(
     alike: a rail is a broken measurement confirmed over three days, a
     weak link is a live reading that moves. So they are counted apart,
     the way Battery: Low and Battery: Falling are, and the weak rule is
-    the one the brief and the chart already use.
+    the bad signal day Signal Trends shows (rule SIG-08).
     """
     coord = await setup_coordinator(hass, {})
     weak, _ = register_device(hass, "sp1", "Weak Link")
@@ -473,7 +474,7 @@ async def test_weak_links_are_counted_apart_from_rails(
 async def test_a_signal_muted_device_is_not_counted_low(
     hass: HomeAssistant,
 ):
-    """Exclusion suppresses judgment, so it suppresses this too."""
+    """A signal mute suppresses judgment, so it suppresses this too."""
     coord = await setup_coordinator(
         hass, {CONF_SIGNAL_MUTED_DEVICES: []}
     )
@@ -522,9 +523,8 @@ async def test_a_low_clears_the_moment_its_dwell_falls_back(
 async def test_a_railed_device_is_not_counted_twice(
     hass: HomeAssistant,
 ):
-    """A rail dwells below its own line by construction, so without
-    the guard a stuck device would appear in both counts and a person
-    adding them would see one fault as two.
+    """Without the guard a railed device could appear in both counts,
+    and a person adding them would see one fault as two (rule SIG-09).
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp5", "Railed Link")
@@ -755,9 +755,8 @@ async def test_a_day_a_broken_release_corrupted_is_dropped_once(
 async def test_the_fold_records_p5_and_p50_and_resets(
     hass: HomeAssistant
 ):
-    """Midnight appends the day's percentiles beside mean and sd,
-    resets the trackers, and removes the naive accumulators from a
-    migrated record so storage sheds them at the first fold."""
+    """Midnight appends the day's percentiles beside mean and sd and
+    resets the trackers (rule SIG-05)."""
     coord = await setup_coordinator(hass)
     record = {}
     coord._feed_signal(record, 120.0, 0.0)
@@ -788,7 +787,7 @@ async def test_a_rail_day_does_not_crash_the_readers(
     coord._feed_signal(record, 184.0, 2000.0)
     coord._roll_signal_stats(record, 86400.0)
 
-    # Day two: nothing but rails, the row the outage was made of.
+    # Day two: nothing but rails.
     coord._feed_signal(record, 255.0, 86400.0 + 1000.0)
     coord._roll_signal_stats(record, 2 * 86400.0)
     assert (record.get(DEV_SIGNAL_DAILY_MEAN) or [])[-1] is None
@@ -797,11 +796,8 @@ async def test_a_rail_day_does_not_crash_the_readers(
     assert coord.signal_badday(record) is None
 
     # Every reader at once: the whole report pipeline renders over
-    # the null day. The outage had two readers with the same fault
-    # and the sweep that fixed the first was truncated and missed
-    # the second, so this test stops trusting sweeps: a reader
-    # anywhere in the render path that cannot read a rail-only row
-    # fails here rather than on a fleet.
+    # the null day, so a reader anywhere in the render path that
+    # cannot read a rail-only row fails here rather than on a house.
     await hass.async_add_executor_job(coord._write_reports)
     telemetry = open(
         hass.config.path("device_sentinel/device_telemetry.md")

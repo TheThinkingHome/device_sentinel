@@ -82,7 +82,7 @@ async def test_the_record_scale_still_wins_where_it_is_present(
 async def test_a_corrupt_reading_in_the_baseline_does_not_raise(
     hass: HomeAssistant,
 ):
-    """Each of these took down the whole fold before the guard.
+    """Each of these would take down the whole fold without the guard.
 
     A NaN and an infinity raise inside statistics.median; a string
     raises on comparison. One bad row on one device must cost that

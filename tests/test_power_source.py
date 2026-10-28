@@ -7,10 +7,11 @@
 
 """What powers each device (rules DEV-06, DEV-07, DEV-08, DEV-09).
 
-The owner's entry first, then the Battery Notes library shipped inside
-Device Sentinel, otherwise "Not known". The pencil is on the device
-page only; the report button opens Battery Notes' New Device form,
-filled in.
+The answer for the device first, then the answer for its model, then
+the Battery Notes library shipped inside Device Sentinel, otherwise
+"Not known". The pencil is on the device page and the Power Not Set
+list; the report button opens Battery Notes' New Device form, filled
+in.
 """
 
 from __future__ import annotations
@@ -385,7 +386,7 @@ async def test_one_entry_covers_every_device_of_the_model(hass: HomeAssistant, h
         assert view["set_on_name"] == "Button Master Shower"
     assert coord.power_view(stranger.id)["words"] == "Not known", "another model took the entry"
     # The same model written another way is another model: same means
-    # exactly the same (rule DEV-07).
+    # exactly the same (rule DEV-06).
     lookalike, _ = register_device(hass, "mk8", "Lookalike")
     _made_by(hass, lookalike, "Unlisted Maker", "Unlisted Sensor", "UL SENSOR 1")
     assert coord.power_view(lookalike.id)["words"] == "Not known", "a model written another way took the entry"
@@ -532,7 +533,7 @@ async def test_a_device_saved_with_a_numeric_maker_keeps_its_page_and_the_brief(
     """The brief's recommendation lines ask the library about every
     device, so a maker saved as the number 7 must not fail the brief,
     the device's page or the Recommendations tab. The device reads as
-    the text Home Assistant itself would give it today (rule CODE-09)."""
+    the text Home Assistant itself would give it today (rule DEV-06)."""
     device, _ = register_device(hass, "num", "Numbered Plug")
     numbers = {"manufacturer": 7, "model": 1234, "model_id": 56, "hw_version": 2}
     if hasattr(dr, "_validate_str"):
@@ -570,7 +571,7 @@ def test_a_malformed_library_entry_is_skipped_and_the_rest_kept(caplog):
     """A battery type or quantity the pencil would refuse is never shown from
     the library either: no hidden or control characters, 1 to 40 characters,
     a quantity of 1 to 8. The entry is left out with one warning; the good
-    entries beside it still answer (rule DEV-08)."""
+    entries beside it still answer (rules DEV-06, DEV-08)."""
     good = {"manufacturer": "Acme", "model": "Good", "battery_type": "AAA", "battery_quantity": 2}
     bad = [
         {"battery_type": "AA‮A"}, {"battery_type": "AA\nA"}, {"battery_type": ""}, {"battery_type": "   "},
@@ -606,7 +607,7 @@ def test_the_shipped_library_has_no_malformed_entry(caplog):
 
 async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass_ws_client, hass_storage, freezer):
     """The one-second wait gathers a burst, through Device Sentinel's own
-    timer rather than the store's (rule STOR-02)."""
+    timer rather than the store's (rule STOR-20)."""
     from homeassistant.util import dt as dt_util
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
     coord, client, device = await _setup(hass, hass_ws_client)
@@ -630,7 +631,7 @@ async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass
 
 async def test_clearing_a_devices_own_entry_leaves_the_models(hass: HomeAssistant, hass_ws_client):
     """As on the Type row: clearing a device's own entry leaves the
-    model's (rule DEV-07)."""
+    model's (rule DEV-08)."""
     coord, _client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
     coord._power_entries[devices[0].id] = {"kind": "battery", "type": "AA", "quantity": 1, "set": None}
     coord.page_set_power(devices[1].id, "AAA", 2)

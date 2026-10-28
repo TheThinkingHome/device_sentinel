@@ -137,7 +137,7 @@ def test_the_starts_are_written_with_each_routine_save():
 async def test_a_damaged_saved_start_costs_only_that_start(hass: HomeAssistant, hass_storage, freezer):
     """One device's saved outage start damaged in the clocks file clears
     that start; the file is kept, so no other device's clock restarts
-    (rule STOR-09).
+    (rule STOR-10).
     """
     from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY, STORAGE_CLOCKS_KEY
 

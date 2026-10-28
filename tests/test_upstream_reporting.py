@@ -155,9 +155,8 @@ async def test_an_outage_settles_before_it_is_announced(
 async def test_the_count_is_pushed_again_only_when_it_changes(
     hass: HomeAssistant,
 ):
-    """Silent after the first, and only when there is something new to
-    say: the same tally twice is not worth a message even a quiet
-    one."""
+    """Once the down push has gone, the outage pushes nothing more
+    until it is over (rule UP-09)."""
     device, _ = register_device(hass, "up8", "Counted Device")
     coord = await setup_coordinator(hass)
     # These devices reach Home Assistant through the broker, and a
@@ -315,7 +314,7 @@ async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
             return None
 
     coord._bridge_readers[STACK_ZHA] = _Reader()
-    # What 0.19.0 did: stamp the moment the dwell expired.
+    # Stamped when the reader's wait expired, a minute late.
     coord._bridge_down_at[STACK_ZHA] = 1743_00.0
     assert len(coord.reportable_down_rows) == 2, (
         "0.19.0's behaviour is not reproduced by this test"

@@ -16,10 +16,10 @@ entry carrying all twelve lists, an entry already migrated, an entry
 holding only some of the twelve, and the jump from the oldest public
 release in one load.
 
-The real fleet's options are read from the diagnostics file when it
-is present rather than hand-written here, because a hand-written
-entry holds what the author expects and the file holds what the
-integration actually wrote.
+A real house's options are read from a captured diagnostics file
+when it is present rather than hand-written here, because a
+hand-written entry holds what the author expects and the file holds
+what the integration actually wrote.
 """
 
 from __future__ import annotations
@@ -222,8 +222,9 @@ async def test_the_public_jump_from_the_current_release(
 ):
     """The oldest public release arrives in one load.
 
-    Testers take the steps one at a time, so this path is the one nobody
-    exercises by hand before it reaches a stranger's system.
+    A house that updates each release takes the steps one at a time,
+    so this path is the one nobody exercises by hand before it reaches
+    a stranger's system.
     """
     entry = await _migrated(hass, dict(PUBLIC_RELEASE_OPTIONS), minor_version=1)
 
@@ -246,9 +247,8 @@ async def test_the_reference_fleet_s_own_entry_survives(
     A hand-written entry holds what the author expects. This one
     holds what the integration actually wrote on a live system.
     """
-    # Read from the reference fleet's folder, like every other fleet
-    # case, never from a folder whose contents are whatever was sent
-    # last, from any house.
+    # Read from the reference house's own folder, never from a folder
+    # holding whatever was sent last, from any house.
     files = sorted(fleet_path("reference").glob("config_entry-device_sentinel-*.json"))
     if not files:
         pytest.skip(FLEET_ABSENT)
@@ -281,7 +281,7 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
     """Stored settings-changed rows carry option keys, so they move.
 
     The brief turns each recorded key into the label a person read on
-    the screen (rule CFG-02). Rename the keys and leave the history
+    the screen (rule BRIEF-07). Rename the keys and leave the history
     alone and every brief covering a day before the upgrade prints
     `excluded_devices` at a person for as long as the row is kept.
     """
@@ -412,8 +412,7 @@ async def test_a_row_written_after_the_rename_is_left_alone(
 async def test_the_retired_sliders_are_dropped(hass: HomeAssistant):
     """Five keys go, and a hand-edited value cannot outlive them.
 
-    They were sliders while their numbers were guesses. The numbers
-    settled, so the code states them as constants, and a stored value
+    The code states their numbers as constants, so a stored value
     left behind would make an entry behave differently from what the
     code says (rule STOR-19).
     """

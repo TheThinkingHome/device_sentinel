@@ -78,7 +78,7 @@ def test_identifiers_are_read_at_any_length():
 
 
 async def test_a_haier_appliance_does_not_stop_setup(hass: HomeAssistant):
-    """The reported case: hOn's three-part identifier."""
+    """hOn's three-part identifier does not stop setup."""
     _device(hass, "hon", ODD[0], "Haier washer", "washer")
     entry = await setup_entry(hass)
     assert entry.state is ConfigEntryState.LOADED
@@ -106,8 +106,7 @@ async def test_every_odd_shape_sets_up_ticks_and_downloads(hass: HomeAssistant, 
 
 
 async def test_a_mac_in_a_third_part_still_ties_the_device(hass: HomeAssistant):
-    """The Wi-Fi tie searches every part after the domain, as the
-    reporter's patch did."""
+    """The Wi-Fi tie searches every part after the domain (rule UP-13)."""
     tracker = _tracker(hass, "washer-tracker", "A4:CF:12:B3:C4:D5")
     device = _device(hass, "hon", ("hon", "haier", "a4cf12b3c4d5"), "Haier washer", "washer")
     entry = await setup_entry(hass)
@@ -147,14 +146,14 @@ async def test_one_unreadable_device_never_stops_setup(hass: HomeAssistant, monk
 
 
 async def test_the_entry_is_named_in_the_loaded_state(hass: HomeAssistant):
-    """The reporter's success check: loaded, not setup_error."""
+    """The entry reads loaded, not setup_error."""
     _device(hass, "hon", ODD[0], "Haier washer", "washer")
     await setup_entry(hass)
     assert hass.config_entries.async_entries(DOMAIN)[0].state is ConfigEntryState.LOADED
 
 
 async def test_a_node_is_mapped_whatever_its_identifier_length(hass: HomeAssistant):
-    """The Extended Diagnostics node mapping, the fourth place."""
+    """The Extended Diagnostics node mapping reads any identifier length."""
     from custom_components.device_sentinel.study_stacks import node_devices
 
     source = MockConfigEntry(domain="zwave_js", title="Z-Wave")

@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_problem_words.py, Version: 0.27.4 (2026-10-25)
+# File: test_problem_words.py, Version: 0.27.10 (2026-10-27)
 
 """One set of words for each problem, the Daily Brief's (rules NOTE-01,
 NOTE-10, LIST-02, LIST-10, UNAV-08).
 
-The push said "was detected frozen", the Problem List "frozen", while
-the brief said "stopped reporting". The push, the card and the Problem
-List now use the brief's word for each problem, each in its own
-sentence shape, and the push no longer adds "This is a battery
-device...". A never-reported device's time reads "discovered", as the
+The push, the card and the Problem List use the brief's word for each
+problem, each in its own sentence shape: a frozen device "stopped
+reporting" everywhere, never "was detected frozen" or "frozen", and the
+push adds no "This is a battery device..." line. A never-reported device's time reads "discovered", as the
 brief has it.
 """
 

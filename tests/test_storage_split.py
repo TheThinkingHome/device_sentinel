@@ -194,8 +194,8 @@ async def test_the_shadow_agrees_with_storage(
 async def test_the_shadow_carries_only_the_hot_fields(
     hass: HomeAssistant, hass_storage
 ):
-    """Cold data stays cold: a shadow carrying the learned series
-    would save nothing at cutover."""
+    """Cold data stays cold: the clocks file carries no learned series
+    (rule STOR-01)."""
     device, entity_id = _register(hass, "cl3", "Cold Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -207,9 +207,8 @@ async def test_the_shadow_carries_only_the_hot_fields(
 async def test_nothing_reads_the_shadow(
     hass: HomeAssistant, hass_storage
 ):
-    """The safety argument for the whole phase: corrupt the shadow
-    completely, restart, and the system is unaffected because it
-    still loads everything from storage."""
+    """Corrupt the clocks file completely and reload: it is set aside
+    whole, and the device's clock is unaffected (rule STOR-10)."""
     device, entity_id = _register(hass, "cl4", "Ignored Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -251,8 +250,8 @@ async def test_the_shadow_exists_from_the_first_moment(
 async def test_the_hot_file_supplies_the_clocks(
     hass: HomeAssistant, hass_storage
 ):
-    """Phase B: a routine save wrote the clocks here and nowhere
-    else, so the load has to take them from here or lose them."""
+    """A routine save writes the clocks here and nowhere else, so the
+    load has to take them from here or lose them."""
     device, _eid = _register(hass, "hot1", "Hot Device")
     _cold(hass_storage, {device.id: _new_device_record(
         "2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)}, saved_at=TIME_BASE + 1000.0)
@@ -308,12 +307,12 @@ async def test_a_dirty_tick_inside_the_window_moves_nothing(
 ):
     """One deadline, owned here, that later dirty ticks cannot push.
 
-    The old fault class: Home Assistant's delayed-save machinery kept
-    the nearer of two deadlines but recorded the further one, and
-    deferred to it when the timer fired, so a dirty tick could drag a
-    scheduled write out from under a cold change. The deadline is now
-    a plain float on the coordinator, and a dirty tick inside the
-    window neither writes nor moves it."""
+    Home Assistant's delayed-save machinery keeps the nearer of two
+    deadlines but records the further one, and defers to it when the
+    timer fires, so a dirty tick could drag a scheduled write out from
+    under a cold change. The deadline is a plain float on the
+    coordinator, and a dirty tick inside the window neither writes nor
+    moves it (rule STOR-02)."""
     device, eid = _register(hass, "pair2", "Ticking Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -370,8 +369,8 @@ async def test_an_unstamped_pair_is_left_alone(
 async def test_a_device_only_the_hot_file_knows_is_skipped(
     hass: HomeAssistant, hass_storage
 ):
-    """Nine fields cannot rebuild a record, so a device the main file
-    has never heard of is not invented here."""
+    """The clock fields alone cannot rebuild a record, so a device the
+    main file has never heard of is not invented here."""
     device, _eid = _register(hass, "hot4", "Known Device")
     _cold(hass_storage, {device.id: _new_device_record(
         "2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)}, saved_at=TIME_BASE + 1000.0)
@@ -392,8 +391,8 @@ async def test_the_epoch_wipe_still_has_the_last_word(
     """The ordering the merge depends on: a merge running after the
     wipe would hand the wiped fields straight back.
 
-    The epoch wipes the rhythm and the verdict drawn from it, six
-    fields, and keeps everything else, because there is no raw layer
+    The epoch wipes the rhythm and the verdict drawn from it, and keeps
+    everything else, because there is no raw layer
     to rebuild a wiped series from and the signal and battery
     histories are soaks in progress (rule STOR-19). So the taint flag
     is reset here and the signal reading is not.
@@ -662,7 +661,7 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
     nothing to rebuild it from.
 
     The epoch exists to relearn the rhythm, which its own log line
-    says. It wipes six fields and keeps the rest, so a signal soak
+    says. It wipes those fields and keeps the rest, so a signal soak
     measured in weeks and a battery soak measured in months both
     survive a rhythm rule changing.
     """
@@ -945,10 +944,9 @@ async def test_stored_kinds_are_renamed_at_load(
 ):
     """The kind rename, driven through the real load path (rule LIST-02).
 
-    Four problem kinds were renamed before the event payload made them
-    a contract. Stored history keeps what was written at the time, so
-    the incidents, the additions journal and the list itself are
-    brought onto the one vocabulary here.
+    Stored history keeps the older spellings of four problem kinds as
+    they were written, so the incidents, the additions journal and the
+    list itself are brought onto the one vocabulary here.
     """
     device, _eid = _register(hass, "kd1", "Renamed Device")
     hass_storage[STORAGE_KEY] = {
@@ -1020,8 +1018,8 @@ async def test_stored_kinds_are_renamed_at_load(
         TODO_KIND_FROZEN: 901.0,
     }
 
-    # The system events carry fourteen values of their own under the
-    # same field name. A sweep over every "kind" in the file would
+    # The system events carry values of their own under the same field
+    # name. A sweep over every "kind" in the file would
     # have rewritten these into nonsense.
     seeded = [
         e["kind"]

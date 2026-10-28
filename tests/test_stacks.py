@@ -53,7 +53,7 @@ OWNED_DOMAIN = {
     stack_z2m: "mqtt",
 }
 
-# Domains seen on the reference fleet, plus the four stack domains and
+# Domains a real house carries, plus the four stack domains and
 # the shapes that are not domains at all. The replay runs over this
 # whole set rather than over a chosen example.
 FLEET_DOMAINS = [
@@ -145,7 +145,7 @@ def test_each_stack_owns_its_own_domain_and_no_other():
 
 
 def test_the_three_unbuilt_stacks_detect_by_domain_alone():
-    """The detection the project already performed, moved not changed."""
+    """Each detects by its integration's domain alone (rule STACK-01)."""
     for module, domain in (
         (stack_zha, "zha"),
         (stack_zwave, "zwave_js"),
@@ -219,7 +219,7 @@ def test_the_domain_replay_agrees_with_the_form_it_replaced():
     """The pairing lookup, old form against new, over every domain.
 
     Every reader set that can exist: the one Z2M reader, and none at
-    all. Against every domain the reference fleet carries and the
+    all. Against every domain a real house carries and the
     shapes that are not domains. They cannot disagree on any of them.
     """
     reader = object()

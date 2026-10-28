@@ -1,5 +1,5 @@
-"""What survives a save, a stop, and a load, for the newer fields
-(rule STOR-19).
+"""What survives a save, a stop, and a load: the day's running figures
+and the set-aside stamp (rules STOR-15, STOR-19).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 # File: test_round_trip.py, Version: 0.27.10 (2026-10-27)

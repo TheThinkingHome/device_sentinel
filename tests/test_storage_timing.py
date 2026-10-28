@@ -323,8 +323,8 @@ async def test_immediate_save_restarts_the_window(
 async def test_an_incident_schedules_the_main_file(
     hass: HomeAssistant, freezer
 ):
-    """An incident gets a write of its own, on the shorter cold window
-    rather than the routine one, so it never waits for an unrelated
+    """An incident sets the main file's flag and schedules nothing, so
+    the next interval write carries it rather than an unrelated
     critical change (rule STOR-02).
 
     This exercises the incident recorder; the episode tests below cover
@@ -345,7 +345,7 @@ async def test_an_incident_schedules_the_main_file(
         event=INCIDENT_OPENED,
     )
 
-    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert spy.delays == 0, "a cold change must not schedule"
     assert coord._cold_dirty is True
 
 
@@ -376,7 +376,7 @@ async def test_opening_an_episode_schedules_the_main_file(
     assert coord.data[DATA_DEVICES][device.id].get(
         DEV_FROZEN_SINCE
     ) is None, "the silence tripped a verdict, so this proves nothing"
-    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert spy.delays == 0, "a cold change must not schedule"
     assert coord._cold_dirty is True
 
 
@@ -411,7 +411,7 @@ async def test_closing_an_episode_schedules_the_main_file(
         if ep[EP_ENDED] == EPISODE_ENDED_RESUMED
     ]
     assert closed, "the episode never closed"
-    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert spy.delays == 0, "a cold change must not schedule"
     assert coord._cold_dirty is True
 
 
@@ -440,9 +440,9 @@ async def test_a_wave_of_cold_changes_costs_one_flag(
 async def test_a_cold_change_waits_at_most_one_interval(
     hass: HomeAssistant, freezer
 ):
-    """The old cap bounded how long a burst could defer the cold
-    write. The bound is now structural: the flag cannot be pushed,
-    so the interval write after the change always carries it."""
+    """A burst cannot defer the main file's write: the flag cannot be
+    pushed, so the interval write after the change always carries it
+    (rule STOR-02)."""
     _register(hass, "cw3", "Capped Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data

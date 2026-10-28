@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_startup_grace_recovery.py, Version: 0.27.6 (2026-10-26)
+# File: tests/test_startup_grace_recovery.py, Version: 0.27.10 (2026-10-27)
 
 """A device that really reports inside the startup grace (rule WATCH-10).
 
@@ -147,7 +147,7 @@ async def test_a_sent_recovery_is_not_sent_again_after_a_restart(
 )
 async def test_a_damaged_held_recovery_is_dropped(hass: HomeAssistant, stored):
     """Dropped without an exception, and nothing is sent for it (rule
-    STOR-07)."""
+    STOR-05)."""
     coord = await setup_coordinator(hass)
     recovered = record_events(hass, "device_sentinel_recovered")
     coord.data[DATA_HELD_RECOVERIES] = stored

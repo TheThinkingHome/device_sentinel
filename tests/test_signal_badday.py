@@ -274,8 +274,8 @@ async def test_the_spread_changes_no_judgment_on_a_fleet(
 ):
     """Every stored day of every device, at the defaults and at both
     ends of the two sliders that shape the baseline, judged with the
-    floating-point spread and with the exact one the release before
-    used. No verdict, normal or fall may move, and no spread by more
+    floating-point spread and with the exact one worked in
+    fractions. No verdict, normal or fall may move, and no spread by more
     than rounding."""
     coord = await setup_coordinator(hass)
     devices = fleet_data(path)["devices"]
@@ -299,9 +299,8 @@ async def test_the_spread_changes_no_judgment_on_a_fleet(
                     assert fast["baseline"] == exact["baseline"]
                     assert fast["fall"] == exact["fall"]
                     assert math.isclose(fast["spread"], exact["spread"], rel_tol=1e-15)
-    # A house younger than the baseline has no day to judge yet: the
-    # fourth fleet held four days when captured. Anything older must
-    # have judged a good many.
+    # A house younger than the baseline has no day to judge yet.
+    # Anything older must have judged a good many.
     longest = max((len(r["signal_daily_p5"]) for r in records), default=0)
     if longest > DEFAULT_BADDAY_BASELINE_DAYS:
         assert judged > 1000

@@ -10,9 +10,10 @@ for all of it (rules FRZ-12, FRZ-21).
 
 Two ways an untrusted gap could be learned. A jump of the system clock
 is noticed at the next minute check, so a report before that check
-measured its gap across the jump. And an unclean stop banked each
-device's silence up to the last save, which took a Zigbee bridge's
-outage as every Zigbee device's own silence.
+would measure its gap across the jump. And an unclean stop that banked
+each device's silence up to the last save would take a Zigbee bridge's
+outage as every Zigbee device's own silence, so after one nothing of
+the silence before the stop is learned (rule FRZ-20).
 """
 
 from __future__ import annotations

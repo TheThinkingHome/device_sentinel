@@ -7,7 +7,7 @@
 
 """The row a Wi-Fi outage writes (rules UP-11, UP-15).
 
-A staged outage can take down forty-odd devices and the problem list
+An outage can take down forty-odd devices and the problem list
 then shows every one of them on its own with no cause, unless the claim
 lasts long enough to gather them.
 
@@ -72,7 +72,7 @@ def _judge(coord, devices, when: float) -> None:
 async def test_the_claim_outlives_the_tracker_coming_home(
     hass: HomeAssistant, freezer
 ):
-    """The defect. Ten fall, the trackers come home a minute into the
+    """Ten fall, the trackers come home a minute into the
     recovery, and the verdicts land after that. Every one of them is
     still a casualty of the outage."""
     coord, trackers, devices, _untied = await _house(hass, 14)
@@ -296,7 +296,7 @@ async def test_the_wording_without_a_network(hass: HomeAssistant, freezer):
 
 
 async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
-    """Both are named. Unmeasured: no fleet has two configured."""
+    """Both are named (rule UP-15)."""
     coord, trackers, devices, _untied = await _house(hass, 14)
     hass.config_entries.async_update_entry(
         coord.entry,
@@ -328,12 +328,10 @@ async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
 async def test_the_sensor_publishes_the_recovery(
     hass: HomeAssistant, freezer
 ):
-    """The probe can only record what the integration publishes.
-
-    Today the Wi-Fi sensor publishes three fields and none of them is
-    the recovery, so a staged outage shows the declare and the clear
-    with nothing in between, which is exactly where the settle is
-    decided.
+    """The Wi-Fi sensor publishes the recovery: the fallen set, the
+    returns, the announcement and the thresholds, so a recorded outage
+    shows what happens between the declare and the clear, where the
+    settle is decided (rule UP-16).
     """
     coord, trackers, _devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
@@ -429,8 +427,8 @@ async def test_the_scan_route_builds_a_fallen_set_too(
     has nothing to work from, and the recovery closes on two returns
     against a threshold of one (rule UP-16).
 
-    A test house with no network configured never takes this route, so
-    this one configures a network.
+    A house with no network configured never takes this route, so
+    this test configures a network.
     """
     coord, trackers, _devices, _untied = await _house(hass, 12)
     coord._grace_until = 0.0

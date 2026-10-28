@@ -56,7 +56,7 @@ COMPONENT = Path(repairs_module.__file__).parent
 
 
 def _issue(hass: HomeAssistant, issue_id: str):
-    """Return one of our issues from the registry, or None."""
+    """Return one of Device Sentinel's issues from the registry, or None."""
     return ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
 
 
@@ -412,8 +412,7 @@ def test_no_issue_uses_critical_severity() -> None:
 
 
 async def test_unload_clears_every_issue(hass: HomeAssistant) -> None:
-    """Nothing this integration raised outlives it (rules STOR-24,
-    REP-04)."""
+    """Nothing this integration raised outlives it (rule REP-04)."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     register_device(hass, "dev_unload")

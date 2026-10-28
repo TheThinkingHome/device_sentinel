@@ -5,8 +5,8 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_wifi_trace_second.py, Version: 0.27.10 (2026-10-27)
 
-"""The second fleet's staged outage, replayed through the whole tick
-(rule UP-15).
+"""A staged outage recorded on a real house, replayed through the whole
+tick (rule UP-15).
 
 The recording: the SSIDs pause, the devices' own integrations notice
 within the first minute, the router marks its first client away four

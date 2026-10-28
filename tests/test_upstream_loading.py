@@ -9,14 +9,14 @@
 (rules UP-03, UP-04).
 
 ZHA can take a minute or two to load after Home Assistant starts. A
-reader that allows sixty seconds before an unloaded entry counts as
-down records "zha bridge went down" and, a minute later, "came back"
-on almost every restart.
+reader that allowed only sixty seconds before an unloaded entry counts
+as down would record "zha bridge went down" and, a minute later, "came
+back" on almost every restart.
 
 Inside the startup grace, a bridge or integration that has not loaded
 since Home Assistant started is loading, and nothing is recorded.
-Once the grace is over, one still not loaded is down, dated from the
-start. The broker already reads unknown until it is first heard, so it
+Once the grace is over, one that never loaded and reads down, or an
+integration that failed to set up, is down, dated from the start. The broker already reads unknown until it is first heard, so it
 has no down to suppress. Every upstream records how long it took to
 load.
 """
@@ -274,7 +274,8 @@ async def test_a_reader_that_faults_saying_is_taken_as_established(
     assert "z2m" in coord.upstreams_loaded_after
 
 
-# A device held while its integration loads keeps its problem, and a real recovery still closes it (the fourth fleet's restart).
+# A device held while its integration loads keeps its problem, and a real
+# recovery still closes it.
 
 
 async def _never_reported(hass):
@@ -308,7 +309,7 @@ def _opened(coord, device_id):
 async def test_a_device_held_while_its_integration_loads_keeps_its_problem(
     hass: HomeAssistant, monkeypatch
 ):
-    """The fourth fleet's restart, step by step: held, then released."""
+    """A restart, step by step: held, then released."""
     coord, device = await _never_reported(hass)
     opened_before = len(_opened(coord, device.id))
 

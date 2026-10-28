@@ -368,7 +368,7 @@ async def test_an_ignored_device_is_named_not_numbered(
     coord._rebuild_registry_view()
     domain = coord._watched[target.id]
 
-    # Ignore its integration, which sets the device aside and takes
+    # Exclude its integration, which sets the device aside and takes
     # it out of the watched name map.
     await _save_options(
         hass, entry, **{CONF_EXCLUDED_INTEGRATIONS: [domain]}
@@ -385,8 +385,8 @@ async def test_an_ignored_device_is_named_not_numbered(
     detail = event.get("detail") or ""
     assert "The Television" in detail
     assert target.id not in detail
-    # Ignoring sets a device aside at once but its record survives
-    # until the next fold discards it, so this trim did have
+    # Excluding sets a device aside at once but its record survives
+    # until the next fold discards it (rule MUTE-01), so this trim did have
     # something to take.
     assert "1 records" in detail
     assert dr.async_get(hass).async_get(target.id) is not None

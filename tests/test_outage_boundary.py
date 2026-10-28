@@ -9,10 +9,10 @@
 
 An ended outage carries a worst figure, and a Wi-Fi recovery writes two
 event kinds. The wide fuzz in `test_storage_shape.py` damages the
-fields a fleet file already holds, and no fleet file holds these, so on
+fields a captured house file already holds, and none holds these, so on
 its own it would never touch them. A check must be read off every value
 the code can write, not off one file's values. Here the new shape is
-written onto each fleet first, then the new fields are damaged, the
+written onto each captured house first, then the new fields are damaged, the
 file goes through the real load, and every reader, the Wi-Fi rules
 among them, runs over what the gate let through. The write seam and
 the save are held to the same shape.
@@ -55,7 +55,7 @@ from tests.test_storage_shape import _plant_hostile as _plant
 
 _EVENT_FIELDS = (SYS_WORST, SYS_DEVICES, SYS_KIND)
 
-# The hostile file's own pair, and both fleets as they stand now.
+# The hostile file's own pair, and both captured houses.
 SHAPE_FLEETS = FLEETS + [
     fleet_param(
         "reference", "device_sentinel.storage", id="james_now",

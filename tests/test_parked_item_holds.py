@@ -93,8 +93,9 @@ async def test_a_drop_that_returns_inside_the_minute_still_sends_its_fault(hass:
 
 
 async def test_a_hand_deletion_during_the_minute_waits_for_nothing(hass: HomeAssistant, freezer):
-    """Deleting the item in its minute leaves _parked holding the device:
-    the release timer then re-syncs the whole list every second, for ever."""
+    """Deleting the item in its minute releases the device from _parked,
+    so the release timer does not re-sync the whole list every second,
+    for ever."""
     coord, dev, calls, heard = await _house(hass, delay=0.0)
     down(coord, dev, FREEZE_CATEGORY_UNAVAILABLE, ago=0.0)
     await sync(hass, coord)
@@ -146,9 +147,9 @@ async def test_a_ticked_item_is_silent_when_it_returns_in_its_minute(hass: HomeA
 
 async def test_a_withdrawn_item_leaves_nothing_to_swallow_a_later_recovery(hass: HomeAssistant, freezer):
     """Hold matures in the park, then the device is set aside inside the
-    minute (excluded). The matured entry is never cleared. Taken back,
-    the device later goes down (fault pushed after its debounce), comes
-    back for good: its recovery is swallowed by the stale entry."""
+    minute. The matured entry is cleared, so when the device, taken back,
+    later goes down (fault pushed after its debounce) and comes back for
+    good, its recovery is still sent."""
     coord, dev, calls, heard = await _house(hass)
     down(coord, dev, FREEZE_CATEGORY_UNAVAILABLE, ago=0.0)
     await sync(hass, coord)

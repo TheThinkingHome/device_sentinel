@@ -56,7 +56,7 @@ async def _ready(hass, freezer, uid, count=2):
 async def test_stale_absence_skips_the_unavailable_debounce(hass: HomeAssistant, freezer):
     """Entity 1 goes unavailable and stays so; the device says nothing new
     for forty minutes (its rhythm is an hour). Then entity 0 blips
-    unavailable for 150 seconds. Every entity reads bad only for those 100
+    unavailable for 150 seconds. Every entity reads bad only for those 150
     seconds, under the 180-second debounce, so no verdict is owed; a stamp
     dated from entity 1's start, forty minutes old, must not publish one
     at the next sweep (rule UNAV-03)."""
@@ -135,12 +135,12 @@ async def test_restart_inside_a_30_minute_outage(hass: HomeAssistant, freezer, a
 @pytest.mark.parametrize("before,down,after,want_taint", [
     (180, 1200, 180, False),   # an ordinary restart inside a short absence
     (420, 120, 300, True),     # 12 minutes absent, 2 of them stopped: 10 counted, at the floor
-    (60, 3600, 400, False),
+    (60, 3600, 400, False),    # an hour stopped, under eight minutes absent, back after the grace
     (1000, 120, 600, True),    # 1,600 s counted, past the 1,446 s debounce
-    (700, 1800, 700, False),   # 1,400 s counted with half an hour stopped    # an hour stopped, under eight minutes absent, back after the grace
+    (700, 1800, 700, False),   # 1,400 s counted with half an hour stopped
 ])
 async def test_stopped_within(hass: HomeAssistant, freezer, before, down, after, want_taint):
-    """The stop is taken out of the absence (rule UP-06)."""
+    """The stop is taken out of the absence (rule FRZ-14)."""
     coord, device, eids = await _ready(hass, freezer, f"a04{before}{down}")
     record = rec(coord, device.id)
     debounce = coord._taint_debounce(record)

@@ -3,18 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_upstream_outage_row.py, Version: 0.27.6 (2026-10-26)
+# File: test_upstream_outage_row.py, Version: 0.27.10 (2026-10-27)
 
 """An upstream outage on a healthy house is reported (rules UP-05, UP-08,
 UP-09, UP-11).
 
-A device's verdict is held while its upstream is down, so on a house
-that was healthy when the broker, a bridge or an integration went, no
-device behind it was ever judged, and the row, its push and its count,
-all built from verdicts, never appeared. The count is now what the
-devices read: each one behind the upstream reading unavailable counts,
-devices muted for unavailable included, while the devices themselves
-stay off the list. The push reads the row's words, and the recovery
+A device's verdict is held while its upstream is down, so the row, its
+push and its count are built from what the devices read rather than
+from verdicts, and a house that was healthy when the broker, a bridge
+or an integration went still gets its row. Each device behind the
+upstream reading unavailable counts, devices muted for unavailable
+included, while the devices themselves stay off the list. The push reads the row's words, and the recovery
 push says how long the upstream was down.
 """
 

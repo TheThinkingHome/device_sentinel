@@ -7,8 +7,8 @@
 
 """Signal detection: the floor line and the rail (rules SIG-06, SIG-07).
 
-A device's danger line is the plain minimum of its daily P5 window
-plus the sensitivity margin. A rail (LQI 255, RSSI -128) is not a
+A device's floor is the plain minimum of its daily P5 levels, and it
+judges nothing. A rail (LQI 255, RSSI -128) is not a
 reading: it feeds neither the floor nor the estimators, and the
 confirmed rail is three consecutive days on which the device spoke and
 said nothing but the fill value, read as a zero reading count beside a
@@ -151,7 +151,7 @@ async def test_line_in_report(hass: HomeAssistant):
     assert "**117** 121 119 - 118 120" in row
 
 
-# ------------------------------- the rails and stuck detector (rule SIG-07)
+# ------------------------------------------- the rail detector (rule SIG-07)
 
 async def test_rail_feeds_neither_floor_nor_estimators(hass: HomeAssistant):
     """A rail value is not a measurement: it never touches today's
@@ -252,7 +252,7 @@ async def test_short_history_is_not_a_rail(hass: HomeAssistant):
     assert coord.signal_railed(rec) is False
 
 
-# ------------------------------------ exclusion: recorded, not reported
+# ------------------------------- the signal mute: recorded, not reported
 
 async def test_excluded_device_by_device_id(hass: HomeAssistant):
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MUTED_DEVICES: ["dev-plug"]})
@@ -279,9 +279,9 @@ async def test_excluded_device_by_integration_and_label(
 async def test_excluded_device_still_records_but_is_not_reported(
     hass: HomeAssistant,
 ):
-    """The living room router plug case: excluded from reporting, but
-    its floor keeps accumulating in storage so re-including
-    it is instant. The report shows excl; the problem list skips it."""
+    """A device muted for signal is not reported, but its floor keeps
+    accumulating in storage so lifting the mute is instant (rule
+    MUTE-01). The report shows excl; the Problem List skips it."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -386,10 +386,8 @@ def test_a_percentage_called_rssi_is_refused():
 
     Tasmota reports RSSI as a 0 to 100 quality figure and Signal as
     the dBm, so on a Tasmota device an entity called RSSI carries a
-    percentage. All seven such devices on the first ZHA fleet to send
-    data were consistent with 2 x (dBm + 100) clamped, one sitting
-    exactly on the clamp at -50 dBm against 100 percent, so it
-    restates a number already recorded.
+    percentage, 2 x (dBm + 100) clamped, which restates a number the
+    dBm entity already records (rule SIG-02).
     """
     for unit in ("%", "percent", "PERCENTAGE", " % "):
         assert not SignalMixin._is_signal(
@@ -468,10 +466,8 @@ def test_an_entity_with_no_unit_attribute_at_all_is_kept():
 
 
 def test_the_two_real_fleets_classify_as_expected():
-    """Every signal entity naming pattern seen on either fleet.
-
-    The reference fleet loses nothing, and the ZHA fleet loses only
-    the percentage.
+    """Each signal entity naming pattern in the recorded house data
+    classifies as expected: only the percentage is refused (rule SIG-02).
     """
     kept = [
         _sig_entry("sensor.door_master_linkquality"),

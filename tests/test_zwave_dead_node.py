@@ -234,7 +234,7 @@ async def test_another_integration_s_node_status_is_not_read(hass: HomeAssistant
 async def test_dead_while_z_wave_is_not_loaded_raises_no_device_fault(
     hass: HomeAssistant, freezer
 ):
-    """An integration outage is one problem (rule UP-03), not one per node."""
+    """An integration outage is one problem, not one per node (rule UP-05)."""
     freezer.move_to(PIN)
     source, device, ids = _zwave(hass)
     _other_source, other, other_ids = _zwave(hass, node=11, source=source)
@@ -326,11 +326,11 @@ async def test_a_device_without_one_shows_no_row(hass: HomeAssistant, freezer):
 # ------------------- a firmware notice beside the node status
 
 
-# 2. The round-six fix (a stale non-dead outage start on a device whose
-# node status is its only real entity) with Z-Wave JS's own firmware
-# update entity enabled beside it, as it is by default. Rule 9 makes the
-# update entity unreadable in _states_of, but _status_only still counts
-# it as an enabled entity, so the stale start is never ended.
+# 2. A stale outage start on a device whose node status is its only real
+# entity, with Z-Wave JS's own firmware update entity enabled beside it,
+# as it is by default. The update entity is never the device, so it does
+# not keep the device from being judged by its status, and the stale
+# start still ends (rules WATCH-04, STACK-05).
 async def test_2_status_only_with_update_entity_stale_start(hass: HomeAssistant, freezer):
     freezer.move_to(PIN)
     node = 41

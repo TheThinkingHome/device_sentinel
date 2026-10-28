@@ -5,7 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: test_repairs_ignore.py, Version: 0.27.10 (2026-10-27)
 
-"""Every fixable repair offers an ignore (rule REP-06).
+"""A repair with something to decide offers an ignore (rule REP-06).
 
 Home Assistant puts an Ignore button on an issue that is not fixable
 and takes it away as soon as one is, because a fixable issue opens its
@@ -13,7 +13,9 @@ flow instead of the dialog carrying the button. A person who does not
 want the fix is then stuck with the card, so the ignore lives inside
 the flow, beside the fix.
 
-The missing-target card is the fixable one left, and it keeps the rule.
+The missing-target card is the one with a decision, and it keeps the
+rule; the storage cards are put down with Home Assistant's own
+confirmation and carry no Ignore.
 A sensor a person switched off is listed already acknowledged on its
 Recommendations card instead (rule REC-07).
 """
@@ -83,9 +85,8 @@ async def test_the_target_card_offers_both_ways_out(
 async def test_every_fixable_flow_has_an_ignore_step(
     hass: HomeAssistant, issue_id: str
 ) -> None:
-    """The standing rule, pinned against every flow this module can hand
-    out: a new fixable repair that forgets the ignore fails here
-    (rule REP-06).
+    """The standing rule, pinned against each card with a decision: a
+    flow for one that forgets the ignore fails here (rule REP-06).
     """
     flow = await repairs_module.async_create_fix_flow(
         hass, issue_id, {"entry_id": "whatever"}

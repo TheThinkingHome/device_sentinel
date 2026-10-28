@@ -12,7 +12,7 @@ not say "74 devices behind it" both going down and coming back. The
 brief records the most devices an outage had down at once, the figure
 its problem list row reached at its peak, and says it beside the total
 when the outage ends. A row from an older release, which carries no
-such figure, reads as it always did.
+such figure, reads with its total alone.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def test_a_wifi_outage_records_its_worst_moment(
     coord, trackers, _devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:8], freezer, count=8)
     coord._note_upstream_peaks()
-    # A second wave, as the second fleet had five minutes in.
+    # A second wave of trackers leaves while the outage stands.
     for tracker in trackers[8:12]:
         await _fall(hass, tracker)
     coord._note_upstream_peaks()

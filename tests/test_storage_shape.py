@@ -284,8 +284,8 @@ async def test_the_reference_fleet_is_clean():
         for field, blank in template.items():
             record.setdefault(field, blank)
     # The load converts a device on Zigbee's raw battery scale before
-    # the boundary (rule BAT-02), and so does this: LUX Outdoors read
-    # 200 down to 178 under a "%" unit. It is the one device converted.
+    # the boundary (rule BAT-02), and so does this: one device in the
+    # snapshot reads 200 down to 178 under a "%" unit, the one converted.
     from custom_components.device_sentinel.detect_battery import (
         mark_raw_battery,
         raw_battery_history,
@@ -356,8 +356,8 @@ def test_every_taint_reason_passes_the_check():
 
 
 def test_the_exact_record_that_fired_on_17_august():
-    """Temperature Outdoors, tainted 'unknown' at 04:22 and still
-    tainted when the 08:14 load checked it."""
+    """A record tainted 'unknown' and still tainted when the load checks
+    it passes the check (rule STOR-05)."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     rec[DEV_TAINTED] = "unknown"
     assert check_records({"efb080fd7ba6963b0c93eedd78dde4f8": rec}) == []
@@ -472,7 +472,7 @@ async def test_the_shape_check_runs_after_every_migration_step(
         )
 
 
-# Damage anywhere in the stored document, the repair gates, and a restore from last-good (0.19.x campaign).
+# Damage anywhere in the stored document, the repair gates, and a restore from last-good.
 
 
 FLEETS = [
@@ -673,9 +673,9 @@ async def test_a_crash_between_the_rename_and_the_write(
 
     The live file is renamed to last-good and the process dies
     before the new one is written, so the next start finds a copy
-    and no live file. Measured for finding 4: the missing-file
-    restore answers it, no record is lost, and the first save writes
-    the live file again.
+    and no live file. The missing-file restore answers it, no record
+    is lost, and the first save writes the live file again (rule
+    STOR-08).
     """
     device, _ = register_device(hass, "crash_dev")
     coord = await setup_coordinator(hass)
@@ -773,11 +773,8 @@ async def test_the_repair_keeps_every_good_row(
     """Would catch: a repair that drops good rows alongside the bad,
     which would quietly erase a person's history.
 
-    The true invariant, measured for finding 3: after a repair a
-    table holds every good row it had, plus the one system event
-    that records the repair. The first draft of this test required
-    the count to be level, which was the test asking the wrong
-    question; the extra row is the log doing its job.
+    After a repair a table holds every good row it had, plus the one
+    system event that records the repair (rules STOR-09, STOR-12).
     """
     data = copy.deepcopy(_fleet(path))
     _plant_hostile(hass_storage, data, _clocks(clocks_path))
@@ -1013,7 +1010,7 @@ async def test_gate_two_repair_does_not_share_a_template_object(
     hass: HomeAssistant,
 ):
     """Would catch: gate 2's record repair assigning the template's
-    own list to several records, which finding 2 named. Gate 1 owns
+    own list to several records. Gate 1 owns
     the nine container fields, so this drives gate 2's path directly
     on a field gate 1 does not check, by making the check see it as
     damaged through a type the schema refuses."""
@@ -1527,10 +1524,8 @@ class TestControlGateOff:
             damaged_rows as real_damaged_rows,
         )
         # With the gate off, the attack must succeed one way or the
-        # other: either setup died on the damage, which is what the
-        # reference run produced when the brief compared a string
-        # timestamp, or the damage sits in the working document where a
-        # reader will meet it.
+        # other: either setup died on the damage, or the damage sits in
+        # the working document where a reader will meet it.
         if entry.state is ConfigEntryState.LOADED:
             coord2 = entry.runtime_data
             assert real_damaged_rows(coord2.data) != {}, (

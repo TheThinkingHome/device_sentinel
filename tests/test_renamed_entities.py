@@ -158,8 +158,7 @@ async def test_foreign_entity_speaks_during_outage(hass: HomeAssistant, freezer)
 async def test_all_entities_removed_and_readded_inside_outage(hass: HomeAssistant, freezer):
     """Every entity down three hours; ten minutes before the return both
     are removed from Home Assistant, and re-added with the same ids as
-    the device comes back. The outage must not be learned, and the
-    recovered event should say about three hours."""
+    the device comes back. The outage must not be learned."""
     coord, device, eids = await _ready(hass, freezer, "o06")
     record = rec(coord, device.id)
     source = hass.config_entries.async_get_entry(er.async_get(hass).async_get(eids[0]).config_entry_id)
@@ -429,8 +428,8 @@ async def test_a_removed_lone_blip_beside_a_resting_event_entity(hass: HomeAssis
 async def test_an_old_orphan_does_not_date_a_short_blip(hass: HomeAssistant, freezer):
     """Entity 0 blips alone and is removed while Device Sentinel reloads,
     so its start is left behind. Twenty minutes later entity 1 is
-    unavailable for one minute: that blip has its own start and is
-    under the debounce, so the gap is learned (rule UNAV-03)."""
+    unavailable for one minute: that blip has its own start and is a
+    mesh blip, so the gap is learned (rule FRZ-14)."""
     coord, device, eids = await _ready(hass, freezer, "o16")
     hass.states.async_set(eids[0], "unavailable")
     await hass.async_block_till_done()

@@ -5,17 +5,17 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_wifi_outage_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The Wi-Fi outage, driven against both reference fleets (rule UP-16).
+"""The Wi-Fi outage, driven against two recorded houses (rule UP-16).
 
-The reference fleet gets a measured shape: thirteen tied devices (the
-two MAC rungs' real coverage), nine trackers gone inside the window,
-and the outage declared while every config entry stays loaded, which
-is exactly the case the integration rung is blind to. The second fleet
-has no router trackers at all, the absent-capability case: no ties, no
-subscription, no sensor, no cost, and 234 devices judged exactly as
-before.
+One house gets a measured shape: thirteen tied devices (the two MAC
+rungs' real coverage), nine trackers gone inside the window, and the
+outage declared while every config entry stays loaded, which is exactly
+the case the integration rung is blind to. The other has no router
+trackers at all, the absent-capability case: no ties, no subscription,
+no sensor, no cost, and 234 devices judged exactly as they would be
+without it.
 
-Skips whole when the fleet files are absent, as every fleet case does.
+Skips whole when the house files are absent, as every house case does.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ async def test_the_measured_outage_on_the_reference_fleet(
     the Zigbee stack untouched, and the integration rung silent."""
     coord, entries, behind, now = await _fleet(hass, JAMES, JAMES_SHAPE)
 
-    # Thirteen ties across the no-reader domains, the fleet's real
+    # Thirteen ties across the no-reader domains, the house's real
     # coverage from the two MAC rungs.
     tied = []
     for domain in (

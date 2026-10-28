@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_unannounced_outage_across_restart.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_unannounced_outage_across_restart.py, Version: 0.27.10 (2026-10-27)
 
 """A bridge or broker outage whose down was never told on the bus,
 standing across a restart (rule UP-10).
@@ -125,7 +125,7 @@ async def test_a_broker_down_never_told_is_told_after_the_next_grace(
 @pytest.mark.parametrize("damaged", ["no", 0, None, [False]])
 async def test_a_damaged_told_flag_is_dropped(hass: HomeAssistant, damaged):
     """Not a flag: dropped without an exception, and the outage is taken
-    as told, as one remembered before the flag existed (rule STOR-07)."""
+    as told, as one remembered before the flag existed (rule STOR-09)."""
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
     coord.data[DATA_BRIDGE_SEEN] = {

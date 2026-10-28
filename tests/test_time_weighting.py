@@ -37,12 +37,12 @@ from .helpers import register_device, setup_coordinator
 
 
 async def test_a_held_value_outweighs_a_brief_one(hass: HomeAssistant):
-    """The point of the change, in one device.
+    """The point of weighing minutes, in one device.
 
     Ninety minutes at 200 and ten at 100 is a day that mostly ran at
-    200, and the mean now says so. Counting readings would have made
-    the two values equal and put the mean at 150, describing a day
-    that did not happen.
+    200, and the mean says so. Counting readings would make the two
+    values equal and put the mean at 150, describing a day that did not
+    happen.
     """
     device, _ = register_device(hass, "tw1", "Weighted Device")
     coord = await setup_coordinator(hass)
@@ -61,7 +61,7 @@ async def test_the_mean_and_the_median_now_agree_on_a_flat_day(
     hass: HomeAssistant,
 ):
     """Both weigh minutes, so a day at one level puts them on the
-    same number. Before the change a chatty hour could separate
+    same number. Counting readings, a chatty hour could separate
     them for no reason in the hardware."""
     device, _ = register_device(hass, "tw2", "Flat Device")
     coord = await setup_coordinator(hass)

@@ -3,10 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_restore_sentence_window.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_restore_sentence_window.py, Version: 0.27.10 (2026-10-27)
 
 """The restore sentence leads only the brief whose window holds the
-restore (rule BRIEF-02); before, it led every brief until a restart."""
+restore (rule BRIEF-02)."""
 
 from __future__ import annotations
 

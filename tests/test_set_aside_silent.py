@@ -5,16 +5,16 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_set_aside_silent.py, Version: 0.27.10 (2026-10-27)
 
-"""A restart replayed against both real fleets sets the entityless
+"""A restart replayed against both recorded houses sets the entityless
 devices aside silently, and real recoveries still announce (rules
 WATCH-03, WATCH-10).
 
-What is real here and what is not:
+What is recorded here and what is not:
 
-  real  every device record, taken from the fleet's own storage
+  real  every device record, taken from the house's own storage
         file: its learned maxima, its first_observed, its clocks
-  real  which devices leave the watched set, taken from what each
-        fleet did: one fleet's ZHA coordinator, and the other's eight
+  real  which devices leave the watched set, as the recorded data
+        shows: a ZHA coordinator in one, and in the other eight
         devices that went never reported at every restart and
         recovered five minutes later
   not   the registry itself, which the harness builds
@@ -52,14 +52,14 @@ from tests.helpers import settle_parked, record_events, register_device, setup_c
 # run, so the suite is honest about what it checked rather than
 # silently proving less.
 JAMES = fleet_path("reference", "device_sentinel.storage")
-# The second fleet's committed house.
+# The second house's committed files.
 TIM = fleet_path("second", "device_sentinel_storage.json")
 
-# What each fleet did. The first fleet's coordinator has no entities and
-# is watched for the length of the startup grace at every restart. The
-# second fleet has eight devices going never reported at every restart
-# and recovering after exactly five minutes, which is the same window
-# closing.
+# What each house's data shows. The first house's coordinator has no
+# entities and is watched for the length of the startup grace at every
+# restart. The second has eight devices going never reported at every
+# restart and recovering after exactly five minutes, which is the same
+# window closing.
 JAMES_LEAVERS = 1
 TIM_LEAVERS = 8
 
@@ -178,8 +178,8 @@ async def test_simulate_tim_fleet_restart(hass: HomeAssistant) -> None:
 
 
 async def test_a_real_recovery_still_announces(hass: HomeAssistant) -> None:
-    """The other half, and the one that must not be broken by any
-    fix: a device whose problem genuinely ends still says so."""
+    """The other half, which must always hold: a device whose problem
+    genuinely ends still says so."""
     heard: list[dict] = record_events(hass, EVENT_RECOVERED)
     device, _eids = register_device(hass, "real_recovery")
     coord = await setup_coordinator(hass)
@@ -249,7 +249,7 @@ async def test_a_device_that_leaves_records_why_it_left(
 async def test_a_problem_clearing_while_watched_still_announces(
     hass: HomeAssistant,
 ):
-    """The fix keys on the watched set, so a device that is watched
+    """The silence keys on the watched set, so a device that is watched
     throughout must be unaffected however its problem ends."""
     heard: list[dict] = record_events(hass, EVENT_RECOVERED)
     device, _eids = register_device(hass, "still_watched")
@@ -314,7 +314,7 @@ async def test_a_device_that_leaves_and_returns_starts_a_new_incident(
 async def test_a_device_whose_entities_are_all_disabled_still_qualifies(
     hass: HomeAssistant,
 ):
-    """The case the fix must not silence.
+    """The case that must not be silenced.
 
     A device whose entities exist but are switched off is not the
     same as a device with none. Those entities can be switched on,

@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_settings_change_words.py, Version: 0.27.4 (2026-10-25)
+# File: test_settings_change_words.py, Version: 0.27.10 (2026-10-27)
 
 """A changed setting is named by its screen label everywhere (rule BRIEF-07).
 
-In Short named it "Repeat Offender Threshold"; the Last 24 Hours row
-and the dashboard's Daily Brief tab printed the raw option key,
-"settings changed (repeat_floor)". Both now use the label.
+In Short, the Last 24 Hours row and the dashboard's Daily Brief tab
+each name it "Repeat Offender Threshold", never by its raw option key,
+"settings changed (repeat_floor)".
 """
 
 from __future__ import annotations

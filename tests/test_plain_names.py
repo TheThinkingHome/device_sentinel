@@ -3,14 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_plain_names.py, Version: 0.27.4 (2026-10-25)
+# File: test_plain_names.py, Version: 0.27.10 (2026-10-27)
 
 """The Daily Brief and the railed-signal rows name a device plainly
 (rule DEV-04).
 
-Two devices sharing a name read "Bluetooth Proxy (test)" in the brief
-and on the railed rows; the integration belongs on the Settings lists
-only, once. The brief and the dashboard keep the plain name.
+Two devices sharing a name read plainly in the brief and on the railed
+rows, never "Bluetooth Proxy (test)"; the integration belongs on the
+Settings lists only, once. The brief and the dashboard keep the plain name.
 """
 
 from __future__ import annotations

@@ -295,7 +295,7 @@ async def test_an_unavailable_device_recovers_when_its_stack_says_available(hass
     await hass.async_block_till_done()
     down["now"] = None
     await _minutes(hass, coord, freezer, 2)
-    assert record[DEV_FROZEN_CATEGORY] is None, "the genuine recovery #535 names"
+    assert record[DEV_FROZEN_CATEGORY] is None, "a genuine recovery clears the verdict"
 
 
 async def test_a_restart_does_not_move_a_working_device_clock(hass: HomeAssistant, freezer):
@@ -356,9 +356,8 @@ async def _restarted(hass, domain):
 
 
 async def test_a_reading_fetched_from_the_device_is_the_device_answering(hass: HomeAssistant):
-    """HomeKit Device polls the accessory when it connects: Presence
-    Guest's 3:40 AM reading is the sensor answering, and it moves the
-    clock (rule FRZ-11)."""
+    """HomeKit Device polls the accessory when it connects: that reading
+    is the sensor answering, and it moves the clock (rule FRZ-11)."""
     record, before = await _restarted(hass, "homekit_controller")
     assert record[DEV_LAST_ACTIVITY] > before
 
@@ -373,10 +372,9 @@ async def test_a_value_restored_from_a_cache_is_not(hass: HomeAssistant):
 
 
 async def test_a_broker_outage_is_upstream_only_to_mqtt_devices(hass: HomeAssistant):
-    """With the broker down, every device in the house answers to it,
-    Lutron Picos included, so their standing items are hidden behind it.
-    They must not be retired as recovered, and the hold must not stop
-    judging every device in the house (rule LIST-08)."""
+    """With the broker down, only the devices that reach Home Assistant
+    through it are behind it: an MQTT device is, a Lutron device is not,
+    so the hold never stops judging every device in the house (rule UP-01)."""
     from homeassistant.config_entries import ConfigEntryState
     from homeassistant.helpers import device_registry as dr
     from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -445,7 +443,8 @@ def _kinds(coord, device_id):
 
 @pytest.mark.parametrize("upstream", ["bridge", "integration", "broker", "wifi"])
 async def test_a_problem_hidden_by_a_start_of_run_outage_is_held(hass: HomeAssistant, freezer, upstream):
-    """Soil Irrigation (Monstera), 3:47 AM, on every upstream."""
+    """A problem hidden behind an outage dated from the start of the run
+    is held, not closed and announced again, on every upstream (rule LIST-08)."""
     domain = {"bridge": "mqtt", "integration": "zwave_js", "broker": "mqtt", "wifi": "shelly"}[upstream]
     source, device, value, battery = _probe(hass, domain)
     hass.states.async_set(value, "40")

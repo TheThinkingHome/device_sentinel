@@ -73,7 +73,8 @@ LIST_ENTITY = "todo.device_sentinel_problem_list"
 
 
 
-# S63 carried down to 21.5 percent: steady, then speeding up.
+# A recorded battery moved down to end at 21.5 percent: steady, then
+# speeding up.
 SPEEDING = [round(level - 36.0, 1) for level in [
     73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
     74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
@@ -224,10 +225,10 @@ async def test_a_missing_status_does_not_reopen_an_item(
 ):
     """A status Home Assistant did not send is not needs_action.
 
-    The coordinator already ignores a status of None; the entity
-    used to fold None into needs_action before that guard could
-    help, so a caller updating text alone would silently have
-    thrown away an acknowledgment.
+    The coordinator ignores a status of None, and the entity must not
+    fold None into needs_action before that guard sees it, or a
+    caller updating text alone would throw away an acknowledgment
+    (rule LIST-03).
     """
     from homeassistant.components.todo import TodoItem
 

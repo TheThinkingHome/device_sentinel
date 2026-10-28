@@ -8,11 +8,10 @@
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim
 (rules UP-12, UP-13, UP-15, UP-16).
 
-Every number asserted here was measured on a real house: nine of
-seventeen watched trackers not_home inside sixty seconds on a real
-outage, a worst ordinary burst of three that the hold absorbed, and a
-tie coverage of thirteen of sixteen from the two MAC rungs. The cases
-follow those shapes rather than inventing new ones.
+The cases follow measured shapes rather than invented ones: nine of
+seventeen watched trackers not_home inside sixty seconds in an outage,
+a worst ordinary burst of three that the hold absorbed, and thirteen of
+sixteen devices tied by the two MAC rungs.
 """
 
 from __future__ import annotations
@@ -44,8 +43,8 @@ from tests.helpers import record_labelled, setup_coordinator
 
 def _tracker(hass, uid: str, mac: str, state: str = "home"):
     """Register one router tracker with its own entity and no shared
-    device, which is the separate-registry-device shape the reference
-    fleet actually has."""
+    device, which is the shape a router integration gives its
+    trackers."""
     entry = er.async_get(hass).async_get_or_create(
         "device_tracker", "tplink_router", uid
     )
@@ -147,7 +146,7 @@ async def test_the_mac_rung_ties_across_spellings(hass: HomeAssistant):
 async def test_the_status_band_says_wi_fi(hass: HomeAssistant):
     """The band says Wi-Fi, not the sensor's entity name "Bridge: WiFi";
     the sensor keeps its name, so nothing reading it breaks
-    (rule DASH-02)."""
+    (rule DASH-16)."""
     coord, _, _, _ = await _house(hass, 3)
     parts = {part["key"]: part["name"] for part in coord.dashboard_status()["parts"]}
     assert parts["wifi"] == "Wi-Fi"
@@ -157,7 +156,7 @@ async def test_the_identifier_rung_claims_the_nspanel_shape(
     hass: HomeAssistant,
 ):
     """A device whose identifier embeds the full twelve-hex MAC is
-    tied, which is the shape the NSPanels actually have."""
+    tied, which is the shape some Wi-Fi panels have."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     tracker = _tracker(hass, "panel", "7C-88-99-B2-C8-2B")
@@ -190,7 +189,7 @@ async def test_a_matching_name_alone_ties_nothing(hass: HomeAssistant):
 
 async def test_a_phone_tracker_ties_to_nothing(hass: HomeAssistant):
     """A tracker whose MAC matches no watched device feeds nothing,
-    which is how 17 of 44 curates itself without a list."""
+    so a house's trackers sort themselves without a list."""
     coord, trackers, _devices, _untied = await _house(hass, 3)
     phone = _tracker(hass, "phone", "12-34-56-78-9A-BC")
     coord._rebuild_registry_view()
@@ -455,7 +454,7 @@ async def test_the_real_boot_order_heals_itself(hass: HomeAssistant):
     not, because the router integration has not polled. The retry gate
     holds while ties are empty and any tracker is stateless, and the
     tick heals it, so the house is never read as incapable forever
-    (rule UP-13)."""
+    (rule CODE-09)."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     device = _wifi_device(
@@ -532,8 +531,7 @@ async def test_the_sensor_arrives_when_the_capability_does(
     # The platform set up with the entry has already registered an
     # adder of its own. Keeping only the one this test drives fixes the
     # refresh order; with both present, which of them sits next to the
-    # other depends on how platform setup interleaved, and the skip in
-    # the test below made this one fail in 2 runs of 20.
+    # other depends on how platform setup interleaved.
     coord._listeners[:] = [
         listener for listener in coord._listeners
         if getattr(listener, "__name__", "") != "_add_wifi_sensor_when_capable"
@@ -609,8 +607,8 @@ async def test_the_adder_removing_itself_does_not_cost_the_next_listener(
 
 
 async def test_diagnostics_carry_the_tie_table(hass: HomeAssistant):
-    """The section that would have answered the live question without
-    a template: tie count, the table, the retry gate, the outage."""
+    """The diagnostics carry the tie count, the table, the retry gate
+    and the outage."""
     coord, trackers, devices, _ = await _house(hass, 2)
     view = coord.wifi_diagnostics
     assert view["ties"] == 2
@@ -646,7 +644,7 @@ async def test_a_wired_tracker_is_never_tied(hass: HomeAssistant):
     """MAC matching says nothing about medium, so PoE cameras and a
     printer must not tie themselves in, or a switch reboot could declare
     a Wi-Fi outage. The worst wired cluster measured was five inside
-    sixty seconds, above the floor (rule UP-13)."""
+    sixty seconds, above the floor (rule UP-14)."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     camera = _wifi_device(
@@ -796,7 +794,7 @@ async def test_a_tie_survives_the_outage_it_exists_to_detect(
     assert coord._wifi_ties.get(device.id) == tracker.entity_id
 
     # Away, and the router re-reports it without its network
-    # attributes, which is what the live fleet actually did.
+    # attributes, as a router can.
     hass.states.async_set(
         tracker.entity_id, "not_home",
         {"source_type": "router", "mac": "20-F8-3B-09-97-53",
@@ -820,7 +818,7 @@ async def test_a_skipped_tracker_rejoins_when_it_reads_wireless(
 
     However a tie is lost, it comes back on its own once the tracker
     is home and no longer reads wired. Without this the only way back
-    from a wrong exclusion was a restart.
+    from a wrong exclusion would be a restart.
     """
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)

@@ -93,7 +93,7 @@ def _downs(events, device_id):
 
 async def test_a_slider_change_does_not_clear_a_standing_freeze(hass: HomeAssistant, freezer):
     """Frozen, excluded an hour, taken back (frozen again at once), and
-    six hours later both Freeze Detection sliders are raised. The return
+    six hours later both freeze sliders, Delta Low and Delta High, are raised. The return
     was dated when it happened; the change does not re-date it, so the
     dead device stays frozen and no recovery is told."""
     coord, device, eids = await _ready(hass, freezer, "u01")

@@ -7,7 +7,6 @@
 
 """How much is kept, and what reads only a window of it (rule STOR-14).
 
-One of the files split out of a larger storage test file by subject.
 Helpers are carried to every file that calls them rather than pooled,
 so each file reads on its own.
 """
@@ -179,9 +178,9 @@ async def test_every_kind_has_words_everywhere(
 
     Five tables map a kind to words. A test that lists the kinds by hand
     keeps passing when a new kind arrives and the list does not grow, and
-    a person's brief then reads "battery_falling" and "Door 2nd Bedroom
-    0s". So this reads TODO_KINDS_ALL, and a kind added without wording
-    fails here rather than in a brief.
+    a person's brief would then read a raw key. So this reads
+    TODO_KINDS_ALL, and a kind added without wording fails here rather
+    than in a brief.
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -191,8 +190,7 @@ async def test_every_kind_has_words_everywhere(
         # The freeze categories are already their own words, so
         # falling through to the key is correct for them. What is
         # never correct is a raw key reaching a person: an underscore
-        # in the output is the tell, and it is precisely what
-        # "battery_falling" showed in a live brief.
+        # in the output is the tell.
         assert "_" not in coord._kind_word(
             kind, 20.0, "about a month"
         ), kind
@@ -300,10 +298,10 @@ async def test_the_maintainer_files_live_at_the_top(
 async def test_the_rhythm_reads_only_the_judgment_window(
     hass: HomeAssistant,
 ):
-    """The hazard this release had to avoid. The trimmed maximum of
-    ninety days is higher than of fourteen, because more days mean
-    more chances at a long gap, so reading the whole series would
-    quietly widen every freeze window on the fleet."""
+    """The trimmed maximum of ninety days is higher than of fourteen,
+    because more days mean more chances at a long gap, so reading the
+    whole series would quietly widen every freeze window in the house
+    (rule FRZ-03)."""
     device, _ = _register(hass, "jd1", "Judged Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data

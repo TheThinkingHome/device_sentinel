@@ -3,15 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_settings_list_names.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_settings_list_names.py, Version: 0.27.10 (2026-10-27)
 
 """Every Settings list names a device "Name (integration)", once (rule
 DEV-04).
 
-The Low Battery list used to show the battery entity, and two devices
-sharing a name read "Name (test) (test)" on the Low Battery and Signal
-Strength lists, since the name they took already carried the
-integration.
+The Low Battery list names the device, not its battery entity, and
+two devices sharing a name read "Name (test)" on the Low Battery and
+Signal Strength lists, never "Name (test) (test)".
 """
 
 from homeassistant.core import HomeAssistant

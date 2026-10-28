@@ -195,8 +195,8 @@ async def test_the_lines_held_at_a_stop_are_written(hass: HomeAssistant):
 
 async def test_a_file_that_cannot_be_written_is_said_once(hass: HomeAssistant, caplog, monkeypatch):
     """A folder where the file should be: the tick carries on, and one
-    Device Sentinel warning names the file, where before Home
-    Assistant logged an anonymous traceback every minute. The file has
+    Device Sentinel warning names the file, rather than Home Assistant
+    logging an anonymous traceback every minute. The file has
     a name of its own here, so no other test's write can meet the
     folder."""
     from custom_components.device_sentinel import report_maintainer
@@ -298,8 +298,8 @@ async def test_a_throwing_executor_at_the_stop_event_leaves_the_save(hass: HomeA
 
 async def test_text_that_cannot_be_encoded_is_said_once(hass: HomeAssistant, caplog):
     """A line that cannot be encoded raises UnicodeEncodeError, which
-    is not an OSError and escaped the file's catch into an anonymous
-    traceback each minute. Raised at the write here: Home Assistant's
+    is not an OSError and must not escape the file's catch into an
+    anonymous traceback each minute. Raised at the write here: Home Assistant's
     registry refuses such text in a name, but a library's own strings
     reach the line as they are."""
     caplog.set_level(logging.DEBUG)

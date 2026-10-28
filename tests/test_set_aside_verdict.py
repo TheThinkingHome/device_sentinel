@@ -6,14 +6,14 @@
 # File: tests/test_set_aside_verdict.py, Version: 0.27.10 (2026-10-27)
 
 """The stale verdict of a set-aside device, and what it cost
-(rule WATCH-03).
+(rule LIST-09).
 
 A ZHA coordinator has no entities and never will, so the startup grace
 watches it, it is judged never reported, and five minutes later grace
-closes and it is set aside. The incident timeline records both cycles,
-300 seconds each. The recovery event must not announce 27 minutes, the
-span from the first cycle's opening to the second cycle's close,
-because that is what a voice assistant reads out.
+closes and it is set aside. The incident timeline records both cycles.
+The recovery event must not announce the span from the first cycle's
+opening to the second cycle's close, because an automation may read
+it out.
 
 These tests report as well as assert, so the mechanism is visible
 whatever the outcome.
@@ -91,7 +91,7 @@ async def test_the_sweep_alone_leaves_a_set_aside_verdict_standing(
 async def test_a_recovery_is_timed_from_the_absence_that_ended(
     hass: HomeAssistant,
 ):
-    """The duration fix, through the path that still announces.
+    """A recovery is timed from the incident that closed (rule LIST-09).
 
     A device with a problem standing, watched throughout, whose
     problem then clears. The item's own stamp is deliberately set
@@ -136,12 +136,12 @@ async def test_a_recovery_is_timed_from_the_absence_that_ended(
     )
 
 
-# ------------------- the three fixes, driven through the real paths
+# ------------------- the clearing, driven through the real paths
 
 
 async def test_a_device_set_aside_loses_its_verdict(hass: HomeAssistant):
-    """Fix one, through the registry rebuild rather than by poking
-    the watched set: a device that leaves it drops its verdict."""
+    """Through the registry rebuild rather than by poking the watched
+    set: a device that leaves it drops its verdict."""
     coord, device, record = await _never_reporting_device(hass, "co3")
     coord._judge_all_devices()
     assert record[DEV_FROZEN_CATEGORY] is not None
@@ -168,7 +168,8 @@ async def test_the_record_itself_survives_the_clearing(
 async def test_a_loaded_integration_ends_the_grace_exemption(
     hass: HomeAssistant,
 ):
-    """Fix three: the clock alone was too blunt."""
+    """A loaded integration ends the grace exemption, not the clock
+    alone (rule WATCH-10)."""
     coord, _device, _record = await _never_reporting_device(hass, "co5")
     # The integration Device Sentinel itself runs under is loaded.
     assert coord._integration_finished_loading(

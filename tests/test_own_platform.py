@@ -53,9 +53,8 @@ async def _house(hass, extras):
 
 
 async def test_the_device_s_own_battery_wins(hass: HomeAssistant, hass_storage):
-    """Battery Notes gives 76 of the second fleet's devices a second
-    percentage. The device's own is the one that has not been
-    through anything."""
+    """Battery Notes can give a device a second percentage. The
+    device's own is the one that has not been through anything."""
     device, _ = await _house(hass, [
         ("battery_notes", "sensor", "b01_battery_plus", "battery"),
         ("zha", "sensor", "b01_power", "battery"),
@@ -92,7 +91,7 @@ async def test_a_foreign_reading_is_used_when_it_is_the_only_one(
 
 
 async def test_a_percentage_still_beats_a_binary(hass: HomeAssistant, hass_storage):
-    """The first rung is unchanged: the binary is the last resort
+    """The first rung holds: the binary is the last resort
     even when it is the device's own."""
     device, _ = await _house(hass, [
         ("zha", "binary_sensor", "b01_low", "battery"),
@@ -120,7 +119,7 @@ async def test_two_foreign_percentages_pick_the_lower_id(
 
 async def test_the_device_s_own_last_seen_wins(hass: HomeAssistant, hass_storage):
     """The same rule on the clock, which the device's own reports drive
-    (rule FRZ-11).
+    (rule WATCH-02).
     """
     device, _ = await _house(hass, [
         ("battery_notes", "sensor", "b01_last_seen", "timestamp"),

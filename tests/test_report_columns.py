@@ -34,9 +34,8 @@ def _classification(hass) -> str:
 async def test_each_reason_is_named_in_the_classification(
     hass: HomeAssistant,
 ):
-    """Three ways to be set aside, three words. A column that can only
-    say yes tells a person nothing about which one they are looking
-    at, which is what sent one device hunting through diagnostics."""
+    """Three ways to be set aside, three words, because a column that
+    can only say yes does not say which one a person is looking at."""
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
     registry = dr.async_get(hass)
@@ -81,15 +80,14 @@ async def test_each_reason_is_named_in_the_classification(
 
 
 async def test_the_header_names_every_cause(hass: HomeAssistant):
-    """The sentence called every set-aside device a service device,
-    which stopped being true the moment disabled devices joined them,
-    and again when a person could ignore a whole integration."""
+    """The header names each cause of being set aside, not only
+    service devices."""
     coord = await setup_coordinator(hass)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _classification(hass)
 
-    # All five reasons, duplicate coordinators included (rule WATCH-05).
+    # All six reasons, duplicate coordinators included (rule WATCH-03).
     for cause in (
         "integrations and devices you asked to exclude", "service devices",
         "disabled devices", "duplicate coordinators",

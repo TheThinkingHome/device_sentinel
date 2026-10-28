@@ -57,9 +57,8 @@ def _failing_main_store(times: int = 1):
     """Make only Device Sentinel's main store raise, only at first.
 
     Patching Store.async_load outright takes Home Assistant's own
-    components down with it, which is what the first draft of these
-    tests did: http failed to set up and the test read that as the
-    integration refusing to start.
+    components down with it: http fails to set up, and the test would
+    read that as the integration refusing to start.
     """
     real = Store.async_load
     left = {"n": times}
@@ -147,8 +146,7 @@ async def test_the_clocks_file_is_left_alone(hass: HomeAssistant):
 # The harness holds storage in memory, so a broken file on disk is
 # not what `async_load` reads. The setup-level tests make the load
 # raise the way a real broken file does, and put a real copy on disk
-# for the restore to find. The first draft of these wrote files
-# nothing read and passed for the wrong reason.
+# for the restore to find.
 
 
 async def test_setup_survives_an_unreadable_file(hass: HomeAssistant):
@@ -506,8 +504,7 @@ async def test_the_notice_names_only_what_was_copied(
     _write(hass, CLOCKS, '{"data": {"clocks": {}}}')
     coord = await setup_coordinator(hass)
     # After the coordinator exists, because building it writes the
-    # storage file back. The first draft of this test deleted the
-    # file first and then recreated it by accident.
+    # storage file back.
     live = hass.config.path(LIVE)
     if os.path.exists(live):
         os.remove(live)

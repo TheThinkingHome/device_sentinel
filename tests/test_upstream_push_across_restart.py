@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_push_across_restart.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_upstream_push_across_restart.py, Version: 0.27.10 (2026-10-27)
 
 """The phone pushes of a bridge or broker outage open across a restart
 (rule UP-09).
@@ -208,7 +208,7 @@ async def test_bridge_flap_then_restart_pushes_down_once(
 @pytest.mark.parametrize("damaged", ["yes", 1, None, [True]])
 async def test_a_damaged_pushed_flag_is_dropped(hass: HomeAssistant, damaged):
     """Not a flag: dropped, and the outage is treated as never pushed
-    (rule STOR-07)."""
+    (rule STOR-05)."""
     rider, _ = register_device(hass, "dp", "Rider")
     coord = await setup_coordinator(hass)
     coord._watched[rider.id] = "mqtt"

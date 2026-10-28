@@ -32,18 +32,18 @@ from .helpers import setup_coordinator
 
 
 @pytest.mark.parametrize(("words", "expected"), [
-    # Answers typed on the first fleet.
+    # Answers typed on one house.
     ("ZHA Coordinator", "Zigbee Coordinator (ZHA)"),
     ("Zigbee2MQTT Coordinator", "Zigbee Coordinator (Zigbee2MQTT)"),
     ("Z-Wave Coordinator", "Z-Wave Controller"),
-    # Answers typed on the second fleet.
+    # Answers typed on another house.
     ("Vacuum", "Vacuum"),
     ("vacuum", "Vacuum"),
     ("RF IR Remote", "IR Remote"),
     ("ups", "UPS"),
     ("zigbee coordinator zha", "Zigbee Coordinator (ZHA)"),
     ("door window sensor", "Door/Window Sensor"),
-    # His own words that name no type on the list stay his.
+    # Words that name no type on the list stay as typed.
     ("Clothes dryer", "Clothes dryer"),
     ("Misc.", "Misc."),
     ("Lab equip", "Lab equip"),
@@ -71,7 +71,7 @@ def _device(hass, uid, model):
 
 
 async def test_a_stored_answer_is_read_as_the_list_name(hass: HomeAssistant):
-    """The rig's answers file as it stands: the coordinators read as listed."""
+    """A stored answers file: the coordinators read as listed."""
     zha = _device(hass, "SLZB-06", "SLZB-06")
     z2m = _device(hass, "SLZB-06M", "SLZB-06M")
     coord = await setup_coordinator(hass)

@@ -102,7 +102,8 @@ async def test_the_brief_line_counts_what_is_not_ticked(hass: HomeAssistant):
 
 
 async def test_a_new_device_on_a_ticked_card_is_active_on_its_own(hass: HomeAssistant):
-    """Three ticked, a fourth joins, the count is one (rule REC-08)."""
+    """One row ticked and a new device joining: the count is one
+    (rule REC-08)."""
     first, _ = _battery_off(hass, "a", "Alpha")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -185,7 +186,7 @@ async def test_ticks_survive_a_restart_in_the_answers_file(hass: HomeAssistant, 
 
 async def test_damaged_ticks_are_dropped_not_fatal(hass: HomeAssistant, hass_storage):
     """A tick that is not true or false is dropped and the start goes on
-    (rule STOR-05)."""
+    (rule STOR-20)."""
     hass_storage[ANSWERS_STORE_KEY] = {
         "version": 1, "key": ANSWERS_STORE_KEY,
         "data": {"power": {}, "types": {}, "acknowledged": {"devices": {"battery_off": {"x": "yes"}}, "lines": []}},

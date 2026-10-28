@@ -8,23 +8,18 @@
 """What a restart with no clean-stop marker does to the clocks (rules
 FRZ-10, FRZ-20).
 
-Built from a real thirty-minute power cut. The last clocks write landed
-fourteen minutes before the cut, so the house came back crediting 46
-minutes of unwatched time. That credit goes only to a device whose
-clock is at or before the anchor, so a motion sensor that reported
-inside the unsaved window was charged the whole wall-clock silence and
-called frozen for an outage it could not have reported through, and
-eight more devices with 22 to 32 minute windows with it. A window
-sensor silent through the cut learned the whole 50-minute gap.
+The last clocks write can land minutes before a power cut, and the
+credit for unwatched time goes only to a device whose clock is at or
+before that write. Without a reset, a device that reported inside the
+unsaved window would be charged the whole wall-clock silence and
+called frozen, and a device silent through the cut would learn the
+whole gap.
 
 One rule cures both. The clock is reset, so the completing gap measures
 from the restart and nothing learns the blackout; nothing measured
 between the last save and the stop is banked, because nobody was
 watching then; and a device already on the Problem List keeps its
 clock, so a known fault is not forgiven because the lights went out.
-
-The figures below are the real ones, so a regression here reads as the
-event rather than as an abstraction.
 """
 
 from __future__ import annotations
@@ -138,12 +133,11 @@ def _on_disk(hass_storage, devices, episodes=None, todo=None, clean=False):
 async def test_the_clock_that_postdated_the_anchor_is_reset(
     hass: HomeAssistant, hass_storage
 ):
-    """Motion Bath Main, the device that proved the fault.
+    """A clock past the last write is reset (rule FRZ-20).
 
-    Its clock read nine minutes past the last write, so the credit
-    that would have excused the blackout did not apply to it and it
-    was convicted. After the reset its clock starts at this boot and
-    it is judged on what happens from here.
+    Its clock reads nine minutes past the last write, so the credit
+    for the blackout does not apply to it. After the reset its clock
+    starts at this start and it is judged on what happens from here.
     """
     device, _ = register_device(hass, "mbm", "Motion Bath Main")
     _on_disk(hass_storage, {device.id: _record(MOTION_BATH_MAIN)})
@@ -310,8 +304,8 @@ async def test_the_learned_series_and_identity_are_untouched(
     """Only the clock moves.
 
     The event count, the first-observed stamp and everything the
-    device genuinely earned survive, because the outage tells us
-    nothing about any of them.
+    device genuinely earned survive, because the outage says nothing
+    about any of them.
     """
     device, _ = register_device(hass, "keep", "Leak Kitchen Sink")
     _on_disk(hass_storage, {device.id: _record(ANCHOR - 600.0)})
@@ -352,7 +346,7 @@ async def test_an_open_episode_closes_as_a_power_loss(
     An episode open across the cut closes at the last known-alive
     moment, the latest instant the silence can honestly be claimed to
     have run to, and reads power loss rather than the reboot label a
-    later restart would have stamped on it (rule FRZ-08).
+    later restart would have stamped on it (rule FRZ-20).
     """
     device, _ = register_device(hass, "open", "Door Master Closet 2")
     episode = {
@@ -499,7 +493,7 @@ async def test_an_orderly_unload_writes_the_marker(
     Changing a setting, reloading the entry, or a HACS update all go
     through the unload path and fire no stop event. A marker written
     only on the stop event would make every options change read as a
-    crash and reset the whole fleet.
+    crash and restart every device's clock.
     """
     device, _ = register_device(hass, "reload", "Switch Entryway")
     _on_disk(

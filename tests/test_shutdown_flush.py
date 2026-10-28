@@ -12,14 +12,12 @@ Stopping does two things: it stamps any silence still running as
 truncated by the restart, and it flushes both storage files so the
 next start reads the exact moment the system went down.
 
-The fault pinned here: the stamp reaches _mark_cold_dirty, whose last
-act is to clear the routine dirty flag, because a delayed write has
-been scheduled to carry the change. A flush gated on that same flag
-skips itself whenever a silence is running. Both files are then written
-by Home Assistant's final-write stage from their separately scheduled
-payloads, each stamped at its own schedule time, in no fixed order, so
-the small file can come out the older of the two and the next start
-refuses to merge it.
+The stamp reaches _mark_cold_dirty, whose last act is to clear the
+routine dirty flag, because a delayed write has been scheduled to carry
+the change. A flush gated on that same flag would skip itself whenever
+a silence is running, and both files would then be written by Home
+Assistant's final-write stage from separately scheduled payloads, in no
+fixed order, so the small file could come out the older of the two.
 
 Every test here advances the frozen clock between phases, because
 both files stamp with utcnow at serialize time: under a pinned clock
@@ -73,8 +71,8 @@ async def test_a_stop_with_a_silence_running_still_flushes(
 ):
     """Both files are written by the stop itself.
 
-    This is the regression: the stamp cleared the flag the flush was
-    gated on, so a stop with an episode open wrote nothing.
+    The stamp clears the flag a gated flush would read, so a stop with
+    an episode open must not depend on it.
     """
     device, _ = register_device(hass, "flushdev", "Flush Device")
     coord = await setup_coordinator(hass)
@@ -135,7 +133,7 @@ async def test_a_stop_with_nothing_outstanding_also_flushes(
 async def test_the_intervention_stamp_survives_the_flush(
     hass: HomeAssistant, freezer, hass_storage
 ):
-    """Fixing the flush must not cost the stamp it exists to flush."""
+    """The flush keeps the stamp it exists to flush."""
     device, _ = register_device(hass, "stampdev", "Stamp Device")
     coord = await setup_coordinator(hass)
     _with_a_silence_running(coord, device.id)

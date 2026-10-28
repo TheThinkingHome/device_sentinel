@@ -12,7 +12,7 @@ One screen for notifications and the daily brief, in three sections
 that flatten to the same stored keys, so the screen has sections while
 the storage does not. A separate Advanced screen whose sliders feed
 live coordinator properties, clamped to safe bands, with defaults that
-leave an untouched install behaving as it always has. Beside the flow,
+leave an untouched install on the shipped constants. Beside the flow,
 the brief's wording: a never-reported device's SINCE cell says
 discovered, and the counts line reads as a sentence.
 """
@@ -61,10 +61,8 @@ DOMAIN = "device_sentinel"
 
 
 def _brief_text(hass):
-    """Return the brief that was written, whatever its name.
-
-    Named for the day its window opened, which is not today's date
-    when the window began before the brief hour.
+    """Return the brief that was written, daily_brief.html, the one
+    file every write lands on (rule BRIEF-14).
     """
     path = hass.config.path(
         "device_sentinel", "daily_brief.html"
@@ -96,8 +94,8 @@ def _register(hass, uid, name):
 async def test_sections_flatten_to_the_same_stored_keys(
     hass: HomeAssistant,
 ):
-    """The screen gained sections; the storage did not. Options keep
-    their original flat keys so nothing downstream migrates."""
+    """The screen has sections; the storage does not. Options keep flat
+    keys, so nothing downstream migrates."""
     entry = await setup_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -153,7 +151,7 @@ async def test_advanced_stores_and_coordinator_reads_live(
 async def test_advanced_defaults_match_the_shipped_constants(
     hass: HomeAssistant,
 ):
-    """An untouched install behaves as it always has.
+    """An untouched install runs on the shipped constants.
 
     The two shares are constants rather than settings, so what is
     asserted here is that the constant reaches the coordinator, not

@@ -187,7 +187,7 @@ async def _pushed_by_the_tick(hass, coord, freezer):
         # The minute check runs as a background task, which a plain
         # block_till_done does not wait for, and its save awaits file work on a
         # worker thread: without this the test could read the disk before the
-        # tick's save landed (rule CODE-13).
+        # tick's save landed.
         await hass.async_block_till_done(wait_background_tasks=True)
         if WIFI_KEY in coord._upstream_announced:
             return

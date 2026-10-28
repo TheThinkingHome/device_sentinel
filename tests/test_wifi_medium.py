@@ -82,9 +82,8 @@ def test_a_reading_is_taken_as_the_router_states_it(attrs, expected):
     """TP-Link spells the network's name into `connection` and the
     band into `band`. UniFi spells it `essid` and `radio`. Both are
     the router saying outright which medium the client is on, and
-    both are read as stated. Measured on the reference fleet: 8,815
-    tracker lines, zero occurrences of the UniFi spellings, 29 of 40
-    trackers left unknown by reading only those."""
+    both are read as stated, since reading only the UniFi spellings
+    leaves most TP-Link trackers unknown (rule UP-14)."""
     assert tracker_medium({"source_type": "router", **attrs}) == expected
 
 
@@ -92,10 +91,10 @@ def test_a_reading_is_taken_as_the_router_states_it(attrs, expected):
 
 
 async def test_the_medium_is_scored_not_fixed(hass: HomeAssistant):
-    """Twelve readings say wireless, one says wired. The one is what
-    every router restart on the reference fleet produces, for every
-    client at once, and last-reading-wins marked the device wired
-    until the next sample happened to undo it."""
+    """Twelve readings say wireless, one says wired. The one is what a
+    router restart produces, for every client at once, and
+    last-reading-wins would mark the device wired until the next sample
+    happened to undo it."""
     coord, trackers, _devices, _untied = await _house(hass, 3)
     tracker = trackers[0]
 
@@ -154,8 +153,8 @@ async def test_a_real_contradiction_goes_to_unknown(hass: HomeAssistant):
 
 
 def test_the_minority_line_is_a_tenth():
-    """Measured, not chosen: the tightest contradiction on either
-    fleet is 2 against 22, the next 1 against 52. A tenth discards
+    """Measured, not chosen: the tightest contradiction measured is
+    2 against 22, the next 1 against 52. A tenth discards
     every one of the thirteen false readings and is reached by none
     of them."""
     assert MEDIUM_MINORITY_SHARE == 0.10
@@ -244,7 +243,7 @@ def test_a_minority_needs_evidence_behind_it():
     )
 
     assert MEDIUM_MINORITY_FLOOR == 20
-    # The reference fleet's three, as they actually read.
+    # The three measured cases, as they read.
     assert medium_from_score({"wired": 1, "wireless": 5}) == "wireless"
     assert medium_from_score({"wired": 1, "wireless": 7}) == "wireless"
     # Enough evidence, and a minority that still reaches a tenth.

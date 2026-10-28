@@ -106,8 +106,7 @@ def test_a_healthy_file_reports_nothing():
 
 
 def test_an_empty_table_is_not_a_fault():
-    """A fleet with no storms and no episodes is an ordinary fleet,
-    and one of the two real ones looks exactly like this."""
+    """A house with no storms and no episodes is an ordinary house."""
     assert check_storage({DATA_STORMS: [], "silence_episodes": []}) == []
 
 
@@ -153,15 +152,15 @@ def test_a_field_of_the_wrong_type():
 
 def test_a_null_where_text_is_required():
     """`ended` and `kind` carry a word or the row means nothing. A
-    None there is a fault, unlike `cause`, which is null on 452 of
-    the reference fleet's 462 rows."""
+    None there is a fault, unlike `cause`, which is null on most
+    rows."""
     faults = check_storage({DATA_INCIDENTS: [_incident(kind=None)]})
     assert ("incidents[0]", "kind") == faults[0][:2]
 
 
 def test_a_nullable_field_may_be_null():
-    """An open incident has no duration yet, and ten storm rows on
-    the reference fleet were open when the file was written."""
+    """An open incident has no duration yet, and a storm row can be
+    open when the file is written."""
     assert check_storage({DATA_INCIDENTS: [_incident(duration=None)]}) == []
 
 
@@ -183,8 +182,7 @@ def test_a_boolean_is_not_an_integer():
 
 
 def test_an_optional_key_may_be_absent():
-    """A system event carries a device count only where it has one,
-    which is most rows on both fleets."""
+    """A system event carries a device count only where it has one."""
     row = {
         "kind": "restart",
         "when": 1786000000.0,
@@ -199,7 +197,7 @@ def test_an_unknown_key_is_not_reported():
     """Deliberately looser than the record check.
 
     Every reader of these rows reaches for a key by name, so a key
-    nobody reads is inert. A fleet upgrading from an older release
+    nobody reads is inert. A house upgrading from an older release
     carries retired keys here for exactly one save, and reporting
     them would withhold the backup on the night it is most wanted.
     """
@@ -218,7 +216,7 @@ def test_an_unknown_key_is_not_reported():
 
 def test_one_broken_table_cannot_bury_the_file():
     """A table that has gone wrong has usually gone wrong
-    throughout. Reporting every row of a 3,866-row incident log
+    throughout. Reporting every row of an incident log thousands of rows long
     would bury every other fault in the file."""
     rows = [_incident(when="bad") for _ in range(50)]
     faults = check_storage({DATA_INCIDENTS: rows})
@@ -255,12 +253,10 @@ def test_a_missing_clock_field_is_caught():
 
 
 def test_a_retired_clock_field_is_tolerated():
-    """The case that would have fired 228 times.
-
-    The external fleet's clocks file predates the dwell erasure and
-    carries two fields the current schema does not know. They leave
-    on the next save; reporting them would mean a fault for every
-    device on the one load where a person can do least about it.
+    """A clocks file written before a field was retired carries fields
+    the current schema does not know. They leave on the next save;
+    reporting them would mean a fault for every device on the one load
+    where a person can do least about it (rule STOR-19).
     """
     row = _clock()
     row["signal_below_since"] = None
@@ -349,7 +345,7 @@ def test_a_migration_marker_of_the_wrong_type_is_a_fault():
     against an expected mark. A marker that does not match runs a
     one-time conversion over data already converted, so a marker
     corrupted to a number fails the comparison, the conversion
-    re-runs, and the check said the file was clean.
+    re-runs, while the check would say the file was clean.
     """
     for key in ("signal_day_repair", "signal_weighting"):
         faults = check_storage({key: 12})
@@ -376,7 +372,7 @@ def test_the_backup_list_must_hold_strings():
 
 
 def test_every_key_both_fleets_hold_has_a_shape():
-    """Every key both fleets hold has a shape, so the next key added to
+    """Every key a captured house file holds has a shape, so the next key added to
     storage cannot arrive unverified (rule STOR-05).
 
     A key with no shape is skipped in silence, which is right for a
@@ -386,7 +382,7 @@ def test_every_key_both_fleets_hold_has_a_shape():
     from custom_components.device_sentinel.normalise import SCALARS, TABLES
 
     known = set(TABLES) | set(SCALARS) | {"devices"}
-    # Every top-level key both real fleets carry.
+    # Every top-level key the captured house files carry.
     seen = {
         "devices", "first_installed", "setup_count", "stats_epoch",
         "saved_at", "last_version", "bridge_seen", "broker_seen",
@@ -432,7 +428,8 @@ def test_an_open_episode_is_not_a_fault():
 
 
 def test_four_open_episodes_no_longer_make_eight_faults():
-    """His card, reproduced and then silenced."""
+    """Four open episodes make no faults and no repair card (rule
+    STOR-05)."""
     rows = [_open_episode(device_id=f"d{index}") for index in range(4)]
     assert check_storage({"silence_episodes": rows}) == []
 

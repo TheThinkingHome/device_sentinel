@@ -78,7 +78,7 @@ def _z2m_device(hass: HomeAssistant, uid: str, name: str):
 
 async def test_a_set_aside_device_is_not_reporting(hass: HomeAssistant):
     """Two devices set aside for having no entities of their own, and a
-    coordinator set aside as a duplicate, all read green before."""
+    coordinator set aside as a duplicate: none reads green."""
     device, entities = register_device(hass, "q1", name="Quiet Plug")
     entity = entities[0]
     hass.states.async_set(entity, "on")
@@ -102,8 +102,8 @@ async def test_a_device_that_never_spoke_says_so(hass: HomeAssistant):
 
 
 async def test_each_problem_carries_its_own_age(hass: HomeAssistant):
-    """The freeze started last night; the battery emptied in July. One
-    row dated from the battery hid the freeze entirely."""
+    """The freeze started last night; the battery emptied in July. A
+    row dated from the battery would hide the freeze entirely."""
     device, _entities3 = register_device(hass, "q3", name="Watering Kit")
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
@@ -125,7 +125,7 @@ async def test_each_problem_carries_its_own_age(hass: HomeAssistant):
 
 async def test_a_truncated_silence_still_running_says_so(hass: HomeAssistant):
     """An intervention truncates the episode, and the device has not
-    spoken since. The file read "0 still open"."""
+    spoken since. The file must not read "0 still open"."""
     device, _entities4 = register_device(hass, "q4", name="Watering Kit")
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()

@@ -15,10 +15,11 @@ those to its own trackers makes the device and the witness the same
 object, so three computers powering down inside a minute would declare
 a network outage (rule UP-13).
 
-A router integration never recorded before is excluded once, and after
-that it is the person's. New installs get it from the default list; an
-existing install gets it on first sighting. It fires once per
-integration, ever, so unexcluding it later sticks (rule MUTE-02).
+A router integration never recorded before is excluded once on a new
+install, and after that it is the person's: the default list covers it,
+or its first sighting adds it. A house that already exists is offered a
+card instead. It fires once per integration, ever, so unexcluding it
+later sticks (rule MUTE-02).
 
 An outage is declared by a share of the tied fleet with a floor of
 three. Three is a quarter of a twelve-tracker house but three percent
@@ -50,7 +51,7 @@ ROUTER = "tplink_router"
 
 def _router_own_device(hass, source, uid: str, mac: str):
     """A registry device published by the router integration itself,
-    which is what a client record looks like on the second fleet."""
+    which is what a client record can look like."""
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
         identifiers={(ROUTER, uid)},
@@ -106,13 +107,10 @@ async def test_a_device_from_another_integration_still_ties(
 async def test_a_router_integration_is_excluded_on_first_sighting(
     hass: HomeAssistant,
 ):
-    """Seen for the first time, it joins the person's list.
-
-    The case that matters is a system that already exists and has
-    saved its exclusions, which is the second fleet exactly: thirteen
-    integrations, none of them the router. An install that never saved
-    its list needs nothing done, because the default already covers
-    it."""
+    """Seen for the first time on a new install, it joins the person's
+    list, even one already saved without it. An install that never
+    saved its list needs nothing done, because the default already
+    covers it (rule MUTE-02)."""
     router_entry = MockConfigEntry(domain=ROUTER, title="router")
     router_entry.add_to_hass(hass)
     _tracker(hass, "client20", "AA-BB-CC-00-00-20")
@@ -238,9 +236,9 @@ async def test_an_unsaved_list_is_left_alone(hass: HomeAssistant):
     ("tied", "expected"),
     [
         (4, WIFI_BURST_FLOOR),      # the floor governs a small fleet
-        (12, WIFI_BURST_FLOOR),     # the reference fleet, unchanged
+        (12, WIFI_BURST_FLOOR),     # a twelve-tracker house
         (30, WIFI_BURST_FLOOR),     # the floor still governs at 30
-        (62, 7),                    # the second fleet after the tie work
+        (62, 7),                    # a sixty-two tracker house
         (100, 10),                  # the case the rule exists for
         (200, 20),
     ],
@@ -249,10 +247,9 @@ async def test_the_declaration_threshold_scales_with_the_fleet(
     hass: HomeAssistant, tied: int, expected: int
 ):
     """Three devices or ten percent of the tied set, whichever is
-    more. Measured: the second fleet's churn tops out at three falls
-    in a minute, 4.8 percent of its 62 tied trackers, against a staged
-    outage peaking at 44 percent. The smallest real event measured
-    anywhere is 25 percent."""
+    more. Measured: a house of 62 tied trackers churns at most three
+    falls in a minute, 4.8 percent, against a staged outage peaking at
+    44 percent. The smallest real event measured is 25 percent."""
     coord = await setup_coordinator(hass)
     coord._wifi_ties = {f"d{i}": f"device_tracker.t{i}" for i in range(tied)}
 

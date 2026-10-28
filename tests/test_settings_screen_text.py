@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_settings_screen_text.py, Version: 0.27.4 (2026-10-25)
+# File: tests/test_settings_screen_text.py, Version: 0.27.10 (2026-10-27)
 
 """What the Settings screens say, read from the files Home Assistant
 draws them from.
@@ -54,8 +54,8 @@ def test_normal_priority_targets_get_every_alert_outside_quiet_hours():
 
 
 def test_quiet_hours_say_high_priority_targets_still_hear():
-    """Quiet Hours no longer silence everything, so the screen does not
-    say "Nothing is sent"."""
+    """Quiet Hours do not silence high-priority targets, so the screen
+    does not say "Nothing is sent" (rule NOTE-07)."""
     for doc in _both():
         words = doc["options"]["step"]["notifications"]["sections"]["quiet"][
             "data_description"]["quiet_hours_enabled"]

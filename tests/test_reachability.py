@@ -5,10 +5,10 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_reachability.py, Version: 0.27.10 (2026-10-27)
 
-"""Zigbee2MQTT reachability, replayed against a captured fleet, and the
+"""Zigbee2MQTT reachability, replayed against a captured house, and the
 upstream outages (rules STACK-03, UP-01, UP-03, UP-10).
 
-The fixtures in tests/fixtures are a real fleet as the broker published
+The fixtures in tests/fixtures are a real house as the broker published
 it: 75 entries in bridge/devices, 81 availability topics, and the
 bridge's own availability configuration. Six of those topics name
 nothing that exists and two of the six read online, which is the case

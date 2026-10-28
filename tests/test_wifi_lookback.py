@@ -50,7 +50,7 @@ async def test_devices_that_noticed_first_are_the_outages(
 ):
     coord, trackers, devices, _untied = await _house(hass, 14)
     lost = dt_util.utcnow().timestamp()
-    # UniFi took 4 minutes 24 seconds on the second fleet.
+    # UniFi has been measured taking 4 minutes 24 seconds.
     freezer.tick(timedelta(seconds=264))
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
     assert coord.wifi_down_at == first

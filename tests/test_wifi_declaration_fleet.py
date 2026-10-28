@@ -19,9 +19,9 @@ Three things are asserted.
    integration that supplies the trackers is not tied, and a device
    from any other integration on the same tracker set still is.
 2. The declaration threshold against each fleet's real tie count.
-3. A staged outage, its fall sequence taken from the second fleet's own
-   probe, declares exactly once through the shipped counter, while the
-   same fleet's measured churn does not.
+3. A staged outage, its fall sequence taken from a recorded probe,
+   declares exactly once through the shipped counter, while the same
+   house's measured churn does not.
 
 Skips whole when the fleet files are absent, as every fleet case does.
 Each case loads a whole fleet, so the file runs at about fifty
@@ -51,9 +51,9 @@ from tests.helpers import add_mac
 
 ROUTER = "tplink_router"
 
-# The second fleet's staged outage, from its own probe: how many tied
-# trackers fell in each minute of the fall, and the churn the same fleet
-# produces on an ordinary day.
+# A staged outage, from a recorded probe: how many tied trackers fell in
+# each minute of the fall, and the churn the same house produces on an
+# ordinary day.
 STAGED_FALL = (14, 0, 0, 29, 3, 10)
 MEASURED_CHURN = 3
 
@@ -100,8 +100,8 @@ async def _fall(hass, tracker: str) -> None:
 async def test_a_router_own_device_is_not_tied_on_a_real_fleet(
     hass: HomeAssistant,
 ):
-    """The shape the second fleet actually has: the router publishes
-    a registry device per client, carrying the same MAC as that
+    """A shape a router can have: it publishes a registry device per
+    client, carrying the same MAC as that
     client's tracker. Without the bar it ties to itself."""
     coord, _entries, behind, _now = await _fleet(hass, TIM, TIM_SHAPE)
 
@@ -184,8 +184,7 @@ async def test_the_measured_churn_does_not_declare(
     hass: HomeAssistant,
 ):
     """Three falls together is the most this fleet's ordinary churn
-    produces, 4.8 percent of its tied set. Before this release it
-    declared an outage."""
+    produces, 4.8 percent of its tied set, and it declares nothing."""
     coord, _entries, behind, _now = await _fleet(hass, TIM, TIM_SHAPE)
     coord._grace_until = 0.0
 

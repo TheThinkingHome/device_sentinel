@@ -5,8 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_stack_readers.py, Version: 0.27.10 (2026-10-27)
 
-"""The Z-Wave and Matter readers in shadow (rules STACK-05, STACK-06,
-STACK-12).
+"""The Z-Wave and Matter readers in shadow (rules STACK-11, STACK-12).
 
 The stack probe names each node's device, sets Device Sentinel's own
 view of that device beside the stack's, says whether they agree, and
@@ -204,7 +203,7 @@ async def test_an_away_matter_node_and_an_unavailable_device_agree(hass: HomeAss
 
 async def test_matter_wifi_nodes_are_named_when_wifi_goes_down(hass: HomeAssistant):
     """Which Matter Wi-Fi nodes went away with Device Sentinel's Wi-Fi
-    outage and which did not (rule UP-15)."""
+    outage and which did not (rule STACK-12)."""
     away = SimpleNamespace(node_id=19, available=False, node_data=SimpleNamespace(attributes={"0/49/65532": 1}))
     up = SimpleNamespace(node_id=20, available=True, node_data=SimpleNamespace(attributes={"0/49/65532": 1}))
     thread = SimpleNamespace(node_id=22, available=False, node_data=SimpleNamespace(attributes={"0/49/65532": 2}))
@@ -220,8 +219,8 @@ async def test_matter_wifi_nodes_are_named_when_wifi_goes_down(hass: HomeAssista
 
 
 async def test_whether_each_status_sensor_is_on(hass: HomeAssistant):
-    """Research finding 5: the node status sensor's change counts as the
-    device speaking, so the probe says where it is on."""
+    """The node status sensor's change from dead to alive counts as
+    contact, so the probe says where the sensor is on (rule STACK-05)."""
     zentry, _client = _zwave(hass, {10: _plug(10), 11: _plug(11), 12: _plug(12)})
     registry = er.async_get(hass)
     registry.async_get_or_create("sensor", ZWAVE_DOMAIN, f"{HOME}.10.node_status", config_entry=zentry)

@@ -9,12 +9,9 @@
 
 SwitchBot, TP-Link and Brother make an integration entry per device,
 so a sensor that dies with its battery fails its own entry. Counted as
-a casualty of that outage, it would leave the Problem List naming no
-device, only "switchbot down: 2 of 14 total devices unavailable"; at
-each restart it would go on the list and come off a minute later,
-logged as a recovery; and an outage row that names no entry would
-never close, so the integration's page would read "still down" for
-days.
+that entry's outage, it would name no device on the Problem List and
+read as a recovery at each restart. An outage row that names no entry
+can never close, so it is left off the integration's page.
 """
 
 from __future__ import annotations

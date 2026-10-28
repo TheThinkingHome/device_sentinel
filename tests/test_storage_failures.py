@@ -12,10 +12,11 @@ just broke, so setup never lets the exception escape as a stack trace
 and an error that names no cause.
 
 The two files are answered differently on purpose. The main file is
-the record, so setup stops and says so, permanently rather than on a
-retry loop, because a corrupt file does not become readable on the
-next attempt. The clocks file is the small companion, so an unreadable
-one costs a few minutes of live counters and the start continues.
+the record, so with no last-good copy to restore, setup stops and says
+so, permanently rather than on a retry loop, because a corrupt file
+does not become readable on the next attempt. The clocks file is the
+small companion, so an unreadable one restarts the device clocks,
+keeps everything learned, and the start continues.
 """
 
 from unittest.mock import patch
@@ -40,9 +41,9 @@ def _clear_storage(hass: HomeAssistant) -> None:
 
     The harness config directory is a fixed folder inside the
     installed package, shared by every test in the session and left
-    on disk between runs. A copy written by another test file was
-    still there for this one, so the restore succeeded and the
-    refusal these tests describe never happened.
+    on disk between runs, so a copy another test wrote would let the
+    restore succeed and the refusal these tests describe would never
+    happen.
     """
     import os
 
@@ -55,7 +56,7 @@ def _clear_storage(hass: HomeAssistant) -> None:
 
 
 async def _entry_with_failing_load(hass: HomeAssistant, error: Exception):
-    """Set up the integration with our own store raising on load.
+    """Set up the integration with Device Sentinel's own store raising on load.
 
     Only this integration's key fails: patching every Store would
     break Home Assistant's own registries and prove nothing about
@@ -82,10 +83,9 @@ async def _entry_with_failing_load(hass: HomeAssistant, error: Exception):
 async def test_an_unreadable_storage_file_states_the_fault(
     hass: HomeAssistant, caplog
 ) -> None:
-    """A file that will not parse stops setup with a sentence.
-
-    Before this, the exception escaped `async_setup_entry` and Home
-    Assistant showed a traceback with no cause a person could act on.
+    """A file that will not parse, with no copy to restore, stops setup
+    with a sentence, not a traceback with no cause a person could act
+    on (rule STOR-08).
     """
     entry = await _entry_with_failing_load(
         hass, HomeAssistantError("expecting value: line 1 column 1")
@@ -119,9 +119,9 @@ async def test_an_unreadable_clocks_file_is_survivable(
 ) -> None:
     """The small companion is not the record.
 
-    Losing it costs one interval of live counters, so the start continues
-    on the clocks held in the main file and says so, rather than refusing
-    to run (rule STOR-10).
+    Losing it restarts each device's clock and loses nothing learned, so
+    the start continues and says so, rather than refusing to run
+    (rule STOR-10).
     """
     real_load = None
 
@@ -143,7 +143,7 @@ async def test_a_missing_storage_file_is_still_a_fresh_install(
     hass: HomeAssistant
 ) -> None:
     """The guard catches faults, not absence. A first run has no file
-    at all, and that path is unchanged."""
+    at all and starts as a fresh install."""
     entry = await setup_entry(hass)
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.data["devices"] == {}

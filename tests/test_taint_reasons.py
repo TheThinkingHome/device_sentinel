@@ -113,8 +113,7 @@ async def test_taint_records_unknown_as_its_reason(
 ):
     """A device that sat in unknown does not report unavailable.
 
-    This is the case the old boolean could never tell, because the
-    state was captured and then spent on a log line.
+    A bare boolean could not tell this case from unavailable.
     """
     device, eid = _plain_device(hass, "unk", "Unk")
     coord = await setup_coordinator(hass)
@@ -140,10 +139,10 @@ async def test_promotion_survives_a_lag_longer_than_the_storm(
     """The reconnect is named however late the device comes back.
 
     This is the whole reason the promotion is resolved at the episode.
-    The storm that names a reconnect releases after five seconds; on
-    the development fleet the tainted devices behind one outage
-    reported with lags from zero seconds to fifty minutes, so deciding
-    at the report would have caught two of fifty-six.
+    The storm that names a reconnect releases after five seconds, while
+    the tainted devices behind one outage can report with lags from zero
+    seconds to fifty minutes, so deciding at the report would miss most
+    of them.
     """
     device, eid = _plain_device(hass, "laggy", "Laggy")
     coord = await setup_coordinator(hass)
@@ -173,7 +172,8 @@ async def test_promotion_survives_a_lag_longer_than_the_storm(
 # --------------------------------------------- carrying storage forward
 
 def test_stored_boolean_becomes_unavailable():
-    """A true from before this version meant unavailable and only that."""
+    """A stored true, from a file that kept a boolean, means unavailable
+    and only that."""
     devices = {
         "a": {DEV_TAINTED: True},
         "b": {DEV_TAINTED: False},

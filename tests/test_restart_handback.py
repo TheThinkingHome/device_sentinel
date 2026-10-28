@@ -77,9 +77,8 @@ async def test_a_control_short_restart_dated_after_start(hass: HomeAssistant, fr
 
 # B. A four-hour blackout that begins ten minutes before the device's
 # window closes. Counted silence cannot reach the window while Home
-# Assistant is off, so the freeze began after the start; the fixed-point
-# loop in _frozen_start runs only len(spans)+1 steps and lands inside the
-# blackout.
+# Assistant is off, so the freeze is dated after the start, never inside
+# the blackout (rule FRZ-10).
 async def test_b_long_blackout_freeze_not_dated_inside_it(hass: HomeAssistant, freezer):
     record, last, window, stopped, started = await _cross_during_restart(
         hass, freezer, "r9b", lead=10 * 60, down=4 * HOUR

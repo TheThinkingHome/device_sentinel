@@ -185,7 +185,7 @@ def _retired_names() -> set[str]:
 
 
 def test_no_retired_exclude_option_name_survives_in_source():
-    """The twelve muting keys keep one spelling (rule MUTE-10).
+    """The twelve muting keys keep one spelling (rule STOR-19).
 
     The rename could fail two ways that nothing else here would catch. A
     reader left on an old key name reads an option that no longer exists,

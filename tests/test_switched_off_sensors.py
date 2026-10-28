@@ -77,7 +77,7 @@ USER = er.RegistryEntryDisabler.USER
 async def test_the_three_enable_buttons_are_gone(hass: HomeAssistant):
     """Only Regenerate Reports and Maintenance Mode are button entities;
     nothing a script can press turns on another integration's entity
-    (rule DASH-09)."""
+    (rule REC-05)."""
     await setup_entry(hass)
     buttons = sorted(
         state.entity_id for state in hass.states.async_all("button")

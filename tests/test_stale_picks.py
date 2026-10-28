@@ -95,9 +95,9 @@ def test_a_covered_pick_still_goes():
 
 
 def test_the_picker_offers_a_pick_its_rows_have_lost():
-    """The bug this release fixes: a screen holding a value its own
-    selector did not offer failed to save at all, so no exclusion of
-    any kind could be changed while one such pick sat in the options.
+    """A screen holding a value its own selector does not offer fails to
+    save at all, so the picker offers each kept pick, or no exclusion of
+    any kind could be changed while one sat in the options (rule CFG-05).
     The device is named rather than shown as an id, because a name is
     what makes the choice possible."""
     rows = [_row("listed", "Door Entryway", "mqtt")]

@@ -5,14 +5,14 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_upstream_events_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The upstream event pair, driven against both reference fleets
+"""The upstream event pair, driven against two real houses' records
 (rules UP-02, UP-10).
 
-Not a unit test. Each case loads a real fleet's own record into a
+Not a unit test. Each case loads a real house's own record into a
 live coordinator, registers every device it names, and then puts the
 upstream through the shapes a house actually produces: a bridge
 falling and returning, a broker taking every bridge with it, a link
-that will not settle, an outage that spans a restart, and a fleet
+that will not settle, an outage that spans a restart, and a house
 where nothing is up at all.
 
 What is judged is the bus. Every down owes a restored, every restored
@@ -20,7 +20,7 @@ owes a down before it, the device count is the membership behind the
 upstream rather than the casualties so far, and nothing is said
 during the startup grace.
 
-Skips whole when the fleet files are absent, as every fleet case does.
+Skips whole when the house files are absent.
 """
 
 from __future__ import annotations
@@ -207,7 +207,7 @@ async def test_the_reference_fleet_pairs_a_bridge_outage(
 async def test_the_second_fleet_pairs_a_bridge_outage(
     hass: HomeAssistant,
 ):
-    """The same on a fleet more than twice the size."""
+    """The same on a house more than twice the size."""
     coord, count = await _fleet(hass, TIM)
     seen = _heard(hass)
 

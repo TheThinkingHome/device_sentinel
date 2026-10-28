@@ -5,15 +5,15 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: tests/test_wifi_recovery_fleet.py, Version: 0.27.10 (2026-10-27)
 
-"""The recovery rule, driven through the shipped code on real fleets
+"""The recovery rule, driven through the shipped code on captured houses
 (rule UP-16).
 
 A model of the rule that agrees with itself proves nothing about
-`router_ties.py`, so these cases drive the real coordinator: real
-fleet storage, the real tie ladder, the real burst counter and the
+`router_ties.py`, so these cases drive the real coordinator: captured
+storage, the real tie ladder, the real burst counter and the
 real recovery sweep.
 
-Two shapes are asserted, both from a staged outage on the second fleet.
+Two shapes are asserted, both from a staged outage.
 
 1. The shape that hangs. Devices fall, all but three return, and three
    unrelated ones stay away. An outage of ten minutes must not stand
@@ -101,10 +101,9 @@ async def _tied_fleet(hass, how_many: int):
 async def test_the_outage_that_hung_for_five_hours_now_closes(
     hass: HomeAssistant,
 ):
-    """Fifty-one fall, forty-eight return, three stay away. Under the
-    old rule this stood open until those three came back, which on
-    the second fleet took hours. Judged against the set that fell, it
-    closes on the settle."""
+    """Fifty-one fall, forty-eight return, three stay away. Judged
+    against the set that fell, it closes on the settle rather than
+    waiting hours for those three."""
     coord, trackers = await _tied_fleet(hass, 62)
 
     for tracker in trackers[:FELL]:
@@ -131,10 +130,8 @@ async def test_the_outage_that_hung_for_five_hours_now_closes(
 async def test_a_device_away_beforehand_never_joins_the_outage(
     hass: HomeAssistant,
 ):
-    """The tablet that left forty-nine minutes early and was one of
-    three holding an outage open for five and a half hours. It is not
-    a casualty, so it neither joins the fallen set nor delays the
-    recovery."""
+    """A tracker that left forty-nine minutes early is not a casualty,
+    so it neither joins the fallen set nor delays the recovery."""
     coord, trackers = await _tied_fleet(hass, 62)
 
     early = trackers[61]
@@ -162,9 +159,7 @@ async def test_a_device_away_beforehand_never_joins_the_outage(
         await _move(hass, tracker, "home")
     await _sweep(coord, hass, now, 3)
 
-    # Closed even though the early leaver is still away, which is
-    # more than WIFI_BURST_FLOOR minus one and would have held the
-    # old rule open on its own.
+    # Closed even though the early leaver is still away.
     assert coord.wifi_down_at is None
     assert early in coord._wifi_not_home
     assert WIFI_BURST_FLOOR >= 3

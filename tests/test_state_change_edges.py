@@ -93,7 +93,7 @@ async def test_a_taint_raised_inside_grace_is_also_held_in_the_grace_set(
 
     # Wide enough to still be open when the device recovers, the moment the
     # branch is decided. Judged unavailable, so its stack saying it is
-    # available is a real recovery, not a value handed back (rule UNAV-05).
+    # available is a real recovery, not a value handed back (rule FRZ-11).
     record[DEV_FROZEN_CATEGORY] = "unavailable"
     coord._grace_until = dt_util.utcnow().timestamp() + 86400.0
     hass.states.async_set(entity_id, "unavailable")

@@ -12,7 +12,7 @@ Link failures surface as a device going unavailable, not as a freeze
 silence, so the silence episodes alone never record one. The opening
 row of an unavailable incident carries the device's signal at that
 moment, and the diagnostics download carries the signal stress table,
-so testers' files bring the evidence with them.
+so a house's download brings the evidence with it.
 """
 
 from __future__ import annotations

@@ -110,8 +110,8 @@ async def test_two_report_writes_at_once_lose_nothing(hass: HomeAssistant, monke
 
 
 async def test_a_brief_that_meets_the_midnight_write_is_still_sent(hass: HomeAssistant, monkeypatch):
-    """The fault GitHub caught: the brief closed its day and, its write
-    lost to the midnight write, sent nothing. It waits its turn instead."""
+    """A brief whose write meets the midnight write waits its turn and
+    is still sent, so it never closes its day without sending."""
     register_device(hass, "d", "Door")
     coord = await setup_coordinator(hass)
     sent: list[str] = []

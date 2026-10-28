@@ -3,11 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_routine_save_checked.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_routine_save_checked.py, Version: 0.27.10 (2026-10-27)
 
 """A routine save is checked and rotated like any other (rules STOR-04,
-STOR-06): before, a save with a cold row waiting wrote the main file
-unchecked and kept the last good copy from rotating."""
+STOR-06): a save with a cold row waiting never writes the main file
+unchecked, and never keeps the last-good copy from rotating."""
 
 from __future__ import annotations
 

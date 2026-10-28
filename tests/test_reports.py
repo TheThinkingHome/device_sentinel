@@ -352,8 +352,8 @@ async def test_battery_column_adds_each_change_when_earned(
 async def test_a_reading_outside_the_scale_says_so(
     hass: HomeAssistant,
 ):
-    """LUX Outdoors reports around 198. That is recorded like any
-    other value (rule STOR-15) and classified here, at rendering."""
+    """A battery reading around 198 is recorded like any other value
+    (rule STOR-15) and classified here, at rendering."""
     coord, device_id = await _marks_coordinator(hass)
     record = coord.data["devices"][device_id]
     record[DEV_BATTERY_DAILY] = [198.0, 194.0, 198.0]
@@ -383,8 +383,8 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "SIG MIN" not in header
     assert "SIG FROZEN" not in header
 
-    # The floor-based figures gave way to the bad-day model, the line
-    # that raises weak links and that the dashboard draws (rule SIG-08).
+    # No floor-based figures: the bad-day model draws the line that
+    # raises weak links, as the dashboard does (rule SIG-08).
     assert "FLOOR/WK" not in header
     assert "MEAN\u00b1SD" not in header
     assert "| ITS NORMAL | BAD-DAY LINE |" in header
@@ -414,7 +414,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
 
 
 async def test_the_enable_buttons_are_gone(hass: HomeAssistant):
-    """The Enable buttons are gone; a device's own switched-off entities
+    """There are no Enable buttons; a device's own switched-off entities
     are turned on from its device page (rule DASH-09)."""
     await _marks_coordinator(hass)
     for entity_id in (

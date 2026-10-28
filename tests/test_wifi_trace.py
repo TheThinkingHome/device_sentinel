@@ -42,11 +42,8 @@ ALL_TRACES = (
 
 async def test_the_recorded_outage_declares(hass: HomeAssistant, freezer):
     """Thirty trackers leave over a few minutes. That is an outage,
-    and the fallen set is not empty when it is declared.
-
-    The empty fallen set was the 09:17 defect: the rule was built for
-    the tie route and this house declares from the scan, so on real
-    hardware there was never a fallen set at all.
+    and the fallen set is not empty when it is declared, though this
+    house declares from the scan rather than from tied trackers.
     """
     house = await build(hass, load_trace(TRACE))
     trace = load_trace(TRACE)
@@ -82,15 +79,12 @@ async def test_the_count_is_taken_not_judged(hass: HomeAssistant, freezer):
 async def test_no_device_is_orphaned_during_the_recovery(
     hass: HomeAssistant, freezer
 ):
-    """The defect this trace exists for.
+    """No device the outage still claims becomes its own problem while
+    the recovery runs (rule UP-16).
 
-    The scan heard the network at 15:13:58 and closed the outage. The
-    five Motion Blinds devices behind it finished reconnecting
-    between 15:14:16 and 15:14:18. Every one was handed back inside
-    that window, wrote its own row and announced itself, and twenty
-    seconds later they were all fine.
-
-    No constructed test could hold twenty seconds. This one does.
+    In this recording the scan hears the network about twenty seconds
+    before the five Motion Blinds devices behind it finish reconnecting.
+    A constructed test cannot hold those twenty seconds; this one does.
     """
     house = await build(hass, load_trace(TRACE))
     trace = load_trace(TRACE)

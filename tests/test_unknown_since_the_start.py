@@ -6,7 +6,7 @@
 # File: test_unknown_since_the_start.py, Version: 0.27.10 (2026-10-27)
 
 """An entity unknown because nothing has arrived since the start counts
-for nothing: it starts no unknown problem and ends none (rule UNAV-02).
+for nothing: it starts no unknown problem and ends none (rule LIST-06).
 
 Repeaters that report only now and then read unknown after each
 restart for over an hour. Unknown is neither down nor alive; these

@@ -6,7 +6,7 @@
 # File: tests/test_unavailable_opening_time.py, Version: 0.27.10 (2026-10-27)
 
 """A device that became unavailable is dated from when it went (rules
-UNAV-07, UNAV-08).
+UNAV-07, BRIEF-07).
 
 A device is listed only once it has been gone past the debounce and the
 sweep has seen it, and its recovery counts from when it went. So the
@@ -123,7 +123,7 @@ async def test_a_start_held_under_a_mute_is_not_kept(hass: HomeAssistant):
     """A device unavailable and muted for unavailable for four days,
     whose mute is then lifted, is listed that day: its opening keeps the
     listing time, not a start four days back, which the brief would read
-    as today (rule UNAV-08)."""
+    as today (rule BRIEF-07)."""
     from custom_components.device_sentinel.const import DEV_DOWN_BEGAN_AS
 
     from .helpers import register_device
@@ -144,7 +144,7 @@ async def test_a_start_held_under_a_mute_is_not_kept(hass: HomeAssistant):
 async def test_a_group_is_told_from_when_the_first_went(hass: HomeAssistant):
     """The sentence for several devices dates them as the table does:
     from when the first one went, not when the first one was listed
-    (rule UNAV-08)."""
+    (rule BRIEF-07)."""
     from .test_attribution import BROKER_OUTAGE, T0, _incident
 
     coord = await setup_coordinator(hass)

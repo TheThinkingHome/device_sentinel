@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_phone_push_rules.py, Version: 0.27.7 (2026-10-27)
+# File: test_phone_push_rules.py, Version: 0.27.10 (2026-10-27)
 
 """What reaches the phone, against what the bus hears (rules LIST-03,
 LIST-06, NOTE-08).
@@ -46,7 +46,8 @@ async def _tick(hass, coord):
 
 
 async def test_a_new_family_on_a_ticked_item_reaches_the_bus_not_the_phone(hass: HomeAssistant):
-    """NOTE-08: a device with nothing learned pushed at once before."""
+    """A ticked item stays silent on the phone even for a device with
+    nothing learned, which would otherwise push at once (rule NOTE-08)."""
     coord, dev, calls, heard = await _ticked_house(hass)
     battery_low(coord, dev)
     await sync(hass, coord)
