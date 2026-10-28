@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.11 (2026-10-28)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.12 (2026-10-28)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -136,6 +136,10 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
     console.log(`The Integrations tab, ${mode}`);
     let { root, calls } = await open({ __mode: mode, __path: "/integrations", integrations });
     const heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
+    check("nothing empty is drawn as text", !/null|undefined/.test(root.querySelector(".pane").textContent));
+    const widths = [...root.querySelectorAll(".pane table col")].map((col) => parseFloat(col.style.width));
+    check("the buttons' column is the widest, so no button breaks a word", widths.length === 3 && widths[1] > widths[0] && widths[1] > widths[2], widths);
+    check("the buttons stay on one line", !!root.querySelector(".pane tbody .intbuttons"));
     check("three columns: INTEGRATION, EXCLUDE AND MUTE, TROUBLE", heads.join() === "INTEGRATION,EXCLUDE AND MUTE,TROUBLE", heads);
     const alexa = rowOf(root, "Alexa Media Player");
     check("the name carries the device count and the id", /^Alexa Media Player \(18\) alexa_media/.test(alexa.cells[0].textContent), alexa.cells[0].textContent);
@@ -194,6 +198,19 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   let { root } = await open({ __mode: "simple", __path: "/battery-trends" });
   let text = root.querySelector(".pane").textContent;
   check("Simple: no TYPICAL LEVEL, LOWEST CELL or WHICH ONE", !/TYPICAL LEVEL|LOWEST CELL|WHICH ONE/.test(text));
+  // DEVICE, TYPE and LEVEL stand in the same place in each table, and a
+  // short table ends short of the edge (rule DASH-04).
+  // The third column counts where it is a level or a cell count; a raw
+  // reading is text of another width.
+  const placed = (table) => [...table.querySelectorAll("col")]
+    .slice(0, /^(LEVEL|CELLS)$/.test(table.tHead.rows[0].cells[2].textContent) ? 3 : 2)
+    .map((col) => (parseFloat(col.style.width) * parseFloat(table.style.width || "100")) / 100);
+  const tables = [...root.querySelectorAll(".pane table")];
+  const first = placed(tables[0]);
+  check("each Battery Trends table is on one scale", tables.length >= 3 && tables.every((t) => t.dataset.base), tables.length);
+  check("DEVICE, TYPE and LEVEL line up from table to table",
+    tables.every((t) => placed(t).every((w, i) => Math.abs(w - first[i]) < 0.01)), tables.map(placed));
+  check("a short table ends short of the edge", parseFloat(tables[0].style.width) < 100, tables[0].style.width);
   ({ root } = await open({ __mode: "advanced", __path: "/battery-trends" }));
   text = root.querySelector(".pane").textContent;
   check("Advanced keeps them", /TYPICAL LEVEL/.test(text) && /LOWEST CELL/.test(text) && /WHICH ONE/.test(text));
