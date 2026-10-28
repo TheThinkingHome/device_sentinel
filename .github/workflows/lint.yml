@@ -1,10 +1,9 @@
 name: Lint
 
-# A rule nobody checks is not a rule. Four unused imports sat in
-# todo.py from 0.3.9 to 0.3.13 because the tests, hassfest, and HACS
-# validation all passed and nothing else was looking. This job is what
-# was missing: dead imports, unused variables, and unsafe names turn
-# the build red the way a failing test does.
+# A rule nobody checks is not a rule. The tests, hassfest and HACS
+# validation all pass with a dead import in place, so this job looks:
+# dead imports, unused variables and unsafe names turn the build red
+# the way a failing test does.
 
 
 # Least privilege: these jobs only read the checked-out code, so
