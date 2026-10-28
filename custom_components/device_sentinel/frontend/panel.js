@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.10 (2026-10-27)
+// File: panel.js, Version: 0.27.11 (2026-10-28)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -36,7 +36,7 @@ const TABS = [
 // and a bookmark all return to the tab that was on screen. The Daily
 // Brief owns the bare address, so opening the dashboard lands on it.
 // The tabs Simple leaves off the row (rule DASH-04).
-const SIMPLE_HIDDEN_TABS = ["Signal Trends", "Integrations"];
+const SIMPLE_HIDDEN_TABS = ["Signal Trends", "Classification"];
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 // A device no type could be found for, as the Type filters name it (rule DEV-10).
@@ -100,13 +100,29 @@ const MUTE_SOURCES = [
 ];
 const INTEGRATION_FILTERS = [
   ["all", "All"],
-  ["watched", "Watched"],
+  ["recommended", "Recommended"],
+  ["trouble", "Trouble"],
   ["excluded", "Excluded"],
   ["muted", "Muted"],
-  ["service", "Service only"],
-  ["no_hardware", "No hardware"],
-  ["helper", "Helper"],
-  ["notices_only", "Nothing switched on to read"],
+];
+// What each standing means, on the words under an integration's name
+// when hovered.
+const STANDING_MEANING = {
+  service: "Its devices report themselves as services, so there is nothing to watch.",
+  no_hardware: "An add-on with no hardware of its own. It puts its entities on devices other integrations own, as Battery Notes does, and they never count as the device reporting.",
+  helper: "A Home Assistant helper you linked to a device. Its entities never count as the device reporting.",
+  notices_only: "Its devices have nothing switched on that can report.",
+};
+// An integration's trouble, each kind in the Problem List's words, worst first.
+const TROUBLE_WORDS = [
+  ["flapping", "dropping out"],
+  ["unavailable", "unavailable"],
+  ["frozen", "frozen"],
+  ["unknown", "unknown"],
+  ["never_reported", "never reported"],
+  ["low_battery", "battery low"],
+  ["falling_battery", "battery falling"],
+  ["railed_signal", "signal railed"],
 ];
 const DEVICE_FILTERS = [
   ["all", "All"],
@@ -222,15 +238,6 @@ const STANDING = {
 };
 // The key under the Integrations table, the same words as
 // classification.md's. A test holds the two to one text.
-const STANDING_KEY = [
-  ["Watched", "It owns devices Device Sentinel watches."],
-  ["Excluded", "It is on your exclusion list, in Exclusions and Muting."],
-  ["Muted", "It is muted, in Exclusions and Muting: its devices are watched but never reported."],
-  ["Service only", "Its devices report themselves as services, so there is nothing to watch."],
-  ["No hardware", "An add-on with no hardware of its own. It puts its entities on devices other integrations own, as Battery Notes does, and they never count as the device reporting."],
-  ["Helper", "A Home Assistant helper you linked to a device. Its entities never count as the device reporting."],
-  ["Nothing switched on to read", "Its devices have nothing switched on that can report."],
-];
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function checkIcon(label) {
@@ -558,6 +565,12 @@ const STYLE = `
      still filled when it is set elsewhere and cannot be pressed here. */
   .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   .chip.on[aria-disabled="true"] { opacity: 1; border-style: solid; }
+  /* The Integrations tab (rule MUTE-03): an excluded row is greyed,
+     its mutes rest, and a recommendation reads under the name. */
+  tr.excluded td { background: var(--secondary-background-color, rgba(127,127,127,0.08)); }
+  tr.excluded .chip:not(.on) { opacity: 0.4; border-style: dashed; }
+  .recommended { color: var(--warning-color, #b26a00); font-size: 13px; margin-top: 2px; line-height: 1.4; }
+  td.trouble { color: var(--error-color, #db4437); }
   .figures th, .figures td { padding: 6px 8px; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); align-items: center; }
   .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
@@ -608,7 +621,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
-    this._integrationFilter = "watched";
+    this._integrationFilter = "all";
     this._integrationSort = null;
     this._base = "/device-sentinel";
     this._view = null;
@@ -1141,7 +1154,7 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _paintTabs() {
-    // Simple hides Signal Trends and Integrations (rule DASH-04); either
+    // Simple hides Signal Trends and Classification (rule DASH-04); either
     // still opens from a link, and its tab shows while it is open.
     const hidden = this._snapshot && this._isSimple() ? SIMPLE_HIDDEN_TABS : [];
     const shown = TABS.filter((name) => !hidden.includes(name) || name === this._tab);
@@ -1313,8 +1326,9 @@ class DeviceSentinelPanel extends HTMLElement {
       const title = at > 0 ? text.slice(0, at) : "";
       const rest = (at > 0 ? text.slice(at + 1) : text).trim();
       const body = rest.charAt(0).toUpperCase() + rest.slice(1);
-      // An integration recommended for exclusion (rule MUTE-02): its
-      // devices, and Exclude beside the tick that keeps it watched.
+      // An integration recommended for exclusion, one card each (rules
+      // MUTE-02, REC-03): its devices, and Exclude beside the tick that
+      // keeps it watched.
       if (line.exclude) {
         const devices = line.devices || [];
         return el("article", { class: line.acknowledged ? "rec acked" : "rec" },
@@ -1325,7 +1339,7 @@ class DeviceSentinelPanel extends HTMLElement {
             el("button", { class: "chip", type: "button", onclick: async (ev) => {
               ev.target.disabled = true;
               try {
-                await this._call({ type: "device_sentinel/integration_exclude", domain: line.exclude, on: true });
+                await this._call({ type: "device_sentinel/integration_exclude", domain: line.exclude, on: true, source: "recommendations_tab" });
               } catch (err) {
                 ev.target.disabled = false;
                 ev.target.after(el("span", { class: "actnote refused" }, err.message || "Home Assistant refused the change."));
@@ -1560,54 +1574,45 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintIntegrations() {
     const all = this._snapshot.integrations.rows;
-    const counts = Object.fromEntries(INTEGRATION_FILTERS.map(([key]) =>
-      [key, key === "all" ? all.length : all.filter((row) => row.standing === key).length]));
-    let rows = all.filter((row) => this._integrationFilter === "all" || row.standing === this._integrationFilter);
+    const owns = (row) => Boolean(row.devices);
+    const muted = (row) => Boolean(row.mutes && Object.values(row.mutes).some(Boolean));
+    const hasTrouble = (row) => Boolean(row.down_since || Object.keys(row.trouble || {}).length);
+    // Recommended, with trouble, excluded and muted, each its own chip
+    // (rule DASH-16).
+    const filters = {
+      all: () => true,
+      recommended: (row) => Boolean(row.recommended),
+      trouble: (row) => !row.excluded && hasTrouble(row),
+      excluded: (row) => Boolean(row.excluded),
+      muted: (row) => !row.excluded && muted(row),
+    };
+    const counts = Object.fromEntries(INTEGRATION_FILTERS.map(([key]) => [key, all.filter(filters[key]).length]));
+    if (!filters[this._integrationFilter]) this._integrationFilter = "all";
+    let rows = all.filter(filters[this._integrationFilter]);
     const sort = this._integrationSort;
     if (sort) {
-      const value = {
-        name: (row) => row.name.toLowerCase(),
-        watched: (row) => row.watched,
-        problems: (row) => row.problems,
-        outages: (row) => row.outages,
-      }[sort.key];
-      rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
+      rows = [...rows].sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1) * sort.dir);
     }
-    const header = (label, key) => {
-      const direction = sort && sort.key === key ? sort.dir : null;
-      return el("button", {
-        class: "sort", type: "button",
-        "aria-sort": direction === 1 ? "ascending" : direction === -1 ? "descending" : "none",
-        onclick: () => {
-          this._integrationSort = { key, dir: direction === 1 ? -1 : 1 };
-          this._paintIntegrations();
-        },
-      }, label);
-    };
-    const watched = all.filter((row) => row.standing === "watched").length;
-    // Each count takes its own verb: "1 is muted", never "1 are muted".
-    const be = (n) => `${n} ${n === 1 ? "is" : "are"}`;
-    const owns = (n) => `${n} ${n === 1 ? "owns" : "own"}`;
-    const owners = all.length - counts.no_hardware - counts.helper;
-    const riders = (counts.no_hardware
-      ? ` ${counts.no_hardware} more ${counts.no_hardware === 1 ? "has" : "have"} no hardware of `
-        + `${counts.no_hardware === 1 ? "its" : "their"} own and only ${counts.no_hardware === 1 ? "adds" : "add"} `
-        + "entities to other integrations' devices."
-      : "")
-      + (counts.helper
-        ? ` ${counts.helper} ${counts.helper === 1 ? "is a helper you linked to a device" : "are helpers you linked to devices"}.`
-        : "")
-      // Devices with nothing but firmware notices or command buttons
-      // switched on (rule WATCH-04).
-      + (counts.notices_only
-        ? ` ${counts.notices_only} ${counts.notices_only === 1 ? "has" : "have"} nothing switched on to read.`
-        : "");
+    const direction = sort ? sort.dir : 1;
+    const header = el("button", {
+      class: "sort", type: "button",
+      "aria-sort": !sort ? "none" : direction === 1 ? "ascending" : "descending",
+      onclick: () => {
+        this._integrationSort = { key: "name", dir: sort && direction === 1 ? -1 : 1 };
+        this._paintIntegrations();
+      },
+    }, "INTEGRATION");
+    const devices = all.filter((row) => !row.excluded).reduce((n, row) => n + (row.watched || 0), 0);
+    const open = all.filter((row) => row.recommended).length;
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      // Led by the total the All chip shows, so the two agree.
-      `${all.length} ${all.length === 1 ? "integration" : "integrations"} in all. `
-      + `${owners} ${owners === 1 ? "owns" : "own"} devices in your house. `
-      + `${be(watched)} watched, ${be(counts.excluded)} excluded, ${be(counts.muted)} muted, and `
-      + `${owns(counts.service)} only service devices, which have nothing to watch.${riders}`);
+      `${all.length} ${all.length === 1 ? "integration" : "integrations"}, ${devices} ${devices === 1 ? "device" : "devices"} watched.`
+      + (open ? ` ${open} ${open === 1 ? "is" : "are"} recommended for exclusion.` : ""));
+    const how = el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" },
+      "Each button works on all the integration's devices at once, and pressing it again undoes it. ",
+      el("strong", {}, "Exclude"), " stops the watching; what its devices recorded is deleted at midnight, "
+      + "so pressing it again before then loses nothing. ",
+      el("strong", {}, "Mute"), " keeps the watching and stops the reports. A single device is muted or "
+      + "excluded on its own page.");
     const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.filter(([key]) =>
       key === "all" || counts[key] || this._integrationFilter === key).map(([key, label]) =>
       el("button", {
@@ -1619,32 +1624,79 @@ class DeviceSentinelPanel extends HTMLElement {
       }, `${label} ${counts[key]}`)));
     const table = el("table", {},
       el("thead", {}, el("tr", {},
-        el("th", {}, header("INTEGRATION", "name")),
-        el("th", {}, "STANDING"),
-        el("th", { class: "num" }, header("WATCHED", "watched")),
-        el("th", { class: "num" }, "MUTED"),
-        el("th", { class: "num" }, "SET ASIDE"),
-        el("th", { class: "num" }, header("PROBLEMS", "problems")),
-        el("th", { class: "num" }, header("OUTAGES, 14 DAYS", "outages")))),
-      el("tbody", {}, ...rows.map((row) => el("tr", {},
-        // An integration with no hardware opens a page of the devices
-        // it adds entities to.
-        el("td", {}, this._link(row.name, this._integrationPath(row.domain)),
-          " ", el("span", { class: "small" }, row.domain),
-          (row.standing === "no_hardware" || row.standing === "helper") && row.adds_to
-            ? el("span", { class: "small" }, `, on ${row.adds_to} ${row.adds_to === 1 ? "device" : "devices"}`) : null),
-        el("td", {}, this._standingText(row)),
-        el("td", { class: "num" }, row.watched ? String(row.watched) : ""),
-        el("td", { class: "num" }, row.muted ? String(row.muted) : ""),
-        el("td", { class: "num" }, row.set_aside ? String(row.set_aside) : ""),
-        el("td", { class: "num" }, row.problems ? String(row.problems) : "",
-          row.acknowledged ? el("span", { class: "small" }, ` +${row.acknowledged} ack`) : null),
-        el("td", { class: "num" }, row.outages ? String(row.outages) : "")))));
-    const key = el("div", { class: "muted", style: "font-size:13px;line-height:1.5" },
-      el("p", { style: "margin:0 0 4px" }, "Standing, by kind:"),
-      ...STANDING_KEY.map(([standing, meaning]) =>
-        el("p", { style: "margin:0" }, el("strong", {}, standing), `: ${meaning}`)));
-    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table), key);
+        el("th", {}, header), el("th", {}, "EXCLUDE AND MUTE"), el("th", {}, "TROUBLE"))),
+      el("tbody", {}, ...rows.map((row) => el("tr", { class: row.excluded ? "excluded" : "" },
+        el("td", {},
+          this._link(row.name, this._integrationPath(row.domain)),
+          owns(row) ? ` (${row.devices}) ` : " ",
+          el("span", { class: "small" }, row.domain),
+          // An integration with no hardware, or one with nothing to
+          // watch, says so under its name.
+          !owns(row) || !["watched", "excluded", "muted"].includes(row.standing)
+            ? el("div", { class: "small", title: STANDING_MEANING[row.standing] || "" }, this._standingText(row)
+              + ((row.standing === "no_hardware" || row.standing === "helper") && row.adds_to
+                ? `, on ${row.adds_to} ${row.adds_to === 1 ? "device" : "devices"}` : ""))
+            : null,
+          // What Device Sentinel recommends, under the name (rule MUTE-02).
+          row.recommended
+            ? el("div", { class: "recommended" }, "Recommended: ", el("strong", {}, "Exclude"), `, ${row.recommended}`)
+            : null),
+        el("td", {}, owns(row) ? this._integrationButtons(row) : null),
+        el("td", { class: "trouble" }, row.excluded ? "" : this._troubleText(row))))));
+    const note = this._integrationNote && this._integrationNote.domain === "*"
+      ? el("p", { class: "actnote refused" }, this._integrationNote.text) : null;
+    this._pane.replaceChildren(summary, how, chips, note, el("div", { class: "scroll" }, table));
+  }
+
+  // An integration's five buttons: one press each, no confirm, and a
+  // second press undoes it (rules MUTE-03, MUTE-09). Mute everything
+  // lights the three single mutes and holds them; an excluded
+  // integration's mutes rest. Unavailable is never muted by
+  // integration (rule MUTE-06).
+  _integrationButtons(row) {
+    const act = async (message) => {
+      this._integrationNote = null;
+      try {
+        await this._call(message);
+      } catch (err) {
+        this._integrationNote = { domain: "*", text: `${row.name}: ${err.message || "Home Assistant refused the change."}` };
+      }
+      await this._refresh();
+    };
+    const mutes = row.mutes || {};
+    const exclude = el("button", {
+      class: row.excluded ? "chip on" : "chip", type: "button", "aria-pressed": String(Boolean(row.excluded)),
+      title: row.excluded ? "History deleted at midnight. Press again before then to keep it." : "",
+      onclick: () => act({ type: "device_sentinel/integration_exclude", domain: row.domain, on: !row.excluded, source: "integrations_tab" }),
+    }, row.excluded ? "✓ Excluded" : "Exclude");
+    const mute = (kind, words) => {
+      const covered = kind !== "everything" && mutes.everything;
+      const lit = Boolean(mutes[kind] || covered);
+      const resting = Boolean(row.excluded) || covered;
+      return el("button", {
+        class: lit ? "chip on" : "chip", type: "button", "aria-pressed": String(lit),
+        ...(resting ? { "aria-disabled": "true" } : {}),
+        onclick: () => {
+          if (resting) return;
+          act({ type: "device_sentinel/integration_mute", domain: row.domain, kind, on: !mutes[kind] });
+        },
+      }, lit ? `✓ ${words}` : words);
+    };
+    return el("div", { class: "actrow", style: "flex-wrap:nowrap" }, exclude,
+      mute("everything", "Mute everything"), mute("freeze", "Mute freeze"),
+      mute("battery", "Mute battery"), mute("signal", "Mute signal"));
+  }
+
+  // What is wrong now on an integration's devices, worst first, and
+  // whether it is down (rule DASH-16).
+  _troubleText(row) {
+    const parts = [];
+    if (row.down_since) parts.push(`Down since ${moment(row.down_since)}`);
+    for (const [kind, words] of TROUBLE_WORDS) {
+      const n = (row.trouble || {})[kind];
+      if (n) parts.push(`${n} ${words}`);
+    }
+    return parts.join(", ");
   }
 
   // Home Assistant's own window for an entity, the one a dashboard
@@ -1714,10 +1766,8 @@ class DeviceSentinelPanel extends HTMLElement {
         this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(page.domain)}`),
         this._link("Device Sentinel settings", SETTINGS_PATH)));
     // Exclude the integration, or take it back, here as well as in
-    // Settings (rule MUTE-03).
-    // Simple hides the button (rule MUTE-03); an exclusion already made
-    // still shows, with its way back.
-    const exclusion = this._isSimple() && !page.excluded ? null : el("div", { class: "actrow" },
+    // Settings, in Simple and Advanced alike (rule MUTE-03).
+    const exclusion = el("div", { class: "actrow" },
       el("button", { class: "chip", type: "button",
         onclick: async () => {
           this._integrationNote = null;
@@ -2066,7 +2116,8 @@ class DeviceSentinelPanel extends HTMLElement {
       if (list.length <= 1) return this._typeLink((list[0] || [""])[0], pick);
       return el("span", {}, ...list.flatMap(([type, n], i) => [i ? ", " : null, this._typeLink(type, pick), ` ${n}`]));
     };
-    const models = this._sortRows(modelRows, this._modelSort, {
+    const modelSort = simpleView && ["typical", "lowest"].includes(this._modelSort.key) ? {} : this._modelSort;
+    const models = this._sortRows(modelRows, modelSort, {
       name: (row) => `${row.maker} ${row.model}`.toLowerCase(),
       type: (row) => (((row.types || [])[0] || [""])[0] || "￿").toLowerCase(),
       cells: (row) => row.cells,
@@ -2074,23 +2125,27 @@ class DeviceSentinelPanel extends HTMLElement {
       typical: (row) => row.typical,
       lowest: (row) => row.lowest,
     });
+    // Simple leaves out TYPICAL LEVEL, LOWEST CELL and WHICH ONE (rule DASH-04).
+    const fewer = simpleView;
     const modelTable = el("table", {},
       el("thead", {}, el("tr", {},
         this._sortHead(this._modelSort, "MAKER AND MODEL", "name", again),
         this._sortHead(this._modelSort, "TYPE", "type", again),
         this._sortHead(this._modelSort, "CELLS", "cells", again, "num"),
         this._sortHead(this._modelSort, "TYPICAL RATE", "rate", again, "num"),
-        this._sortHead(this._modelSort, "TYPICAL LEVEL", "typical", again, "num"),
-        this._sortHead(this._modelSort, "LOWEST CELL", "lowest", again, "num"),
-        el("th", {}, "WHICH ONE"))),
+        ...(fewer ? [] : [
+          this._sortHead(this._modelSort, "TYPICAL LEVEL", "typical", again, "num"),
+          this._sortHead(this._modelSort, "LOWEST CELL", "lowest", again, "num"),
+          el("th", {}, "WHICH ONE")]))),
       el("tbody", {}, ...models.map((row) => el("tr", {},
         el("td", {}, `${row.maker} ${row.model}`),
         el("td", {}, typeCell(row)),
         el("td", { class: "num" }, String(row.cells)),
         el("td", { class: "num", style: row.rate <= -1 ? "color:var(--error-color, #db4437)" : "" }, perWeek(row.rate)),
-        el("td", { class: "num" }, pct(row.typical)),
-        el("td", { class: "num" }, pct(row.lowest)),
-        el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))))));
+        ...(fewer ? [] : [
+          el("td", { class: "num" }, pct(row.typical)),
+          el("td", { class: "num" }, pct(row.lowest)),
+          el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))])))));
     const byType = (row) => (row.type || "￿").toLowerCase();
     const byName = (row) => (row.name || "").toLowerCase();
     // The report's own groups. A falling cell shows its last five
@@ -2466,11 +2521,15 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._deviceType && (this._deviceType === NOT_KNOWN ? all.every((row) => row.type) : !types.includes(this._deviceType))) {
       this._deviceType = "";
     }
-    if (this._deviceType) {
+    // Simple has no type filter, so one chosen in Advanced does not
+    // narrow it (rule DASH-04).
+    if (this._deviceType && !this._isSimple()) {
       rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
     }
     const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
-    const sort = this._deviceSort;
+    // A sort on a column Simple leaves out does not order Simple's rows.
+    const sort = this._isSimple() && this._deviceSort && ["type", "last", "rhythm", "window"].includes(this._deviceSort.key)
+      ? null : this._deviceSort;
     if (sort) {
       const value = {
         name: (row) => row.name.toLowerCase(),
@@ -2493,27 +2552,31 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, label));
     };
+    // Simple leaves out TYPE, LAST REPORT, RHYTHM and WINDOW, and the
+    // type filter (rule DASH-04).
+    const simple = this._isSimple();
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${all.length} devices are watched. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
-      + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted. Each device's window is how long it may stay `
-      + "quiet before it is called frozen, learned from its own rhythm.");
+      + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted.`
+      + (simple ? "" : " Each device's window is how long it may stay quiet before it is called frozen, learned from its own rhythm."));
     const chips = chipsFor();
     const table = el("table", {},
       el("thead", {}, el("tr", {},
-        header("DEVICE", "name"), header("TYPE", "type"), header("INTEGRATION", "integration"), el("th", {}, "STANDING"),
-        el("th", {}, "PROBLEM"), header("LAST REPORT", "last"),
-        header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num"))),
+        header("DEVICE", "name"), simple ? null : header("TYPE", "type"), header("INTEGRATION", "integration"),
+        el("th", {}, "STANDING"), el("th", {}, "PROBLEM"),
+        ...(simple ? [] : [header("LAST REPORT", "last"), header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num")]))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         // A link that sets the type filter.
-        el("td", {}, this._typeLink(row.type, pickType)),
+        simple ? null : el("td", {}, this._typeLink(row.type, pickType)),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
         el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
-        el("td", {}, ago(row.last_activity, at)),
-        el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
-        el("td", { class: "num" }, row.judged_by ? this._judgedByWords(row.judged_by)
-          : row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")))));
+        ...(simple ? [] : [
+          el("td", {}, ago(row.last_activity, at)),
+          el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
+          el("td", { class: "num" }, row.judged_by ? this._judgedByWords(row.judged_by)
+            : row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")])))));
     // The order a device page's Previous and Next follow.
     this._lists = { ...(this._lists || {}), [TAB_SLUG.Devices]: rows.map((row) => row.device_id) };
     const typeFilter = el("select", { class: "actinput", "aria-label": "Show one type",
@@ -2521,9 +2584,9 @@ class DeviceSentinelPanel extends HTMLElement {
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
       ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
         `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
-    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
+    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, simple ? null : typeFilter), finders,
       excludedAll.length ? el("p", { style: "margin:0" }, switchView("excluded")) : null,
-      this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
+      simple ? null : this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
     this._keepSearchFocus();
   }
 
@@ -3300,7 +3363,6 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _mutedCell(who, hub) {
     const mutes = who.actions.mutes;
-    const e = this._edit(who.device_id);
     const everything = mutes.everything && mutes.everything.on;
     const toggle = (kind, words) => {
       const m = mutes[kind] || { on: false, here: false };
@@ -3317,11 +3379,7 @@ class DeviceSentinelPanel extends HTMLElement {
         ...(fixed ? { "aria-disabled": "true" } : {}),
         onclick: () => {
           if (fixed) return;
-          if (kind === "everything" && !m.on) {
-            this._devEdit = { device: who.device_id, row: "muteall" };
-            this._paintDevicePage();
-            return;
-          }
+          // One press, no confirm: a second press undoes it (rule MUTE-09).
           this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind, on: !m.on }, "muted");
         } }, lit ? `\u2713 ${words}` : words);
     };
@@ -3347,17 +3405,12 @@ class DeviceSentinelPanel extends HTMLElement {
         : source.startsWith("integration: ")
           ? `the integration ${source.slice(13) === who.integration && who.integration_title ? who.integration_title : source.slice(13)}`
           : source;
-      parts.push(el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it in `,
-        this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
-    }
-    if (e && e.row === "muteall") {
-      parts.push(el("div", { class: "actnote ask", role: "alert" },
-        `Mute everything for ${who.name}? Device Sentinel will stop judging and reporting it for freeze, unavailable, battery and signal. It keeps learning.`),
-        el("div", { class: "actrow" },
-          el("button", { class: "chip", type: "button",
-            onclick: () => this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind: "everything", on: true }, "muted") },
-            "Mute everything"),
-          el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
+      // An integration's mute is changed on the Integrations tab (rule MUTE-03).
+      parts.push(source.startsWith("integration: ")
+        ? el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it on the `,
+          this._link("Integrations tab", this._tabPath("Integrations")), ".")
+        : el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it in `,
+          this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
     }
     parts.push(this._actNote("muted"));
     // Advanced only (rule MUTE-09).
@@ -3365,13 +3418,12 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
-  // Exclude one device (rule MUTE-03): the
-  // integration exclusion's rules for this device alone, asked once
-  // before it is done. Only the device's own exclusion is lifted here;
-  // an excluded integration is changed in Settings.
+  // Exclude one device (rule MUTE-03): the integration exclusion's
+  // rules for this device alone, one press with no confirm. Only the
+  // device's own exclusion is lifted here; an excluded integration is
+  // changed on the Integrations tab.
   _excludedCell(who) {
     const ex = who.actions.excluded || { here: false, integration: false };
-    const e = this._edit(who.device_id);
     const act = (on) => this._deviceAct({ type: "device_sentinel/device_exclude", device_id: who.device_id, on }, "excluded");
     const parts = [];
     // Another listing of the same hardware can take over the watching,
@@ -3382,23 +3434,16 @@ class DeviceSentinelPanel extends HTMLElement {
       // Watching stops at once; the history goes at midnight, and until
       // then cancelling loses nothing (rule MUTE-03).
       parts.push(el("span", {}, "Excluded. Device Sentinel has stopped watching this device and deletes its history at midnight. "
-        + "After that this page is gone, and the device is taken back in Device Sentinel's settings, Exclusions and Muting."),
+        + `After that this page is gone, and the device is taken back in Device Sentinel's settings, Exclusions and Muting.${takeover}`),
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(false) }, "Cancel the exclusion")));
     } else if (ex.integration) {
-      parts.push(el("div", { class: "actnote" }, "Its integration is excluded. Change it in ",
-        this._link("Device Sentinel's settings", SETTINGS_PATH), ", Configure, Exclusions and Muting."));
-    } else if (e && e.row === "exclude") {
-      parts.push(el("div", { class: "actnote ask", role: "alert" },
-        `Exclude ${who.name}? Device Sentinel will stop watching it and delete what it recorded at the next midnight. Take it back here before then and nothing is lost. After that, take it back in Device Sentinel's settings.${takeover}`),
-        el("div", { class: "actrow" },
-          el("button", { class: "chip", type: "button", onclick: () => act(true) }, "Exclude"),
-          el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
+      parts.push(el("div", { class: "actnote" }, "Its integration is excluded. Change it on the ",
+        this._link("Integrations tab", this._tabPath("Integrations")), "."));
     } else {
       // A watched device shows only the button (rule MUTE-03).
       parts.push(
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
-          onclick: () => { this._devEdit = { device: who.device_id, row: "exclude" }; this._paintDevicePage(); } },
-          "Exclude this device")));
+          onclick: () => act(true) }, "Exclude this device")));
     }
     parts.push(this._actNote("excluded"));
     return el("div", { class: "actcol" }, ...parts);
