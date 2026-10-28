@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -111,8 +111,9 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
 (async () => {
   console.log("The setting opens the dashboard");
   let { root, panel, window } = await open({ __mode: "simple", __path: "" });
-  check("Simple: Signal Trends and Integrations are off the tab row",
-    !tabs(root).includes("Signal Trends") && !tabs(root).includes("Integrations") && tabs(root).length === 6, tabs(root));
+  check("Simple: Signal Trends and Classification are off the tab row, Integrations on it",
+    !tabs(root).includes("Signal Trends") && !tabs(root).includes("Classification")
+    && tabs(root).includes("Integrations") && tabs(root).length === 6, tabs(root));
   check("the switch shows Simple pressed", modeButton(root, "Simple").getAttribute("aria-pressed") === "true");
   await click(modeButton(root, "Advanced"));
   check("the switch moves the page to Advanced", tabs(root).length === 8, tabs(root));
@@ -285,9 +286,11 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
 
   console.log("Simple's integration page");
   ({ root } = await open({ __mode: "simple", __path: "/integration/test", integration: () => JSON.parse(JSON.stringify(payloads.integration)) }));
-  check("no Exclude this integration", !anyButton(root, "Exclude this integration"), text(root).slice(0, 80));
+  // Simple excludes whole integrations, on the Integrations tab and on
+  // each integration's page (rule MUTE-03).
+  check("Exclude this integration, in Simple too", !!anyButton(root, "Exclude this integration"), text(root).slice(0, 80));
   ({ root } = await open({ __mode: "advanced", __path: "/integration/test", integration: () => JSON.parse(JSON.stringify(payloads.integration)) }));
-  check("Advanced keeps it", !!anyButton(root, "Exclude this integration"));
+  check("and in Advanced", !!anyButton(root, "Exclude this integration"));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

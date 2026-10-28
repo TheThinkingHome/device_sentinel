@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_no_hardware_pages.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_no_hardware_pages.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: each integration with no hardware of its own, and each
 // helper linked to a device, opens a page naming the devices it adds
 // entities to, and each entity opens Home Assistant's own window.
@@ -108,19 +108,16 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   await settle();
   const notes = rowOf(root, "Battery Notes");
   const rate = rowOf(root, "Derivative");
-  check("Battery Notes reads No hardware", notes && notes.cells[1].textContent === "No hardware");
-  check("Derivative reads Helper", rate && rate.cells[1].textContent === "Helper", rate && rate.cells[1].textContent);
+  // Under each name, what it is, its meaning when hovered (rule DASH-16).
+  const under = (row) => (row ? row.cells[0].querySelector(".small[title]") : null);
+  check("Battery Notes reads No hardware", under(notes) && under(notes).textContent.startsWith("No hardware"));
+  check("Derivative reads Helper", under(rate) && under(rate).textContent.startsWith("Helper"), rate && rate.cells[0].textContent);
   check("each opens a page", notes && notes.cells[0].querySelector("a") && rate && rate.cells[0].querySelector("a"));
-  const chip = [...root.querySelectorAll(".pane .chip")].find((c) => c.textContent.startsWith("Helper"));
-  check("a Helper filter counts it", chip && chip.textContent === "Helper 1", chip && chip.textContent);
-  const summary = root.querySelector(".pane > p").textContent;
-  check("the count of owners leaves both out", summary.startsWith("4 integrations in all. 2 own devices"), summary);
-  // The singular reads "to a device".
-  check("the summary names the helper", summary.includes("1 is a helper you linked to a device."), summary);
-  check("the key says what a helper is",
-    text(root).includes("Helper: A Home Assistant helper you linked to a device."), text(root).slice(-500));
-  check("the key says what no hardware is",
-    text(root).includes("No hardware: An add-on with no hardware of its own."), text(root).slice(-500));
+  check("neither has buttons", notes.cells[1].querySelectorAll("button").length === 0 && rate.cells[1].querySelectorAll("button").length === 0);
+  check("a helper's words say what a helper is",
+    /A Home Assistant helper you linked to a device\./.test(under(rate).getAttribute("title")));
+  check("no hardware's words say what it is",
+    /An add-on with no hardware of its own\./.test(under(notes).getAttribute("title")));
 
   console.log("A helper's page");
   ({ root, window, opened } = await open(`${PREFIX}/integration/derivative?from=integrations`, pageFor("derivative")));

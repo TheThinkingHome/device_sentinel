@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: names, Last seen and mutes on the device page and the
 // Problem List (rule MUTE-09). The Last
 // seen fallback is checked on real_device.json, a real mains plug's page
@@ -190,11 +190,12 @@ const realPage = (tweak = () => {}) => (m) => {
     check("A label's mute says so and names its section",
       notes.includes("Battery is muted by the label Quiet. Change it in Device Sentinel's settings, Configure, Low Battery."), notes);
     check("An integration's mute names the integration, MQTT, not the device's Zigbee2MQTT",
-      notes.includes("Freeze is muted by the integration MQTT. Change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection."), notes);
+      notes.includes("Freeze is muted by the integration MQTT. Change it on the Integrations tab."), notes);
     check("A mute set on the device itself, which the page can lift, adds no note",
       !notes.some((n) => n.startsWith("Signal is muted")), notes);
     const links = cell ? [...cell.querySelectorAll(".actnote a")] : [];
-    check("Each note links to Device Sentinel's settings", links.length === 2 && links.every((a) => a.getAttribute("href") === SETTINGS),
+    check("The label's note links to Device Sentinel's settings, the integration's to the Integrations tab",
+      links.length === 2 && links[0].getAttribute("href").endsWith("/integrations") && links[1].getAttribute("href") === SETTINGS,
       links.map((a) => a.getAttribute("href")));
   }
   {

@@ -1,7 +1,6 @@
-// File: tools/panel_checks/check_exclusion_card.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_exclusion_card.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: the Recommendations tab card that recommends excluding an
-// integration seen for the first time on a house that already exists
-// (rule MUTE-02), and Send to Battery Notes offered
+// integration, one card each (rules MUTE-02, REC-03), and Send to Battery Notes offered
 // after a battery type is saved from the Power Not Set card (rule DEV-09).
 // Run with: LC_ALL=en_US.UTF-8 node check_exclusion_card.js [path/to/panel.js]
 const fs = require("fs");
@@ -131,6 +130,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     await settle(); await settle(); await settle();
     const call = page.calls.find((c) => c.type === "device_sentinel/integration_exclude");
     check(`${mode}: Exclude excludes that integration`, !!call && call.domain === "cast" && call.on === true, call);
+    check(`${mode}: the brief says it was the Recommendations tab`, !!call && call.source === "recommendations_tab", call);
   }
 
   console.log("\nSend to Battery Notes after a save from the Power Not Set card (rule DEV-09)");

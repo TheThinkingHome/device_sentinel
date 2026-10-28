@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_no_hardware_integrations.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_no_hardware_integrations.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: an integration with no hardware of its own, as Battery
 // Notes is, on the Integrations tab.
 // Run with: LC_ALL=en_US.UTF-8 node check_no_hardware_integrations.js [path/to/panel.js]
@@ -89,40 +89,22 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   console.log("The Integrations tab, with Battery Notes");
   let { root } = await open(`${PREFIX}/integrations`, withNotes);
   check("the tab is open", selected(root) === "Integrations", selected(root));
-  // The tab opens on Watched; All shows every standing.
-  [...root.querySelectorAll(".pane .chip")].find((c) => c.textContent.startsWith("All")).click();
-  await settle();
   const notes = rowOf(root, "Battery Notes");
   const cells = notes ? [...notes.cells].map((td) => td.textContent) : [];
-  check("its STANDING reads No hardware", cells[1] === "No hardware", cells);
+  // Under its name, what it is; it owns no device, so it has no buttons
+  // and no trouble (rule DASH-16).
+  check("under its name it reads No hardware, on 3 devices", cells[0] && cells[0].includes("No hardware, on 3 devices"), cells);
+  check("its row has no buttons", notes && notes.cells[1].querySelectorAll("button").length === 0, notes && notes.cells[1].innerHTML);
+  check("the words say what no hardware means when hovered",
+    notes && /An add-on with no hardware of its own/.test(notes.cells[0].querySelector(".small[title]")?.getAttribute("title") || ""));
   // Its name opens a page of the devices it adds to.
   check("its name opens its page", notes && !!notes.cells[0].querySelector("a"), notes && notes.cells[0].innerHTML);
-  check("it says how many devices carry its entities", cells[0] && cells[0].includes("on 3 devices"), cells[0]);
   const owner = rowOf(root, "test");
   check("an owning integration still links to its page", owner && !!owner.cells[0].querySelector("a"));
-  const chip = [...root.querySelectorAll(".pane .chip")].find((c) => c.textContent.startsWith("No hardware"));
-  check("a No hardware filter counts it", chip && chip.textContent === "No hardware 1", chip && chip.textContent);
+  check("an owning integration has its five buttons", owner && owner.cells[1].querySelectorAll("button").length === 5);
   const summary = root.querySelector(".pane > p").textContent;
-  check("the count of owners leaves it out", summary.includes(". 2 own devices"), summary);
-  // Led by the total the All chip shows.
   const allChip = [...root.querySelectorAll(".chips .chip")].find((c) => c.textContent.startsWith("All "));
-  check("the summary opens with the All chip's total", !!allChip && summary.startsWith(`${allChip.textContent.slice(4)} integrations in all.`), [allChip && allChip.textContent, summary]);
-  check("the summary names it as having no hardware",
-    summary.includes("1 more has no hardware of its own and only adds entities to other integrations' devices."), summary);
-  check("the key names every standing", ["Watched", "Excluded", "Muted", "Service only", "No hardware"]
-    .every((s) => text(root).includes(`${s}: `)), text(root).slice(-600));
-  check("the key says what no hardware means",
-    text(root).includes("No hardware: An add-on with no hardware of its own."), text(root).slice(-400));
-  if (chip) chip.click();
-  await settle();
-  const shown = [...root.querySelectorAll(".pane tbody tr")].map((tr) => tr.cells[0].textContent);
-  check("the filter shows it alone", shown.length === 1 && shown[0].startsWith("Battery Notes"), shown);
-
-  console.log("The Integrations tab, with none");
-  ({ root } = await open(`${PREFIX}/integrations`));
-  const plain = root.querySelector(".pane > p").textContent;
-  check("the summary says nothing about no hardware", !plain.includes("no hardware"), plain);
-  check("the key is still there", text(root).includes("Standing, by kind:"));
+  check("the summary opens with the All chip's total", !!allChip && summary.startsWith(`${allChip.textContent.slice(4)} integrations,`), [allChip && allChip.textContent, summary]);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

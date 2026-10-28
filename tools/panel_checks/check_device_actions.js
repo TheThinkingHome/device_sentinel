@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.27.11 (2026-10-28)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -156,11 +156,9 @@ const excludedPage = (excluded) => (p) => {
   await click(battery);
   check("Muted: a fixed chip sends nothing", !calls.some((c) => c.type === "device_sentinel/device_mute"));
   await click(buttonIn(rowCell(root, "Muted"), "Mute everything"));
-  check("Muted: Mute everything asks first", /Mute everything for Button Randy Night Table\?/.test(rowCell(root, "Muted").textContent)
-    && !calls.some((c) => c.type === "device_sentinel/device_mute"));
-  const confirmButton = [...rowCell(root, "Muted").querySelectorAll("button")].filter((b) => b.textContent === "Mute everything").pop();
-  await click(confirmButton);
-  check("Muted: confirming sends the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true));
+  check("Muted: Mute everything sends at once, with no question",
+    calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true)
+    && !/\?/.test(rowCell(root, "Muted").textContent), rowCell(root, "Muted").textContent);
 
   // Mute everything on: the other four show on too, filled, and cannot
   // be pressed (rule MUTE-09).
@@ -301,20 +299,9 @@ const excludedPage = (excluded) => (p) => {
     cell.textContent === "Exclude this device" && buttons(cell).join() === "Exclude this device", cell.textContent);
   cell.querySelector("button").click();
   await settle();
-  cell = rowCell(root, "Excluded");
-  check("It asks once, naming the device and what happens at midnight",
-    /^Exclude .+\? Device Sentinel will stop watching it and delete what it recorded at the next midnight\. Take it back here before then and nothing is lost\. After that, take it back in Device Sentinel's settings\.Exclude/.test(cell.textContent)
-    && buttons(cell).join() === "Exclude,Cancel", cell.textContent);
-  check("Asking sends nothing", !calls.some((c) => c.type === "device_sentinel/device_exclude"));
-  [...cell.querySelectorAll("button")].find((b) => b.textContent === "Cancel").click();
-  await settle();
-  check("Cancel goes back to the button", buttons(rowCell(root, "Excluded")).join() === "Exclude this device");
-  rowCell(root, "Excluded").querySelector("button").click();
-  await settle();
-  [...rowCell(root, "Excluded").querySelectorAll("button")].find((b) => b.textContent === "Exclude").click();
-  await settle();
   const sent = calls.filter((c) => c.type === "device_sentinel/device_exclude");
-  check("Exclude sends the device and on: true", sent.length === 1 && sent[0].on === true && sent[0].device_id === DEVICE, sent);
+  check("One press excludes, with no question: it sends the device and on: true",
+    sent.length === 1 && sent[0].on === true && sent[0].device_id === DEVICE, sent);
 
   ({ root, calls } = await open({}, excludedPage({ here: true, integration: false })));
   cell = rowCell(root, "Excluded");
@@ -329,17 +316,15 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}, excludedPage({ here: false, integration: true })));
   cell = rowCell(root, "Excluded");
-  check("An excluded integration is named, with the way to Settings, and no button",
-    /^Its integration is excluded\. Change it in Device Sentinel's settings, Configure, Exclusions and Muting\./.test(cell.textContent)
+  check("An excluded integration is named, with the way to the Integrations tab, and no button",
+    /^Its integration is excluded\. Change it on the Integrations tab\./.test(cell.textContent)
     && buttons(cell).length === 0 && !!cell.querySelector("a"), cell.textContent);
 
   ({ root } = await open({}, (p) => {
-    excludedPage({ here: false, integration: false })(p);
+    excludedPage({ here: true, integration: false })(p);
     p.identity.same_hardware = { watched_through: DEVICE, devices: [{ device_id: DEVICE }, { device_id: "other" }] };
   }));
-  rowCell(root, "Excluded").querySelector("button").click();
-  await settle();
-  check("With another listing of the same box, the question says it may take over",
+  check("With another listing of the same hardware, the excluded row says it may take over",
     /If another listing of the same hardware can be watched, Device Sentinel watches the hardware through it instead\./.test(rowCell(root, "Excluded").textContent),
     rowCell(root, "Excluded").textContent);
 
