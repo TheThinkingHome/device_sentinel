@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.11 (2026-10-28)
+// File: panel.js, Version: 0.27.12 (2026-10-28)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -331,6 +331,19 @@ const COLUMN_SHARE = {
   "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
   "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "GAP STARTED": 1.4,
 };
+// Battery Trends' tables share one scale (their "data-base"), so DEVICE,
+// TYPE and LEVEL sit in the same place in each, and a table with fewer
+// columns ends short of the edge rather than spreading out (rule DASH-04).
+const BATTERY_SHARE = {
+  "DEVICE": 3, "MAKER AND MODEL": 3, "TYPE": 1.7, "LEVEL": 0.8, "CELLS": 0.8, "READING": 1,
+  "TYPICAL RATE": 1.2, "TYPICAL LEVEL": 0.9, "LOWEST CELL": 0.9, "WHICH ONE": 2.2,
+  "SINCE": 1.4, "PACE": 1.2, "LEFT": 1.6, "4 WEEKS": 1, "DAYS RECORDED": 1.35, "STEPS": 1.3,
+  "CELL": 1.2, "MODEL, A WEEK": 1.1,
+};
+const BATTERY_BASE = 13.4;
+// The Integrations tab: the five buttons get the room they need, so
+// none breaks inside a word (rule DASH-16).
+const INTEGRATION_SHARE = { "INTEGRATION": 3, "EXCLUDE AND MUTE": 4.6, "TROUBLE": 1.6 };
 // The history table's own widths, the ones its printout uses.
 const HISTORY_WIDTHS = [8, 8, 11, 9, 11, 9, 44];
 
@@ -342,7 +355,11 @@ function pinTable(table) {
   const count = heads ? heads.length : (table.rows[0] ? table.rows[0].cells.length : 0);
   if (!count) return;
   let shares;
-  if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
+  const base = Number(table.dataset.base) || 0;
+  const own = table.dataset.shares === "battery" ? BATTERY_SHARE
+    : table.dataset.shares === "integrations" ? INTEGRATION_SHARE : null;
+  if (own && heads) shares = heads.map((head) => own[head] || 1);
+  else if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
   else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
   else {
     shares = heads.map((head, index) => {
@@ -351,6 +368,7 @@ function pinTable(table) {
     });
   }
   const total = shares.reduce((sum, share) => sum + share, 0);
+  const scale = Math.max(base, total);
   const group = document.createElement("colgroup");
   for (const share of shares) {
     const col = document.createElement("col");
@@ -359,10 +377,12 @@ function pinTable(table) {
   }
   table.prepend(group);
   table.classList.add("pinned");
+  // On a shared scale the table is only as wide as its columns.
+  if (base) table.style.width = `${((total / scale) * 100).toFixed(3)}%`;
   // Seventy pixels per share: on a phone the table scrolls sideways in
   // its box rather than crushing its columns.
   if (table.parentElement && table.parentElement.classList.contains("scroll")) {
-    table.style.minWidth = `${Math.round(total * 70)}px`;
+    table.style.minWidth = `${Math.round(total * (table.dataset.shares === "integrations" ? 125 : 70))}px`;
   }
 }
 
@@ -571,6 +591,15 @@ const STYLE = `
   tr.excluded .chip:not(.on) { opacity: 0.4; border-style: dashed; }
   .recommended { color: var(--warning-color, #b26a00); font-size: 13px; margin-top: 2px; line-height: 1.4; }
   td.trouble { color: var(--error-color, #db4437); }
+  /* The five buttons stay on one line, each word whole. */
+  .intbuttons { flex-wrap: nowrap; gap: 6px; }
+  .intbuttons .chip { white-space: nowrap; padding: 0 8px; text-align: center; }
+  /* Each button keeps one width, lit or not, so they stand in columns. */
+  .intbuttons .chip:nth-child(1) { min-width: 92px; }
+  .intbuttons .chip:nth-child(2) { min-width: 134px; }
+  .intbuttons .chip:nth-child(3) { min-width: 108px; }
+  .intbuttons .chip:nth-child(4) { min-width: 114px; }
+  .intbuttons .chip:nth-child(5) { min-width: 108px; }
   .figures th, .figures td { padding: 6px 8px; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); align-items: center; }
   .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
@@ -1622,7 +1651,7 @@ class DeviceSentinelPanel extends HTMLElement {
           this._paintIntegrations();
         },
       }, `${label} ${counts[key]}`)));
-    const table = el("table", {},
+    const table = el("table", { "data-shares": "integrations" },
       el("thead", {}, el("tr", {},
         el("th", {}, header), el("th", {}, "EXCLUDE AND MUTE"), el("th", {}, "TROUBLE"))),
       el("tbody", {}, ...rows.map((row) => el("tr", { class: row.excluded ? "excluded" : "" },
@@ -1645,7 +1674,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", { class: "trouble" }, row.excluded ? "" : this._troubleText(row))))));
     const note = this._integrationNote && this._integrationNote.domain === "*"
       ? el("p", { class: "actnote refused" }, this._integrationNote.text) : null;
-    this._pane.replaceChildren(summary, how, chips, note, el("div", { class: "scroll" }, table));
+    this._pane.replaceChildren(...[summary, how, chips, note, el("div", { class: "scroll" }, table)].filter((part) => part));
   }
 
   // An integration's five buttons: one press each, no confirm, and a
@@ -1682,7 +1711,7 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, lit ? `✓ ${words}` : words);
     };
-    return el("div", { class: "actrow", style: "flex-wrap:nowrap" }, exclude,
+    return el("div", { class: "actrow intbuttons" }, exclude,
       mute("everything", "Mute everything"), mute("freeze", "Mute freeze"),
       mute("battery", "Mute battery"), mute("signal", "Mute signal"));
   }
@@ -2127,7 +2156,7 @@ class DeviceSentinelPanel extends HTMLElement {
     });
     // Simple leaves out TYPICAL LEVEL, LOWEST CELL and WHICH ONE (rule DASH-04).
     const fewer = simpleView;
-    const modelTable = el("table", {},
+    const modelTable = el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
       el("thead", {}, el("tr", {},
         this._sortHead(this._modelSort, "MAKER AND MODEL", "name", again),
         this._sortHead(this._modelSort, "TYPE", "type", again),
@@ -2159,7 +2188,7 @@ class DeviceSentinelPanel extends HTMLElement {
       reading: (row) => row.reading || "",
     });
     const fallingTable = falling.length
-      ? el("div", { class: "scroll" }, el("table", {},
+      ? el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
         el("thead", {}, el("tr", {},
           this._sortHead(this._batterySort, "DEVICE", "name", again),
           this._sortHead(this._batterySort, "TYPE", "type", again),
@@ -2188,7 +2217,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const lowRows = this._sortRows(low, this._lowSort, { name: byName, type: byType, level: (row) => row.level,
       since: (row) => row.since || "" });
     const lowTable = low.length
-      ? el("div", { class: "scroll" }, el("table", {},
+      ? el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
         el("thead", {}, el("tr", {},
           this._sortHead(this._lowSort, "DEVICE", "name", again),
           this._sortHead(this._lowSort, "TYPE", "type", again),
@@ -2203,7 +2232,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const steadyRows = this._sortRows(steadyAll, this._steadySort, { name: byName, type: byType,
       level: (row) => row.level, month: (row) => row.month_drop || 0, days: (row) => row.days || 0,
       steps: (row) => row.steps || "" });
-    const steady = el("div", { class: "scroll" }, el("table", {},
+    const steady = el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
       el("thead", {}, el("tr", {},
         this._sortHead(this._steadySort, "DEVICE", "name", again),
         this._sortHead(this._steadySort, "TYPE", "type", again),
@@ -2231,7 +2260,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // How fast the others of its model fall (rule BAT-16).
         el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
     const unreadable = unreadableRows.length
-      ? el("div", {}, el("div", { class: "scroll" }, el("table", {},
+      ? el("div", {}, el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
         el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
         el("tbody", {}, ...unreadableRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
