@@ -36,9 +36,9 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 
 ### SIG-06 The Floor
 
-**A device's floor is the lowest of its daily P5 levels over the last 30 days, with no day discarded. It judges nothing. Device Telemetry shows the 30 days newest first, the lowest day in bold and each bad signal day struck through.**
+**A device's floor is the lowest of its daily P5 levels over the last 30 calendar days, ending yesterday, with no day discarded; a day without readings is left empty and shows a dash. It judges nothing. Device Telemetry shows the 30 days newest first, the lowest day in bold and each bad signal day struck through.**
 
-*Proof:* [`test_telemetry_signal_columns.py`](../tests/test_telemetry_signal_columns.py).
+*Proof:* [`test_telemetry_signal_columns.py`](../tests/test_telemetry_signal_columns.py), [`test_signal_lows_by_day.py`](../tests/test_signal_lows_by_day.py).
 
 ### SIG-07 A Railed Signal
 
@@ -54,9 +54,9 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 
 ### SIG-09 Signal: Rails and Signal: Weak
 
-**Two sensors, counted apart as Battery: Low and Battery: Falling are. Signal: Rails counts the railed devices. Signal: Weak counts the devices whose last recorded day was a bad signal day, leaving out railed and muted devices, so one fault never counts twice. A weak device leaves the count the next day its signal holds, with nothing to acknowledge, because a weak day is a reading, not an incident.**
+**Two sensors, counted apart as Battery: Low and Battery: Falling are. Signal: Rails counts the railed devices. Signal: Weak counts the devices whose last recorded day was a bad signal day, counting watched devices only and leaving out railed devices and those muted for signal or for everything, so one fault never counts twice. A weak device leaves the count the next day its signal holds, with nothing to acknowledge, because a weak day is a reading, not an incident.**
 
-*Proof:* [`test_signal_stats.py`](../tests/test_signal_stats.py), [`test_entity_defaults.py`](../tests/test_entity_defaults.py).
+*Proof:* [`test_signal_stats.py`](../tests/test_signal_stats.py), [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
 
 ### SIG-10 No Signal Alert Yet
 
@@ -84,7 +84,7 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 
 ### SIG-14 Zigbee Parent Tracking
 
-**Retired.** Device Sentinel does not record which router or coordinator a Zigbee device connects through. It may return as a planned feature.
+**Retired.** Device Sentinel does not record which router or coordinator a Zigbee device connects through.
 
 ### SIG-15 A Signal Trail on a Freeze
 

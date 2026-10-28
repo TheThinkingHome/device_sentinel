@@ -6,7 +6,7 @@ How Device Sentinel's code is written and checked: the code standard, comments a
 
 ### CODE-01 Docstrings and Comments
 
-**Each module and each function that is not trivial opens with a docstring in plain English that gives the decision and the reason for it; the same text is never repeated in a comment block. Inline comments say why, never narrate what the line does. Names are written out in full, except the standard Python short names such as `err`, `msg` and `ent`. A comment or docstring stands on its own: the reason comes first in plain words, and the ID of the rule in this rulebook follows at the end as a bookmark, written "(rule [UP-05](Rulebook__07_UP_Upstream_Outages.md#up-05-devices-behind-a-down-upstream))". Comments and docstrings cite rule IDs and nothing else: no decision number, review, release history, person or date, since the rulebook and its record hold those. A version number stays only where the code itself compares with that version. `tools/check_comments.py` lists any line that breaks this, and `tools/compare_code.py` proves a change to comments alone changes no code.**
+**Each module and each function that is not trivial opens with a docstring in plain English that gives the decision and the reason for it; the same text is never repeated in a comment block. Inline comments say why, never narrate what the line does. Names are written out in full, except the standard Python short names such as `err`, `msg` and `ent`. A comment or docstring stands on its own: the reason comes first in plain words, and the ID of the rule in this rulebook follows at the end as a bookmark, written "(rule [UP-05](Rulebook__07_UP_Upstream_Outages.md#up-05-devices-behind-a-down-upstream))". Comments and docstrings cite rule IDs and nothing else: no decision number, review, release history, person or date, since the rulebook and its record hold those. A version number stays only where the code itself compares with that version. The code's own text, its log lines, report wording, test messages and names, carries no decision number either. `tools/check_comments.py` lists any line that breaks this, a phrase split across two lines included, and `tools/compare_code.py` proves a change to comments alone changes no code, or with `--text`, that a change to words alone changes no logic.**
 
 *Proof:* [`test_rule_citations.py`](../tests/test_rule_citations.py).
 
@@ -14,13 +14,13 @@ How Device Sentinel's code is written and checked: the code standard, comments a
 
 **Each rule ID cited in the code or the tests must exist in the rulebook, and a test checks it. The check proves that a cited rule exists, not that it is the right one.**
 
-*Proof:* `test_citations.py`.
+*Proof:* [`test_rule_citations.py`](../tests/test_rule_citations.py).
 
 ### CODE-03 The Header on Each File
 
-**Each Python and YAML file opens with five lines, above its docstring: the copyright line, the GPL-3.0-or-later line pointing at the repository's LICENSE, the project line naming The Thinking Home and xeazy.com, the article link, and the repository link. A new file carries it from the start. JSON files have no comments and are covered by the LICENSE and the README.**
+**Each Python, JavaScript and YAML file opens with a header above its docstring: the copyright line, the GPL-3.0-or-later line pointing at the repository's LICENSE, the project line naming The Thinking Home and xeazy.com, the article link where the file has one, the repository link, and the stamp line naming the file, the release and the date. A new file carries it from the start. JSON files have no comments and are covered by the LICENSE and the README.**
 
-*Proof:* none found.
+*Proof:* [`tools/check_comments.py`](../tools/check_comments.py) reads the stamp line; no test checks the header.
 
 ### CODE-04 Lint and the Type Checker
 

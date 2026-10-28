@@ -4,7 +4,7 @@
 
 **What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today; under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings cite a rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))", after the reason in plain words.
 
-**Status.** Adopted. The code was brought in line with these rules in the 0.27 line, and from 0.27.10 every comment and docstring cites them by ID. A change to how Device Sentinel behaves changes its rule here first.
+**Status.** Adopted. The code follows these rules, and every comment and docstring cites them by ID. A change to how Device Sentinel behaves changes its rule here first.
 
 ## How the IDs Work
 
@@ -15,12 +15,12 @@
 
 ## Sections
 
-289 rules in all.
+290 rules in all.
 
 | Code | Section | Rules | File |
 |---|---|---|---|
 | GEN | General | 10 | [`Rulebook__01_GEN_General.md`](Rulebook__01_GEN_General.md) |
-| WATCH | What Is Watched | 11 | [`Rulebook__02_WATCH_What_Is_Watched.md`](Rulebook__02_WATCH_What_Is_Watched.md) |
+| WATCH | What Is Watched | 12 | [`Rulebook__02_WATCH_What_Is_Watched.md`](Rulebook__02_WATCH_What_Is_Watched.md) |
 | MUTE | Muting and Exclusion | 10 | [`Rulebook__03_MUTE_Muting_and_Exclusion.md`](Rulebook__03_MUTE_Muting_and_Exclusion.md) |
 | DEV | Device Identity | 16 | [`Rulebook__04_DEV_Device_Identity.md`](Rulebook__04_DEV_Device_Identity.md) |
 | FRZ | Freeze | 24 | [`Rulebook__05_FRZ_Freeze.md`](Rulebook__05_FRZ_Freeze.md) |

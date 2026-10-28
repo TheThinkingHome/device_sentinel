@@ -12,15 +12,15 @@ Which devices Device Sentinel watches, what it reads them through, which it sets
 
 ### WATCH-02 Only a Device's Own Entities Speak for It
 
-**An entity another integration adds to a device, as Battery Notes or a helper does, never counts as the device reporting and never decides whether it is unavailable. A reading (battery, signal, last seen) is taken from an entity of the device's own integration wherever it has one. Another integration's reading is used only where the device has none of its own, and the choice is made by comparison, never by the order the registry lists them; the diagnostics name the entity chosen and whose it is.**
+**An entity another integration adds to a device, as Battery Notes or a helper does, never counts as the device reporting and never decides whether it is unavailable. A reading (battery, signal, last seen) is taken from an entity of the device's own integration wherever it has one. Another integration's reading is used only where the device has none of its own, and a battery or signal reading is chosen by comparison, never by the order the registry lists them, while two Last Seen entities of the same ownership are taken in the registry's order; the diagnostics name the entity chosen and whose it is.**
 
-*Proof:* [`test_foreign_entities.py`](../tests/test_foreign_entities.py), [`test_own_platform.py`](../tests/test_own_platform.py).
+*Proof:* [`test_foreign_entities.py`](../tests/test_foreign_entities.py), [`test_own_platform.py`](../tests/test_own_platform.py), [`test_signal_own_first.py`](../tests/test_signal_own_first.py).
 
 ### WATCH-03 Set Aside
 
 **A device that is set aside is never judged or reported, and keeps its record unless it was excluded. The Classification tab gives one reason, the first that fits in this order: excluded (see [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md)), service, disabled, duplicate coordinator, clone, nothing switched on that can report, no entities. A service is a device Home Assistant marks as one, such as an add-on. A disabled device is one disabled by a person, by its integration or with its config entry. No entities means no entities of its own that could report (firmware notices and buttons do not count, switched on or off), so it is never judged never reported. A device whose entities exist but are all switched off is not set aside: it stays watched, and its never-reported row is the prompt to switch them on.**
 
-*Proof:* [`test_set_aside.py`](../tests/test_set_aside.py), [`test_classification.py`](../tests/test_classification.py), [`test_set_aside_verdict.py`](../tests/test_set_aside_verdict.py).
+*Proof:* [`test_set_aside.py`](../tests/test_set_aside.py), [`test_classification.py`](../tests/test_classification.py), [`test_set_aside_verdict.py`](../tests/test_set_aside_verdict.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
 
 ### WATCH-04 Notices and Buttons Are Never the Device
 
@@ -56,7 +56,7 @@ Which devices Device Sentinel watches, what it reads them through, which it sets
 
 **Each list, report, sensor and count that walks devices reads the watched devices only, so a device set aside or excluded never reaches the Problem List, the brief or a trend. The Classification tab and the Excluded list, which exist to show them, are the exceptions.**
 
-*Proof:* [`test_ignored_integrations.py`](../tests/test_ignored_integrations.py), [`test_removed_hold.py`](../tests/test_removed_hold.py).
+*Proof:* [`test_ignored_integrations.py`](../tests/test_ignored_integrations.py), [`test_removed_hold.py`](../tests/test_removed_hold.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
 
 ### WATCH-10 The Startup Grace
 
@@ -66,9 +66,9 @@ Which devices Device Sentinel watches, what it reads them through, which it sets
 
 ### WATCH-11 Registry Changes
 
-**A change to Home Assistant's devices, entities or labels is read at once when nothing was read in the last 2 seconds, and otherwise within 2 seconds, so a burst of changes is read once. A removed device that was muted is named in the log at once, since nothing else keeps its name once it is gone.**
+**A change to Home Assistant's devices, entities or labels is read at once when nothing was read in the last 2 seconds, and otherwise within 2 seconds, so a burst of changes is read at once and once more after it ends. A removed device that was muted is named in the log at once, since nothing else keeps its name once it is gone.**
 
-*Proof:* [`test_registry_bursts.py`](../tests/test_registry_bursts.py).
+*Proof:* [`test_registry_bursts.py`](../tests/test_registry_bursts.py), [`test_stale_picks.py`](../tests/test_stale_picks.py).
 
 ### WATCH-12 A Value Handed Back at a Start
 

@@ -56,10 +56,10 @@ What Device Sentinel is, what it watches, the Home Assistant it needs, how light
 
 **A duration reads the way the Daily Brief writes it, in a table cell and in a sentence alike. Below two days it takes a short form: seconds below 90 seconds, minutes below 90 minutes, then hours with one decimal (45s, 74m, 4.1h). From two days up it is said in words, in halves rounded down so the number is never larger than the truth: days, then weeks from a week and a half ("2 and a half days", "a week and a half", "6 weeks"). In a report's gap table, a gap held at the length set in How Much History to Keep reads "more than" it.**
 
-*Proof:* [`test_long_durations.py`](../tests/test_long_durations.py) (the formatters); no test checks a table cell on each surface.
+*Proof:* [`test_long_durations.py`](../tests/test_long_durations.py), [`test_report_spans_in_words.py`](../tests/test_report_spans_in_words.py).
 
 ### GEN-10 The Log
 
-**Home Assistant's log is for errors and debugging. Device Sentinel writes there an error, a fault that happens while nobody is watching, and what is needed to debug or find one. Anything else is not logged, and a routine count or summary is written at debug level at most.**
+**Home Assistant's log is for errors and debugging. Device Sentinel writes there an error, a fault that happens while nobody is watching, and what is needed to debug or find one. Anything else is not logged. A routine count or summary is written at debug level at most; a change Device Sentinel makes to its own storage, such as an upgrade filling fields, records deleted at the fold or a backup taken, is logged once at info.**
 
 *Proof:* [`test_log_lines.py`](../tests/test_log_lines.py).

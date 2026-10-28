@@ -26,7 +26,7 @@ What Device Sentinel raises in Home Assistant's Settings, Repairs, and how those
 
 **A card is removed at the first judging moment after its condition clears ([REP-07](#rep-07-when-cards-are-judged)), or by its fix. A storage card the person put down with Submit stays gone until a new repair to storage. Cards are not saved across a restart: each start judges the conditions again and raises what still holds, after the startup grace, so a card can never outlive what it describes.**
 
-*Proof:* [`test_repairs.py`](../tests/test_repairs.py), [`test_restore.py`](../tests/test_restore.py).
+*Proof:* [`test_repairs.py`](../tests/test_repairs.py), [`test_restore.py`](../tests/test_restore.py), [`test_storage_card_acknowledged.py`](../tests/test_storage_card_acknowledged.py).
 
 ### REP-05 Severity
 

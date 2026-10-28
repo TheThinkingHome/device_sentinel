@@ -14,7 +14,7 @@ What a device is called, what kind of device it is, what powers it, how it conne
 
 **Each surface that shows a stored name, the brief and Repeat Offenders included, shows the name the device has today, never the name it had when the row was written. Only a device Home Assistant no longer knows is named by what it was called then.**
 
-*Proof:* [`test_brief_wording.py`](../tests/test_brief_wording.py).
+*Proof:* [`test_brief_wording.py`](../tests/test_brief_wording.py), [`test_name_today.py`](../tests/test_name_today.py).
 
 ### DEV-03 Long Names
 
@@ -42,9 +42,9 @@ What a device is called, what kind of device it is, what powers it, how it conne
 
 ### DEV-07 The Power Row
 
-**The device page's Power row reads, for example, "2× CR2032", "USB Powered" or "Not known", with an icon for where the answer came from and a pencil. The library's icon is redrawn from Battery Notes' own, in light and dark, and opens the Battery Notes repository in a new tab; a person's answer carries Device Sentinel's shield. Hovering names the source, and on a device covered by another device's answer it names that device, "Entered on Button Master Shower". An answer that covers a model reads "set on Button Master Shower, covers 4 devices of this model", and the brief records where it was set: "power set to 2× AAA, for all 4 devices of this model, from its device page", or "from the Recommendations tab". Power is set only on the device page and in the Recommendations tab's Power Not Set list; the battery problem row and the Daily Brief show it as plain text, with no icons. In Simple the row is read-only, and a device with no answer reads "Not known" there as in Advanced.**
+**The device page's Power row reads, for example, "2× CR2032", "USB Powered" or "Not known", with an icon for where the answer came from and a pencil. The library's icon is redrawn from Battery Notes' own, in light and dark, and opens the Battery Notes repository in a new tab; a person's answer carries Device Sentinel's shield. Hovering names the source, and on a device covered by another device's answer it names that device, "Entered on Button Master Shower". An answer that covers a model reads "set on Button Master Shower, covers 4 devices of this model", and the brief records where it was set: "power set to 2× AAA, for all 4 devices of this model, from its device page", or "from the Recommendations tab". Power is set only on the device page and in the Recommendations tab's Power Not Set list; the battery problem row and the Daily Brief show it as plain text, with no icons. In Simple the row is read-only, and a device with no answer reads "Not known" there as in Advanced. The Type row shows a person's answer the same way: the shield, the hover naming where it was entered, and the line saying which device set it and how many devices of the model it covers.**
 
-*Proof:* `check_power_row.js`, `check_device_page_layout.js`, `check_simple_dashboard.js`, `check_recommendations.js`, [`test_power_source.py`](../tests/test_power_source.py), [`test_action_source.py`](../tests/test_action_source.py).
+*Proof:* `check_power_row.js`, `check_device_page_layout.js`, `check_simple_dashboard.js`, `check_recommendations.js`, [`test_power_source.py`](../tests/test_power_source.py), [`test_action_source.py`](../tests/test_action_source.py), `check_device_type.js`.
 
 ### DEV-08 The Pencil's Choices
 

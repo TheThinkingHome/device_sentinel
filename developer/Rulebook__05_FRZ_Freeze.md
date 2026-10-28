@@ -30,7 +30,8 @@ How Device Sentinel learns each device's reporting rhythm, how long it waits bef
 
 ### FRZ-05 The Wait in Use
 
-**The wait in use is the shorter of the two rules; with only the Trimmed Maximum ready, or on a tie, it is the Trimmed Maximum. The Log-Normal Percentile starts its count again after a firmware update, a battery replacement Device Sentinel detects from the level, a re-pair, three days in a row set aside as longer than the device's usual, or a press of "Use the 14-Day Trimmed Maximum" on the device page; the device then waits on the Trimmed Maximum until it has 28 new days. A replacement date a person enters does not start the count again, and neither does a reconfigure or a removal, since neither changes how a device reports. On ZHA a re-pair is a join followed by its setup. Zigbee2MQTT does not say which device was paired, so there a re-pair is a device removed and added again while pairing is open, or one that was frozen, unavailable or silent past its window and comes back while pairing is open; a device reporting on its rhythm while another is paired keeps its count. The button shows only while the Log-Normal Percentile is in use, and while the count runs again the device page says why.**
+**The wait in use is the shorter of the two rules; with only the Trimmed Maximum ready, or on a tie, it is the Trimmed Maximum. The Log-Normal Percentile starts its count again after a firmware update, a battery replacement Device Sentinel detects from the level, a re-pair, three days in a row set aside as longer than the device's usual, or a press of "Use the 14-Day Trimmed Maximum" on the device page; the device then waits on the Trimmed Maximum until it has 28 new days. A replacement date a person enters does not start the count again, and neither does a reconfigure or a removal, since neither changes how a device reports. On ZHA a re-pair is a join followed by its setup. Zigbee2MQTT does not say which device was paired, so there a re-pair is a device removed and added again while pairing is open or within 120 seconds after it closes, or one that was frozen, unavailable or silent past its window and comes back in that time; a device reporting on its rhythm while another is paired keeps its count. The button shows only while the Log-Normal Percentile is in use, and while the count runs again the device page says why.**
+
 *Proof:* [`test_freeze_rules.py`](../tests/test_freeze_rules.py), [`test_repair_restarts_count.py`](../tests/test_repair_restarts_count.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`tools/panel_checks/check_rhythm_rules.js`](../tools/panel_checks/check_rhythm_rules.js).
 
 ### FRZ-06 The Freeze Window and Its Sliders
@@ -41,15 +42,15 @@ How Device Sentinel learns each device's reporting rhythm, how long it waits bef
 
 ### FRZ-07 A Device Is Frozen
 
-**An armed device is frozen when its silence, counted only over time Device Sentinel was listening ([FRZ-10](#frz-10-only-watched-silence-counts-against-a-device)), reaches its freeze window while it is not judged unavailable. A device its stack speaks for is never newly judged frozen: an ESPHome device that does not deep-sleep while Home Assistant's connection to it is up, whatever its entities read, a Matter device not behind a bridge, of a type that reports only on use, while any of its entities reads available, and a Lutron hub and the devices registered through it (see [STACK](Rulebook__08_STACK_Stacks.md)). Unknown counts as nothing, so a device whose deciding entities read only unknown is still judged by its freeze clock, unless its stack speaks for it as above (see [UNAV](Rulebook__06_UNAV_Unavailable.md)). The verdict is dated from the moment the counted silence reached the window. Its entity is refreshed only when the verdict changes, never on each reading. A frozen verdict clears the moment the device reports.**
+**An armed device is frozen when its silence, counted only over time Device Sentinel was listening ([FRZ-10](#frz-10-only-watched-silence-counts-against-a-device)), reaches its freeze window while it is not judged unavailable. A device its stack speaks for is never newly judged frozen: an ESPHome device that does not deep-sleep while Home Assistant's connection to it is up, whatever its entities read, a Matter device not behind a bridge, of a type that reports only on use, while any of its entities reads available, and a Lutron hub and the devices registered through it (see [STACK](Rulebook__08_STACK_Stacks.md)). Unknown counts as nothing, so a device whose deciding entities read only unknown is still judged by its freeze clock, unless its stack speaks for it as above (see [UNAV](Rulebook__06_UNAV_Unavailable.md)). The verdict is dated from the moment the counted silence reached the window. Its entity is refreshed only when the verdict changes, never on each reading. A frozen verdict clears the moment the device reports. A device never judged for freezing shows, in place of a window on its page and on the Devices tab, "Judged by its hub, <hub>" with a link to the hub, or "Judged by its connection" for a hub itself and for an ESPHome device whose only entities switched on are notices or buttons.**
 
-*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_esphome_connection.py`](../tests/test_esphome_connection.py).
+*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_esphome_connection.py`](../tests/test_esphome_connection.py), [`test_judged_by.py`](../tests/test_judged_by.py), [`tools/panel_checks/check_judged_by_line.js`](../tools/panel_checks/check_judged_by_line.js).
 
 ### FRZ-08 Silence Episodes
 
 **A silence episode opens once a device's silence passes the rhythm in use ([FRZ-05](#frz-05-the-wait-in-use)) plus half its grace, halfway to its freeze window, so it always opens before the device is called frozen. It closes when the device reports, or earlier when a restart or a bridge coming back cuts it short; then the record names that cause and the time from it to the device's next report. The share is fixed, not a setting. Episodes are a record for reading; nothing is judged on them.**
 
-*Proof:* [`test_reports.py`](../tests/test_reports.py).
+*Proof:* [`test_reports.py`](../tests/test_reports.py), [`test_silence_episode_rhythm.py`](../tests/test_silence_episode_rhythm.py).
 
 ### FRZ-09 Never Reported
 
@@ -102,6 +103,7 @@ How Device Sentinel learns each device's reporting rhythm, how long it waits bef
 ### FRZ-17 A ZHA Device Handled by a Person
 
 **ZHA names the device a person re-pairs, reconfigures or removes, seconds before its entities return, and that device's gap is set aside; the mark lasts 60 seconds after ZHA's last message about the device. A full initialisation counts only after a raw initialisation for the same address (a Reconfigure, or a new device being paired), or after a join while pairing is open, within 15 minutes and until ZHA calls the device initialized. A full initialisation alone, or a join with pairing closed, sets nothing aside. Pairing is open for as long as the zha.permit action asks, or up to 254 seconds after ZHA's Add Device page last relays its log. ZHA keeps no pairing window of its own, and pairing being open never sets a gap aside by itself: it only decides whether a join counts. A join opened from a button on a router or by Touchlink is not seen, and neither is a reset device that re-pairs and gets its old network address back, since ZHA sends nothing about it.**
+
 *Proof:* [`test_device_handled.py`](../tests/test_device_handled.py), [`test_zha_join_observer.py`](../tests/test_zha_join_observer.py), [`test_zha_reader.py`](../tests/test_zha_reader.py).
 
 ### FRZ-18 Maintenance Mode
@@ -113,6 +115,7 @@ How Device Sentinel learns each device's reporting rhythm, how long it waits bef
 ### FRZ-19 A Commanded Recovery
 
 **A report that clears a frozen verdict within a short window after a command to any of that device's entities, from a person or an automation, is a commanded recovery: the verdict clears, because the device answered, and the gap is set aside, because a toggle says nothing about its rhythm. A press on the device itself sends no command and is not seen. The window is 60 seconds, a first figure to be measured on the rig before it is settled.**
+
 *Proof:* [`test_frozen_recovery_learning.py`](../tests/test_frozen_recovery_learning.py).
 
 ### FRZ-20 Clean and Unclean Stops

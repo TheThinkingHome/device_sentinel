@@ -8,7 +8,7 @@ The Device Sentinel dashboard: how it is registered, its top band and tabs, Simp
 
 **The dashboard is registered through Home Assistant's panel_custom, for administrators, with frontend and panel_custom among the integration's dependencies.**
 
-*Proof:* [`test_dashboard_panel.py`](../tests/test_dashboard_panel.py), [`test_manifest_ruling.py`](../tests/test_manifest_ruling.py).
+*Proof:* [`test_dashboard_panel.py`](../tests/test_dashboard_panel.py), [`test_manifest_dependencies.py`](../tests/test_manifest_dependencies.py).
 
 ### DASH-02 The Top Band and the Tabs
 
@@ -96,6 +96,6 @@ The Device Sentinel dashboard: how it is registered, its top band and tabs, Simp
 
 ### DASH-16 Names and Counts on the Tabs
 
-**The status band names the Wi-Fi tile "Wi-Fi", whatever the sensor is called. The Classification tab names each integration as Home Assistant shows it, not by its id, and a set-aside reason names the integration the same way. The Integrations tab's summary opens with the All chip's total, and an integration's page counts its devices muted from everything, as the Integrations tab does. On the Devices tab, a device whose wait is still being learned reads "learning" under WINDOW, never a blank.**
+**The status band names the Wi-Fi tile "Wi-Fi", whatever the sensor is called. The Classification tab names each integration as Home Assistant shows it, not by its id, and a set-aside reason names the integration the same way. The Integrations tab's summary opens with the All chip's total, and an integration's page counts its devices muted from everything, as the Integrations tab does. On the Devices tab, a device whose wait is still being learned reads "learning" under WINDOW, never a blank. A device never judged for freezing reads "Judged by its hub, <name>", the name opening the hub's page, or "Judged by its connection", in place of a window, on the Devices tab and on the device page.**
 
-*Proof:* [`test_classification_sources.py`](../tests/test_classification_sources.py), [`test_integration_names.py`](../tests/test_integration_names.py), [`test_dashboard_integrations.py`](../tests/test_dashboard_integrations.py), [`test_wifi_outage.py`](../tests/test_wifi_outage.py), [`tools/panel_checks/check_integration_names.js`](../tools/panel_checks/check_integration_names.js), `check_no_hardware_integrations.js`, `check_mutes_shown.js`, `check_rhythm_words.js`.
+*Proof:* [`test_classification_sources.py`](../tests/test_classification_sources.py), [`test_integration_names.py`](../tests/test_integration_names.py), [`test_dashboard_integrations.py`](../tests/test_dashboard_integrations.py), [`test_wifi_outage.py`](../tests/test_wifi_outage.py), [`tools/panel_checks/check_integration_names.js`](../tools/panel_checks/check_integration_names.js), `check_no_hardware_integrations.js`, `check_mutes_shown.js`, `check_rhythm_words.js`, `check_judged_by_line.js`, [`test_judged_by.py`](../tests/test_judged_by.py).

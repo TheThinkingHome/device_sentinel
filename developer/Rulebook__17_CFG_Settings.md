@@ -19,7 +19,8 @@ How the configuration screens are laid out and worded, what the entities Device 
 ### CFG-03 What a Screen Says
 
 **A screen says what a setting does at the moment it is set. It may add a short note on how Device Sentinel behaves afterwards where a person could not choose the setting sensibly without it; the rest, and the reasons, belong on the wiki. Each screen ends with a link that names the wiki page it opens, such as "Low Battery on the wiki", and the menu offers all the documentation. The address of a wiki link is kept out of the screen text and supplied when the screen is drawn. The Days Till Low Warning text says a battery's date is a range drawn from that battery's own history.**
-*Proof:* [`test_hardening.py`](../tests/test_hardening.py).
+
+*Proof:* [`test_hardening.py`](../tests/test_hardening.py), [`test_screen_text.py`](../tests/test_screen_text.py).
 
 ### CFG-04 Labels in Title Case
 

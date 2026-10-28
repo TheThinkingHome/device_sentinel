@@ -71,7 +71,7 @@ How Device Sentinel tells people and automations about the Problem List: phone p
 ### NOTE-12 The Bus Events
 
 **Device Sentinel puts six events on the Home Assistant bus, at the edge of the Problem List and nowhere else:**
-- **`device_sentinel_fault`** when a device's line is added, or gains a family it did not have: once per device, its kinds worst first, with "renewed" when an unticked item comes back, and the battery level and battery type or the signal value when a kind needs them.
+- **`device_sentinel_fault`** when a device's line is added, gains a family it did not have, or carries a battery running down that crosses into low: once per device, its kinds worst first, with "renewed" when an unticked item comes back, and the battery level and battery type or the signal value when a kind needs them.
 - **`device_sentinel_recovered`** when the worst kind on a line clears, with how long it lasted and what ended it; the next kind fires in turn when it clears. A device that has stopped reporting recovers only when it reports again: frozen giving way to unavailable, or unavailable to frozen, while it stays silent fires no recovery. It means the worst thing is no longer wrong, not that the device is well.
 - **`device_sentinel_acknowledged`** when a person ticks the item. Unticking has no event of its own; the fault fires again, renewed.
 - **`device_sentinel_withdrawn`** when a line leaves without a recovery, with its kinds and the reason: set_aside, muted or removed.

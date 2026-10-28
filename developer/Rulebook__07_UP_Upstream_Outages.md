@@ -12,9 +12,9 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 
 ### UP-02 Watching the Broker
 
-**Device Sentinel watches the MQTT broker itself, because nothing else can see it fail. A broker restart is seen when its reported start time moves forward by more than 30 seconds, so two restarts inside 30 seconds read as one; a broker that dies while Home Assistant runs is seen by silence past six times its own learned publish interval, with a floor of 30 seconds. A restart's outage runs from the last message before it to the first after it, never from the broker's previous start. The Broker: MQTT sensor reads running, down or unknown, and says when the broker last started. It is on by default where Device Sentinel found any stack, ZHA and Z-Wave included, and off otherwise, so a house on ZHA alone has a broker sensor that reads unknown. It reads unknown until it first hears the broker. A broker heard in an earlier run that says nothing for a whole run past the startup grace is down from the start of that run; one never heard is left alone. While the broker is down, no bridge event is written.**
+**Device Sentinel watches the MQTT broker itself, because nothing else can see it fail. A broker restart is seen when its reported start time moves forward by more than 30 seconds, so two restarts inside 30 seconds read as one; a broker that dies while Home Assistant runs is seen by silence past six times its own learned publish interval, with a floor of 30 seconds. A restart's outage runs from the last message before it to the first after it, never from the broker's previous start. A broker restart since the last minute check is told as Home Assistant stops, with its length. The Broker: MQTT sensor reads running, down or unknown, and says when the broker last started. It is on by default where Device Sentinel found any stack, ZHA and Z-Wave included, and off otherwise, so a house on ZHA alone has a broker sensor that reads unknown. It reads unknown until it first hears the broker. A broker heard in an earlier run that says nothing for a whole run past the startup grace is down from the start of that run; one never heard is left alone. While the broker is down, no bridge event is written.**
 
-*Proof:* [`test_broker.py`](../tests/test_broker.py), [`test_boot_claim.py`](../tests/test_boot_claim.py), [`test_upstream_events_fleet.py`](../tests/test_upstream_events_fleet.py).
+*Proof:* [`test_broker.py`](../tests/test_broker.py), [`test_boot_claim.py`](../tests/test_boot_claim.py), [`test_upstream_events_fleet.py`](../tests/test_upstream_events_fleet.py), [`test_broker_restart_at_stop.py`](../tests/test_broker_restart_at_stop.py).
 
 ### UP-03 How a Bridge or Integration Is Seen to Fail
 
@@ -108,6 +108,6 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 
 ### UP-18 Advice on a Noisy Integration
 
-**An integration with three or more unexplained storms a day on two of the last seven days gets one line on the Recommendations tab. The line is in James's own words: it opens with the condition, a colon, then what it costs and where to change it, naming the integration as a poller, how often it republishes, and that it should be excluded on the Exclusions and Muting screen. It is gone when the integration quiets or is excluded.**
+**An integration with three or more unexplained storms a day on two of the last seven days gets one line on the Recommendations tab. The line opens with the condition, a colon, then what it costs and where to change it, naming the integration as a poller, how often it republishes, and that it should be excluded on the Exclusions and Muting screen. It is gone when the integration quiets or is excluded.**
 
 *Proof:* [`test_noisy_integration.py`](../tests/test_noisy_integration.py), [`test_storm_tally.py`](../tests/test_storm_tally.py).

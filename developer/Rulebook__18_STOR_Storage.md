@@ -19,13 +19,14 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-03 The History File
 
 **At each save, the part of storage older than each history's newest 30 entries (and the house's events and signal stress rows older than a line set at each fold) is compared with what was last written, and the history file is written only if it differs: at the fold, and after a trim, an exclusion delete or a lowered retention. A history write runs four steps: the history file is renamed to its last-good copy, the new one is written and read back, the main file is written recording the history file's generation number, and the new history file is copied over its last-good copy; after a clean save the new main file is copied over its own last-good, so all four files hold one generation. At each start the load joins the history copy whose generation matches the main file, and a good copy is written over the other where they differ. A bad live file, or a pair whose generations do not match, restores the last-good set: the main file's last-good joined with the history copy of the same generation. With no matching copy, Device Sentinel starts with the main file's 30 days, never doubling a day, and says so as [STOR-12](#stor-12-no-silent-repair) sets out. There is no rollback below 0.26.2: an older release reads only the main file and runs on 30 days.**
+
 *Proof:* [`test_history_file.py`](../tests/test_history_file.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_history_file_hostile.py`](../tests/test_history_file_hostile.py).
 
 ### STOR-04 Last-Good Copies
 
 **Before each clean save of the main file, the live file is renamed to last-good and the new file put in place by Home Assistant's own safe write. A clean save is one whose outgoing file holds no faults; a save that repaired anything, and the first save after a load that needed a restore or repair, leaves last-good alone. So last-good is always the latest file that was clean when written, and freezes at it while the files are not clean. An empty file is never a clean save over a last-good that holds devices. The clocks file has no last-good copy; the history file's is kept as [STOR-03](#stor-03-the-history-file) says, and the answers file's as [STOR-20](#stor-20-the-answers-file) says.**
 
-*Proof:* [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_restore.py`](../tests/test_restore.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py).
+*Proof:* [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_restore.py`](../tests/test_restore.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_routine_save_checked.py`](../tests/test_routine_save_checked.py).
 
 ### STOR-05 The Shape Check at Load
 
@@ -37,7 +38,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **A table row is checked the moment it is written, and refused there if its shape is wrong, while the writer carries on. Each save of the main file checks the whole outgoing file, which catches a row changed in place after it was written; such a row is seen only at the next save. No reader carries a guard of its own. A value of the right shape that is possible ([STOR-07](#stor-07-values-held-to-what-is-possible)) but wrong for the house passes each check; that is left to the test campaigns.**
 
-*Proof:* [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_storage_tables.py`](../tests/test_storage_tables.py).
+*Proof:* [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_storage_tables.py`](../tests/test_storage_tables.py), [`test_routine_save_checked.py`](../tests/test_routine_save_checked.py).
 
 ### STOR-07 Values Held to What Is Possible
 
@@ -54,6 +55,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-09 Damage Is Repaired Where It Is Found
 
 **Damage is repaired at the moment it is found, with no decision asked of anyone. Damage at load with a usable last-good restores the whole file from it; the first step of [STOR-05](#stor-05-the-shape-check-at-load) checks the copy with its own check before trusting it, and one boot restores at most once. Damage at load with no usable copy, or damage found at save, is repaired in place: a damaged row or record is dropped, and a damaged field is reset to its default with the rest of the record kept. A damaged activity clock restarts at the moment of repair. Nothing is rebuilt field by field from the backup. Each repair raises one card naming what was repaired and where the originals are. It asks no decision; its Submit button is the person's way to put it down, and a card the person submitted stays gone until a new repair.**
+
 *Proof:* [`test_verify_restore.py`](../tests/test_verify_restore.py), [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_storage_failures.py`](../tests/test_storage_failures.py).
 
 ### STOR-10 A Damaged or Missing Clocks File
@@ -72,18 +74,19 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **Whatever Device Sentinel does to its own storage writes a system event naming what was done and what it was done from, and the Daily Brief gives it a sentence. The one exception is the container repair of [STOR-05](#stor-05-the-shape-check-at-load)'s first step, which raises its own notice card and writes no event, since the event table may be what it is emptying; the log carries the detail. A start that restored or repaired anything sets Status to Problem for the whole session; no repair, later check or button clears it, only a restart that loads clean. Status carries when last-good was taken, how old it is, and how many repairs the load made.**
 
-*Proof:* [`test_restore.py`](../tests/test_restore.py), [`test_verify_restore.py`](../tests/test_verify_restore.py), [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_backup_integrity.py`](../tests/test_backup_integrity.py).
+*Proof:* [`test_restore.py`](../tests/test_restore.py), [`test_verify_restore.py`](../tests/test_verify_restore.py), [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_load_repairs_counted.py`](../tests/test_load_repairs_counted.py).
 
 ### STOR-13 How Long the Trim Backups Are Kept
 
-**At each fold, each copy in trim_backups is deleted 30 days after it was taken, all of its files alike, except the newest copy, which is kept for the full History retention. A file in the folder that Device Sentinel did not name is never touched. The last-good copies live in `.storage` and are never pruned by this.**
+**At each fold, each copy in trim_backups is deleted 30 days after it was taken, all of its files alike, the copy of a corrupt file saved under the same stamp included, except the newest copy, which is kept for the full History retention. Any other file in the folder that Device Sentinel did not name is never touched. The last-good copies live in `.storage` and are never pruned by this.**
 
-*Proof:* [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py).
+*Proof:* [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_corrupt_copy_pruned.py`](../tests/test_corrupt_copy_pruned.py).
 
 ### STOR-14 How Much History Is Kept
 
-**How Much History to Keep sets how many days of battery, signal and gap history are kept, from 30 to 360 days in steps of 30, default 90. It judges one thing only: a device's longest silence is learned at most as long as the retention (FRZ). Each other verdict reads its own fixed window, so on everything else two houses with different settings detect alike. A lower setting trims at the next midnight rather than on save, so a mistake can be undone. The house's events and signal stress rows are kept for the same retention; incidents and silence episodes for 14 days, except that an opening is kept until its problem leaves the Problem List for good, by recovering, by deletion, or by the device being set aside or excluded; an acknowledgment or a mute does not release it (LIST); and a silence episode is kept past 14 days while it has no ending, or while it ended other than by the device resuming and is still waiting for its lag.**
-*Proof:* [`test_retention.py`](../tests/test_retention.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py).
+**How Much History to Keep sets how many days of battery, signal and gap history are kept, from 30 to 360 days in steps of 30, default 90. It judges one thing only: a device's longest silence is learned at most as long as the retention (FRZ). Each other verdict reads its own fixed window, so on everything else two houses with different settings detect alike. A lower setting trims at the next midnight rather than on save, so a mistake can be undone. The house's events and signal stress rows are kept for the same retention; incidents and silence episodes for 14 days, except that an opening is kept while its problem stands on the Problem List, and an acknowledgment does not release it (LIST); and a silence episode is kept past 14 days while it has no ending, or while it ended other than by the device resuming and is still waiting for its lag.**
+
+*Proof:* [`test_retention.py`](../tests/test_retention.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_house_tables_trim.py`](../tests/test_house_tables_trim.py).
 
 ### STOR-15 What Is Recorded
 
@@ -94,6 +97,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-16 Each History Carries Its Dates
 
 **Each daily history records the date of its newest entry, how many entries the dates cover, and the days skipped, as ranges. A day the device was not heard writes nothing to its battery history. Histories saved before 0.24.4 read as consecutive days ending at their last fold, and dates already saved wrong are left as they are. A rollback to 0.23.20 with a full history, followed by a return, misdates a history by the nights spent on the older release.**
+
 *Proof:* [`test_dated_histories.py`](../tests/test_dated_histories.py), [`test_daily_dates.py`](../tests/test_daily_dates.py).
 
 ### STOR-17 A Midnight Missed While Down
@@ -124,7 +128,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **The diagnostics download carries each device's stored record and the tables: the to-do list and its additions journal, the house's events, silence episodes, incidents and signal stress rows, the history file's state, the answers (the recommendation ticks and the battery replacement dates included), and the count of open episodes. Network addresses are hidden: each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file. Version-like numbers and Zigbee IEEE addresses stay. The reports are not redacted. A download is read beside the live entities, whose version says which build is running.**
 
-*Proof:* [`test_diagnostics_privacy.py`](../tests/test_diagnostics_privacy.py), [`test_storage_tables.py`](../tests/test_storage_tables.py), [`test_device_page.py`](../tests/test_device_page.py).
+*Proof:* [`test_diagnostics_privacy.py`](../tests/test_diagnostics_privacy.py), [`test_storage_tables.py`](../tests/test_storage_tables.py), [`test_device_page.py`](../tests/test_device_page.py), [`test_diagnostics_answers.py`](../tests/test_diagnostics_answers.py).
 
 ### STOR-22 The Log
 
