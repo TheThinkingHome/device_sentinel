@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.10 (2026-10-27)
+# File: dashboard.py, Version: 0.27.11 (2026-10-28)
 
 """What the dashboard reads from the coordinator.
 
@@ -45,6 +45,20 @@ from .report_battery import (
 )
 from . import stacks
 from .const import (
+    AUTO_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    EXCLUDE_GROUP_COPIES,
+    EXCLUDE_GROUP_POLLER,
+    EXCLUDE_GROUP_REASONS,
+    EXCLUDE_GROUPS,
+    EXCLUDE_MEDIA_MORE,
+    EXCLUSION_OFFER_REASONS,
+    LIBRARY_FALSE_ALERTS,
+    RECOMMENDATION_LIBRARY,
+    ROUTER_INTEGRATIONS,
+    TODO_KIND_SEVERITY,
     BATTERY_STEPS_COARSE,
     BATTERY_MODEL_PACE_MIN_OTHERS,
     BATTERY_FIT_MIN_DAYS,
@@ -561,8 +575,88 @@ class IntegrationViewMixin:
                 total += int(row.get(STORM_DAY_COUNT) or 0)
         return total
 
+    def exclusion_reason(self, domain: str, noisy: set[str] | None = None) -> str | None:
+        """Why Device Sentinel recommends excluding this integration, or
+        None: one reason, from the one list the Recommendations tab
+        reads too (rule MUTE-02). A poller is named only when its storms
+        have been measured (rule UP-18)."""
+        if domain in ROUTER_INTEGRATIONS:
+            return EXCLUSION_OFFER_REASONS["router"]
+        if domain in EXCLUSION_OFFER_REASONS:
+            return EXCLUSION_OFFER_REASONS[domain]
+        for group, members in EXCLUDE_GROUPS.items():
+            if domain in members:
+                return EXCLUDE_GROUP_REASONS[group]
+        if (
+            domain in AUTO_EXCLUDED_INTEGRATIONS
+            or domain in RECOMMENDATION_LIBRARY[LIBRARY_FALSE_ALERTS]
+            or domain in EXCLUDE_MEDIA_MORE
+        ):
+            return EXCLUSION_OFFER_REASONS["media"]
+        if self._is_helper(domain):
+            return EXCLUDE_GROUP_REASONS[EXCLUDE_GROUP_COPIES]
+        if noisy is None:
+            noisy = self._noisy_domains()
+        if domain in noisy:
+            return EXCLUDE_GROUP_REASONS[EXCLUDE_GROUP_POLLER]
+        return None
+
+    def recommended_exclusions(self) -> dict[str, str]:
+        """Each integration with its own card on the Recommendations tab,
+        and why: one Device Sentinel recommends excluding, with a
+        watched device, neither excluded nor muted for everything. A
+        poller has its own line instead. Worked out each time, so an
+        exclusion taken back brings the card back; only its tick keeps
+        it quiet (rules MUTE-02, REC-03)."""
+        excluded = self.excluded_integrations
+        muted = set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, []) or [])
+        found: dict[str, str] = {}
+        for domain in sorted(set(self._watched.values())):  # type: ignore[attr-defined]
+            if domain in excluded or domain in muted:
+                continue
+            why = self.exclusion_reason(domain, noisy=set())
+            if why is not None:
+                found[domain] = why
+        return found
+
+    def _exclusion_settled(self) -> set[str]:
+        """The integrations whose exclusion the person has answered:
+        muted for everything, or kept watching with the tick on their
+        card or line. The Integrations tab does not recommend them
+        (rules MUTE-02, REC-03)."""
+        settled = set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, []) or [])
+        ticked = {line["key"] for line in self.recommendation_lines() if line.get("acknowledged")}  # type: ignore[attr-defined]
+        settled |= {key.split(":", 1)[1] for key in ticked if key.startswith(("noisy:", "offer:"))}
+        return settled
+
+    def _noisy_domains(self) -> set[str]:
+        return {
+            key.split(":", 1)[1]
+            for key, _text in self._noisy_integration_entries()  # type: ignore[attr-defined]
+            if key.startswith("noisy:")
+        }
+
+    def _integration_trouble(self) -> dict[str, dict[str, int]]:
+        """What is wrong now on each integration's devices: each item
+        not ticked, counted by its worst kind (rule DASH-16)."""
+        found: dict[str, dict[str, int]] = {}
+        for item in self.todo_items:
+            if item.get(TODO_STATUS) == "completed":
+                continue
+            domain = self._watched.get(item.get(TODO_DEVICE_ID))  # type: ignore[attr-defined]
+            kinds = item.get(TODO_KINDS) or {}
+            worst = next((kind for kind in TODO_KIND_SEVERITY if kind in kinds), None)
+            if domain is None or worst is None:
+                continue
+            counts = found.setdefault(domain, {})
+            counts[worst] = counts.get(worst, 0) + 1
+        return found
+
     def dashboard_integrations(self) -> list[dict[str, Any]]:
-        """One row per integration that owns a device, by name."""
+        """One row per integration that owns a device, by name. Each row
+        carries its exclusion and its four mutes, so the tab's buttons
+        show what is on, the reason Device Sentinel recommends excluding
+        it, and what is wrong now (rules MUTE-02, MUTE-03)."""
         rows = self.classification_rows()
         problems = self._problems_by_device()
         outages = self.integration_outages()
@@ -587,8 +681,23 @@ class IntegrationViewMixin:
             if problem is not None:
                 count["acknowledged" if problem["acknowledged"] else "problems"] += 1
         result = []
+        options = self.entry.options
+        muted_lists = {
+            kind: set(options.get(key, []) or [])
+            for kind, key in (
+                ("everything", CONF_MUTED_INTEGRATIONS),
+                ("freeze", CONF_FREEZE_MUTED_INTEGRATIONS),
+                ("battery", CONF_BATTERY_MUTED_INTEGRATIONS),
+                ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS),
+            )
+        }
+        excluded = self.excluded_integrations
+        noisy = self._noisy_domains()
+        trouble = self._integration_trouble()
+        settled = self._exclusion_settled()
         for domain, count in domains.items():
             standing = self._integration_standing(domain, count["watched"])
+            down = next((row for row in outages.get(domain, []) if row["open"]), None)
             result.append({
                 "domain": domain,
                 "name": self._integration_title(domain),
@@ -596,6 +705,15 @@ class IntegrationViewMixin:
                 "first_seen": standing == "excluded" and domain in seen_routers,
                 **count,
                 "outages": len(outages.get(domain, [])),
+                "devices": count["watched"] + count["set_aside"],
+                "excluded": domain in excluded,
+                "mutes": {kind: domain in listed for kind, listed in muted_lists.items()},
+                "recommended": (
+                    None if domain in excluded or domain in settled
+                    else self.exclusion_reason(domain, noisy)
+                ),
+                "trouble": trouble.get(domain, {}),
+                "down_since": down["went_down"] if down else None,
             })
         # An integration with no hardware owns no row above; it is
         # listed so a person can see it and why its entities are not

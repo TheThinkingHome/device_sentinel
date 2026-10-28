@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.11 (2026-10-28)
 
 """Acting from the device page (rule DASH-09).
 
@@ -36,9 +36,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import label_registry as lr
 
 from .const import (
-    DATA_EXCLUSION_OFFERS,
-    OFFER_CLOSED,
-    OFFER_OPEN,
     CONF_UNAVAILABLE_MUTED_LABELS,
     LOGGER,
     CONF_BATTERY_MUTED_DEVICES,
@@ -58,6 +55,8 @@ from .const import (
     CONF_SIGNAL_MUTED_LABELS,
     SYS_DEVICE_PAGE,
     SYS_INTEGRATION_PAGE,
+    SYS_INTEGRATIONS_TAB,
+    SYS_RECOMMENDATIONS_TAB,
 )
 
 # What a "Turn it on" switches on, as the brief's row names it
@@ -554,15 +553,17 @@ class DeviceActionsMixin:
         )
         self._mark_changed()  # type: ignore[attr-defined]
 
-    def page_set_integration_excluded(self, domain: str, on: bool) -> None:
-        """Exclude an integration, or take it back, from its page on the
-        dashboard (rule MUTE-03), in the list Settings writes, through the
-        same update listener. The ladder is settled as a Settings save
-        settles it, so its mutes go with an exclusion (rule MUTE-04). Its
-        devices' records go at the next midnight's fold, so taking it
-        back before then loses nothing. One act, one row in the brief."""
-        from .config_flow import settle_options  # the flow imports this module's package
-
+    def page_set_integration_excluded(
+        self, domain: str, on: bool, source: str = "integration_page"
+    ) -> None:
+        """Exclude an integration, or take it back, from its page, the
+        Integrations tab or its card on the Recommendations tab (rule
+        MUTE-03), in the list Settings writes,
+        through the same update listener. Its mutes, and its devices'
+        own, are kept, as a device's are when it is excluded, so a
+        second press before midnight loses nothing; a Settings save
+        settles them (rule MUTE-04). Its devices' records go at the next
+        midnight's fold. One act, one row in the brief."""
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
         if stored is None:
             # The default list stands until the option is first saved.
@@ -578,23 +579,43 @@ class DeviceActionsMixin:
         else:
             return
         merged = {**self.entry.options, CONF_EXCLUDED_INTEGRATIONS: current}
-        if on:
-            merged = settle_options(self.hass, self, merged)
-        self._page_option_keys.update(
-            key
-            for key in set(merged) | set(self.entry.options)
-            if merged.get(key) != self.entry.options.get(key)
-        )
+        self._page_option_keys.add(CONF_EXCLUDED_INTEGRATIONS)
         self.hass.config_entries.async_update_entry(self.entry, options=merged)
-        offers = self.exclusion_offers()  # type: ignore[attr-defined]
-        if on and offers.get(domain) == OFFER_OPEN:
-            # Its card is answered for good.
-            self.data[DATA_EXCLUSION_OFFERS] = {**offers, domain: OFFER_CLOSED}  # type: ignore[attr-defined]
-            self._dirty = True  # type: ignore[attr-defined]
         self._record_system_event(  # type: ignore[attr-defined]
-            SYS_INTEGRATION_PAGE,
+            {
+                "integrations_tab": SYS_INTEGRATIONS_TAB,
+                "recommendations_tab": SYS_RECOMMENDATIONS_TAB,
+            }.get(source, SYS_INTEGRATION_PAGE),
             scope=domain,
             detail="excluded" if on else "no longer excluded",
+        )
+        self._mark_changed()  # type: ignore[attr-defined]
+
+    def page_set_integration_mute(self, domain: str, kind: str, on: bool) -> None:
+        """Set or lift one kind's mute on a whole integration, from the
+        Integrations tab, in the list Settings writes (rule MUTE-03).
+        Nothing narrower is cleared, so a second press undoes it exactly;
+        a Settings save settles the ladder (rule MUTE-04). Unavailable is
+        never muted by integration (rule MUTE-06), and an excluded
+        integration is not muted at all."""
+        if kind not in MUTE_KINDS or not MUTE_KINDS[kind][0]:
+            raise ValueError(f"no integration mute {kind}")
+        if on and domain in self.excluded_integrations:  # type: ignore[attr-defined]
+            raise ValueError("the integration is excluded")
+        key = MUTE_KINDS[kind][0]
+        current = [d for d in self.entry.options.get(key, []) or [] if isinstance(d, str)]
+        if on and domain not in current:
+            current.append(domain)
+        elif not on and domain in current:
+            current.remove(domain)
+        else:
+            return
+        self._page_option_keys.add(key)
+        self.hass.config_entries.async_update_entry(self.entry, options={**self.entry.options, key: current})
+        self._record_system_event(  # type: ignore[attr-defined]
+            SYS_INTEGRATIONS_TAB,
+            scope=domain,
+            detail=f"muted for {kind}" if on else f"{kind} mute lifted",
         )
         self._mark_changed()  # type: ignore[attr-defined]
 

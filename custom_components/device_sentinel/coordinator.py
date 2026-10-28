@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.10 (2026-10-27)
+# File: coordinator.py, Version: 0.27.11 (2026-10-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -3224,9 +3224,18 @@ class DeviceSentinelCoordinator(
         return (
             domain is not None
             and device_id not in self._last_seen_entity
-            and domain not in FETCHING_INTEGRATIONS
+            and not self._fetches_readings(domain)
             and stack_last_heard(self.hass, domain, device_id) is None
         )
+
+    @staticmethod
+    def _fetches_readings(domain: str | None) -> bool:
+        """Whether the integration asks the device for each reading:
+        ESPHome and HomeKit Device as they connect, and the pollers of a
+        printer, a NAS or a UPS that restore nothing. What it shows
+        after a restart is the device answering, not a value handed
+        back (rules WATCH-12, UP-06)."""
+        return domain in FETCHING_INTEGRATIONS
 
     def _held_entities(self, device_id: str) -> dict[str, str]:
         """The device's entities that can hold a value, each with its
@@ -3910,8 +3919,8 @@ class DeviceSentinelCoordinator(
         a last-seen clock: its clock is the stack's own record of
         hearing it, so a restored old time cannot move it and a new one
         is the device speaking (rule FRZ-11). One on an integration that
-        fetches its readings from the device itself (FETCHING_INTEGRATIONS),
-        whose reading is the device answering. And one Device Sentinel
+        fetches its readings from the device itself, polling it or asking
+        as it connects, whose reading is the device answering. And one Device Sentinel
         had judged unavailable: its stack now saying it is available is
         a genuine recovery (rule UP-06).
         """
@@ -3919,7 +3928,7 @@ class DeviceSentinelCoordinator(
             return False
         if device_id in self._last_seen_entity:
             return False
-        if self._watched.get(device_id) in FETCHING_INTEGRATIONS:
+        if self._fetches_readings(self._watched.get(device_id)):
             # Fetched from the device, not restored from a cache: the
             # device answering (rule UP-06).
             return False

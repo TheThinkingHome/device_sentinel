@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.11 (2026-10-28)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -44,6 +44,8 @@ from .const import (
     DATA_DEVICES,
     DEV_FROZEN_CATEGORY,
     FREEZE_CATEGORY_FROZEN,
+    LIBRARY_COPIES,
+    RECOMMENDATION_LIBRARY,
     SLOW_REPORTER_SECONDS,
 )
 
@@ -392,8 +394,24 @@ class DeviceRecommendationsMixin:
         entries = self._recommendation_entries()  # type: ignore[attr-defined]
         kept: dict[str, bool] = self._acks().get("lines") or {}
         for entry in entries:
-            entry["acknowledged"] = bool(kept.get(entry["key"], False))
+            entry["acknowledged"] = bool(kept.get(entry["key"], self._library_tick(entry["key"], kept)) or False)
         return entries
+
+    def _library_tick(self, key: str, kept: dict[str, bool]) -> bool | None:
+        """A card's tick carried over from the library line that named
+        its integration before each had a card (rule REC-03), or None
+        when no such line was answered."""
+        if not key.startswith("offer:"):
+            return None
+        domain = key.split(":", 1)[1]
+        for name, members in RECOMMENDATION_LIBRARY.items():
+            line = f"library_{name}"
+            if line in kept and (
+                domain in members
+                or (name == LIBRARY_COPIES and self._is_helper(domain))  # type: ignore[attr-defined]
+            ):
+                return bool(kept[line])
+        return None
 
     def prune_recommendation_acks(self) -> None:
         """Forget each tick whose device has left its card or whose
@@ -416,6 +434,12 @@ class DeviceRecommendationsMixin:
         present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
         old_lines: dict[str, bool] = acks.get("lines") or {}
         lines = {key: on for key, on in old_lines.items() if key in present}
+        # A library line's tick moves onto each card it answers, then
+        # the line's own key goes (rule REC-03).
+        for key in present - set(lines):
+            carried = self._library_tick(key, old_lines)
+            if carried is not None:
+                lines[key] = carried
         if devices != old_devices or lines != old_lines:
             acks["devices"] = devices
             acks["lines"] = lines

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.10 (2026-10-27)
+# File: const.py, Version: 0.27.11 (2026-10-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -799,6 +799,40 @@ EXCLUSION_OFFER_REASONS = {
         "watched through its own integration"
     ),
     "media": "its devices go unavailable whenever they are switched off",
+}
+
+# Every integration Device Sentinel recommends excluding, in groups, one
+# reason each (rule MUTE-02). The Integrations tab shows the reason
+# under the name; its card on the Recommendations tab says the same.
+# A helper is in the "copies" group by its manifest as well as by name,
+# and a poller by its measured storms (rule UP-18).
+EXCLUDE_GROUP_AWAY = "away"
+EXCLUDE_GROUP_TOOLS = "tools"
+EXCLUDE_GROUP_VIRTUAL = "virtual"
+EXCLUDE_GROUP_COPIES = "copies"
+EXCLUDE_GROUP_POLLER = "poller"
+EXCLUDE_GROUPS: dict[str, tuple[str, ...]] = {
+    # Phones, tablets and addresses that leave or sleep.
+    EXCLUDE_GROUP_AWAY: ("mobile_app", "ping", "fully_kiosk"),
+    # Tools for Home Assistant rather than hardware.
+    EXCLUDE_GROUP_TOOLS: ("spook",),
+    # Remotes made in software, which send and never hear back.
+    EXCLUDE_GROUP_VIRTUAL: ("hair", "smartir", "samsung_infrared"),
+    # Readings worked out from another device.
+    EXCLUDE_GROUP_COPIES: (
+        "tank_volume", "thermal_comfort", "template", "group", "derivative",
+        "integration", "statistics", "min_max", "utility_meter", "threshold",
+        "trend", "filter", "compensation",
+    ),
+}
+# More media players that go unavailable when switched off or closed.
+EXCLUDE_MEDIA_MORE = ("kodi", "plex")
+EXCLUDE_GROUP_REASONS = {
+    EXCLUDE_GROUP_AWAY: "its devices go quiet when they leave the house, sleep or are switched off",
+    EXCLUDE_GROUP_TOOLS: "it adds tools to Home Assistant rather than hardware",
+    EXCLUDE_GROUP_VIRTUAL: "it drives a virtual remote, so nothing it reports comes from hardware",
+    EXCLUDE_GROUP_COPIES: "it works out its readings from another device, which is watched itself",
+    EXCLUDE_GROUP_POLLER: "a poller that republishes its whole state on a timer, so Device Sentinel learns nothing from it",
 }
 
 # The devices set aside (disabled, excluded or held after a removal) at
@@ -2390,7 +2424,16 @@ RECOVERY_CAUSES_INTERVENTION = frozenset(
 # and Matter and Z-Wave serve their own caches, so none of those is here.
 # Any integration not listed gets the literal reading: a value it
 # restores is not the device speaking (rule UNAV-05).
-FETCHING_INTEGRATIONS = frozenset({"homekit_controller", "esphome"})
+FETCHING_INTEGRATIONS = frozenset({
+    "homekit_controller", "esphome",
+    # Integrations that poll a printer, a NAS or a UPS on the local
+    # network and restore nothing at a start, each checked in Home
+    # Assistant's source: what they show after a restart is the device
+    # answering (rule WATCH-12). A poller that restores its last value,
+    # as Modbus does, or reads a hub's cache, as FRITZ!Box DECT does, is
+    # left off.
+    "brother", "ipp", "nut", "apcupsd", "synology_dsm", "qnap", "glances",
+})
 # The restart and outage causes still stored on older incidents,
 # recognized so they are told plainly rather than credited (rule UP-06).
 RECOVERY_CAUSES_RESTART = frozenset(
@@ -2537,24 +2580,30 @@ STORM_EXPLAINED_SECONDS = 300.0
 FLOOD_MIN_STORMS = 3
 FLOOD_MIN_DAYS = 2
 FLOOD_WINDOW_DAYS = 7
-# The library: integrations whose devices come and go for reasons that
-# are not faults, grouped by that reason, because a category travels
-# further than a list of names. Shipped as data so the brief can say
-# something useful on the first day, before anything is learned (rule
-# REC-03). Router trackers are not here: they have their own exclusion
-# (rule MUTE-02) and a line of their own.
+# The three library lines each recommended integration's own card
+# replaced (rule REC-03), kept only so a tick on one of them still
+# answers the card of each integration it named. Its key is
+# "library_" and the name below.
 LIBRARY_FALSE_ALERTS = "false_alerts"
 LIBRARY_NO_DEVICES = "no_devices"
+LIBRARY_COPIES = "copies"
 RECOMMENDATION_LIBRARY: dict[str, tuple[str, ...]] = {
     # Devices that go offline by design: phones and computers leave
     # the house, televisions are switched off.
     LIBRARY_FALSE_ALERTS: (
         "ping", "mobile_app",
         "webostv", "androidtv", "samsungtv", "apple_tv",
-        "dlna_dmr", "samsung_infrared",
+        "dlna_dmr", "samsung_infrared", *EXCLUDE_MEDIA_MORE,
     ),
     # Integrations that add tools rather than hardware.
     LIBRARY_NO_DEVICES: ("spook",),
+    # Virtual remotes, and readings worked out from another device.
+    # samsung_infrared was named on the line above.
+    LIBRARY_COPIES: tuple(
+        domain
+        for domain in (*EXCLUDE_GROUPS[EXCLUDE_GROUP_VIRTUAL], *EXCLUDE_GROUPS[EXCLUDE_GROUP_COPIES])
+        if domain not in ("samsung_infrared",)
+    ),
 }
 
 # The daily storm tally: one row per domain per day, written at the fold
@@ -2603,6 +2652,12 @@ SYS_DEVICE_PAGE = "device_page"
 # A person excluded an integration, or took it back, from its page on the
 # dashboard (rule MUTE-03). Its scope is the integration.
 SYS_INTEGRATION_PAGE = "integration_page"
+# The same acts pressed on the Integrations tab, each row its own line
+# in the brief (rule BRIEF-07).
+SYS_INTEGRATIONS_TAB = "integrations_tab"
+# An integration excluded from its card on the Recommendations tab
+# (rule BRIEF-07).
+SYS_RECOMMENDATIONS_TAB = "recommendations_tab"
 # An integration added to the exclusion list the first time a new
 # install sees it, its domain in the scope (rule MUTE-02).
 SYS_FIRST_SEEN_EXCLUDED = "first_seen_excluded"

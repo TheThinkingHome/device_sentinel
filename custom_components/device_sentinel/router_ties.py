@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.10 (2026-10-27)
+# File: router_ties.py, Version: 0.27.11 (2026-10-28)
 
 """Router ties: which watched devices a router says have left.
 
@@ -651,12 +651,11 @@ class RouterTiesMixin:
         the default list, and one the default lacks, such as a FRITZ!Box
         router, is added in its first run. On a house that already
         exists nothing is added behind the person's back: an
-        integration seen for the first time raises a card on the
-        Recommendations tab, told once in the brief, with an Exclude
-        button and a tick to keep watching it. One the person has
-        already decided about, by a mute or an exclusion of it or its
-        devices, is left as they chose. After that the integration is
-        recorded and never new again.
+        integration seen for the first time is told once in the brief,
+        pointing to its card on the Recommendations tab, which stands
+        while it is neither excluded, muted for everything nor ticked
+        (rule REC-03). After that the integration is recorded and never
+        new again.
 
         Runs one at a time.
         """
@@ -673,9 +672,11 @@ class RouterTiesMixin:
             await self._sight_once()
 
     def exclusion_offers(self) -> dict[str, str]:
-        """Each integration recommended for exclusion, "open" while its
-        card stands and "closed" once it was excluded (rule MUTE-02).
-        Read defensively: the shape is Device Sentinel's own."""
+        """Each integration recommended in the brief when first seen on
+        a house that already exists, so one excluded by Device Sentinel
+        is told apart from one the person excluded (rule MUTE-02). A
+        file may still mark one "closed"; it means the same. Read
+        defensively: the shape is Device Sentinel's own."""
         found = self.data.get(DATA_EXCLUSION_OFFERS)
         if not isinstance(found, dict):
             return {}
@@ -713,13 +714,7 @@ class RouterTiesMixin:
             # A list damaged by hand is not a reason to fail the start.
             else ([] if stored is not None else list(self.default_exclusions()))  # type: ignore[attr-defined]
         )
-        # A card whose integration is now excluded is closed for good:
-        # taken back later, it does not come back (rule MUTE-02).
-        closing = {
-            domain for domain, state in offers.items()
-            if state == OFFER_OPEN and domain in current
-        }
-        if not fresh and not pinned and not closing:
+        if not fresh and not pinned:
             return
         told: list[str] = []
         offered: list[str] = []
@@ -746,13 +741,12 @@ class RouterTiesMixin:
             new_list = current + adding
         else:
             # A house that already exists: recommended, not excluded,
-            # routers and media alike, unless the person has decided
-            # about it already (rule MUTE-02).
+            # routers and media alike; one muted for everything has no
+            # card to point to (rule MUTE-02).
+            muted = set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, []) or [])
             offered = [
                 name for name in sorted(fresh)
-                if name not in current
-                and name not in offers
-                and not self._choice_made(name)
+                if name not in current and name not in offers and name not in muted
             ]
             new_list = current
         write = pinned or bool(kept_out or adding)
@@ -770,12 +764,10 @@ class RouterTiesMixin:
                 for entry in self.hass.config_entries.async_entries(name)
             ):
                 self._record_system_event(SYS_EXCLUSION_OFFERED, scope=name)  # type: ignore[attr-defined]
-        if offered or closing:
+        if offered:
             updated = dict(offers)
             for name in offered:
                 updated[name] = OFFER_OPEN
-            for name in closing:
-                updated[name] = OFFER_CLOSED
             self.data[DATA_EXCLUSION_OFFERS] = updated
             mark = getattr(self, "_mark_changed", None)
             if mark is not None:

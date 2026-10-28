@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.10 (2026-10-27)
+# File: report_brief.py, Version: 0.27.11 (2026-10-28)
 
 """The daily brief: the one report written for a person.
 
@@ -33,14 +33,10 @@ from homeassistant.util import dt as dt_util
 from .battery_level import level_text
 from . import attribution, escalation
 from .repairs import (
-    _english_list,
     delivery_is_configured,
     missing_targets,
 )
 from .const import (
-    EXCLUSION_OFFER_REASONS,
-    OFFER_OPEN,
-    ROUTER_INTEGRATIONS,
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
@@ -48,14 +44,10 @@ from .const import (
     FLOOD_MIN_DAYS,
     FLOOD_MIN_STORMS,
     FLOOD_WINDOW_DAYS,
-    RECOMMENDATION_LIBRARY,
-    LIBRARY_FALSE_ALERTS,
-    LIBRARY_NO_DEVICES,
     CONF_REPORT_LINKS,
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
     REPORT_LINKS_INTERNAL,
-    CONF_MUTED_INTEGRATIONS,
     CONF_REPEAT_FLOOR,
     DEFAULT_REPEAT_FLOOR,
     REPEAT_FLOOR_MAX,
@@ -142,6 +134,8 @@ from .const import (
     SYS_EXCLUSION_OFFERED,
     SYS_FIRST_SEEN_EXCLUDED,
     SYS_INTEGRATION_PAGE,
+    SYS_INTEGRATIONS_TAB,
+    SYS_RECOMMENDATIONS_TAB,
     SYS_DEVICE_ID,
 )
 from .outage_detail import FAILED, REMOVED, UNWATCHED, parse_detail
@@ -751,6 +745,19 @@ class BriefMixin:
                 f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
                 f"{detail or 'changed'}, from its integration page, at {when}."
             )
+        if kind == SYS_INTEGRATIONS_TAB:
+            # "ZHA: muted for freeze, from the Integrations tab, at 9:14 AM."
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
+                f"{detail or 'changed'}, from the Integrations tab, at {when}."
+            )
+        if kind == SYS_RECOMMENDATIONS_TAB:
+            # "Alexa Media Player: excluded, from the Recommendations
+            # tab, at 9:14 AM."
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
+                f"{detail or 'changed'}, from the Recommendations tab, at {when}."
+            )
         if kind == SYS_TRIMMED:
             # The one destructive act done on a person's instruction,
             # so the brief carries it, and it answers later why a
@@ -968,6 +975,16 @@ class BriefMixin:
             return (
                 f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
                 f"{detail or 'changed'}, from its integration page"
+            )
+        if kind == SYS_INTEGRATIONS_TAB:
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
+                f"{detail or 'changed'}, from the Integrations tab"
+            )
+        if kind == SYS_RECOMMENDATIONS_TAB:
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
+                f"{detail or 'changed'}, from the Recommendations tab"
             )
         if kind == SYS_TRIMMED:
             return (
@@ -1229,7 +1246,6 @@ class BriefMixin:
         items += [(key, text) for key, text, _extra in offers]
         items += self._router_watched_entries()
         items += self._noisy_integration_entries()
-        items += self._library_entries()
         # An integration recommended for exclusion is shown in Simple
         # too, with its devices and an Exclude button (rule MUTE-02).
         simple = ("target:", "no_target", "muted:", "offer:")
@@ -1239,21 +1255,14 @@ class BriefMixin:
             for key, text in items
         ]
 
-    def _open_offers(self) -> set[str]:
-        """The integrations whose exclusion card stands (rule MUTE-02)."""
-        return {
-            domain for domain, state in self.exclusion_offers().items()
-            if state == OFFER_OPEN and domain not in self.excluded_integrations
-        }
-
     def _exclusion_offer_entries(self) -> list[tuple[str, str, dict[str, Any]]]:
-        """One card for each router or media integration seen for the
-        first time on a house that already exists (rule MUTE-02): what
-        it is, why it is usually excluded, its devices, and an Exclude
-        button beside the tick that keeps it watched."""
+        """One card for each integration Device Sentinel recommends
+        excluding (rules MUTE-02, REC-03): what it is, why it is usually
+        excluded, its devices, and an Exclude button beside the tick
+        that keeps it watched."""
         registry = dr.async_get(self.hass)
         said: list[tuple[str, str, dict[str, Any]]] = []
-        for domain in sorted(self._open_offers()):
+        for domain, why in self.recommended_exclusions().items():  # type: ignore[attr-defined]
             names = sorted(
                 {
                     self._device_name(device.id)
@@ -1263,14 +1272,19 @@ class BriefMixin:
                 key=str.casefold,
             )
             if not names:
-                # Nothing to exclude, or removed from Home Assistant: no
-                # card until it has devices.
+                # A helper's entities sit on another integration's
+                # device: those devices are the ones it is on.
+                names = sorted(
+                    {
+                        self._device_name(device_id)
+                        for device_id, owner in self._watched.items()
+                        if owner == domain
+                    },
+                    key=str.casefold,
+                )
+            if not names:
                 continue
             title = self._integration_title(domain)
-            why = EXCLUSION_OFFER_REASONS.get(
-                "router" if domain in ROUTER_INTEGRATIONS else domain,
-                EXCLUSION_OFFER_REASONS["media"],
-            )
             count = len(names)
             said.append((
                 f"offer:{domain}",
@@ -1280,72 +1294,6 @@ class BriefMixin:
                 f"because {why}. Exclude it here, or tick the box to keep "
                 f"watching it.",
                 {"exclude": domain, "devices": names},
-            ))
-        return said
-
-    def _library_items(self) -> list[str]:
-        """Name watched integrations the library knows to be noise."""
-        return [text for _key, text in self._library_entries()]
-
-    def _library_entries(self) -> list[tuple[str, str]]:
-        """Name watched integrations the library knows to be noise.
-
-        Known rather than measured, so last in the order. An
-        integration the person muted is left alone, since muting is
-        already a view expressed about it (rule REC-03).
-        """
-        excluded = self.excluded_integrations
-        muted = set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, []))
-        per_domain: dict[str, int] = {}
-        for domain in self._watched.values():
-            per_domain[domain] = per_domain.get(domain, 0) + 1
-
-        offered = self._open_offers()
-
-        def present(domains: tuple[str, ...]) -> list[str]:
-            # One with its own card is told there (rule MUTE-02).
-            return sorted(
-                domain for domain in domains
-                if per_domain.get(domain)
-                and domain not in excluded
-                and domain not in muted
-                and domain not in offered
-            )
-
-        said: list[tuple[str, str]] = []
-        false_alerts = present(RECOMMENDATION_LIBRARY[LIBRARY_FALSE_ALERTS])
-        if false_alerts:
-            names = sorted(
-                (self._integration_title(domain) for domain in false_alerts),
-                key=str.casefold,
-            )
-            plural = "s" if len(names) > 1 else ""
-            said.append(("library_false_alerts",
-                f"Some integrations create false alerts: Exclude the "
-                f"{_english_list(names, limit=len(names))} "
-                f"integration{plural} to stop false alarms. Some "
-                f"integrations are not beneficial to monitor because they "
-                f"contain entities that become unavailable when the device "
-                f"is turned off, leave the house WiFi, or contain "
-                f"batteries that are recharged daily. Exclude these in "
-                f"the Exclusions and Muting settings screen."
-            ))
-        no_devices = present(RECOMMENDATION_LIBRARY[LIBRARY_NO_DEVICES])
-        if no_devices:
-            named = [
-                f"{domain} ({per_domain[domain]} device"
-                f"{'' if per_domain[domain] == 1 else 's'})"
-                for domain in no_devices
-            ]
-            one = len(no_devices) == 1
-            said.append(("library_no_devices",
-                f"Some integrations own no devices and are not worth "
-                f"monitoring: {_english_list(named, limit=len(named))} "
-                f"{'is' if one else 'are'} watched. Integrations of this "
-                f"kind add tools to Home Assistant rather than hardware, "
-                f"so their devices go quiet for reasons that are not "
-                f"faults. Exclude {'it' if one else 'them'} in the "
-                f"Exclusions and Muting settings screen."
             ))
         return said
 
@@ -1434,7 +1382,7 @@ class BriefMixin:
                 entity.domain == "device_tracker"
                 and entity.platform in self._router_integrations_present()
                 and entity.platform not in excluded
-                and entity.platform not in self._open_offers()
+                and entity.platform not in self.recommended_exclusions()  # type: ignore[attr-defined]
                 and entity.device_id
             ):
                 clients.setdefault(entity.platform, set()).add(entity.device_id)
@@ -1462,13 +1410,13 @@ class BriefMixin:
         would hide the lines below for as long as the ones above stood
         (rule REC-02).
         """
-        # A line or a device a person ticked leaves the Brief (rule
-        # REC-07); the emailed Brief is the whole Advanced list (rule
-        # REC-10). An exclusion card is told once, by the day's
-        # sentence that it was found, not every morning (rule MUTE-02).
+        # A line, an exclusion card or a device a person ticked leaves
+        # the Brief (rule REC-07); the emailed Brief is the whole
+        # Advanced list, each exclusion card every morning until it is
+        # answered (rules REC-03, REC-10).
         items = [
             entry["text"] for entry in self.recommendation_lines()
-            if not entry["acknowledged"] and not entry["key"].startswith("offer:")
+            if not entry["acknowledged"]
         ]
         # One line for each kind of device recommendation, with its
         # count, pointing to the tab that lists them. The

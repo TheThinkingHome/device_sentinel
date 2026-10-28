@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.10 (2026-10-27)
+# File: dashboard_api.py, Version: 0.27.11 (2026-10-28)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -119,6 +119,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_exclude)
     websocket_api.async_register_command(hass, ws_integration_exclude)
+    websocket_api.async_register_command(hass, ws_integration_mute)
     websocket_api.async_register_command(hass, ws_device_power)
     websocket_api.async_register_command(hass, ws_device_type)
     websocket_api.async_register_command(hass, ws_brief)
@@ -816,6 +817,8 @@ def ws_device_exclude(
         vol.Required("type"): "device_sentinel/integration_exclude",
         vol.Required("domain"): str,
         vol.Required("on"): bool,
+        # Where it was pressed, for the brief's row (rule BRIEF-07).
+        vol.Optional("source", default="integration_page"): vol.In(["integration_page", "integrations_tab", "recommendations_tab"]),
     }
 )
 @callback
@@ -833,7 +836,40 @@ def ws_integration_exclude(
         connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
         return
     try:
-        coordinator.page_set_integration_excluded(msg["domain"], msg["on"])
+        coordinator.page_set_integration_excluded(msg["domain"], msg["on"], msg["source"])
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "refused", str(err) or "Home Assistant refused the change")
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/integration_mute",
+        vol.Required("domain"): str,
+        vol.Required("kind"): vol.In(["everything", "freeze", "battery", "signal"]),
+        vol.Required("on"): bool,
+    }
+)
+@callback
+def ws_integration_mute(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Mute a whole integration for one kind, or lift it, from the
+    Integrations tab (rule MUTE-03)."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    if coordinator.dashboard_integration(msg["domain"]) is None:
+        connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
+        return
+    try:
+        coordinator.page_set_integration_mute(msg["domain"], msg["kind"], msg["on"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "refused", str(err))
+        return
     except HomeAssistantError as err:
         connection.send_error(msg["id"], "refused", str(err) or "Home Assistant refused the change")
         return
