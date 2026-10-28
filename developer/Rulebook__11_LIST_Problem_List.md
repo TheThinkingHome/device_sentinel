@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Problem List (LIST)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Problem List is Home Assistant's to-do list of what is wrong with the house's devices. This section covers what an item is, the kinds of problem and their words, acknowledgment, the order, when a problem is announced, what counts as a recovery and how an item leaves. What a push, the persistent card and the bus events do with an item is under [NOTE](Rulebook__12_NOTE_Notifications.md). How each problem is judged is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG; an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md); muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md); the Problem List tab on the dashboard is under [DASH](Rulebook__14_DASH_Dashboard.md).
 

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 

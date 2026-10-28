@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md); the dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 

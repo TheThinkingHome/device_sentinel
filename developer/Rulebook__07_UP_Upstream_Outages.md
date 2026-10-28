@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. It covers how each is seen to fail and recover, what an outage claims, the row, the pushes and the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV; mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md); how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 

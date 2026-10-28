@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The two choices a person makes about what Device Sentinel reports: excluding, which stops the watching, and muting, which stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md); battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md); the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 

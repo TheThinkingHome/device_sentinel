@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel is, what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md); device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md); the Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 

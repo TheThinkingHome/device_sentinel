@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Code and Tests (CODE)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel's code is written and checked: the code standard, comments and the rule IDs they cite, the header on each file, the linters and the type checker, and how tests are written, pinned and fed. How a release is proven and shipped is under [REL](Rulebook__19_REL_Releases.md); how stored files are checked is under [STOR](Rulebook__18_STOR_Storage.md).
 

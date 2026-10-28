@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), its Recommendations section under [REC](Rulebook__15_REC_Recommendations.md), and phone pushes and the Problem List under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 

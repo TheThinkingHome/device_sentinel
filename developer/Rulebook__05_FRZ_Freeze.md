@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md); which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md); the stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md); upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 

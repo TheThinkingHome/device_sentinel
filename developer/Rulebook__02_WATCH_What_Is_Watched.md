@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: What Is Watched (WATCH)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 Which devices Device Sentinel watches, what it reads them through, which it sets aside and why, what happens to a device that is removed or taken back, and the quiet first minutes after a start. Excluding and muting, the two choices a person makes, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). What is judged once a device is watched is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG; the stack readers are under [STACK](Rulebook__08_STACK_Stacks.md).
 

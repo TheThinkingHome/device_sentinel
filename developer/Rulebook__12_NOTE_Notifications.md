@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card and the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 

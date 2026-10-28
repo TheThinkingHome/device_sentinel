@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a battery, says when it is low, judges where it is heading and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes); muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
