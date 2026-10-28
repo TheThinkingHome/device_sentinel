@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.12 (2026-10-28)
+// File: panel.js, Version: 0.27.13 (2026-10-28)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -330,6 +330,9 @@ const COLUMN_SHARE = {
   "MUTED": 2.5, "WHICH ONE": 2.5, "WHAT": 2.5,
   "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
   "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "GAP STARTED": 1.4,
+  // Room for "Door/Window Sensor" and "Judged by its connection" on one
+  // line.
+  "TYPE": 1.7, "AREA": 1.4, "WINDOW": 1.5, "LAST REPORT": 1.1, "BATTERY": 0.9,
 };
 // Battery Trends' tables share one scale (their "data-base"), so DEVICE,
 // TYPE and LEVEL sit in the same place in each, and a table with fewer
@@ -341,9 +344,15 @@ const BATTERY_SHARE = {
   "CELL": 1.2, "MODEL, A WEEK": 1.1,
 };
 const BATTERY_BASE = 13.4;
+// The Devices tab's own widths: ten columns in Advanced, each word whole
+// (rule DASH-04).
+const DEVICES_SHARE = {
+  "DEVICE": 2.6, "TYPE": 2.4, "AREA": 1.6, "INTEGRATION": 1.6, "STANDING": 1.6, "PROBLEM": 1.6,
+  "BATTERY": 1.15, "LAST REPORT": 1.15, "RHYTHM": 1.1, "WINDOW": 1.5,
+};
 // The Integrations tab: the five buttons get the room they need, so
 // none breaks inside a word (rule DASH-16).
-const INTEGRATION_SHARE = { "INTEGRATION": 3, "EXCLUDE AND MUTE": 4.6, "TROUBLE": 1.6 };
+const INTEGRATION_SHARE = { "INTEGRATION": 3, "EXCLUDE AND MUTE": 4.6, "SET ASIDE": 0.9, "OUTAGES, 14 DAYS": 1.1, "TROUBLE": 1.6 };
 // The history table's own widths, the ones its printout uses.
 const HISTORY_WIDTHS = [8, 8, 11, 9, 11, 9, 44];
 
@@ -357,7 +366,8 @@ function pinTable(table) {
   let shares;
   const base = Number(table.dataset.base) || 0;
   const own = table.dataset.shares === "battery" ? BATTERY_SHARE
-    : table.dataset.shares === "integrations" ? INTEGRATION_SHARE : null;
+    : table.dataset.shares === "integrations" ? INTEGRATION_SHARE
+      : table.dataset.shares === "devices" ? DEVICES_SHARE : null;
   if (own && heads) shares = heads.map((head) => own[head] || 1);
   else if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
   else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
@@ -970,6 +980,10 @@ class DeviceSentinelPanel extends HTMLElement {
 
     this._tabRow = el("div", { class: "tabs", role: "tablist", "aria-label": "Reports" });
     this._pane = el("div", { class: "pane", role: "tabpanel" });
+    // A part left out (null) is dropped rather than drawn as the word
+    // "null", on every tab and page the pane shows.
+    const draw = this._pane.replaceChildren.bind(this._pane);
+    this._pane.replaceChildren = (...parts) => draw(...parts.filter((part) => part !== null && part !== undefined && part !== false));
     // Every table the pane gains is pinned as it arrives, whichever tab,
     // page, filter or sort drew it, before the browser lays it out.
     new MutationObserver((records) => {
@@ -1603,6 +1617,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintIntegrations() {
     const all = this._snapshot.integrations.rows;
+    const simple = this._isSimple();
     const owns = (row) => Boolean(row.devices);
     const muted = (row) => Boolean(row.mutes && Object.values(row.mutes).some(Boolean));
     const hasTrouble = (row) => Boolean(row.down_since || Object.keys(row.trouble || {}).length);
@@ -1653,7 +1668,11 @@ class DeviceSentinelPanel extends HTMLElement {
       }, `${label} ${counts[key]}`)));
     const table = el("table", { "data-shares": "integrations" },
       el("thead", {}, el("tr", {},
-        el("th", {}, header), el("th", {}, "EXCLUDE AND MUTE"), el("th", {}, "TROUBLE"))),
+        el("th", {}, header), el("th", {}, "EXCLUDE AND MUTE"),
+        // Advanced adds the counts nothing else on the tab shows (rule DASH-16).
+        simple ? null : el("th", { class: "num" }, "SET ASIDE"),
+        simple ? null : el("th", { class: "num" }, "OUTAGES, 14 DAYS"),
+        el("th", {}, "TROUBLE"))),
       el("tbody", {}, ...rows.map((row) => el("tr", { class: row.excluded ? "excluded" : "" },
         el("td", {},
           this._link(row.name, this._integrationPath(row.domain)),
@@ -1671,6 +1690,8 @@ class DeviceSentinelPanel extends HTMLElement {
             ? el("div", { class: "recommended" }, "Recommended: ", el("strong", {}, "Exclude"), `, ${row.recommended}`)
             : null),
         el("td", {}, owns(row) ? this._integrationButtons(row) : null),
+        simple ? null : el("td", { class: "num" }, row.set_aside ? String(row.set_aside) : ""),
+        simple ? null : el("td", { class: "num" }, row.outages ? String(row.outages) : ""),
         el("td", { class: "trouble" }, row.excluded ? "" : this._troubleText(row))))));
     const note = this._integrationNote && this._integrationNote.domain === "*"
       ? el("p", { class: "actnote refused" }, this._integrationNote.text) : null;
@@ -2193,7 +2214,8 @@ class DeviceSentinelPanel extends HTMLElement {
           this._sortHead(this._batterySort, "DEVICE", "name", again),
           this._sortHead(this._batterySort, "TYPE", "type", again),
           this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
-          ...weekHeads.map((label) => el("th", { class: "num" }, label)),
+          // Simple leaves out the weekly levels (rule DASH-04).
+          ...(simpleView ? [] : weekHeads.map((label) => el("th", { class: "num" }, label))),
           this._sortHead(this._batterySort, "PACE", "rate", again, "num"),
           this._sortHead(this._batterySort, "READING", "reading", again),
           el("th", {}, "LEFT"))),
@@ -2204,8 +2226,8 @@ class DeviceSentinelPanel extends HTMLElement {
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
             el("td", {}, this._typeLink(row.type, pick)),
             el("td", { class: "num" }, levelText(row.level)),
-            ...padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
-              i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : "")),
+            ...(simpleView ? [] : padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
+              i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : ""))),
             el("td", { class: "num" }, perWeek(-(row.pace || 0))),
             el("td", { style: row.reading === "accelerating" ? "color:var(--error-color, #db4437);font-weight:500" : "" }, row.reading || ""),
             // Red for a warning, an accelerating cell inside Days Till Low;
@@ -2214,22 +2236,28 @@ class DeviceSentinelPanel extends HTMLElement {
               row.until || row.left || ""));
         }))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
-    const lowRows = this._sortRows(low, this._lowSort, { name: byName, type: byType, level: (row) => row.level,
-      since: (row) => row.since || "" });
+    // A sort on a column a view leaves out does not order its rows.
+    const lowSort = simpleView && this._lowSort.key === "month" ? {} : this._lowSort;
+    const lowRows = this._sortRows(low, lowSort, { name: byName, type: byType, level: (row) => row.level,
+      month: (row) => row.month_drop || 0, since: (row) => row.since || "" });
     const lowTable = low.length
       ? el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
         el("thead", {}, el("tr", {},
           this._sortHead(this._lowSort, "DEVICE", "name", again),
           this._sortHead(this._lowSort, "TYPE", "type", again),
           this._sortHead(this._lowSort, "LEVEL", "level", again, "num"),
+          // Advanced shows whether a low cell is still falling (rule DASH-04).
+          simpleView ? null : this._sortHead(this._lowSort, "4 WEEKS", "month", again, "num"),
           this._sortHead(this._lowSort, "SINCE", "since", again))),
         el("tbody", {}, ...lowRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
           el("td", {}, this._typeLink(row.type, pick)),
           el("td", { class: "num" }, levelText(row.level)),
+          simpleView ? null : el("td", { class: "num" }, moved(row.month_drop)),
           el("td", {}, row.since ? moment(row.since) : ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under your threshold.");
-    const steadyRows = this._sortRows(steadyAll, this._steadySort, { name: byName, type: byType,
+    const steadySort = simpleView && ["days", "steps"].includes(this._steadySort.key) ? {} : this._steadySort;
+    const steadyRows = this._sortRows(steadyAll, steadySort, { name: byName, type: byType,
       level: (row) => row.level, month: (row) => row.month_drop || 0, days: (row) => row.days || 0,
       steps: (row) => row.steps || "" });
     const steady = el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
@@ -2238,19 +2266,20 @@ class DeviceSentinelPanel extends HTMLElement {
         this._sortHead(this._steadySort, "TYPE", "type", again),
         this._sortHead(this._steadySort, "LEVEL", "level", again, "num"),
         this._sortHead(this._steadySort, "4 WEEKS", "month", again, "num"),
-        this._sortHead(this._steadySort, "DAYS RECORDED", "days", again, "num"),
-        this._sortHead(this._steadySort, "STEPS", "steps", again),
+        // Simple leaves out how well each cell is measured (rule DASH-04).
+        simpleView ? null : this._sortHead(this._steadySort, "DAYS RECORDED", "days", again, "num"),
+        simpleView ? null : this._sortHead(this._steadySort, "STEPS", "steps", again),
         el("th", {}, "CELL"),
-        el("th", { class: "num" }, "MODEL, A WEEK"))),
+        simpleView ? null : el("th", { class: "num" }, "MODEL, A WEEK"))),
       el("tbody", {}, ...steadyRows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._typeLink(row.type, pick)),
         el("td", { class: "num" }, levelText(row.level)),
         el("td", { class: "num" }, moved(row.month_drop)),
-        el("td", { class: "num" }, String(row.days)),
+        simpleView ? null : el("td", { class: "num" }, String(row.days)),
         // How the cell reports (rule BAT-09): a coarse cell that is falling
         // sits here with no forecast, and this says why.
-        el("td", {}, row.steps || ""),
+        simpleView ? null : el("td", {}, row.steps || ""),
         // The battery it takes, as its Power row says it, lithium named
         // (rule BAT-16); "Not set" when nobody has said, a link to the page
         // that sets it, plain in Simple, where the Power row is read-only,
@@ -2258,8 +2287,9 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
           : simpleView ? el("span", { class: "muted" }, "Not set") : this._link("Not set", this._devicePath(row.device_id))),
         // How fast the others of its model fall (rule BAT-16).
-        el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
-    const unreadable = unreadableRows.length
+        simpleView ? null : el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
+    // A raw sensor value is no level to act on: Advanced only (rule DASH-04).
+    const unreadable = unreadableRows.length && !simpleView
       ? el("div", {}, el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
         el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
         el("tbody", {}, ...unreadableRows.map((row) => el("tr", {},
@@ -2300,7 +2330,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // WEEK line never hides behind the lithium one.
       steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left.") : null,
-      steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+      !simpleView && steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest: context, not this cell's time left.") : null,
       !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "Not set: no battery type is known for the device. Open it and set the type with the pencil on its Power row; one answer covers every device of the same model.") : null,
@@ -2449,8 +2479,10 @@ class DeviceSentinelPanel extends HTMLElement {
       return el("div", { class: "scroll" },
         el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
     };
+    // Two short columns: on a scale of its own, so DEVICES sits beside
+    // DAY instead of across the page.
     const badDays = page.bad_days.length
-      ? el("div", { class: "scroll" }, el("table", {},
+      ? el("div", { class: "scroll" }, el("table", { "data-base": 12 },
         el("thead", {}, el("tr", {}, el("th", {}, "DAY"), el("th", { class: "num" }, "DEVICES"))),
         el("tbody", {}, ...page.bad_days.map((row) => el("tr", {},
           el("td", {}, moment(`${row.day}T12:00:00`).replace(/,[^,]*$/, "")),
@@ -2513,7 +2545,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const narrow = (list) => list.filter((row) =>
       (!wanted || row.name.toLocaleLowerCase().includes(wanted))
       && (!this._deviceArea || (this._deviceArea === NO_AREA ? !row.area : row.area === this._deviceArea))
-      && (!this._deviceLabel || (row.labels || []).includes(this._deviceLabel)));
+      && (this._isSimple() || !this._deviceLabel || (row.labels || []).includes(this._deviceLabel)));
     const finders = this._deviceFinders(areas, labels, listed);
     const chipsFor = () => el("div", { class: "chips" }, ...DEVICE_FILTERS.map(([key, label]) =>
       el("button", {
@@ -2557,13 +2589,15 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
     // A sort on a column Simple leaves out does not order Simple's rows.
-    const sort = this._isSimple() && this._deviceSort && ["type", "last", "rhythm", "window"].includes(this._deviceSort.key)
+    const sort = this._isSimple() && this._deviceSort && ["type", "area", "battery", "last", "rhythm", "window"].includes(this._deviceSort.key)
       ? null : this._deviceSort;
     if (sort) {
       const value = {
         name: (row) => row.name.toLowerCase(),
         type: (row) => (row.type || "\uffff").toLowerCase(),
         integration: (row) => row.integration_name.toLowerCase(),
+        area: (row) => (row.area || "\uffff").toLowerCase(),
+        battery: (row) => (row.battery == null ? 999 : row.battery),
         last: (row) => (row.last_activity ? new Date(row.last_activity).getTime() : 0),
         rhythm: (row) => row.rhythm || 0,
         window: (row) => row.window || 0,
@@ -2581,27 +2615,30 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, label));
     };
-    // Simple leaves out TYPE, LAST REPORT, RHYTHM and WINDOW, and the
-    // type filter (rule DASH-04).
+    // Simple leaves out AREA, TYPE, BATTERY, LAST REPORT, RHYTHM and
+    // WINDOW, and the type and label filters (rule DASH-04).
     const simple = this._isSimple();
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${all.length} devices are watched. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
       + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted.`
       + (simple ? "" : " Each device's window is how long it may stay quiet before it is called frozen, learned from its own rhythm."));
     const chips = chipsFor();
-    const table = el("table", {},
+    const table = el("table", { "data-shares": "devices" },
       el("thead", {}, el("tr", {},
-        header("DEVICE", "name"), simple ? null : header("TYPE", "type"), header("INTEGRATION", "integration"),
-        el("th", {}, "STANDING"), el("th", {}, "PROBLEM"),
-        ...(simple ? [] : [header("LAST REPORT", "last"), header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num")]))),
+        header("DEVICE", "name"), simple ? null : header("TYPE", "type"), simple ? null : header("AREA", "area"),
+        header("INTEGRATION", "integration"), el("th", {}, "STANDING"), el("th", {}, "PROBLEM"),
+        ...(simple ? [] : [header("BATTERY", "battery", "num"), header("LAST REPORT", "last"),
+          header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num")]))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         // A link that sets the type filter.
         simple ? null : el("td", {}, this._typeLink(row.type, pickType)),
+        simple ? null : el("td", {}, row.area || el("span", { class: "muted" }, "No area")),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
         el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
         ...(simple ? [] : [
+          el("td", { class: "num" }, row.battery == null ? "" : `${Math.round(row.battery)}%`),
           el("td", {}, ago(row.last_activity, at)),
           el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
           el("td", { class: "num" }, row.judged_by ? this._judgedByWords(row.judged_by)
@@ -2645,7 +2682,9 @@ class DeviceSentinelPanel extends HTMLElement {
       el("option", { value: "", ...(!this._deviceLabel ? { selected: "" } : {}) }, "All labels"),
       ...labels.map((name) => el("option", { value: name, ...(this._deviceLabel === name ? { selected: "" } : {}) },
         `${name} ${count((row) => (row.labels || []).includes(name))}`)));
-    return el("div", { class: "actrow" }, search, area, label);
+    // Labels mute in Advanced only, so Simple has no label filter
+    // (rule DASH-04).
+    return el("div", { class: "actrow" }, search, area, this._isSimple() ? null : label);
   }
 
   // Typing repaints the tab, so the search box takes its focus and
