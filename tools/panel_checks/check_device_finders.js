@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.27.14 (2026-10-29)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
 // dashboard (rules DASH-12, MUTE-03). The Devices tab's name
@@ -127,12 +127,12 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   const kitchen = reply.rows.filter((r) => r.area === "Kitchen").length;
   const garage = reply.rows.filter((r) => r.area === "Garage").length;
   const none = reply.rows.filter((r) => !r.area).length;
-  check("The Area filter offers each area with its count, then No area",
-    JSON.stringify(areaOptions) === JSON.stringify(["All areas", `Garage ${garage}`, `Kitchen ${kitchen}`, `No area ${none}`]), areaOptions);
+  check("The Area filter offers each area with its count, then Not Set (rule DASH-04)",
+    JSON.stringify(areaOptions) === JSON.stringify(["All areas", `Garage ${garage}`, `Kitchen ${kitchen}`, `Not Set ${none}`]), areaOptions);
   await choose(root, "Show one area", "Kitchen");
   check("Choosing an area lists its devices only", bodyRows(root).length === kitchen, bodyRows(root).length);
   await choose(root, "Show one area", select(root, "Show one area").options[3].value);
-  check("No area lists the devices without one", bodyRows(root).length === none, bodyRows(root).length);
+  check("Not Set lists the devices without one", bodyRows(root).length === none, bodyRows(root).length);
   await choose(root, "Show one area", "");
 
   const spare = reply.rows.filter((r) => r.labels.includes("Spare")).length;

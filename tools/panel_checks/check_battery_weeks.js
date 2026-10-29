@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -235,22 +235,30 @@ const trends = {
   const cellText = text(cellTab.root);
   check("a battery that is not lithium is named", rowCells(cellTab.root, "Door Kitchen").some((td) => td.textContent === "2× AAA"),
     rowCells(cellTab.root, "Door Kitchen").map((td) => td.textContent));
-  const notSet = rowCells(cellTab.root, "Leak Sink").find((td) => td.textContent === "Not set");
-  const notSetLink = notSet && notSet.querySelector("a");
-  check("one nobody has set reads Not set, a link to its page",
-    Boolean(notSetLink) && notSetLink.getAttribute("href").split("?")[0].endsWith("/device/unk1"), notSet && notSet.innerHTML);
-  check("a line says where to set it", cellText.includes("Not set: no battery type is known for the device."), cellText.slice(-900));
+  // The last "Not Set" in the row is CELL's; TYPE reads it too.
+  const notSet = rowCells(cellTab.root, "Leak Sink").filter((td) => td.textContent === "Not Set").pop();
+  const notSetButton = notSet && notSet.querySelector("button.linkbtn");
+  check("one nobody has set reads Not Set, a link that sets it in place (rule DASH-04)",
+    Boolean(notSetButton) && !notSet.querySelector("a"), notSet && notSet.innerHTML);
+  if (notSetButton) {
+    notSetButton.click();
+    await settle();
+  }
+  check("pressing Not Set opens the battery choices there, with Save and Cancel",
+    Boolean(notSet && notSet.querySelector('select[aria-label="What powers this device"]'))
+      && [...notSet.querySelectorAll("button")].map((b) => b.textContent).join(",") === "Save,Cancel", notSet && notSet.innerHTML);
+  check("a line says how to set it", cellText.includes("Not Set: no battery type is known for the device. Press Not Set to choose it"), cellText.slice(-900));
   check("MODEL, A WEEK is explained with no lithium cell listed",
     cellText.includes("MODEL, A WEEK is how many points") && !cellText.includes("A lithium cell holds"), cellText.slice(-900));
   check("the line on where to set it is absent when every battery is known",
-    !text(lithiumTab.root).includes("Not set: no battery type"));
+    !text(lithiumTab.root).includes("Not Set: no battery type"));
   const simpleTab = await open(`${PREFIX}/battery-trends`, {
     battery_trends: mixed,
     status: (reply) => ({ ...reply, dashboard: "simple" }),
   });
-  const simpleNotSet = rowCells(simpleTab.root, "Leak Sink").find((td) => td.textContent === "Not set");
-  check("Simple reads Not set plainly, with no link and no line, since its Power row is read-only",
-    Boolean(simpleNotSet) && !simpleNotSet.querySelector("a") && !text(simpleTab.root).includes("Not set: no battery type"),
+  const simpleNotSet = rowCells(simpleTab.root, "Leak Sink").filter((td) => td.textContent === "Not Set").pop();
+  check("Simple: Not Set is the link too, with no line below the table",
+    Boolean(simpleNotSet) && Boolean(simpleNotSet.querySelector("button.linkbtn")) && !text(simpleTab.root).includes("Not Set: no battery type"),
     simpleNotSet && simpleNotSet.innerHTML);
   const coinRow = [...lithiumTab.root.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent))
     .find((cells) => cells[0] === "Door Bath Main");

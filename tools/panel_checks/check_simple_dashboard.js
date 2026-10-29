@@ -1,8 +1,8 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.11 (2026-10-28)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
-// and its battery chart; Mute by label in Advanced.
+// and its battery chart; a label mute's line, and no Mute by label.
 // Run with: LC_ALL=en_US.UTF-8 node check_simple_dashboard.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -138,18 +138,36 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
 
   console.log("Simple's device page");
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.status.category = "reporting"; }));
-  check("Type, Area and Labels are read-only", !buttons(rowCell(root, "Type")).length
-    && !buttons(rowCell(root, "Area")).length && !buttons(rowCell(root, "Labels")).length,
-  [buttons(rowCell(root, "Type")), buttons(rowCell(root, "Area")), buttons(rowCell(root, "Labels"))]);
-  // "Not known", as Advanced says it (rules DEV-07, DEV-10).
-  check("an empty type reads Not known", rowCell(root, "Type").textContent === "Not known", rowCell(root, "Type").textContent);
-  check("an unanswered Power reads Not known", rowCell(root, "Power").textContent === "Not known", rowCell(root, "Power").textContent);
-  check("labels still say what they do", rowCell(root, "Labels").textContent.includes("mutes battery and signal"));
-  check("Power is read-only", !buttons(rowCell(root, "Power")).length);
+  // "Not Set" is the link that sets it; a value that is set is grey,
+  // with nothing to press (rules DASH-04, DEV-07, DEV-10).
+  check("an empty type reads Not Set, a link", rowCell(root, "Type").textContent === "Not Set"
+    && buttons(rowCell(root, "Type")).join() === "Not Set", rowCell(root, "Type").innerHTML);
+  check("an area that is set is grey, with nothing to press", rowCell(root, "Area").textContent === "Master Bedroom"
+    && !buttons(rowCell(root, "Area")).length && Boolean(rowCell(root, "Area").querySelector("span.muted")), rowCell(root, "Area").innerHTML);
+  check("an unanswered Power reads Not Set, a link", rowCell(root, "Power").textContent === "Not Set"
+    && buttons(rowCell(root, "Power")).join() === "Not Set", rowCell(root, "Power").textContent);
+  await click(buttonIn(rowCell(root, "Type"), "Not Set"));
+  check("pressing Not Set opens the type choices in place, with Save and Cancel",
+    Boolean(rowCell(root, "Type").querySelector('select[aria-label="What this device is"]'))
+    && buttons(rowCell(root, "Type")).join() === "Save,Cancel", buttons(rowCell(root, "Type")));
+  await click(buttonIn(rowCell(root, "Type"), "Cancel"));
+  check("Cancel puts Not Set back", buttons(rowCell(root, "Type")).join() === "Not Set", buttons(rowCell(root, "Type")));
+  // Labels are Advanced's: Simple has no Labels row, and a label's
+  // mute is one line that points there (rules DASH-04, MUTE-09).
+  check("no Labels row", !rowCell(root, "Labels"));
+  const labelLines = [...rowCell(root, "Muted").querySelectorAll(".actnote")].map((n) => n.textContent);
+  check("a label's mute is one line pointing to Advanced",
+    labelLines.includes("Battery is muted by the label Quiet. Switch to Advanced to change it.")
+    && labelLines.includes("Signal is muted by the label Quiet. Switch to Advanced to change it."), labelLines);
+  check("and lights no button", ![...rowCell(root, "Muted").querySelectorAll("button.chip")].some((b) => b.classList.contains("on")));
   check("no Exclude this device", !rowCell(root, "Excluded") && !anyButton(root, "Exclude this device"));
   check("every device mute button stays", ["Mute freeze", "Mute unavailable", "Mute everything"].every((w) => buttons(rowCell(root, "Muted")).includes(w)),
     buttons(rowCell(root, "Muted")));
   check("no Mute by label", !anyButton(root, "Mute by label"));
+  await click(buttonIn(rowCell(root, "Muted"), "Advanced"));
+  check("Advanced, in the line, switches the view to Advanced, where the Labels row is",
+    modeButton(root, "Advanced").getAttribute("aria-pressed") === "true" && Boolean(rowCell(root, "Labels")));
+  ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.status.category = "reporting"; }));
   check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !rowCell(root, "Wait rule"));
   // A device its hub judges shows no gaps, as in Advanced (rule STACK-10).
   ({ root } = await open({ __mode: "simple" }, (p) => {
@@ -201,41 +219,11 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.actions.excluded = { here: true, integration: false }; }));
   check("an exclusion already made still shows its way back", !!anyButton(root, "Cancel the exclusion"));
 
-  console.log("Mute by label, in Advanced");
+  // Label mutes are made in settings only (rule MUTE-09).
+  console.log("No Mute by label, in Advanced");
   let calls;
   ({ root, calls } = await open({ __mode: "advanced" }));
-  check("the Muted row offers Mute by label", !!buttonIn(rowCell(root, "Muted"), "Mute by label"));
-  await click(buttonIn(rowCell(root, "Muted"), "Mute by label"));
-  check("the picker fetches the labels", calls.some((c) => c.type === "device_sentinel/device_choices"));
-  check("each label with how many devices carry it", text(root).includes("Garage, on 3 devices") && text(root).includes("Quiet, on 1 device"));
-  const kind = rowCell(root, "Muted").querySelector("select");
-  kind.value = "battery";
-  kind.dispatchEvent(new window.Event("change"));
-  await settle();
-  const garage = [...rowCell(root, "Muted").querySelectorAll("label.pick")].find((l) => l.textContent.startsWith("Garage")).querySelector("input");
-  garage.checked = true;
-  garage.dispatchEvent(new window.Event("change"));
-  await settle();
-  check("it says what the mute reaches before it saves",
-    text(root).includes("Garage is on 3 devices and goes on this one too. Muting it for battery mutes all 4 for battery."), text(root).slice(0, 0));
-  await click(buttonIn(rowCell(root, "Muted"), "Mute by label"));
-  const sent = calls.filter((c) => c.type === "device_sentinel/device_label_mute");
-  check("Mute by label sends the device, the kind and the label", sent.length === 1 && sent[0].kind === "battery"
-    && sent[0].label_id === "garage" && sent[0].device_id === DEVICE, sent);
-
-  ({ root, calls } = await open({ __mode: "advanced" }));
-  await click(buttonIn(rowCell(root, "Muted"), "Mute by label"));
-  const typed = rowCell(root, "Muted").querySelector('input[aria-label="New label"]');
-  typed.value = "garage ";
-  typed.dispatchEvent(new window.Event("input"));
-  await settle();
-  const sameBox = rowCell(root, "Muted").querySelector('input[aria-label="New label"]') === typed;
-  check("typing repaints nothing, so the first click reaches the button", sameBox);
-  check("a typed name that is already a label says how many devices carry it",
-    text(root).includes("Garage is on 3 devices and goes on this one too."), text(root).slice(0, 0));
-  await click(buttonIn(rowCell(root, "Muted"), "Mute by label"));
-  const byName = calls.filter((c) => c.type === "device_sentinel/device_label_mute");
-  check("and saves that label, not a new one", byName.length === 1 && byName[0].label_id === "garage" && !byName[0].name, byName);
+  check("the Muted row offers no Mute by label", !buttonIn(rowCell(root, "Muted"), "Mute by label") && !anyButton(root, "Mute by label"));
 
   // Simple asks for nothing more than it must (rule DASH-04). No
   // Rename, no Use the 14-Day Trimmed Maximum, and no

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.11 (2026-10-28)
+// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: names, Last seen and mutes on the device page and the
 // Problem List (rule MUTE-09). The Last
 // seen fallback is checked on real_device.json, a real mains plug's page
@@ -187,8 +187,8 @@ const realPage = (tweak = () => {}) => (m) => {
     }) } });
     const cell = rowCell(root, "Muted");
     const notes = cell ? [...cell.querySelectorAll(".actnote")].map((n) => n.textContent) : [];
-    check("A label's mute says so and names its section",
-      notes.includes("Battery is muted by the label Quiet. Change it in Device Sentinel's settings, Configure, Low Battery."), notes);
+    check("A label's mute says to remove the label here, or names its section (rule MUTE-09)",
+      notes.includes("Battery is muted by the label Quiet. Remove the label above to lift it for this device, or change it in Device Sentinel's settings, Configure, Low Battery."), notes);
     check("An integration's mute names the integration, MQTT, not the device's Zigbee2MQTT",
       notes.includes("Freeze is muted by the integration MQTT. Change it on the Integrations tab."), notes);
     check("A mute set on the device itself, which the page can lift, adds no note",

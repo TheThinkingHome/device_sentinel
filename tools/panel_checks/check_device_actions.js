@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.11 (2026-10-28)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -142,19 +142,40 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}));
   const muted = rowCell(root, "Muted");
-  const battery = buttonIn(muted, "\u2713 Mute battery");
-  check("Muted: a mute from a label shows lit and fixed",
-    battery && battery.getAttribute("aria-pressed") === "true" && battery.getAttribute("aria-disabled") === "true");
+  // A mute from a label lights no button: the buttons show only the
+  // device's own mutes, so every lit one lifts its mute (rule MUTE-09).
+  const battery = buttonIn(muted, "Mute battery");
+  check("Muted: a mute from a label lights no button",
+    battery && battery.getAttribute("aria-pressed") === "false" && !battery.classList.contains("on")
+    && ![...muted.querySelectorAll("button")].some((b) => b.classList.contains("on")));
   // The row says nothing in words; each mute that is on is filled
   // with a check mark, and one that is off is plain (rule MUTE-09).
   check("Muted: no word before the buttons, not even 'nothing'",
     !!muted && muted.querySelector(".actcol").firstChild.classList.contains("actrow")
     && !/nothing/.test(muted.textContent), muted && muted.innerHTML.slice(0, 80));
-  check("Muted: a mute that is on is filled and checked, one that is off is plain",
-    battery.classList.contains("on") && /^\u2713 /.test(battery.textContent)
-    && !buttonIn(muted, "Mute freeze").classList.contains("on"));
+  check("Muted: the label is drawn lit in the Labels row instead",
+    [...rowCell(root, "Labels").querySelectorAll(".labelchip.on")].map((c) => c.firstChild.textContent).join() === "Quiet",
+    rowCell(root, "Labels").innerHTML.slice(0, 300));
   await click(battery);
-  check("Muted: a fixed chip sends nothing", !calls.some((c) => c.type === "device_sentinel/device_mute"));
+  check("Muted: pressing it sets the device's own battery mute, the label's untouched",
+    calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "battery" && c.on === true));
+  ({ root, calls } = await open({}, (p) => {
+    p.identity.actions.mutes.freeze = { on: true, source: "device", here: true };
+  }));
+  const ownFreeze = buttonIn(rowCell(root, "Muted"), "\u2713 Mute freeze");
+  check("Muted: a mute that is on is filled and checked, with the hover that says a press lifts it",
+    Boolean(ownFreeze) && ownFreeze.classList.contains("on") && ownFreeze.getAttribute("title") === "Muted. Press to lift the mute."
+    && !buttonIn(rowCell(root, "Muted"), "Mute signal").classList.contains("on"));
+  await click(ownFreeze);
+  check("Muted: pressing it lifts the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "freeze" && c.on === false));
+  const bothPage = await open({}, (p) => {
+    p.identity.actions.mutes.battery = { on: true, source: "label: Quiet", here: true };
+  });
+  const both = rowCell(bothPage.root, "Muted");
+  check("Muted: its own mute under a label's: lit, and the line says the label's stays",
+    buttonIn(both, "\u2713 Mute battery") && [...both.querySelectorAll(".actnote")].map((n) => n.textContent)
+      .includes("Battery is also muted by the label Quiet, which stays when you lift your own."),
+    [...both.querySelectorAll(".actnote")].map((n) => n.textContent));
   await click(buttonIn(rowCell(root, "Muted"), "Mute everything"));
   check("Muted: Mute everything sends at once, with no question",
     calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true)
@@ -211,10 +232,10 @@ const excludedPage = (excluded) => (p) => {
     };
   }));
   const unl = rowCell(root, "Muted");
-  check("Muted: a label's unavailable mute names its section",
-    /Unavailable is muted by the label Wall switched\. Change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection\./.test(unl.textContent), unl.textContent);
-  check("Muted: a label's unavailable mute cannot be pressed here",
-    buttonIn(unl, "\u2713 Mute unavailable").getAttribute("aria-disabled") === "true");
+  check("Muted: a label's unavailable mute says to remove the label, and names its section",
+    /Unavailable is muted by the label Wall switched\. Remove the label above to lift it for this device, or change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection\./.test(unl.textContent), unl.textContent);
+  check("Muted: a label's unavailable mute lights no button",
+    buttonIn(unl, "Mute unavailable") && !buttonIn(unl, "Mute unavailable").classList.contains("on"));
 
   console.log("\nRenaming");
   ({ root, calls } = await open({

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: the Power row. Words, the source icon in light and
 // dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library; the Battery Last
@@ -135,10 +135,19 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Owner: the light slate shield on the dark theme", /#B0C4DE/.test(mine.innerHTML), mine.innerHTML);
   check("Owner: no report button until a save", !cell.querySelector("a.chip"));
 
-  ({ root } = await open({}, block({ words: "<img src=x onerror=1>" })));
+  ({ root } = await open({}, block({ words: "<img src=x onerror=1>", source: "library" })));
   cell = rowCell(root, "Power");
   check("Words are shown as text, never markup", cell.textContent.startsWith("<img src=x onerror=1>") && !cell.querySelector("img"));
-  check("Not known has no source icon", !cell.querySelector(".powericon"));
+  ({ root } = await open({}, block({})));
+  cell = rowCell(root, "Power");
+  // Nothing known reads "Not Set", a link that opens the choices, with
+  // the pencil beside it (rule DASH-04).
+  check("Nothing known: Not Set, a link, the pencil beside it, no source icon",
+    cell.textContent === "Not Set" && cell.querySelector("button.linkbtn") && cell.querySelector("button.edit")
+    && !cell.querySelector(".powericon"), cell.innerHTML);
+  await click(cell.querySelector("button.linkbtn"));
+  check("Pressing Not Set opens the same choices as the pencil",
+    Boolean(rowCell(root, "Power").querySelector('select[aria-label="What powers this device"]')));
 
   ({ root, calls } = await open({}, LIBRARY));
   await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));

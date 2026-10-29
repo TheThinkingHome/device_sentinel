@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.13 (2026-10-28)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -224,8 +224,9 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   check("Advanced keeps the measuring columns", /DAYS RECORDED/.test(text) && /STEPS/.test(text) && /MODEL, A WEEK/.test(text));
   ({ root } = await open({ __mode: "simple", __path: "/devices" }));
   let heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
-  check("Simple Devices: DEVICE, INTEGRATION, STANDING, PROBLEM", heads.join() === "DEVICE,INTEGRATION,STANDING,PROBLEM", heads);
-  check("Simple Devices: no type filter", ![...root.querySelectorAll(".pane select")].some((s) => /All types/.test(s.textContent)));
+  // TYPE and its filter show in Simple too (rule DASH-04).
+  check("Simple Devices: DEVICE, TYPE, INTEGRATION, STANDING, PROBLEM", heads.join() === "DEVICE,TYPE,INTEGRATION,STANDING,PROBLEM", heads);
+  check("Simple Devices: the type filter", [...root.querySelectorAll(".pane select")].some((s) => /All types/.test(s.textContent)));
   check("Simple Devices: no label filter", ![...root.querySelectorAll(".pane select")].some((s) => /All labels/.test(s.textContent)));
   ({ root } = await open({ __mode: "advanced", __path: "/devices" }));
   heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // rows and lines not ticked, as the tab and the button do, says they
 // help Device Sentinel run better and that none is required, singles
@@ -91,7 +91,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         tweak(page);
         return page;
       }
-      if (kind === "device_choices") return { areas: [], labels: [] };
+      if (kind === "device_choices") return { areas: [{ id: "porch", name: "Porch" }, { id: "hall", name: "Hall" }], labels: [] };
       if (kind.startsWith("device_")) return {};
       if (!(kind in payloads)) throw new Error(`no payload for ${kind}`);
       return JSON.parse(JSON.stringify(payloads[kind]));
@@ -145,8 +145,10 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("Its body is James's text, word for word", !!card && card.querySelector("p").textContent === SLOW.body);
   check("It opens on its list when the address asks for it", !!card && card.querySelector("details").hasAttribute("open"));
   const rows = card ? [...card.querySelectorAll("tbody tr")] : [];
-  check("Each device has a row with its area or 'no area'", rows.length === 2
-    && rows[0].children[1].textContent === "Guest Bedroom" && rows[1].children[1].textContent === "no area", rows.map((r) => r.textContent));
+  // An area nobody set reads "Not Set", which sets it there (rule DASH-04).
+  check("Each device has a row with its area or Not Set, a link", rows.length === 2
+    && rows[0].children[1].textContent === "Guest Bedroom" && rows[1].children[1].textContent === "Not Set"
+    && Boolean(rows[1].children[1].querySelector("button.linkbtn")), rows.map((r) => r.textContent));
   const chip = rows[0] && rows[0].querySelector("button.chip");
   check("Each row offers Mute freeze", !!chip && chip.textContent === "Mute freeze", chip && chip.textContent);
   chip.click();
@@ -204,7 +206,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("A sensor its person switched off is shown ticked and faded", offRows[1] && offRows[1].classList.contains("acked")
     && offRows[1].querySelector('input[type="checkbox"]').checked);
   const turnOn = offRows[0] && offRows[0].querySelector("button.chip");
-  check("Each row offers Turn on its battery sensor", !!turnOn && turnOn.textContent === "Turn on its battery sensor", turnOn && turnOn.textContent);
+  // Named for what it reports (rule REC-05).
+  check("Each row offers Turn on its battery percentage sensor", !!turnOn && turnOn.textContent === "Turn on its battery percentage sensor", turnOn && turnOn.textContent);
   turnOn.click();
   await settle(); await settle();
   const turnCall = acks.calls.find((c) => c.type === "device_sentinel/device_turn_on");
@@ -244,7 +247,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   } });
   const voltCard = [...volt.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "voltage_off");
   const voltChip = voltCard && voltCard.querySelector("tbody tr button.chip");
-  check("Its row offers Turn on its battery voltage", !!voltChip && voltChip.textContent === "Turn on its battery voltage", voltChip && voltChip.textContent);
+  check("Its row offers Turn on its battery voltage sensor", !!voltChip && voltChip.textContent === "Turn on its battery voltage sensor", voltChip && voltChip.textContent);
   if (voltChip) voltChip.click();
   await settle(); await settle();
   const voltCall = volt.calls.find((c) => c.type === "device_sentinel/device_turn_on");
@@ -341,6 +344,74 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   await agree(4, "1 recommendation to help Device Sentinel run better. None of them is required.", "Recommendations (1)", "Active Recommendations (1)");
   const done = await agree(5, "Nothing to recommend right now.", "Recommendations", null);
   check("Every row ticked: the card is still drawn, to untick", !!done.root.querySelector('article.rec[data-kind="battery_off"]'));
+
+  // Every card is answered in its own rows (rule REC-04): the area, the
+  // name and the model's type, each saved from the Recommendations tab.
+  console.log("\nArea, name and model type, set in the list");
+  const AREA = { kind: "area", title: "No Area Assigned", body: "1 device has no area.",
+    devices: [{ device_id: ROWS[0].device_id, name: "Porch Light", area: null, acknowledged: false }] };
+  const NAMES = { kind: "names", title: "Devices Sharing A Name", body: "2 devices share a name with another.",
+    devices: [{ device_id: ROWS[0].device_id, name: "Lamp", area: "Hall", acknowledged: false },
+      { device_id: ROWS[1].device_id, name: "Lamp", area: "Porch", acknowledged: false }] };
+  const MIXED = { kind: "mixed_types", title: "Model With More Than One Type", body: "1 model has devices of more than one type.",
+    devices: [{ device_id: ROWS[2].device_id, name: "Plug Desk", area: "Hall", model: "IKEA Tretakt", type: "Switch", acknowledged: false }] };
+  const threeRecs = () => ({ lines: [], devices: [AREA, NAMES, MIXED], closing: "", power: {},
+    types: { choices: ["Switch", "Plug"], other: "Other" } });
+  const three = await open({ path: `${PREFIX}/recommendations?open=area`, answers: {
+    recommendations: threeRecs,
+    device_rename: (m) => {
+      if (!m.confirm && m.name === "Lamp") { const e = new Error("Another device is already named Lamp (in the Porch)."); e.code = "name_in_use"; throw e; }
+      return {};
+    },
+  } });
+  const threeCard = (kind) => [...three.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === kind);
+  for (const kind of ["area", "names", "mixed_types"]) {
+    const d = threeCard(kind) && threeCard(kind).querySelector("details");
+    if (d && !d.open) { d.open = true; }
+  }
+  await settle();
+  const areaRow = threeCard("area").querySelector("tbody tr");
+  const areaSelect = areaRow && areaRow.querySelector('select[aria-label="Which area"]');
+  check("No Area Assigned: each row has the area chooser, from Home Assistant's areas",
+    Boolean(areaSelect) && [...areaSelect.options].map((o) => o.textContent).join("|") === "Choose…|Porch|Hall",
+    areaRow && areaRow.innerHTML.slice(0, 400));
+  check("No Area Assigned: its AREA column reads Not Set, with nothing more to press there",
+    areaRow && areaRow.children[1].textContent === "Not Set" && !areaRow.children[1].querySelector("button"));
+  areaSelect.value = "porch"; areaSelect.dispatchEvent(new three.window.Event("change"));
+  [...areaRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await settle(); await settle();
+  const areaCall = three.calls.find((c) => c.type === "device_sentinel/device_area");
+  check("Save moves the device to the area, from the Recommendations tab",
+    areaCall && areaCall.device_id === ROWS[0].device_id && areaCall.area_id === "porch" && areaCall.source === "recommendations", areaCall);
+  const afterArea = three.calls.slice(three.calls.indexOf(areaCall)).map((c) => c.type);
+  check("and the dashboard reads everything again, so the other tabs show it (rule DASH-11)",
+    afterArea.includes("device_sentinel/devices") && afterArea.includes("device_sentinel/problem_list"), afterArea);
+
+  const nameRow = threeCard("names").querySelector("tbody tr");
+  const nameBox = nameRow && nameRow.querySelector("input.actinput");
+  check("Devices Sharing A Name: each row has a name box with the name", Boolean(nameBox) && nameBox.value === "Lamp");
+  [...nameRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await settle(); await settle();
+  check("A name another device shows is held, with Save anyway",
+    /Another device is already named Lamp/.test(nameRow.textContent) && [...nameRow.querySelectorAll("button")].some((b) => b.textContent === "Save anyway"),
+    nameRow.textContent);
+  nameBox.value = "Lamp Hall";
+  [...nameRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await settle(); await settle();
+  const renamed = three.calls.filter((c) => c.type === "device_sentinel/device_rename").pop();
+  check("Save renames the device, from the Recommendations tab",
+    renamed && renamed.name === "Lamp Hall" && renamed.confirm === false && renamed.source === "recommendations", renamed);
+
+  const mixedRow = threeCard("mixed_types").querySelector("tbody tr");
+  const mixedSelect = mixedRow && mixedRow.querySelector('select[aria-label="What this device is"]');
+  check("Model With More Than One Type: the model and its type now, then the type picker",
+    /IKEA Tretakt: Switch/.test(mixedRow.textContent) && Boolean(mixedSelect), mixedRow && mixedRow.textContent);
+  mixedSelect.value = "Plug"; mixedSelect.dispatchEvent(new three.window.Event("change"));
+  [...mixedRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await settle(); await settle();
+  const typed = three.calls.find((c) => c.type === "device_sentinel/device_type");
+  check("Save sets the type, for the whole model, from the Recommendations tab",
+    typed && typed.device_id === ROWS[2].device_id && typed.choice === "Plug" && typed.source === "recommendations", typed);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

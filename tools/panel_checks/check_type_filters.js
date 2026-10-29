@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -123,19 +123,24 @@ const BATTERY = {
   const motion = tableRows(models).find((tr) => tr.firstChild.textContent === "Third Reality Wireless motion sensor");
   check("A model split between types lists each with its count, and keeps all its cells",
     motion && text(motion.children[1]) === "Motion Sensor 2, Presence Sensor 1" && text(motion.children[2]) === "3", motion && text(motion));
-  check("A model with no type reads Not known", tableRows(models).some((tr) => text(tr.children[1]) === "Not known"));
+  check("A model with no type reads Not Set, a link that sets it", tableRows(models).some((tr) => text(tr.children[1]) === "Not Set"
+    && tr.children[1].querySelector("button.linkbtn")));
+  // A type that is set is words, not a button: the Type filter narrows
+  // the lists (rule DEV-12).
+  check("A type that is set is plain words, nothing to press",
+    !linkNamed(root, "Motion Sensor") && !linkNamed(root, "Leak Sensor"));
   for (const title of ["Falling", "Other Cells"]) {
     check(`${title} has a TYPE column`, headers(section(root, title)).includes("TYPE"), headers(section(root, title)));
   }
   const picker = root.querySelector('select[aria-label="Show one type"]');
   const options = picker ? [...picker.options].map((o) => o.textContent) : [];
   check("The type list counts each type and the unknown ones", options[0] === "All types 6" && options.includes("Motion Sensor 2")
-    && options.includes("Not known 1"), options);
+    && options.includes("Not Set 1"), options);
 
-  await click(linkNamed(root, "Motion Sensor"));
+  await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Motion Sensor");
   models = section(root, "By Model");
   const steady = section(root, "Other Cells");
-  check("Clicking a type says what is shown, with Show all", text(root.querySelector(".typeshowing")) === "Showing Motion Sensor only. Show all");
+  check("Choosing a type says what is shown, with Show all", text(root.querySelector(".typeshowing")) === "Showing Motion Sensor only. Show all");
   check("By Model counts the model by the type chosen", tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "2", tableRows(models).map(text));
   check("The lists show only that type", tableRows(steady).map((tr) => tr.firstChild.textContent).join("|") === "Motion Laundry|Motion Closet", tableRows(steady).map(text));
   const summary = text(root.querySelector("p"));
@@ -151,13 +156,13 @@ const BATTERY = {
   check("Picking from the list narrows the same way; the split model shows its one presence cell",
     tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "1" && text(tableRows(section(root, "Other Cells"))[0].firstChild) === "Motion Hall",
     tableRows(models).map(text));
-  await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Not known");
-  check("Not known shows the devices with no type", tableRows(section(root, "Other Cells")).map((tr) => tr.firstChild.textContent).join("|") === "Mystery Tag");
+  await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Not Set");
+  check("Not Set shows the devices with no type", tableRows(section(root, "Other Cells")).map((tr) => tr.firstChild.textContent).join("|") === "Mystery Tag");
 
   await click(linkNamed(root, "Show all"));
   await click([...section(root, "Other Cells").querySelectorAll("thead button")].find((b) => b.textContent === "TYPE"));
   check("Other Cells sorts by type", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])).join("|")
-    === "Leak Sensor|Motion Sensor|Motion Sensor|Presence Sensor|Not known", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])));
+    === "Leak Sensor|Motion Sensor|Motion Sensor|Presence Sensor|Not Set", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])));
   check("Every device name and type is text, never markup", !root.querySelector("tbody img"));
 
   console.log("\nClassification by type (0.25.3)");
@@ -168,9 +173,9 @@ const BATTERY = {
   check("TYPE sits after INTEGRATION", headers(table).slice(0, 3).join("|") === "DEVICE|INTEGRATION|TYPE", headers(table));
   check("Every column sorts", headers(table).every((h) => h) && table.querySelectorAll("thead button.sort").length === headers(table).length);
   const plugs = classification.rows.filter((r) => r.type === "Plug");
-  await click(linkNamed(root, "Plug"));
+  await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Plug");
   table = root.querySelector("table");
-  check("Clicking a type narrows the table", tableRows(table).length === plugs.length, tableRows(table).length);
+  check("Choosing a type narrows the table", tableRows(table).length === plugs.length, tableRows(table).length);
   const chipText = [...root.querySelectorAll(".chips .chip")].map((b) => b.textContent);
   check("The chips count only that type", chipText[0] === `All ${plugs.length}`
     && chipText[1] === `Watched ${plugs.filter((r) => r.watched).length}`, chipText);
@@ -178,18 +183,23 @@ const BATTERY = {
   const names = tableRows(root.querySelector("table")).map((tr) => tr.firstChild.textContent);
   check("Sorting keeps the type chosen", names.length === plugs.length && names.join("|") === [...names].sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1).join("|"), names);
 
-  console.log("\nDevices tab type links (0.25.3)");
+  console.log("\nDevices tab: a type in a row, and Not Set (0.27.14)");
   const devices = JSON.parse(JSON.stringify(payloads.devices));
   devices.rows.forEach((r, i) => { r.type = ["Plug", "Switch", null][i % 3]; });
-  ({ root } = await open(`${PREFIX}/devices`, { devices }));
-  await click(linkNamed(root, "Switch"));
+  let devCalls;
+  ({ root, window, calls: devCalls } = await open(`${PREFIX}/devices`, { devices }));
+  check("A type in a row is words, nothing to press", !linkNamed(root, "Switch") && !linkNamed(root, "Plug"));
+  await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Switch");
   const shown = tableRows(root.querySelector("table")).map((tr) => text(tr.children[1]));
-  check("Clicking a type in a row sets the type filter", shown.length && shown.every((t) => t === "Switch")
-    && root.querySelector('select[aria-label="Show one type"]').value === "Switch", shown);
+  check("The Type filter narrows the rows", shown.length && shown.every((t) => t === "Switch"), shown);
   check("The tab says what is shown", text(root.querySelector(".typeshowing")) === "Showing Switch only. Show all");
   await click(linkNamed(root, "Show all"));
-  await click(linkNamed(root, "Not known"));
-  check("Not known in a row shows the devices with no type", tableRows(root.querySelector("table")).every((tr) => text(tr.children[1]) === "Not known"));
+  const unset = tableRows(root.querySelector("table")).find((tr) => text(tr.children[1]) === "Not Set");
+  check("A row with no type reads Not Set, a link", Boolean(unset && unset.children[1].querySelector("button.linkbtn")));
+  await click(unset.children[1].querySelector("button.linkbtn"));
+  check("Pressing it opens the type choices in the row, with Save and Cancel",
+    Boolean(unset.children[1].querySelector('select[aria-label="What this device is"]'))
+    && [...unset.children[1].querySelectorAll("button")].map((b) => b.textContent).join() === "Save,Cancel");
 
   console.log("\nRecommendations for types (0.25.3)");
   const recommendations = JSON.parse(JSON.stringify(payloads.recommendations));

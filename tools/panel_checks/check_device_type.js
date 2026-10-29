@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_type.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_device_type.js, Version: 0.27.14 (2026-10-29)
 // Panel checks: the Type row and the Devices tab's Type column and filter (rule DEV-10).
 // A type set or cleared here says it came from the device page.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_type.js [path/to/panel.js]
@@ -104,8 +104,9 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
 
   ({ root, calls, window } = await open(DEVICE_PATH, block({})));
   cell = rowCell(root, "Type");
-  const link = buttonIn(cell, "Not known, click to set");
-  check("Nothing known: Not known, click to set, and no separate pencil", link && !cell.querySelector("button.edit"), cell && cell.innerHTML);
+  const link = buttonIn(cell, "Not Set");
+  // The pencil stays beside "Not Set" in Advanced (rule DASH-04).
+  check("Nothing known: Not Set, a link, with the pencil beside it", link && cell.querySelector("button.edit"), cell && cell.innerHTML);
   await click(link);
   cell = rowCell(root, "Type");
   const select = cell.querySelector('select[aria-label="What this device is"]');
@@ -153,8 +154,8 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
 
   ({ root } = await open(DEVICE_PATH, block({}), null, false));
   cell = rowCell(root, "Type");
-  check("Without the right to change it: plain Not known, nothing to click",
-    cell && cell.textContent === "Not known" && !cell.querySelector("button"), cell && cell.innerHTML);
+  check("Without the right to change it: plain Not Set, nothing to click",
+    cell && cell.textContent === "Not Set" && !cell.querySelector("button"), cell && cell.innerHTML);
 
   console.log("\nThe Devices tab's Type column and filter (0.25.1)");
   const base = JSON.parse(JSON.stringify(payloads.devices.rows[0]));
@@ -165,23 +166,23 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   const heads = [...root.querySelectorAll("thead th")].map((th) => th.textContent);
   check("TYPE is the second column", heads[1] === "TYPE", heads);
   const typeCells = () => [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[1].textContent);
-  check("Each row shows its type, Not known where there is none",
-    typeCells().join("|") === "Leak Sensor|Switch|Not known|Leak Sensor", typeCells());
+  check("Each row shows its type, Not Set where there is none",
+    typeCells().join("|") === "Leak Sensor|Switch|Not Set|Leak Sensor", typeCells());
   const filter = root.querySelector('select[aria-label="Show one type"]');
   const offered = filter ? [...filter.options].map((o) => o.textContent) : [];
-  check("The filter offers each type present with its count, then Not known",
-    offered.join("|") === "All types|Leak Sensor 2|Switch 1|Not known 1", offered);
+  check("The filter offers each type present with its count, then Not Set",
+    offered.join("|") === "All types|Leak Sensor 2|Switch 1|Not Set 1", offered);
   filter.value = "Leak Sensor"; filter.dispatchEvent(new window.Event("change")); await settle();
   check("Choosing a type shows only those devices", typeCells().join("|") === "Leak Sensor|Leak Sensor", typeCells());
   const again = root.querySelector('select[aria-label="Show one type"]');
   check("The filter keeps its choice after repainting", again && again.value === "Leak Sensor");
-  again.value = "Not known"; again.dispatchEvent(new window.Event("change")); await settle();
-  check("Not known shows the devices nothing could name", [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[0].textContent).join("|") === "Router Aotec Zi");
+  again.value = "Not Set"; again.dispatchEvent(new window.Event("change")); await settle();
+  check("Not Set shows the devices nothing could name", [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[0].textContent).join("|") === "Router Aotec Zi");
   const sortType = [...root.querySelectorAll("thead button.sort")].find((b) => b.textContent === "TYPE");
   const all = root.querySelector('select[aria-label="Show one type"]');
   all.value = ""; all.dispatchEvent(new window.Event("change")); await settle();
   await click([...root.querySelectorAll("thead button.sort")].find((b) => b.textContent === "TYPE"));
-  check("TYPE sorts, Not known last", typeCells().join("|") === "Leak Sensor|Leak Sensor|Switch|Not known", typeCells());
+  check("TYPE sorts, Not Set last", typeCells().join("|") === "Leak Sensor|Leak Sensor|Switch|Not Set", typeCells());
   check("The sort button exists", !!sortType);
 
   const named = [row("a", "Lamp Office", "lamp"), row("b", "Plug Master Router", "Switch"), row("c", "Hub", "Button"),
@@ -189,16 +190,16 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   ({ root, window } = await open(`${PREFIX}/devices`, block({}), named));
   const listed = [...root.querySelector('select[aria-label="Show one type"]').options].map((o) => o.textContent);
   check("Types list as people read them, an owner's lower case among the rest",
-    listed.join("|") === "All types|Button 1|lamp 1|Leak Sensor 1|Switch 1|Not known 0", listed);
+    listed.join("|") === "All types|Button 1|lamp 1|Leak Sensor 1|Switch 1|Not Set 0", listed);
   let panel;
   ({ root, window, panel } = await open(`${PREFIX}/devices`, block({}), rows));
   const pick = root.querySelector('select[aria-label="Show one type"]');
-  pick.value = "Not known"; pick.dispatchEvent(new window.Event("change")); await settle();
-  check("Not known shows the one device with no type", root.querySelectorAll("tbody tr").length === 1);
+  pick.value = "Not Set"; pick.dispatchEvent(new window.Event("change")); await settle();
+  check("Not Set shows the one device with no type", root.querySelectorAll("tbody tr").length === 1);
   panel._snapshot.devices.rows = JSON.parse(JSON.stringify(named));
   panel._paintDevices();
   const after = root.querySelector('select[aria-label="Show one type"]');
-  check("Once every device has a type, Not known goes back to All types",
+  check("Once every device has a type, Not Set goes back to All types",
     after.value === "" && root.querySelectorAll("tbody tr").length === 4, [after.value, root.querySelectorAll("tbody tr").length]);
 
   console.log(`\n${passed} passed, ${failed} failed`);
