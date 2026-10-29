@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.11 (2026-10-28)
+# File: dashboard_api.py, Version: 0.27.14 (2026-10-29)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -59,7 +59,9 @@ _REGISTERED = f"{DOMAIN}_dashboard_api"
 
 # Where a sensor turn-on, a power answer or a type can be pressed: its
 # device page or its Recommendations card (rule BRIEF-07).
-ACT_SOURCES = ["device_page", "recommendations"]
+# Where an act on a device was pressed (rule BRIEF-07): its page, a
+# Recommendations card, or a "Not Set" in a tab's list (rule DASH-04).
+ACT_SOURCES = list(MUTE_SOURCES_SAID)
 
 
 def mutes_for_kinds(kinds: Any) -> list[str]:
@@ -113,7 +115,6 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_new_area)
     websocket_api.async_register_command(hass, ws_device_new_label)
     websocket_api.async_register_command(hass, ws_device_turn_on)
-    websocket_api.async_register_command(hass, ws_device_label_mute)
     websocket_api.async_register_command(hass, ws_recommendation_ack)
     websocket_api.async_register_command(hass, ws_device_battery)
     websocket_api.async_register_command(hass, ws_device_mute)
@@ -531,16 +532,20 @@ def ws_device_choices(
         vol.Required("device_id"): str,
         vol.Optional("name"): vol.Any(str, None),
         vol.Optional("confirm", default=False): bool,
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
 def ws_device_rename(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Rename a device; an empty name resets it to the integration's."""
+    """Rename a device; an empty name resets it to the integration's.
+    Recorded with where it was pressed (rule BRIEF-07)."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_rename(msg["device_id"], msg.get("name"), msg["confirm"]),
+        lambda c: c.page_from(
+            msg["source"], lambda: c.page_rename(msg["device_id"], msg.get("name"), msg["confirm"])
+        ),
     )
 
 
@@ -603,14 +608,19 @@ def ws_device_type(
         vol.Required("type"): "device_sentinel/device_area",
         vol.Required("device_id"): str,
         vol.Optional("area_id"): vol.Any(str, None),
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
 def ws_device_area(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Move a device to an area, or to none."""
-    _page_act(hass, connection, msg, lambda c: c.page_set_area(msg["device_id"], msg.get("area_id")))
+    """Move a device to an area, or to none, recorded with where it was
+    pressed (rule BRIEF-07)."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_from(msg["source"], lambda: c.page_set_area(msg["device_id"], msg.get("area_id"))),
+    )
 
 
 @websocket_api.require_admin
@@ -636,35 +646,10 @@ def ws_device_label(
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "device_sentinel/device_label_mute",
-        vol.Required("device_id"): str,
-        vol.Required("kind"): vol.In(["everything", "freeze", "unavailable", "battery", "signal"]),
-        vol.Exclusive("label_id", "label"): str,
-        vol.Exclusive("name", "label"): str,
-    }
-)
-@callback
-def ws_device_label_mute(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
-    """Mute by label from the device page (rule MUTE-09)."""
-    if "label_id" not in msg and "name" not in msg:
-        connection.send_error(msg["id"], "invalid_format", "A label or a new label's name is needed")
-        return
-    _page_act(
-        hass, connection, msg,
-        lambda c: c.page_label_mute(
-            msg["device_id"], msg["kind"], label_id=msg.get("label_id"), name=msg.get("name")
-        ),
-    )
-
-
-@websocket_api.require_admin
-@websocket_api.websocket_command(
-    {
         vol.Required("type"): "device_sentinel/device_new_area",
         vol.Required("device_id"): str,
         vol.Required("name"): str,
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
@@ -672,7 +657,10 @@ def ws_device_new_area(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Make an area and move a device into it."""
-    _page_act(hass, connection, msg, lambda c: c.page_new_area(msg["device_id"], msg["name"]))
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_from(msg["source"], lambda: c.page_new_area(msg["device_id"], msg["name"])),
+    )
 
 
 @websocket_api.require_admin

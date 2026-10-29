@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.11 (2026-10-28)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.14 (2026-10-29)
 
 """Acting from the device page (rule DASH-09).
 
@@ -79,8 +79,11 @@ MUTE_SOURCES_SAID: dict[str, str] = {
     "device_page": "from its device page",
     "recommendations": "from the Recommendations tab",
     "problem_list": "from the Problem List",
-    # The Devices tab's Excluded list (rule DASH-12).
+    # The Devices tab's Excluded list (rule DASH-12), and a "Not Set" set
+    # from a tab's list (rule DASH-04).
     "devices_tab": "from the Devices tab",
+    "battery_trends": "from the Battery Trends tab",
+    "classification": "from the Classification tab",
 }
 
 MUTE_KINDS: dict[str, tuple[str, str, str]] = {
@@ -145,9 +148,10 @@ class DeviceActionsMixin:
 
         The source is the one the reports name (`_mute_source`, the
         ladder every mute uses), so the page cannot disagree with
-        Classification. Only a mute whose source is the device itself
-        can be lifted here; one from a label or an integration is lifted
-        where it was set.
+        Classification. "here" is whether the device is on the kind's own
+        list, whatever else also mutes it, since that is what its button
+        lifts; one from a label, an integration or a hub is lifted where
+        it was set (rule MUTE-09).
         """
         options = self.entry.options
         found: dict[str, dict[str, Any]] = {}
@@ -161,7 +165,7 @@ class DeviceActionsMixin:
             found[kind] = {
                 "on": source is not None,
                 "source": source,
-                "here": source == "device",
+                "here": device_id in options.get(devices, []),
             }
         return found
 
@@ -217,15 +221,12 @@ class DeviceActionsMixin:
             {"id": area.id, "name": area.name}
             for area in ar.async_get(self.hass).async_list_areas()
         ]
-        devices = dr.async_get(self.hass)
-        # How many devices carry each label, so the Mute by label picker
-        # can say what a label mute reaches before it saves (rule MUTE-09).
+        # Each label with what Device Sentinel does with it (rule MUTE-09).
         labels = [
             {
                 "id": label.label_id,
                 "name": label.name,
                 "meaning": self.label_meaning(label.label_id),
-                "devices": len(dr.async_entries_for_label(devices, label.label_id)),
             }
             for label in lr.async_get(self.hass).async_list_labels()
         ]
@@ -341,9 +342,9 @@ class DeviceActionsMixin:
     def page_from(self, source: str, act: Callable[[], Any]) -> Any:
         """Run one act, recorded as pressed where `source` says.
 
-        A sensor turned on, a power answer or a type set from a
-        Recommendations card is recorded with where it was pressed, as
-        a mute is (rules BRIEF-07, DEV-07).
+        A sensor turned on, a power answer, a type, an area or a name set
+        from a Recommendations card or a tab's "Not Set" is recorded with
+        where it was pressed, as a mute is (rules BRIEF-07, DEV-07).
         """
         self._page_source = source
         try:
@@ -436,52 +437,6 @@ class DeviceActionsMixin:
             device_id, labels=set(device.labels or ()) | {label.label_id}
         )
         self._page_done(device_id, f"label {label.name} added{'' if held else ', a new label'}")
-
-    def page_label_mute(
-        self, device_id: str, kind: str, label_id: str | None = None, name: str | None = None
-    ) -> dict[str, Any]:
-        """Mute by label, from the device page, in Advanced (rule MUTE-09).
-
-        One of the person's labels, or a new one by name, goes on the
-        device and onto the kind's label list, the list Settings writes,
-        so every device carrying it is muted for that kind. Unavailable
-        has a label list and no integration list; every kind here has a
-        label list.
-        """
-        device = self._device(device_id)
-        if kind not in MUTE_KINDS:
-            raise ValueError(f"no mute kind {kind}")
-        labels_reg = lr.async_get(self.hass)
-        made = False
-        if label_id is not None:
-            label = labels_reg.async_get_label(label_id)
-            if label is None:
-                raise ValueError("Home Assistant has no such label")
-        else:
-            wanted = self._new_registry_name(name)
-            label = labels_reg.async_get_label_by_name(wanted)
-            if label is None:
-                label = labels_reg.async_create(wanted)
-                made = True
-        if label.label_id not in (device.labels or ()):
-            dr.async_get(self.hass).async_update_device(
-                device_id, labels=set(device.labels or ()) | {label.label_id}
-            )
-        key = MUTE_KINDS[kind][1]
-        current = list(self.entry.options.get(key, []))
-        if label.label_id not in current:
-            current.append(label.label_id)
-            self._page_option_keys.add(key)
-            self.hass.config_entries.async_update_entry(
-                self.entry, options={**self.entry.options, key: current}
-            )
-        reach = len(dr.async_entries_for_label(dr.async_get(self.hass), label.label_id))
-        self._page_done(
-            device_id,
-            f"{kind} muted by label {label.name}{', a new label' if made else ''}, "
-            f"on {reach} device{'' if reach == 1 else 's'}",
-        )
-        return {"label_id": label.label_id, "devices": reach}
 
     def page_label(self, device_id: str, label_id: str, add: bool) -> None:
         device = self._device(device_id)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.27.14 (2026-10-29)
 
 """What powers each device (rule DEV-06).
 
@@ -703,6 +703,10 @@ class PowerMixin:
                 battery_type = choice
             elif choice == POWER_OTHER:
                 battery_type = clean_other(other)
+                if battery_type.casefold() in (NOT_KNOWN.casefold(), "not set"):
+                    # The dashboard's own words for nothing known; as an
+                    # answer it would read as no answer (rule DASH-04).
+                    raise ValueError("Type the battery or power source.")
             else:
                 raise ValueError("Choose from the list.")
             if quantity is None:

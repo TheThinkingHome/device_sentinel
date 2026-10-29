@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.27.14 (2026-10-29)
 
 """What each device is, in plain words (rule DEV-10).
 
@@ -37,6 +37,9 @@ from .const import STACK_Z2M
 from .device_fields import device_field
 from .power_source import NOT_KNOWN, clean_other, is_model_key
 from .stacks import is_plumbing
+
+# The dashboard's words for a type nobody has set (rule DEV-10).
+NOT_SET = "Not Set"
 
 TYPE_OTHER = "Other"
 SOURCE_ENTITIES = "entities"
@@ -357,7 +360,7 @@ def clean_type(text: str | None) -> str:
         if "battery" in str(err):
             raise ValueError("Type what the device is.") from err
         raise
-    if words.casefold() == NOT_KNOWN.casefold():
+    if words.casefold() in (NOT_KNOWN.casefold(), NOT_SET.casefold()):
         # The page's own words for no type; as an answer it would read
         # as no answer, and the Devices tab would count it as one.
         raise ValueError("Type what the device is.")
