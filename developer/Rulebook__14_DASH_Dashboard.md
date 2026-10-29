@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Power, Type and Battery Last Replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -13,10 +13,11 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-02 The Top Band and the Tabs
 
 **The status tiles and the action buttons sit in a band of their own above the tabs, and the tabs read as tabs.**
-- **In the band:** Refresh, Maintenance Mode with its length list, the Active Recommendations button (REC), the Simple and Advanced switch, and the time the figures were read.
+- **In the band:** Refresh, the Maintenance Mode button with its length list, the Active Recommendations button (REC), the Simple and Advanced switch, and the time the figures were read.
+- **The Maintenance Mode button:** it says what pressing it does. Off, it reads "Start Maintenance Mode". Open, it reads "End Maintenance Mode" with the minutes left, counted down while the page is open.
 - **The tabs:** Daily Brief, Problem List, Battery Trends, Signal Trends, Classification, Integrations, Devices and Recommendations, each with its own address.
 
-*Proof:* [`tools/panel_checks/check_controls_band.js`](../tools/panel_checks/check_controls_band.js), `check_tab_addresses.js`, `check_recommendations.js`.
+*Proof:* [`tools/panel_checks/check_controls_band.js`](../tools/panel_checks/check_controls_band.js), `check_tab_addresses.js`, `check_recommendations.js`, `check_acknowledged_rows.js`.
 
 ### DASH-03 Simple or Advanced
 
@@ -33,13 +34,15 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **Tabs left off:** Signal Trends and Classification. Each still opens from its own address, and no page in Simple links to it.
 - **Battery Trends in Simple:** it leaves out the TYPICAL LEVEL, LOWEST CELL and WHICH ONE columns, the weekly levels under Falling, DAYS RECORDED, STEPS and MODEL, A WEEK under Other Cells, and the Not a Percentage list. Advanced's At or Under the Threshold adds 4 WEEKS.
 - **Battery Trends' tables:** they share one scale, so DEVICE, TYPE and LEVEL stand in the same place in each. A table with few columns ends short of the edge.
-- **Devices tab in Simple:** it leaves out the TYPE column and its filter, the label filter, AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW.
-- **Asking for input:** nothing in Simple asks for more, except the Battery Last Replaced pencil, the Confirm Battery Replacement card and the Mute buttons.
-- **Device page actions in Simple:** no Rename, no "Use the 14-Day Trimmed Maximum" and no button to turn a sensor on. A switched-off sensor is turned on from its Recommendations card (REC). Type, Area, Power (with the battery type) and Labels are read-only.
+- **Devices tab in Simple:** it shows TYPE and its filter. It leaves out the label filter, AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW.
+- **"Not Set":** a type, an area or a battery type nobody has set reads "Not Set", in Simple and Advanced, on every tab and on the device page. It is a link that opens the way to set it in place, with no question first. A type or a battery type is set for every device of the model; an area for that one device, in Home Assistant. The brief says where it was set ([BRIEF-07](Rulebook__13_BRIEF_Daily_Brief.md#brief-07-last-24-hours)). A value that is set is words, with nothing to press; on Simple's device page it is grey. In Advanced the device page keeps the pencil beside each value, set or not, so anything set can be changed. The Type and Area filters name the choice "Not Set" too.
+- **Asking for input:** nothing in Simple asks for more, except "Not Set", the Battery Last Replaced pencil, the Confirm Battery Replacement card and the Mute buttons.
+- **Device page actions in Simple:** no Rename, no "Use the 14-Day Trimmed Maximum" and no button to turn a sensor on. A switched-off sensor is turned on from its Recommendations card (REC). Type, Area and Power (with the battery type) are read-only once set.
+- **Labels in Simple:** the device page has no Labels row. A mute from a label is one line in the Muted row, "Freeze is muted by the label Outdoor. Switch to Advanced to change it.", where "Advanced" switches the view ([MUTE-09](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-09-mutes-on-the-device-page-and-the-problem-list)).
 - **Exclusions in Simple:** Exclude this device is hidden. An exclusion already made still shows with its way back. Whole integrations are excluded and muted on the Integrations tab ([MUTE-03](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-03-excluding-one-device-or-one-integration)).
 - **Device page rows in Simple:** the rhythm chart, its figures, the Wait rule row and the gaps table show only for a device that is frozen or has never reported. The Signal group shows only when the device's latest signal day is railed. The Last seen sensor row shows only when its sensor is switched off. The Z-Wave status row shows only when the node is dead or its sensor is switched off. The dropout counts show only while the device is dropping out. The firmware history never shows.
 
-*Proof:* [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js), `check_integrations_tab.js`.
+*Proof:* [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js), `check_integrations_tab.js`, `check_not_set.js`, `check_battery_weeks.js`, `check_type_filters.js`.
 
 ### DASH-05 The Look
 
@@ -104,12 +107,13 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 
 ### DASH-12 Finding a Device
 
-**The Devices tab has a name search, an Area filter with "No area", and a Label filter beside the type filter.**
+**The Devices tab has a name search, an Area filter with "Not Set", and a Label filter beside the type filter.**
 - **The Excluded list:** a link, "Show the N excluded devices", opens it. It lists the devices on the exclusion lists, read live from Home Assistant's registry and the settings, with nothing stored.
-- **Each row says:** whether the device was excluded by the person or with its integration, and whether its history is kept until midnight or already deleted.
+- **Each row says:** whether the device was excluded by the person or with its integration, and whether its history is kept until midnight or already deleted. Its AREA reads "Not Set" when none is set ([DASH-04](#dash-04-what-simple-shows)).
+- **Its columns:** the list has its own widths, so "Cancel the exclusion" or "Open its integration page" stays on one line.
 - **Ways back:** a device excluded on its own has "Cancel the exclusion", which the brief records as "from the Devices tab". One excluded with its integration links to that integration's page. One whose history has gone opens Home Assistant's own device page.
 
-*Proof:* [`tools/panel_checks/check_device_finders.js`](../tools/panel_checks/check_device_finders.js).
+*Proof:* [`tools/panel_checks/check_device_finders.js`](../tools/panel_checks/check_device_finders.js), `check_not_set.js`.
 
 ### DASH-13 Devices Behind the Broker
 

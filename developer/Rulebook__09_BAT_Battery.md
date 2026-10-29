@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -40,7 +40,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **On unmute:** a low battery appears at once, with the time it first read low.
 - **Leaving the Problem List:** an item that leaves because of a battery mute leaves silently.
 
-*Proof:* [`test_exclusions.py`](../tests/test_exclusions.py), [`test_mute_by_label.py`](../tests/test_mute_by_label.py), [`test_brief_mutes.py`](../tests/test_brief_mutes.py).
+*Proof:* [`test_exclusions.py`](../tests/test_exclusions.py), [`test_brief_mutes.py`](../tests/test_brief_mutes.py).
 
 ### BAT-05 One Reading a Day
 

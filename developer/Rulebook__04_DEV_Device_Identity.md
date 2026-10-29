@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -54,15 +54,16 @@ This section covers what a device is called, what kind of device it is, what pow
 
 ### DEV-07 The Power Row
 
-**The device page's Power row reads, for example, "2× CR2032", "USB Powered" or "Not known", with an icon for where the answer came from and a pencil.**
+**The device page's Power row reads, for example, "2× CR2032", "USB Powered" or "Not Set", with an icon for where the answer came from and a pencil.**
 - **The icons:** the library's icon is redrawn from Battery Notes' own, in light and dark, and opens the Battery Notes repository in a new tab. A person's answer carries Device Sentinel's shield.
 - **Hovering:** it names the source. On a device covered by another device's answer it names that device, "Entered on Button Master Shower".
 - **A model's answer:** an answer that covers a model reads "set on Button Master Shower, covers 4 devices of this model". The brief records where it was set: "power set to 2× AAA, for all 4 devices of this model, from its device page", or "from the Recommendations tab".
-- **Where power is set:** only on the device page and in the Recommendations tab's Power Not Set list. The battery problem row and the Daily Brief show it as plain text, with no icons.
-- **In Simple:** the row is read-only, and a device with no answer reads "Not known" there as in Advanced.
+- **Where power is set:** on the device page, in the Recommendations tab's Power Not Set list, and from "Not Set" in Battery Trends' CELL column ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)). The battery problem row and the Daily Brief show it as plain text, with no icons.
+- **In Simple:** an answer is read-only, in grey. A device with no answer reads "Not Set" there as in Advanced, a link that sets it.
+- **Its own words:** "Not Set" and "Not known" are refused as a battery typed under Other.
 - **The Type row:** it shows a person's answer the same way: the shield, the hover naming where it was entered, and the line saying which device set it and how many devices of the model it covers.
 
-*Proof:* `check_power_row.js`, `check_device_page_layout.js`, `check_simple_dashboard.js`, `check_recommendations.js`, [`test_power_source.py`](../tests/test_power_source.py), [`test_action_source.py`](../tests/test_action_source.py), `check_device_type.js`.
+*Proof:* `check_power_row.js`, `check_device_page_layout.js`, `check_simple_dashboard.js`, `check_recommendations.js`, [`test_power_source.py`](../tests/test_power_source.py), [`test_action_source.py`](../tests/test_action_source.py), `check_device_type.js`, `check_not_set.js`.
 
 ### DEV-08 The Pencil's Choices
 
@@ -77,7 +78,7 @@ This section covers what a device is called, what kind of device it is, what pow
 ### DEV-09 Sending a Battery to Battery Notes
 
 **After a battery type is added or changed, a button opens Battery Notes' New Device form, filled in.**
-- **Where:** on the device page or in the Recommendations tab's Power Not Set list.
+- **Where:** on the device page, in Simple and Advanced and after "Not Set" there, or in the Recommendations tab's Power Not Set list.
 - **The form:** it is titled "[Device]: <manufacturer> <model> (<model ID>)". A correction uses the same form, and Battery Notes' author reviews each entry by hand.
 - **Not offered:** for a wired choice, one typed under Other included; for an answer that says exactly what the library says; or for a device with no manufacturer or model.
 
@@ -85,11 +86,12 @@ This section covers what a device is called, what kind of device it is, what pow
 
 ### DEV-10 A Device's Type
 
-**Device Sentinel works out each device's type. With nothing matched it reads "Not known", never a guess, in Simple and Advanced alike.**
+**Device Sentinel works out each device's type. With nothing matched it reads "Not Set", never a guess, in Simple and Advanced alike, and "Not Set" opens the way to set it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).**
 - **The order:** a known model; its role on its network; an appliance integration; its own entities; and last, a role read from the device itself (a printer, an ESPHome device or Bluetooth proxy, a Zigbee router, a Z-Wave repeater, a hub).
 - **The person's answer:** the answer from the pencil wins and covers each device of the model.
 - **Putting the answer back:** the button that puts Device Sentinel's own answer back reads "Use what its entities say" where the entities gave it, "Use Device Sentinel's answer" where a known model or a role gave it, and "Use the model's answer" where its model has an answer.
-- **Where it shows:** as a row on the device page, read-only in Simple, and as a column and filter on the Devices tab.
+- **Where it shows:** as a row on the device page, and as a column and filter on the Devices tab, in Simple and Advanced. Once set it is read-only in Simple.
+- **The words "Not Set":** a person cannot give them as a type of their own, nor "Not known".
 - **Why:** the point is comparing hardware of one kind across brands and versions.
 - **Diagnostics:** they list each device's entities by domain, device class and category, without their readings.
 
@@ -108,11 +110,12 @@ This section covers what a device is called, what kind of device it is, what pow
 ### DEV-12 Types Where Devices Are Compared
 
 **Battery Trends, Classification and the Devices tab each sort and filter by type.**
-- **Clicking a type:** in a row or from the list at the top, it narrows the whole page to that type. Classification's filter combines with its All, Watched, Muted and Set aside chips.
+- **Choosing a type:** from the list at the top, it narrows the whole page to that type, "Not Set" included. Classification's filter combines with its All, Watched, Muted and Set aside chips.
+- **A type in a row:** it is words, with nothing to press. A row with no type reads "Not Set", which sets it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).
 - **By Model:** it counts by type, and lists each type with its count where a model's devices disagree.
 - **Each page its own:** each page keeps its own type choice; switching tabs never carries it over.
 
-*Proof:* [`test_type_columns.py`](../tests/test_type_columns.py), `check_type_filters.js`.
+*Proof:* [`test_type_columns.py`](../tests/test_type_columns.py), `check_type_filters.js`, `check_not_set.js`.
 
 ### DEV-13 How a Device Connects and Its Addresses
 

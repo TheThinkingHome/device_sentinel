@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -42,16 +42,19 @@ This section covers what Device Sentinel suggests a person change about their ow
 **Each card lists the watched devices it covers, by name with the area, and each name opens the device's page.** A device leaves a card once its condition is gone.
 - **The cards, in order:** Confirm Battery Replacement (or Confirm Battery Charge) for a detected new battery (BAT), Power Not Set, the switched-off cards of [REC-05](#rec-05-switched-off-sensors), No Area Assigned, Devices Sharing A Name (names compared without regard to capitals), Slow Reporting Devices ([REC-06](#rec-06-slow-reporting-devices)), and last Type Not Set and Model With More Than One Type.
 - **Power Not Set:** lists each watched device with no power type, mains included, and stays that way.
-- **Where each is fixed:** power and type are set right in the list. A switched-off sensor is turned on in the list. Area and name are changed from the device's page.
+- **Where each is fixed:** every card is answered in its own rows. Power and type are set in the list. A switched-off sensor is turned on in the list. No Area Assigned has an area chooser and Save on each row, which moves that device in Home Assistant. Devices Sharing A Name has a name box and Save on each row; a name another device shows is held for "Save anyway", as on the device page ([DASH-10](Rulebook__14_DASH_Dashboard.md#dash-10-confirmations-and-refusals)). Model With More Than One Type names the model and the device's type now, then the type choices, which set the model's type.
+- **The card sentences:** "Choose each one's area here.", "Rename each one here." and "Pick the type for the model here."
+- **AREA on a card:** an area nobody set reads "Not Set", a link that sets it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)). On No Area Assigned the row's own chooser does that.
+- **Where it was set:** each save from a card is one brief row "from the Recommendations tab" ([BRIEF-07](Rulebook__13_BRIEF_Daily_Brief.md#brief-07-last-24-hours)).
 
-*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_power_source.py`](../tests/test_power_source.py), [`test_device_type.py`](../tests/test_device_type.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_device_page_layout.js`, `check_type_filters.js`.
+*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_power_source.py`](../tests/test_power_source.py), [`test_device_type.py`](../tests/test_device_type.py), [`test_device_actions.py`](../tests/test_device_actions.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_device_page_layout.js`, `check_type_filters.js`.
 
 ### REC-05 Switched-Off Sensors
 
 **A sensor is switched on one device at a time, by an administrator.** Nothing switches on a whole kind at once.
 - **Where:** from its card, or in Advanced from the device's page. A battery voltage sensor is switched on from its card only.
 - **The cards:** Last Seen Sensor Switched Off, Battery Sensor Switched Off, Z-Wave Status Switched Off, Signal Sensor Switched Off and Battery Voltage Switched Off.
-- **The chips:** each card has a chip per device that names the sensor: "Turn on its Last Seen", "Turn on its battery sensor", "Turn on its Z-Wave status", "Turn on its signal sensor" and "Turn on its battery voltage".
+- **The chips:** each card has a chip per device that names the sensor and what it reports: "Turn on its Last Seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor" and "Turn on its battery voltage sensor".
 - **Which entities count:** only a device's own entities, never one another integration added, such as Battery Notes'. A device is listed only when none of its own entities of that kind is on.
 - **Battery Voltage Switched Off:** lists only a device with a battery reading, whose power is not set to mains, USB or PoE, and whose voltage nothing else already reports.
 - **Its wording:** "These devices have battery voltage entities which can be used for more accurate battery reporting and forecasting." With one device listed it reads "This device has a battery voltage entity which can be used for more accurate battery reporting and forecasting."
@@ -69,13 +72,14 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-07 Acknowledged
 
 **Each row of a device card, and each written recommendation, has an Acknowledged tick that can be taken off again.**
-- **A ticked row:** stays listed, faded, and leaves the counts and the Daily Brief. The tick is kept in the answers file.
+- **A ticked row:** stays listed, faded to 75%, and leaves the counts and the Daily Brief. The tick is kept in the answers file.
+- **The tick itself:** it and the word "Acknowledged" never fade, so it still reads as something to press, here, on the Problem List and on the Daily Brief tab. A ticked box's hover reads "Acknowledged. Press to take it back."
 - **At the midnight run:** a tick whose device has left the card, or whose line has gone, is forgotten. So a problem that comes back on a later day is active again.
 - **Back the same day:** one that leaves and comes back the same day, or across a restart, comes back ticked.
 - **Already ticked:** a sensor a person switched off themselves starts ticked.
 - **Battery replacements:** a Confirm Battery Replacement row is answered, not ticked.
 
-*Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js).
+*Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_acknowledged_rows.js`.
 
 ### REC-08 Counts
 
