@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -20,6 +20,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **A restart:** seen when the broker's reported start time moves forward by more than 30 seconds, so two restarts inside 30 seconds read as one. A restart's outage runs from the last message before it to the first after it, never from the broker's previous start.
 - **A broker that dies while Home Assistant runs:** seen by silence past six times its own learned publish interval, with a floor of 30 seconds.
 - **At the minute check:** a broker restart since the last minute check is told as Home Assistant stops, with its length.
+- **Inside a Home Assistant restart:** a broker restart inside Device Sentinel's own unwatched gap is the restart. The restart's row covers it, and no broker row is written.
 - **The sensor:** Broker: MQTT reads running, down or unknown, and says when the broker last started. It reads unknown until it first hears the broker.
 - **When the sensor is on:** on by default where Device Sentinel found any stack, ZHA and Z-Wave included, and off otherwise. So a house on ZHA alone has a broker sensor that reads unknown.
 - **Silent for a whole run:** a broker heard in an earlier run that says nothing for a whole run past the startup grace is down from the start of that run. One never heard is left alone.
