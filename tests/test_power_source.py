@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_power_source.py, Version: 0.27.14 (2026-10-29)
 
 """What powers each device (rules DEV-06, DEV-07, DEV-08, DEV-09).
 
@@ -254,6 +254,18 @@ async def test_no_link_without_a_maker_or_when_it_says_what_the_library_says(has
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AA")
     assert reply["success"], reply
     assert coord.power_view(device.id)["report_url"] is None, "the form refuses a device with no maker"
+
+
+async def test_the_dashboards_words_for_nothing_are_no_battery(hass: HomeAssistant, hass_ws_client):
+    """"Not Set" and "Not known" typed under Other would read as no answer
+    on Battery Trends' CELL column, where "Not Set" is a link (rule DEV-07)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    for words in ("Not Set", " not  SET ", "Not known"):
+        reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id,
+                          choice="Other", other=words, quantity=1)
+        assert reply["error"]["code"] == "refused", reply
+        assert reply["error"]["message"] == "Type the battery or power source."
+    assert coord.power_view(device.id)["words"] == "Not known"
 
 
 # ------------------------------------------------------------ the answers file

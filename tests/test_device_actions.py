@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_device_actions.py, Version: 0.27.14 (2026-10-29)
 
 """Acting from the device page (rule DASH-09).
 
@@ -115,8 +115,7 @@ async def test_a_labels_meaning_is_read_from_the_mute_settings(hass: HomeAssista
     )
     await hass.async_block_till_done()
     reply = await _ws(client, type="device_sentinel/device_choices")
-    # With how many devices carry it, for Mute by label (rule MUTE-09).
-    assert {"id": garage.label_id, "name": "Garage", "meaning": "mutes freeze", "devices": 0} in reply["result"]["labels"]
+    assert {"id": garage.label_id, "name": "Garage", "meaning": "mutes freeze"} in reply["result"]["labels"]
 
 
 async def test_last_seen_is_turned_on_for_this_device_alone(hass: HomeAssistant, hass_ws_client):
@@ -182,6 +181,66 @@ async def test_a_mute_from_a_label_cannot_be_lifted_here(hass: HomeAssistant, ha
     coord._rebuild_registry_view()
     state = coord.page_mutes(device.id)["freeze"]
     assert state["on"] is True and state["here"] is False and state["source"] == "label: Quiet"
+
+
+async def test_a_devices_own_mute_under_a_label_mute_is_its_own(hass: HomeAssistant, hass_ws_client):
+    """A device on the freeze list and carrying a label that mutes freeze:
+    the label is the source the reports name, and the device's own mute
+    still shows as its own, so its button lifts it (rule MUTE-09)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    quiet = lr.async_get(hass).async_create("Quiet")
+    dr.async_get(hass).async_update_device(device.id, labels={quiet.label_id})
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, CONF_FREEZE_MUTED_LABELS: [quiet.label_id], CONF_FREEZE_MUTED_DEVICES: [device.id]},
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": True}
+    reply = await _ws(client, type="device_sentinel/device_mute", device_id=device.id, kind="freeze", on=False)
+    await hass.async_block_till_done()
+    assert reply["success"], reply
+    # The label's mute stands; the device's own is gone.
+    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": False}
+
+
+@pytest.mark.parametrize(
+    ("payload", "source", "said"),
+    [
+        ({"type": "device_sentinel/device_area", "area_id": "AREA"}, "recommendations", "moved to Porch, from the Recommendations tab"),
+        ({"type": "device_sentinel/device_area", "area_id": "AREA"}, "devices_tab", "moved to Porch, from the Devices tab"),
+        ({"type": "device_sentinel/device_area", "area_id": "AREA"}, None, "moved to Porch, from its device page"),
+        ({"type": "device_sentinel/device_new_area", "name": "Shed"}, "recommendations", "moved to Shed, a new area, from the Recommendations tab"),
+        ({"type": "device_sentinel/device_rename", "name": "Porch Light"}, "recommendations", "renamed Porch Light, from the Recommendations tab"),
+        ({"type": "device_sentinel/device_type", "choice": "Leak Sensor"}, "battery_trends", "type set to Leak Sensor, from the Battery Trends tab"),
+        ({"type": "device_sentinel/device_type", "choice": "Leak Sensor"}, "classification", "type set to Leak Sensor, from the Classification tab"),
+    ],
+)
+async def test_an_area_a_name_or_a_type_says_where_it_was_set(hass: HomeAssistant, hass_ws_client, payload, source, said):
+    """Set from a Recommendations card or a tab's "Not Set", the brief
+    says where, as a mute does (rules BRIEF-07, DASH-04, REC-04)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    porch = ar.async_get(hass).async_create("Porch")
+    payload = {k: (porch.id if v == "AREA" else v) for k, v in payload.items()}
+    extra = {"source": source} if source else {}
+    reply = await _ws(client, device_id=device.id, **payload, **extra)
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    assert [row[SYS_DETAIL] for row in _rows(coord, SYS_DEVICE_PAGE)] == [said]
+
+
+async def test_a_source_nobody_offers_is_refused(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_area", device_id=device.id, area_id=None, source="elsewhere")
+    assert reply["success"] is False and reply["error"]["code"] == "invalid_format"
+
+
+async def test_mute_by_label_is_no_longer_offered(hass: HomeAssistant, hass_ws_client):
+    """Label mutes are made in settings only (rule MUTE-09)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_label_mute", device_id=device.id, kind="freeze", name="Quiet")
+    assert reply["success"] is False and reply["error"]["code"] == "unknown_command"
+    assert lr.async_get(hass).async_get_label_by_name("Quiet") is None
 
 
 async def test_every_act_answers_not_found_for_an_unknown_device(hass: HomeAssistant, hass_ws_client):

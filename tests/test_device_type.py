@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_device_type.py, Version: 0.27.14 (2026-10-29)
 
 """What each device is (rules DEV-10, DEV-11).
 
@@ -182,7 +182,8 @@ async def test_own_words_are_tidied_and_bad_answers_refused(hass: HomeAssistant,
     for other, words in (("", "Type what the device is."), ("x" * 41, "Keep it to 40 characters."),
                          ("bad‮word", "That text holds characters that cannot be shown."),
                          # The page's own words for no type.
-                         ("Not known", "Type what the device is."), ("  not   KNOWN ", "Type what the device is.")):
+                         ("Not known", "Type what the device is."), ("  not   KNOWN ", "Type what the device is."),
+                         ("Not Set", "Type what the device is."), (" not  set", "Type what the device is.")):
         reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Other", other=other)
         assert reply["error"]["code"] == "refused" and reply["error"]["message"] == words
     reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Toaster")
