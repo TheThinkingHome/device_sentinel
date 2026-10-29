@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.13 (2026-10-28)
+// File: panel.js, Version: 0.27.14 (2026-10-29)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -39,12 +39,21 @@ const TABS = [
 const SIMPLE_HIDDEN_TABS = ["Signal Trends", "Classification"];
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
-// A device no type could be found for, as the Type filters name it (rule DEV-10).
-const NOT_KNOWN_TYPE = "Not known";
+// A type, an area or a battery nobody has set, the same words on
+// every tab, and the Type filters' choice for it (rules DEV-10, DASH-04).
+const NOT_SET = "Not Set";
+const NOT_KNOWN_TYPE = NOT_SET;
 // The device commands that say where they were pressed (rules BRIEF-07,
 // DEV-07): "device_page" from the device page, "recommendations" from a
 // Recommendations card.
-const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel/device_power", "device_sentinel/device_type"]);
+const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel/device_power", "device_sentinel/device_type",
+  "device_sentinel/device_area", "device_sentinel/device_new_area", "device_sentinel/device_rename"]);
+// The hover on a ticked acknowledgment, wherever it sits (rule REC-07).
+const ACK_HOVER = "Acknowledged. Press to take it back.";
+// Where a "Not Set" was set from, by tab, so the brief says so
+// (rule BRIEF-07).
+const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab", "Classification": "classification",
+  "Recommendations": "recommendations", "Problem List": "problem_list" };
 // A battery level as reported, the same on every surface: "15.5%",
 // "16%", one decimal at most, rounded half up on the number as
 // written, as battery_level.py does, so the brief, the device page and
@@ -350,6 +359,10 @@ const DEVICES_SHARE = {
   "DEVICE": 2.6, "TYPE": 2.4, "AREA": 1.6, "INTEGRATION": 1.6, "STANDING": 1.6, "PROBLEM": 1.6,
   "BATTERY": 1.15, "LAST REPORT": 1.15, "RHYTHM": 1.1, "WINDOW": 1.5,
 };
+// The Devices tab's Excluded list: the last column, which has no
+// heading, holds "Cancel the exclusion" or "Open its integration page"
+// on one line (rule DASH-12).
+const EXCLUDED_SHARE = { "DEVICE": 2.6, "INTEGRATION": 1.6, "AREA": 1.4, "EXCLUDED": 1.5, "HISTORY": 1.5, "": 2.2 };
 // The Integrations tab: the five buttons get the room they need, so
 // none breaks inside a word (rule DASH-16).
 const INTEGRATION_SHARE = { "INTEGRATION": 3, "EXCLUDE AND MUTE": 4.6, "SET ASIDE": 0.9, "OUTAGES, 14 DAYS": 1.1, "TROUBLE": 1.6 };
@@ -367,8 +380,9 @@ function pinTable(table) {
   const base = Number(table.dataset.base) || 0;
   const own = table.dataset.shares === "battery" ? BATTERY_SHARE
     : table.dataset.shares === "integrations" ? INTEGRATION_SHARE
-      : table.dataset.shares === "devices" ? DEVICES_SHARE : null;
-  if (own && heads) shares = heads.map((head) => own[head] || 1);
+      : table.dataset.shares === "devices" ? DEVICES_SHARE
+        : table.dataset.shares === "excluded" ? EXCLUDED_SHARE : null;
+  if (own && heads) shares = heads.map((head) => own[head] ?? 1);
   else if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
   else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
   else {
@@ -463,7 +477,11 @@ const STYLE = `
   .pill.mode[aria-pressed="true"] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
   .pill.active-recs { background: var(--warning-color, #ffa600); color: #1a1a1a; border-color: var(--warning-color, #ffa600); font-weight: 600; }
   .pill[hidden] { display: none; }
-  .rec.acked, tr.acked { opacity: 0.6; }
+  /* An acknowledged row fades, all but its tick and the word beside it,
+     so the tick still reads as something to press (rule REC-07). */
+  tr.acked td:not(.ackcell):not(.ackhold) { opacity: 0.75; }
+  .rec.acked > :not(:has(.ack)) { opacity: 0.75; }
+  .rec.acked .actrow:has(> .ack) > :not(.ack) { opacity: 0.75; }
   label.ack { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
   .maint { display: flex; align-items: center; border: 1px solid var(--divider-color); border-radius: 22px;
     background: var(--card-background-color); }
@@ -520,6 +538,9 @@ const STYLE = `
   .labelchip { display: inline-flex; align-items: center; gap: 4px; padding-left: 10px; border-radius: 13px;
     border: 1px solid var(--divider-color); font-size: 13px; }
   .labelchip .meaning { color: var(--warning-color, #b26a00); }
+  /* The label that mutes this device, drawn lit (rule MUTE-09). */
+  .labelchip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .labelchip.on .meaning, .labelchip.on button { color: var(--text-primary-color, #fff); }
   .labelchip button { width: 24px; height: 24px; border: none; background: transparent; padding: 0;
     color: var(--secondary-text-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
   .actnote { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
@@ -549,7 +570,6 @@ const STYLE = `
   .ackcell { width: 56px; }
   .ackbox { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; cursor: pointer; }
   .ackbox input { width: 20px; height: 20px; accent-color: var(--primary-color); cursor: pointer; }
-  tr.acked td { opacity: 0.55; }
   .rec { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
     flex-direction: column; gap: 6px; }
   .rec h3 { margin: 0; font-size: 15px; font-weight: 500; color: var(--primary-color); }
@@ -848,11 +868,17 @@ class DeviceSentinelPanel extends HTMLElement {
 
   connectedCallback() {
     window.addEventListener(UPDATED_EVENT, this._onUpdated);
+    // Back on the page: the Maintenance Mode countdown runs again.
+    if (this._maintButton && this._snapshot) this._paintMaintButton();
     if (this._started && !this._unsubscribe) this._subscribe();
   }
 
   disconnectedCallback() {
     window.removeEventListener(UPDATED_EVENT, this._onUpdated);
+    if (this._maintTimer) {
+      clearInterval(this._maintTimer);
+      this._maintTimer = null;
+    }
     if (this._liveTimer) {
       clearInterval(this._liveTimer);
       this._liveTimer = null;
@@ -961,7 +987,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
     this._statusRow = el("section", { class: "status", "aria-label": "Status" });
     this._refreshButton = el("button", { class: "pill", type: "button", onclick: () => this._refresh() }, "Refresh");
-    this._maintButton = el("button", { class: "pill", type: "button", onclick: () => this._maintenance() }, "Maintenance Mode");
+    this._maintButton = el("button", { class: "pill", type: "button", onclick: () => this._maintenance() }, "Start Maintenance Mode");
     this._minutes = el("select", { "aria-label": "Maintenance length" });
     this._asOf = el("span", { class: "asof" });
     // One highlighted button (rule DASH-02): the recommendations not yet
@@ -1063,6 +1089,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   async _refresh() {
     this._refreshButton.disabled = true;
+    this._areaChoices = null;
     try {
       const [status, classification, problems, recommendations, integrations, devices, brief, battery, signal] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
@@ -1097,6 +1124,34 @@ class DeviceSentinelPanel extends HTMLElement {
     }
   }
 
+  // The button says what pressing it does; open, with the minutes left,
+  // counted down each half minute while it is open (rule DASH-02).
+  _paintMaintButton() {
+    const open = this._maintOpen();
+    const maint = open ? this._snapshot.status.maintenance : null;
+    const until = open ? new Date(maint.until).getTime() : NaN;
+    const left = Number.isFinite(until) ? Math.max(1, Math.ceil((until - Date.now()) / 60000)) : null;
+    this._maintButton.textContent = !open ? "Start Maintenance Mode"
+      : left === null ? "End Maintenance Mode" : `End Maintenance Mode (${left} min left)`;
+    if (open && !this._maintTimer) this._maintTimer = setInterval(() => this._paintMaintButton(), 30000);
+    else if (!open && this._maintTimer) {
+      clearInterval(this._maintTimer);
+      this._maintTimer = null;
+      // The window ran out while the page was open: read the house
+      // again, so the tile and the length list say so too.
+      this._refresh();
+    }
+  }
+
+  // Open, and not yet past its end: a window that has run out reads as
+  // off, so the button never offers to end what has ended.
+  _maintOpen() {
+    const maint = this._snapshot && this._snapshot.status && this._snapshot.status.maintenance;
+    if (!maint || !maint.open) return false;
+    const until = new Date(maint.until).getTime();
+    return !Number.isFinite(until) || until > Date.now();
+  }
+
   _paintRefresh() {
     const fresh = this._latestMarker !== null && this._shownMarker !== null && this._latestMarker > this._shownMarker;
     this._refreshButton.classList.toggle("new", fresh);
@@ -1120,7 +1175,7 @@ class DeviceSentinelPanel extends HTMLElement {
         maint.open ? `open until ${until}` : "off")));
     this._statusRow.replaceChildren(...parts);
 
-    this._maintButton.textContent = maint.open ? "End Maintenance" : "Maintenance Mode";
+    this._paintMaintButton();
     this._minutes.disabled = maint.open;
     const chosen = this._minutes.value || String(maint.default_minutes);
     this._minutes.replaceChildren(...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((m) =>
@@ -1179,13 +1234,17 @@ class DeviceSentinelPanel extends HTMLElement {
     const mode = this._mode();
     this._modeSwitch.replaceChildren(...[["simple", "Simple"], ["advanced", "Advanced"]].map(([key, label]) =>
       el("button", { class: "pill mode", type: "button", "aria-pressed": String(mode === key),
-        onclick: () => {
-          if (this._mode() === key) return;
-          this._modeChoice = key;
-          this._devEdit = null;
-          this._paintStatus();
-          this._paintPane();
-        } }, label)));
+        onclick: () => this._switchMode(key) }, label)));
+  }
+
+  // The switch, held while the page is open (rule DASH-03); also what a
+  // Simple line that points to Advanced presses.
+  _switchMode(key) {
+    if (this._mode() === key) return;
+    this._modeChoice = key;
+    this._devEdit = null;
+    this._paintStatus();
+    this._paintPane();
   }
 
   _paintActiveRecs() {
@@ -1306,7 +1365,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("th", {}, this._sortHeader("SINCE", "since")),
         el("th", {}, "FOR"))),
       el("tbody", {}, ...rows.map((row) => el("tr", { class: row.acknowledged ? "acked" : "" },
-        el("td", { class: "ackcell" }, el("label", { class: "ackbox" },
+        el("td", { class: "ackcell" }, el("label", { class: "ackbox", ...(row.acknowledged ? { title: ACK_HOVER } : {}) },
           el("input", {
             type: "checkbox", "aria-label": `Acknowledge ${row.name}`,
             ...(row.acknowledged ? { checked: "" } : {}),
@@ -1457,7 +1516,8 @@ class DeviceSentinelPanel extends HTMLElement {
       this._paintActiveRecs();
       if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
     });
-    return el("label", { class: "ack small" }, box, " Acknowledged");
+    // Ticked, it says it can be taken back (rule REC-07).
+    return el("label", { class: "ack small", ...(on ? { title: ACK_HOVER } : {}) }, box, " Acknowledged");
   }
 
   _recDeviceCard(card, open) {
@@ -1473,27 +1533,33 @@ class DeviceSentinelPanel extends HTMLElement {
         this._navigate(`${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`);
       },
     }, row.name);
-    const refresh = async () => {
-      this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
-      this._paintActiveRecs();
-      this._paintRecommendations();
-    };
+    // A save on a card reads everything again, so a new name, area or
+    // type shows on the other tabs at once (rule DASH-11).
+    const refresh = () => this._refresh();
     const rows = card.devices.map((row) => {
       const note = el("span", { class: "small" }, "");
       const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
       let action = null;
       if (card.kind === "power") action = this._recPowerPicker(row.device_id, refresh, fail, row.name);
       if (card.kind === "type") action = this._recTypePicker(row.device_id, refresh, fail);
-      // A model split between types: which model, and what
-      // this device is.
-      if (card.kind === "mixed_types") action = el("span", { class: "small" }, `${row.model || "Unknown model"}: ${row.type}`);
+      // Every card is answered in its own rows, as Power and Type are
+      // (rule REC-04): the area, the name, the model's type.
+      if (card.kind === "area") action = this._recAreaPicker(row.device_id, refresh, fail);
+      if (card.kind === "names") action = this._recRename(row, refresh, fail);
+      // A model split between types: which model and what this device
+      // is now, then the type for the whole model.
+      if (card.kind === "mixed_types") {
+        action = el("span", { class: "actcol" }, el("span", { class: "small" }, `${row.model || "Unknown model"}: ${row.type}`),
+          this._recTypePicker(row.device_id, refresh, fail));
+      }
       // The switched-off cards (rule REC-05): one device, one kind.
       const TURN_ON = {
         last_seen: ["last_seen", "Turn on its Last Seen"],
-        battery_off: ["battery", "Turn on its battery sensor"],
+        // Named for what it reports (rule REC-05).
+        battery_off: ["battery", "Turn on its battery percentage sensor"],
         signal_off: ["signal", "Turn on its signal sensor"],
         node_status_off: ["node_status", "Turn on its Z-Wave status"],
-        voltage_off: ["voltage", "Turn on its battery voltage"],
+        voltage_off: ["voltage", "Turn on its battery voltage sensor"],
       };
       if (card.kind === "battery_confirm") {
         action = this._batteryAnswers(row.device_id, async (error) => {
@@ -1516,10 +1582,14 @@ class DeviceSentinelPanel extends HTMLElement {
         } }, "Mute freeze");
       }
       return el("tr", row.acknowledged ? { class: "acked" } : {},
-        el("td", {}, nameLink(row)), el("td", { class: "small" }, row.area || "no area"),
+        el("td", {}, nameLink(row)),
+        // The area, or "Not Set" to set it; on the area card the row's own
+        // chooser does that (rule DASH-04).
+        el("td", { class: "small" }, card.kind === "area" ? el("span", { class: "muted" }, NOT_SET)
+          : this._areaWords(row.area, row.device_id)),
         el("td", {}, el("div", { class: "actrow" }, action, note)),
         // A battery replacement is answered, not ticked (rule REC-07).
-        el("td", {}, card.kind === "battery_confirm" ? null
+        el("td", { class: "ackhold" }, card.kind === "battery_confirm" ? null
           : this._ackBox(row.acknowledged, { kind: card.kind, device_id: row.device_id })));
     });
     return el("article", { class: "rec", "data-kind": card.kind },
@@ -1545,7 +1615,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The Power choices in a list row, as the device page's pencil
   // offers them; Save sets the whole model, as there.
-  _recPowerPicker(deviceId, refresh, fail, deviceName = "") {
+  _recPowerPicker(deviceId, refresh, fail, deviceName = "", source = "recommendations") {
     const power = this._snapshot.recommendations.power || {};
     const [qmin, qmax] = power.quantity || [1, 8];
     const wired = power.wired || [];
@@ -1564,15 +1634,17 @@ class DeviceSentinelPanel extends HTMLElement {
     const save = el("button", { class: "chip", type: "button", onclick: async () => {
       if (!select.value) return;
       // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
-      const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value, source: "recommendations" };
+      const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value, source };
       if (!wired.includes(select.value)) message.quantity = Number(quantity.value);
       if (select.value === power.other) message.other = other.value;
       try {
         const reply = await this._call(message);
         // The device leaves the card once saved, so Send to Battery
         // Notes is offered above the cards (rule DEV-09).
-        this._recReport = reply && reply.report_url
-          ? { device_id: deviceId, name: deviceName, url: reply.report_url } : null;
+        if (source === "recommendations") {
+          this._recReport = reply && reply.report_url
+            ? { device_id: deviceId, name: deviceName, url: reply.report_url } : null;
+        }
         await refresh();
       } catch (err) { fail(err); }
     } }, "Save");
@@ -1582,7 +1654,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The Type choices in a list row, as the device page's
   // pencil offers them; Save sets the whole model, as there.
-  _recTypePicker(deviceId, refresh, fail) {
+  _recTypePicker(deviceId, refresh, fail, source = "recommendations") {
     const kinds = this._snapshot.recommendations.types || { choices: [], other: "Other" };
     const select = el("select", { class: "actinput", "aria-label": "What this device is" },
       el("option", { value: "" }, "Choose…"), ...kinds.choices.map((c) => el("option", { value: c }, c)));
@@ -1591,7 +1663,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const save = el("button", { class: "chip", type: "button", disabled: "", onclick: async () => {
       if (!select.value) return;
       // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
-      const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value, source: "recommendations" };
+      const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value, source };
       if (select.value === kinds.other) message.other = other.value;
       try { await this._call(message); await refresh(); } catch (err) { fail(err); }
     } }, "Save");
@@ -1602,6 +1674,40 @@ class DeviceSentinelPanel extends HTMLElement {
     select.addEventListener("change", repaint);
     repaint();
     return el("span", { class: "actrow" }, select, other, save);
+  }
+
+  // The area chooser in a No Area Assigned row (rule REC-04): the
+  // same areas the device page offers; Save moves this one device, in
+  // Home Assistant.
+  _recAreaPicker(deviceId, refresh, fail) {
+    const holder = el("span", { class: "actrow" }, el("span", { class: "muted small" }, "Loading the areas."));
+    this._areaPicker(deviceId, refresh, fail, "recommendations").then((picker) => holder.replaceChildren(picker));
+    return holder;
+  }
+
+  // A new name in a Devices Sharing A Name row (rule REC-04), held for a
+  // yes when another device shows it, as on the device page (rule
+  // DASH-10). The device leaves the card once no other device shares
+  // its name.
+  _recRename(row, refresh, fail) {
+    const input = el("input", { class: "actinput", type: "text", "aria-label": `A new name for ${row.name}`, value: row.name || "" });
+    const ask = el("span", { class: "actrow" });
+    const send = async (confirm) => {
+      ask.replaceChildren();
+      try {
+        await this._call({ type: "device_sentinel/device_rename", device_id: row.device_id, name: input.value,
+          confirm, source: "recommendations" });
+        await refresh();
+      } catch (err) {
+        if (err && err.code === "name_in_use") {
+          ask.replaceChildren(el("span", { class: "small" }, err.message),
+            el("button", { class: "chip", type: "button", onclick: () => send(true) }, "Save anyway"));
+        } else fail(err);
+      }
+    };
+    const save = el("button", { class: "chip", type: "button", onclick: () => send(false) }, "Save");
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") send(false); });
+    return el("span", { class: "actcol" }, el("span", { class: "actrow" }, input, save), ask);
   }
 
   _standingText(row) {
@@ -1937,7 +2043,7 @@ class DeviceSentinelPanel extends HTMLElement {
           })()) : null,
           ...["DEVICE", "PROBLEM", "SINCE", "FOR"].map((h) => el("th", {}, h)))),
         el("tbody", {}, ...nowRows.map((row) => el("tr", { class: row.acknowledged ? "acked" : "" },
-          brief.is_today ? el("td", { class: "ackcell" }, el("label", { class: "ackbox" },
+          brief.is_today ? el("td", { class: "ackcell" }, el("label", { class: "ackbox", ...(row.acknowledged ? { title: ACK_HOVER } : {}) },
             el("input", {
               type: "checkbox", "aria-label": `Acknowledge ${row.name}`,
               ...(row.acknowledged ? { checked: "" } : {}),
@@ -2044,9 +2150,75 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   // A type as a link that narrows the tab to it.
-  _typeLink(type, pick) {
-    return el("button", { class: type ? "linkbtn" : "linkbtn muted", type: "button",
-      title: `Show ${type || NOT_KNOWN_TYPE} only`, onclick: () => pick(type || NOT_KNOWN_TYPE) }, type || NOT_KNOWN_TYPE);
+  // A device's type in a list (rules DEV-10, DEV-12): a type that is set
+  // is plain words, since the Type filter is what narrows a list; one
+  // nobody has set is "Not Set", which opens the way to set it.
+  _typeLink(type, deviceId) {
+    if (type) return el("span", {}, type);
+    return deviceId ? this._notSet("type", deviceId) : el("span", { class: "muted" }, NOT_SET);
+  }
+
+  // "Not Set" (rules DEV-10, DASH-04): a type, an area or a battery
+  // nobody has set, a link that opens the way to set it in place, with
+  // no question first. A type and a battery are set for the whole
+  // model; an area for this one device, in Home Assistant. Saved, the
+  // dashboard reads everything again, so every tab shows it.
+  _notSet(kind, deviceId, opts = {}) {
+    const source = opts.source || (this._view ? "device_page" : TAB_SOURCE[this._tab]) || "device_page";
+    const holder = el("span", { class: "actrow notset" });
+    const note = el("span", { class: "small" }, "");
+    const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
+    const done = async () => {
+      await this._refresh();
+      // A battery set on a device's page offers Send to Battery Notes
+      // below it, as the pencil does (rule DEV-09).
+      const fresh = this._page && this._page.identity;
+      if (kind === "power" && source === "device_page" && fresh && fresh.device_id === deviceId && fresh.power && fresh.power.report_url) {
+        this._devEdit = { device: deviceId, row: "power-saved", saved: true };
+        this._paintDevicePage();
+      }
+    };
+    const link = el("button", { class: "linkbtn", type: "button", "aria-label": `${NOT_SET}: set it`, onclick: async () => {
+      const picker = kind === "type" ? this._recTypePicker(deviceId, done, fail, source)
+        : kind === "power" ? this._recPowerPicker(deviceId, done, fail, opts.name || "", source)
+          : await this._areaPicker(deviceId, done, fail, source);
+      holder.replaceChildren(picker, el("button", { class: "chip", type: "button",
+        onclick: () => { note.textContent = ""; holder.replaceChildren(link, note); } }, "Cancel"), note);
+    } }, NOT_SET);
+    holder.append(link, note);
+    return holder;
+  }
+
+  // The areas Home Assistant holds, to choose one in place; Save
+  // moves this one device there (rule DASH-09).
+  async _areaPicker(deviceId, done, fail, source) {
+    let choices;
+    try {
+      // Asked once for a whole card's rows, again after the next refresh.
+      if (!this._areaChoices) this._areaChoices = this._call({ type: "device_sentinel/device_choices" });
+      choices = await this._areaChoices;
+    } catch (err) {
+      this._areaChoices = null;
+      fail(err);
+      return el("span", {});
+    }
+    const select = el("select", { class: "actinput", "aria-label": "Which area" },
+      el("option", { value: "" }, "Choose…"), ...(choices.areas || []).map((a) => el("option", { value: a.id }, a.name)));
+    const save = el("button", { class: "chip", type: "button", disabled: "", onclick: async () => {
+      if (!select.value) return;
+      try {
+        await this._call({ type: "device_sentinel/device_area", device_id: deviceId, area_id: select.value, source });
+        await done();
+      } catch (err) { fail(err); }
+    } }, "Save");
+    select.addEventListener("change", () => { save.disabled = !select.value; });
+    return el("span", { class: "actrow" }, select, save);
+  }
+
+  // A device's area in a list: set, its name; else "Not Set" to set it.
+  _areaWords(area, deviceId) {
+    if (area) return el("span", {}, area);
+    return deviceId ? this._notSet("area", deviceId) : el("span", { class: "muted" }, NOT_SET);
   }
 
   // The list of types beside a tab's filters, with how many of each.
@@ -2163,8 +2335,9 @@ class DeviceSentinelPanel extends HTMLElement {
     // model split between types as each type and its count.
     const typeCell = (row) => {
       const list = row.types || [];
-      if (list.length <= 1) return this._typeLink((list[0] || [""])[0], pick);
-      return el("span", {}, ...list.flatMap(([type, n], i) => [i ? ", " : null, this._typeLink(type, pick), ` ${n}`]));
+      // Any device of the model sets the model's type (rule DEV-10).
+      if (list.length <= 1) return this._typeLink((list[0] || [""])[0], row.lowest_id);
+      return el("span", {}, ...list.flatMap(([type, n], i) => [i ? ", " : null, this._typeLink(type, row.lowest_id), ` ${n}`]));
     };
     const modelSort = simpleView && ["typical", "lowest"].includes(this._modelSort.key) ? {} : this._modelSort;
     const models = this._sortRows(modelRows, modelSort, {
@@ -2224,7 +2397,7 @@ class DeviceSentinelPanel extends HTMLElement {
           const padded = [...Array(Math.max(0, 5 - weeks.length)).fill(null), ...weeks];
           return el("tr", {},
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-            el("td", {}, this._typeLink(row.type, pick)),
+            el("td", {}, this._typeLink(row.type, row.device_id)),
             el("td", { class: "num" }, levelText(row.level)),
             ...(simpleView ? [] : padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
               i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : ""))),
@@ -2251,7 +2424,7 @@ class DeviceSentinelPanel extends HTMLElement {
           this._sortHead(this._lowSort, "SINCE", "since", again))),
         el("tbody", {}, ...lowRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-          el("td", {}, this._typeLink(row.type, pick)),
+          el("td", {}, this._typeLink(row.type, row.device_id)),
           el("td", { class: "num" }, levelText(row.level)),
           simpleView ? null : el("td", { class: "num" }, moved(row.month_drop)),
           el("td", {}, row.since ? moment(row.since) : ""))))))
@@ -2273,7 +2446,7 @@ class DeviceSentinelPanel extends HTMLElement {
         simpleView ? null : el("th", { class: "num" }, "MODEL, A WEEK"))),
       el("tbody", {}, ...steadyRows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", {}, this._typeLink(row.type, pick)),
+        el("td", {}, this._typeLink(row.type, row.device_id)),
         el("td", { class: "num" }, levelText(row.level)),
         el("td", { class: "num" }, moved(row.month_drop)),
         simpleView ? null : el("td", { class: "num" }, String(row.days)),
@@ -2281,11 +2454,10 @@ class DeviceSentinelPanel extends HTMLElement {
         // sits here with no forecast, and this says why.
         simpleView ? null : el("td", {}, row.steps || ""),
         // The battery it takes, as its Power row says it, lithium named
-        // (rule BAT-16); "Not set" when nobody has said, a link to the page
-        // that sets it, plain in Simple, where the Power row is read-only,
-        // so one blank never means two things.
+        // (rule BAT-16); "Not Set" when nobody has said, which opens the
+        // way to set it in place, for the whole model (rule DASH-04).
         el("td", {}, row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
-          : simpleView ? el("span", { class: "muted" }, "Not set") : this._link("Not set", this._devicePath(row.device_id))),
+          : this._notSet("power", row.device_id, { name: row.name })),
         // How fast the others of its model fall (rule BAT-16).
         simpleView ? null : el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
     // A raw sensor value is no level to act on: Advanced only (rule DASH-04).
@@ -2294,7 +2466,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
         el("tbody", {}, ...unreadableRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-          el("td", {}, this._typeLink(row.type, pick)),
+          el("td", {}, this._typeLink(row.type, row.device_id)),
           el("td", { class: "num" }, levelText(row.level))))))),
       el("p", { class: "small", style: "margin:6px 0 0" },
         "These report a raw sensor value rather than a battery level, and are never called low. To take them out of these lists, "
@@ -2333,7 +2505,7 @@ class DeviceSentinelPanel extends HTMLElement {
       !simpleView && steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
         "MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest: context, not this cell's time left.") : null,
       !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "Not set: no battery type is known for the device. Open it and set the type with the pencil on its Power row; one answer covers every device of the same model.") : null,
+        "Not Set: no battery type is known for the device. Press Not Set to choose it; one answer covers every device of the same model.") : null,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
@@ -2571,25 +2743,23 @@ class DeviceSentinelPanel extends HTMLElement {
       problem: (row) => row.problem,
       muted: (row) => row.muted,
     }[this._deviceFilter]);
-    // The Type filter (rule DEV-12), beside the chips: every type a watched
-    // device has, then the ones nothing could name.
-    const NOT_KNOWN = "Not known";
+    // The Type filter (rule DEV-12), beside the chips, in both views:
+    // every type a watched device has, then the ones not set.
+    const NOT_KNOWN = NOT_SET;
     // Sorted as people read, so an owner's "lamp" sits with the L's.
     const types = [...new Set(all.map((row) => row.type).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0));
     // A chosen type no device has any longer goes back to All types,
-    // Not known included once every device has a type.
+    // Not Set included once every device has a type.
     if (this._deviceType && (this._deviceType === NOT_KNOWN ? all.every((row) => row.type) : !types.includes(this._deviceType))) {
       this._deviceType = "";
     }
-    // Simple has no type filter, so one chosen in Advanced does not
-    // narrow it (rule DASH-04).
-    if (this._deviceType && !this._isSimple()) {
+    if (this._deviceType) {
       rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
     }
     const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
     // A sort on a column Simple leaves out does not order Simple's rows.
-    const sort = this._isSimple() && this._deviceSort && ["type", "area", "battery", "last", "rhythm", "window"].includes(this._deviceSort.key)
+    const sort = this._isSimple() && this._deviceSort && ["area", "battery", "last", "rhythm", "window"].includes(this._deviceSort.key)
       ? null : this._deviceSort;
     if (sort) {
       const value = {
@@ -2615,8 +2785,8 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, label));
     };
-    // Simple leaves out AREA, TYPE, BATTERY, LAST REPORT, RHYTHM and
-    // WINDOW, and the type and label filters (rule DASH-04).
+    // Simple leaves out AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW,
+    // and the label filter; TYPE and its filter show in both (rule DASH-04).
     const simple = this._isSimple();
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${all.length} devices are watched. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
@@ -2625,15 +2795,14 @@ class DeviceSentinelPanel extends HTMLElement {
     const chips = chipsFor();
     const table = el("table", { "data-shares": "devices" },
       el("thead", {}, el("tr", {},
-        header("DEVICE", "name"), simple ? null : header("TYPE", "type"), simple ? null : header("AREA", "area"),
+        header("DEVICE", "name"), header("TYPE", "type"), simple ? null : header("AREA", "area"),
         header("INTEGRATION", "integration"), el("th", {}, "STANDING"), el("th", {}, "PROBLEM"),
         ...(simple ? [] : [header("BATTERY", "battery", "num"), header("LAST REPORT", "last"),
           header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num")]))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        // A link that sets the type filter.
-        simple ? null : el("td", {}, this._typeLink(row.type, pickType)),
-        simple ? null : el("td", {}, row.area || el("span", { class: "muted" }, "No area")),
+        el("td", {}, this._typeLink(row.type, row.device_id)),
+        simple ? null : el("td", {}, this._areaWords(row.area, row.device_id)),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
         el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
@@ -2650,9 +2819,9 @@ class DeviceSentinelPanel extends HTMLElement {
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
       ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
         `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
-    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, simple ? null : typeFilter), finders,
+    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
       excludedAll.length ? el("p", { style: "margin:0" }, switchView("excluded")) : null,
-      simple ? null : this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
+      this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
     this._keepSearchFocus();
   }
 
@@ -2676,7 +2845,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ...areas.map((name) => el("option", { value: name, ...(this._deviceArea === name ? { selected: "" } : {}) },
         `${name} ${count((row) => row.area === name)}`)),
       el("option", { value: NO_AREA, ...(this._deviceArea === NO_AREA ? { selected: "" } : {}) },
-        `No area ${count((row) => !row.area)}`));
+        `${NOT_SET} ${count((row) => !row.area)}`));
     const label = el("select", { class: "actinput", "aria-label": "Show one label",
       onchange: (ev) => { this._deviceLabel = ev.target.value; this._paintDevices(); } },
       el("option", { value: "", ...(!this._deviceLabel ? { selected: "" } : {}) }, "All labels"),
@@ -2719,17 +2888,19 @@ class DeviceSentinelPanel extends HTMLElement {
         } catch (err) { /* the refresh shows the list as it stands */ }
         await this._refresh();
       } }, "Cancel the exclusion");
-    const table = el("table", {},
+    // Its own widths, so the last column's button and link sit on one
+    // line (rule DASH-12).
+    const table = el("table", { "data-shares": "excluded" },
       el("thead", {}, el("tr", {}, ...["DEVICE", "INTEGRATION", "AREA", "EXCLUDED", "HISTORY", ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, row.page
           ? this._link(row.name, this._devicePath(row.device_id))
           : this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
-        el("td", {}, row.area || ""),
+        el("td", {}, this._areaWords(row.area, row.device_id)),
         el("td", {}, row.how === "integration" ? "With its integration" : "By you"),
         el("td", {}, row.page ? "Kept until midnight" : "Deleted"),
-        el("td", {}, row.how === "integration"
+        el("td", { style: "white-space:nowrap" }, row.how === "integration"
           ? this._link("Open its integration page", this._integrationPath(row.integration))
           : takeBack(row))))));
     this._pane.replaceChildren(summary, el("p", { style: "margin:0" }, back), finders,
@@ -3093,20 +3264,26 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _powerCell(who) {
-    const power = who.power || { words: "Not known", source: null };
+    const power = who.power || { words: NOT_SET, source: null };
     const acts = who.actions;
     const e = this._edit(who.device_id);
-    const shown = el("div", { class: "actrow" }, el("span", {}, power.words),
+    const openPower = () => {
+      const entry = power.entry;
+      const wired = power.wired || [power.mains, power.usb];
+      const pick = entry ? (power.battery_choices.includes(entry.type) || wired.includes(entry.type)
+        ? entry.type : power.other) : "";
+      this._devEdit = { device: who.device_id, row: "power", choice: pick,
+        quantity: (entry && entry.quantity) || 1, other: entry && pick === power.other ? entry.type : "" };
+      this._paintDevicePage();
+    };
+    // Nothing known reads "Not Set", which opens the pencil's choices;
+    // the pencil stays beside it (rule DASH-04).
+    const words = power.source ? el("span", {}, power.words)
+      : acts ? el("button", { class: "linkbtn", type: "button", onclick: openPower }, NOT_SET)
+        : el("span", { class: "muted" }, NOT_SET);
+    const shown = el("div", { class: "actrow" }, words,
       power.source ? this._powerIcon(power, who.device_id) : null,
-      acts ? this._editMark("Change what powers this device", () => {
-        const entry = power.entry;
-        const wired = power.wired || [power.mains, power.usb];
-        const pick = entry ? (power.battery_choices.includes(entry.type) || wired.includes(entry.type)
-          ? entry.type : power.other) : "";
-        this._devEdit = { device: who.device_id, row: "power", choice: pick,
-          quantity: (entry && entry.quantity) || 1, other: entry && pick === power.other ? entry.type : "" };
-        this._paintDevicePage();
-      }) : null);
+      acts ? this._editMark("Change what powers this device", openPower) : null);
   // Where an owner's entry was set, and how many it covers (rule DEV-07).
     const elsewhere = power.source === "owner" && power.set_on && power.set_on !== who.device_id;
     const covers = power.source === "owner" && power.covers > 1;
@@ -3180,8 +3357,9 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // What the device is (rule DEV-10): the owner's answer, else Device
   // Sentinel's own (a known model, a network role, its entities), else
-  // "Not known, click to set", which opens the pencil. Like the Power
-  // row, an answer covers the whole model.
+  // "Not Set", which opens the pencil's choices; the pencil stays beside
+  // it (rule DASH-04). Like the Power row, an answer covers the whole
+  // model.
   _typeCell(who) {
     const kind = who.type || { words: null, source: null, choices: [], other: "Other" };
     const acts = who.actions;
@@ -3198,13 +3376,13 @@ class DeviceSentinelPanel extends HTMLElement {
     const words = kind.words
       ? el("span", {}, kind.words)
       : acts
-        ? el("button", { class: "linkbtn", type: "button", onclick: open }, "Not known, click to set")
-        : el("span", { class: "muted" }, "Not known");
+        ? el("button", { class: "linkbtn", type: "button", onclick: open }, NOT_SET)
+        : el("span", { class: "muted" }, NOT_SET);
     const shown = el("div", { class: "actrow" }, words,
       // The hover names where the answer was entered, as the Power
       // row's does (rule DEV-07).
       kind.source === "owner" ? this._powerIcon({ source: "owner", set_on: kind.set_on, set_on_name: kind.set_on_name }, who.device_id) : null,
-      acts && kind.words ? this._editMark("Change what this device is", open) : null);
+      acts ? this._editMark("Change what this device is", open) : null);
     const elsewhere = kind.source === "owner" && kind.set_on && kind.set_on !== who.device_id;
     const covers = kind.source === "owner" && kind.covers > 1;
     const whence = elsewhere || covers ? el("div", { class: "muted small powerwhence" },
@@ -3272,9 +3450,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const acts = who.actions;
     const e = this._edit(who.device_id);
     if (!e || e.row !== "area" || !this._choices) {
+      const openArea = () => this._openPicker(who, "area");
       return el("div", { class: "actcol" }, el("div", { class: "actrow" },
-        el("span", {}, who.area || "none assigned"),
-        this._editMark("Change area", () => this._openPicker(who, "area"))), this._actNote("area"));
+        who.area ? el("span", {}, who.area) : el("button", { class: "linkbtn", type: "button", onclick: openArea }, NOT_SET),
+        this._editMark("Change area", openArea)), this._actNote("area"));
     }
     const choose = (area_id) => this._deviceAct(
       { type: "device_sentinel/device_area", device_id: who.device_id, area_id }, "area");
@@ -3313,9 +3492,14 @@ class DeviceSentinelPanel extends HTMLElement {
       icon.append(svg("path", { d: "M6 6l12 12" }), svg("path", { d: "M18 6L6 18" }));
       return icon;
     };
-    const chips = acts.labels.map((label) => el("span", { class: "labelchip" }, label.name,
+    // A label that mutes this device is drawn lit; its × takes it off
+    // this device and so lifts the mute here (rule MUTE-09).
+    const muting = new Set(Object.values(acts.mutes || {}).flatMap((m) =>
+      (m && typeof m.source === "string" && m.source.startsWith("label: ") ? m.source.slice(7).split(", ") : [])));
+    const chips = acts.labels.map((label) => el("span", { class: muting.has(label.name) ? "labelchip on" : "labelchip" }, label.name,
       label.meaning ? el("span", { class: "meaning" }, label.meaning) : null,
       el("button", { type: "button", "aria-label": `Remove the label ${label.name} from this device`,
+        title: "Removes the label from this device in Home Assistant.",
         onclick: () => this._deviceAct({ type: "device_sentinel/device_label", device_id: who.device_id,
           label_id: label.id, add: false }, "labels") }, cross())));
     const parts = [el("div", { class: "actrow" }, ...chips,
@@ -3338,129 +3522,39 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
-  // Labels in Simple (rule DASH-04): each with what Device Sentinel does
-  // with it, and nothing to press.
-  _plainLabels(who) {
-    const labels = (who.actions && who.actions.labels) || [];
-    if (!labels.length) return el("span", { class: "muted" }, "none");
-    return el("div", { class: "actrow" }, ...labels.map((label) => el("span", { class: "labelchip" }, label.name,
-      label.meaning ? el("span", { class: "meaning" }, label.meaning) : null)));
-  }
-
-  // Mute by label (rule MUTE-09, Advanced): one of the person's labels,
-  // or a new one, and the kind. The page says how many devices carry
-  // the label before it saves.
-  _labelMute(who) {
-    const e = this._edit(who.device_id);
-    if (!e || e.row !== "labelmute" || !this._choices) {
-      return el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
-        onclick: () => this._openPicker(who, "labelmute") }, "Mute by label"));
-    }
-    e.kind = e.kind || "freeze";
-    const KINDS = [["freeze", "Freeze"], ["unavailable", "Unavailable"], ["battery", "Battery"], ["signal", "Signal"], ["everything", "Everything"]];
-    const have = new Set(((who.actions && who.actions.labels) || []).map((l) => l.id));
-    const repaint = () => this._paintDevicePage();
-    const kind = el("select", { class: "actinput", "aria-label": "What to mute" },
-      ...KINDS.map(([key, label]) => el("option", { value: key, ...(e.kind === key ? { selected: "" } : {}) }, label)));
-    kind.addEventListener("change", () => { e.kind = kind.value; repaint(); });
-    const option = (l) => el("label", { class: "pick" },
-      el("input", { type: "radio", name: "ds-labelmute", ...(e.label === l.id ? { checked: "" } : {}),
-        onchange: () => { e.label = l.id; e.name = ""; repaint(); } }),
-      `${l.name}, on ${l.devices || 0} device${l.devices === 1 ? "" : "s"}`,
-      l.meaning ? el("span", { class: "muted" }, ` (${l.meaning})`) : null);
-    const input = el("input", { class: "actinput", type: "text", "aria-label": "New label", placeholder: "New label", value: e.name || "" });
-    const word = (KINDS.find(([key]) => key === e.kind) || ["", ""])[1].toLowerCase();
-    const fold = (text) => text.trim().toLowerCase();
-    // A typed name Home Assistant already holds is that label, and the
-    // page says how many devices carry it.
-    const chosenNow = () => {
-      const typed = (e.name || "").trim();
-      if (e.label) return this._choices.labels.find((l) => l.id === e.label) || null;
-      return typed ? this._choices.labels.find((l) => fold(l.name) === fold(typed)) || null : null;
-    };
-    const reachWords = () => {
-      const chosen = chosenNow();
-      const typed = (e.name || "").trim();
-      if (chosen) {
-        const n = (chosen.devices || 0) + (have.has(chosen.id) ? 0 : 1);
-        return `${chosen.name} is on ${chosen.devices || 0} device${chosen.devices === 1 ? "" : "s"}${have.has(chosen.id) ? "" : " and goes on this one too"}. `
-          + `Muting it for ${word} mutes all ${n} for ${word}.`;
-      }
-      return typed ? `A new label, ${typed}, goes on this device and mutes it for ${word}.` : "";
-    };
-    const note = el("div", { class: "actnote ask" }, "");
-    const saveButton = el("button", { class: "chip", type: "button", onclick: () => save() }, "Mute by label");
-    // Updated where it stands as the name is typed, never by a repaint,
-    // because a repaint on leaving the field would replace the button
-    // under the first click.
-    const showReach = () => {
-      const words = reachWords();
-      note.textContent = words;
-      note.hidden = !words;
-      if (words) saveButton.removeAttribute("aria-disabled");
-      else saveButton.setAttribute("aria-disabled", "true");
-    };
-    input.addEventListener("input", () => {
-      e.name = input.value;
-      e.label = null;
-      for (const radio of this._pane.querySelectorAll('input[name="ds-labelmute"]')) radio.checked = false;
-      showReach();
-    });
-    const save = () => {
-      const chosen = chosenNow();
-      const typed = (e.name || "").trim();
-      const message = { type: "device_sentinel/device_label_mute", device_id: who.device_id, kind: e.kind };
-      if (chosen) message.label_id = chosen.id;
-      else if (typed) message.name = typed;
-      else return;
-      this._deviceAct(message, "labelmute");
-    };
-    showReach();
-    return el("div", { class: "actcol" },
-      el("div", { class: "actrow" }, el("span", {}, "Mute"), kind, el("span", {}, "by label")),
-      el("fieldset", { style: "border:none;margin:0;padding:0" },
-        el("legend", { class: "muted", style: "padding:0 0 4px" }, "Label"),
-        ...this._choices.labels.map(option)),
-      el("div", { class: "actrow" }, input),
-      note,
-      el("div", { class: "actrow" },
-        saveButton,
-        el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; repaint(); } }, "Cancel")),
-      this._actNote("labelmute"));
-  }
-
   _mutedCell(who, hub) {
     const mutes = who.actions.mutes;
-    const everything = mutes.everything && mutes.everything.on;
+    // The device's own Mute everything covers its single mutes.
+    const everything = Boolean(mutes.everything && mutes.everything.here);
     const toggle = (kind, words) => {
       const m = mutes[kind] || { on: false, here: false };
-      // Fixed when the mute comes from a label or an integration, or
-      // when Mute everything covers this kind. Freeze and unavailable
-      // are each their own (rule MUTE-06).
+      // A button shows only the device's own mute, so every lit button
+      // lifts its mute when pressed; a mute from a label, an
+      // integration or a hub lights none of them and is named below
+      // (rule MUTE-09). Mute everything set here lights the single
+      // mutes it covers, held. Freeze and unavailable are each their
+      // own (rule MUTE-06).
       const covered = kind !== "everything" && everything;
-      const fixed = (m.on && !m.here) || covered;
-      const lit = Boolean(m.on || covered);
-      // A mute that is on is drawn filled, with a check mark, whether
-      // set here or by a label, an integration or Mute everything
-      // (rule MUTE-09); one set elsewhere cannot be pressed here.
+      const own = Boolean(m.here);
+      const lit = own || covered;
       return el("button", { class: lit ? "chip on" : "chip", type: "button", "aria-pressed": String(lit),
-        ...(fixed ? { "aria-disabled": "true" } : {}),
+        ...(covered && !own ? { "aria-disabled": "true", title: "Muted by Mute everything." }
+          : own ? { title: "Muted. Press to lift the mute." } : {}),
         onclick: () => {
-          if (fixed) return;
+          if (covered && !own) return;
           // One press, no confirm: a second press undoes it (rule MUTE-09).
-          this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind, on: !m.on }, "muted");
+          this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind, on: !own }, "muted");
         } }, lit ? `\u2713 ${words}` : words);
     };
     // The buttons say what is muted, with no word for none (rule MUTE-09).
     const parts = [
       el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("unavailable", "Mute unavailable"),
         toggle("battery", "Mute battery"), toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
-    // A mute set by a label or an integration cannot be lifted here,
-    // so each says where it comes from and where it is changed
-    // (rule MUTE-09).
+    // A mute from a label, an integration or a hub says where it comes
+    // from and where it is lifted (rule MUTE-09).
     for (const [kind, words, section] of MUTE_SOURCES) {
       const m = mutes[kind];
-      if (!m || !m.on || m.here || !m.source) continue;
+      if (!m || !m.on || !m.source || m.source === "device") continue;
       const source = String(m.source);
       if (source === "hub") {
         // A hub's mute covers the devices it controls and is lifted on
@@ -3469,10 +3563,28 @@ class DeviceSentinelPanel extends HTMLElement {
           hub ? this._link(`${hub.name}'s page`, this._devicePath(hub.device_id)) : "the hub's page", "."));
         continue;
       }
-      const from = source.startsWith("label: ") ? `the label ${source.slice(7)}`
-        : source.startsWith("integration: ")
-          ? `the integration ${source.slice(13) === who.integration && who.integration_title ? who.integration_title : source.slice(13)}`
-          : source;
+      if (source.startsWith("label: ")) {
+        const from = `the label ${source.slice(7)}`;
+        // The device's own mute as well: the button lifts that one, and
+        // the label's stays until the label goes (rule MUTE-09).
+        if (m.here) {
+          parts.push(el("div", { class: "actnote" }, `${words} is also muted by ${from}, which stays when you lift your own.`));
+          continue;
+        }
+        // Advanced: take the label off this device in the Labels row, or
+        // change what it does in settings. Simple has no Labels row, and
+        // says where (rule DASH-04).
+        parts.push(this._isSimple()
+          ? el("div", { class: "actnote" }, `${words} is muted by ${from}. Switch to `,
+            el("button", { class: "linkbtn", type: "button", onclick: () => this._switchMode("advanced") }, "Advanced"),
+            " to change it.")
+          : el("div", { class: "actnote" }, `${words} is muted by ${from}. Remove the label above to lift it for this device, or change it in `,
+            this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
+        continue;
+      }
+      const from = source.startsWith("integration: ")
+        ? `the integration ${source.slice(13) === who.integration && who.integration_title ? who.integration_title : source.slice(13)}`
+        : source;
       // An integration's mute is changed on the Integrations tab (rule MUTE-03).
       parts.push(source.startsWith("integration: ")
         ? el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it on the `,
@@ -3481,8 +3593,6 @@ class DeviceSentinelPanel extends HTMLElement {
           this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
     }
     parts.push(this._actNote("muted"));
-    // Advanced only (rule MUTE-09).
-    if (!this._isSimple()) parts.push(this._labelMute(who));
     return el("div", { class: "actcol" }, ...parts);
   }
 
@@ -3665,10 +3775,12 @@ class DeviceSentinelPanel extends HTMLElement {
         } catch (err) { /* the next refresh shows the rule as it stands */ }
       } }, "Use the 14-Day Trimmed Maximum") : null;
     const group = (title) => ["__group__", title];
-    // Read-only in Simple (rule DASH-04): the value when set, and
-    // nothing that asks for more. "Not known" when not, the words
-    // Advanced uses (rules DEV-07, DEV-10).
-    const plain = (text) => (text ? el("span", {}, text) : el("span", { class: "muted" }, "Not known"));
+    // Simple (rule DASH-04): the value when set, in grey, with nothing to
+    // press; "Not Set" when not, which opens the way to set it in place
+    // (rules DEV-07, DEV-10).
+    const plain = (text, kind) => (text ? el("span", { class: "muted" }, text)
+      : acts ? this._notSet(kind, who.device_id, { source: "device_page", name: who.name })
+        : el("span", { class: "muted" }, NOT_SET));
     const signalTrouble = (() => {
       const rail = (page.signal && page.signal.railed_days) || [];
       const last = [...rail].reverse().find((v) => v !== null && v !== undefined);
@@ -3681,11 +3793,12 @@ class DeviceSentinelPanel extends HTMLElement {
       // No Rename in Simple (rule DASH-04).
       ["Name", acts && !simple ? this._nameCell(who) : who.name],
       // What it is (rule DEV-10).
-      ["Type", simple ? plain(who.type && who.type.words) : this._typeCell(who)],
+      ["Type", simple ? plain(who.type && who.type.words, "type") : this._typeCell(who)],
       ["Device ID", who.device_id],
-      ["Area", simple ? plain(who.area) : acts ? this._areaCell(who) : (who.area || "none assigned")],
-      // Labels, each with what Device Sentinel does with it.
-      ...(acts ? [["Labels", simple ? this._plainLabels(who) : this._labelsCell(who)]] : []),
+      ["Area", simple ? plain(who.area, "area") : acts ? this._areaCell(who) : (who.area || NOT_SET)],
+      // Labels, each with what Device Sentinel does with it, in Advanced
+      // only: Simple says when a label mutes the device (rule DASH-04).
+      ...(acts && !simple ? [["Labels", this._labelsCell(who)]] : []),
       // A row with nothing to show is left out (rule DASH-08); a row with
       // an action, such as Area or Power, always stays. The server
       // sends nothing for a field that is empty or only zeros.
@@ -3709,7 +3822,8 @@ class DeviceSentinelPanel extends HTMLElement {
       ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]]
         : acts && acts.battery_off ? [["Battery sensor", this._switchedOffCell(who, "battery", "batterysensor")]] : []),
       // What powers it (rule DEV-07): words, where they came from, pencil.
-      ["Power", simple ? plain(who.power && who.power.source ? who.power.words : null) : this._powerCell(who)],
+      ["Power", simple ? el("div", { class: "actcol" }, plain(who.power && who.power.source ? who.power.words : null, "power"),
+        this._powerReport(who, this._edit(who.device_id))) : this._powerCell(who)],
       // Battery Last Replaced, in both modes (rule BAT-07): the day, or
       // a detected one waiting for an answer, with a pencil.
       ...(who.battery_replaced ? [[who.battery_replaced.words.row, this._batteryReplacedCell(who)]] : []),
@@ -4690,7 +4804,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         // The integration's name; its id still opens its page (rule GEN-07).
         el("td", {}, this._link(row.integration_name || row.integration, this._integrationPath(row.integration))),
-        el("td", {}, this._typeLink(row.type, pick)),
+        el("td", {}, this._typeLink(row.type, row.device_id)),
         el("td", {}, row.watched ? (row.judged ? `\u2713 ${row.judged}` : "\u2713") : ""),
         el("td", {}, row.muted),
         el("td", {}, row.set_aside),
@@ -4708,7 +4822,14 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   async _maintenance() {
-    const open = this._snapshot && this._snapshot.status.maintenance.open;
+    const stale = this._snapshot && this._snapshot.status.maintenance.open && !this._maintOpen();
+    // A window that ran out while the page was open: read it again
+    // first, so a press never opens what the button said it would end.
+    if (stale) {
+      await this._refresh();
+      return;
+    }
+    const open = this._maintOpen();
     const message = { type: "device_sentinel/action", action: "maintenance" };
     if (!open) message.minutes = Number(this._minutes.value);
     await this._call(message);
