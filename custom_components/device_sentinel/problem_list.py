@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.10 (2026-10-27)
+# File: problem_list.py, Version: 0.27.15 (2026-10-30)
 
 """The problem list: the single memory every channel renders.
 
@@ -57,11 +57,8 @@ from .const import (
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
+    DEV_DOWN_FROM,
     DEV_FROZEN_CATEGORY,
-    DEV_LAST_ACTIVITY,
-    DEV_SET_ASIDE_SINCE,
-    DEV_WATCHED_FROM,
-    FREEZE_CATEGORY_FROZEN,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     SETTLE_SHARE_PCT,
@@ -1396,42 +1393,23 @@ class ProblemListMixin:
     ) -> float | None:
         """How long a recovered device was down, for the recovered event.
 
-        For a frozen, unavailable or unknown kind (rule UNAV-07):
-        trouble that began as a freeze counts from the device's last
-        report, so a device frozen at 2h21 and unavailable at 2h41 that
-        returns at 2h50 was down 2h50; trouble that began as
-        unavailable or unknown counts from when it went, so a
-        five-minute drop on a device that reports twice a day reads five
-        minutes. A freeze that cleared with no report (the wait grew, a
-        setting changed) counts from the last report. A device taken
-        back counts from when it was watched again (rule WATCH-08), or
-        from the opening when it came back already past its window.
-        Other kinds count from the opening.
+        For a frozen, unavailable or unknown kind (rule UNAV-07), from
+        the start saved with the record when the trouble
+        opened: a freeze from the device's last report, so a device
+        frozen at 2h21 and unavailable at 2h41 that returns at 2h50 was
+        down 2h50; an outage from when the device went, so a five-minute
+        drop on a device that reports twice a day reads five minutes.
+        Saved once, it is the same however many times the device reports
+        in the minute its recovery waits, and across a restart. Other
+        kinds, never reported and dropping out among them, and a start
+        that is damaged or later than now, count from the opening.
         """
         began: Any = None
-        if TODO_KIND_FAMILIES.get(kind) == "down":
-            ended = self._report_ends_down.pop(device_id, None)  # type: ignore[attr-defined]
-            if isinstance(ended, tuple):
-                began_as, chain_since = ended
-                if began_as == FREEZE_CATEGORY_FROZEN:
-                    # A freeze: down since the device last spoke.
-                    began = self._silence_began.get(device_id)  # type: ignore[attr-defined]
-                elif isinstance(chain_since, (int, float)) and not isinstance(chain_since, bool):
-                    # Straight to unavailable or unknown: down since it went.
-                    began = chain_since
-                else:
-                    began = self._silence_began.get(device_id)  # type: ignore[attr-defined]
-            elif kind == TODO_KIND_FROZEN:
-                # A freeze that cleared with no report: the wait grew.
-                # It counts from the last report, unless the record
-                # shows a stretch set aside.
-                devices = self.data.get(DATA_DEVICES) if isinstance(self.data, dict) else None  # type: ignore[attr-defined]
-                record = devices.get(device_id) if isinstance(devices, dict) else None
-                if isinstance(record, dict) and record.get(DEV_SET_ASIDE_SINCE) is None:
-                    began = record.get(DEV_LAST_ACTIVITY)
-                elif isinstance(record, dict):
-                    # Taken back: from when it was watched again (rule WATCH-08).
-                    began = record.get(DEV_WATCHED_FROM)
+        if kind in (TODO_KIND_FROZEN, TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN):
+            devices = self.data.get(DATA_DEVICES) if isinstance(self.data, dict) else None  # type: ignore[attr-defined]
+            record = devices.get(device_id) if isinstance(devices, dict) else None
+            if isinstance(record, dict):
+                began = record.get(DEV_DOWN_FROM)
         # Across a clock step both count from the step (rule FRZ-21).
         if isinstance(began, (int, float)) and not isinstance(began, bool):
             began = self._counted_from(float(began))  # type: ignore[attr-defined]
@@ -1442,8 +1420,10 @@ class ProblemListMixin:
             and math.isfinite(began)
             and began > 0.0
             and began <= now
-            and (opened is None or began <= opened)
         ):
+            # Not checked against the opening: each trouble writes its
+            # own start as it opens, and a clock step moves a standing
+            # one while the opening, in the stored history, stays.
             return now - began
         return None if opened is None else max(0.0, now - opened)
 

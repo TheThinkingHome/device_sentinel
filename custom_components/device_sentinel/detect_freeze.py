@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.10 (2026-10-27)
+# File: detect_freeze.py, Version: 0.27.15 (2026-10-30)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -87,7 +87,9 @@ from .const import (
     NODE_DEAD_STATE,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_DOWN_FROM,
     DEV_LAST_ACTIVITY,
+    DEV_SET_ASIDE_SINCE,
     DEV_WATCHED_FROM,
     DEV_TAINTED,
     DEV_TODAY_MAX,
@@ -1113,6 +1115,7 @@ class FreezeMixin:
                 if category == FREEZE_CATEGORY_NEVER_REPORTED
                 else now
             )
+            record[DEV_DOWN_FROM] = self._down_from(record, category)
         self._dirty = True
         self._critical = True
         LOGGER.debug(
@@ -1121,6 +1124,37 @@ class FreezeMixin:
             category or "alive",
         )
         return True
+
+    @staticmethod
+    def _down_from(record: dict[str, Any], category: str) -> float | None:
+        """When the trouble opening now began, as its recovery's "down
+        for" counts it, saved with the record (rule UNAV-07).
+
+        A freeze counts from the device's last report: the silence is
+        what was wrong, not the moment it outgrew its window. A device
+        taken back from being set aside counts from when it was watched
+        again, since the time nobody watched it is not its silence
+        (rule WATCH-08); one with no such stamp counts from the
+        opening. Unavailable or unknown counts from when the device
+        went, the start its verdict carries. A freeze that turns unavailable
+        keeps what it saved here, since this runs only when trouble
+        opens.
+        """
+        if category == FREEZE_CATEGORY_FROZEN:
+            began = (
+                record.get(DEV_LAST_ACTIVITY)
+                if record.get(DEV_SET_ASIDE_SINCE) is None
+                else record.get(DEV_WATCHED_FROM)
+            )
+        elif category in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN):
+            began = record.get(DEV_FROZEN_SINCE)
+        else:
+            # A device never heard has no silence to measure; its
+            # recovery counts from the opening.
+            began = None
+        if isinstance(began, bool) or not isinstance(began, (int, float)):
+            return None
+        return float(began)
 
     def _clear_freeze_verdict(
         self, device_id: str, record: dict[str, Any]

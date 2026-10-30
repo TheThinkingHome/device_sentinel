@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.11 (2026-10-28)
+# File: const.py, Version: 0.27.15 (2026-10-30)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1540,6 +1540,13 @@ SERIES_SIGNAL = (
 DEV_FROZEN_CATEGORY = "frozen_category"
 DEV_FROZEN_SINCE = "frozen_since"
 DEV_DOWN_BEGAN_AS = "down_began_as"
+# When the device's latest trouble began, as a recovery's "down for"
+# counts it: a freeze from the device's last report before the silence,
+# an outage from when the device went. Saved when the trouble opens and
+# read when its recovery is told, so no report, waiting minute or
+# restart in between can move it; the next trouble writes over it (rule
+# UNAV-07).
+DEV_DOWN_FROM = "down_from"
 # The last good value of each of the device's own entities, kept from
 # the moment a verdict starts until it ends: {entity registry id: state}.
 # Keyed by the registry id, so a renamed entity keeps its value. After a

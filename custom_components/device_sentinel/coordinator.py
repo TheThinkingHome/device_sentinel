@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.11 (2026-10-28)
+# File: coordinator.py, Version: 0.27.15 (2026-10-30)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -207,6 +207,7 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_DOWN_FROM,
     DEV_HELD_VALUES,
     HELD_VALUE_LENGTH,
     UNHELD_DEVICE_CLASSES,
@@ -234,7 +235,6 @@ from .const import (
     EPOCH_KEPT,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_PRIORITY,
     INC_CAUSE,
     LEARNED_DISABLED,
     LEARNED_COMMANDED,
@@ -728,11 +728,6 @@ class DeviceSentinelCoordinator(
         # The moment of the last command to each device's entities,
         # read from the bus, in memory only (rule FRZ-19).
         self._commanded_at: dict[str, float] = {}
-        # When each device's latest closed silence began (rule UNAV-07).
-        self._silence_began: dict[str, float] = {}
-        # Whether each device's latest report came while it was judged
-        # down (rule UNAV-07).
-        self._report_ends_down: dict[str, tuple[str, Any] | None] = {}
         # Entities just renamed, whose first state under the new id is
         # Home Assistant moving the old one across, not the device
         # (rule UNAV-04).
@@ -3618,8 +3613,6 @@ class DeviceSentinelCoordinator(
             # Sentinel was listening (rule STACK-05).
             down = ""
             came_back = saved[1] == NODE_DEAD_STATE and self._node_heard_now(device_id)
-            if came_back:
-                self._node_came_back(device_id)
         if down is None:
             return False
         if down:
@@ -3732,25 +3725,6 @@ class DeviceSentinelCoordinator(
             gone,
         )
 
-    def _node_came_back(self, device_id: str) -> None:
-        """A dead node its stack has heard again ends the outage.
-
-        As a report ending a down verdict does, so the recovery counts
-        from when the device went down rather than from the opening,
-        which the debounce dates minutes later, even where the device's
-        Last Seen clock has not moved yet (rules STACK-05, UNAV-07).
-        """
-        record = self.data[DATA_DEVICES].get(device_id)
-        if not isinstance(record, dict):
-            return
-        category = record.get(DEV_FROZEN_CATEGORY)
-        if category is None:
-            return
-        began_as = record.get(DEV_DOWN_BEGAN_AS)
-        if category == FREEZE_CATEGORY_FROZEN or began_as not in FREEZE_CATEGORY_PRIORITY:
-            began_as = category
-        self._report_ends_down[device_id] = (began_as, record.get(DEV_FROZEN_SINCE))
-
     @callback
     def _on_state_changed(self, event: Event) -> None:
         """Handle a state change for a watched device's entity."""
@@ -3799,8 +3773,6 @@ class DeviceSentinelCoordinator(
             back = was_dead and node_heard(domain, new_state.state)
             if back:
                 self._dead_nodes.discard(device_id)
-            if back:
-                self._node_came_back(device_id)
             recorded = self._settle_down(device_id, entity_id)
             if back and not recorded:
                 # Z-Wave JS calls a dead node alive only once it has
@@ -4196,49 +4168,9 @@ class DeviceSentinelCoordinator(
         # (_reporting_through_others; rule UNAV-01).
         self._reported_at[device_id] = now
 
-        # When the silence this report ends began: a recovery's "down
-        # for" counts from here, the device's last report, rather than
-        # from the moment its verdict was reached (rule UNAV-07).
-        # Not across a stretch the device was set aside, disabled or
-        # excluded by a person: that is not the device being down, and
-        # the recovery keeps its own opening.
-        # A device taken back counts from when it was watched again:
-        # the time nobody watched it is not its silence (rule WATCH-08).
-        back = record.get(DEV_WATCHED_FROM)
-        if last is not None and record.get(DEV_SET_ASIDE_SINCE) is None:
-            self._silence_began[device_id] = last
-        elif (
-            last is not None
-            and isinstance(back, (int, float))
-            and not isinstance(back, bool)
-            and back > last
-        ):
-            self._silence_began[device_id] = float(back)
-        else:
-            self._silence_began.pop(device_id, None)
         # Whether this report ends a down verdict, read before the
-        # verdict clears below: a recovery that follows it counts from
-        # the silence it ended; one with no report counts from the last
-        # report. Read from the verdict, not from stamps, which a Last
-        # Seen clock or a clock reset can place before the opening.
-        # It keeps how the trouble began (rule UNAV-07): a freeze
-        # counts from the last report, while a
-        # device that went straight to unavailable counts from when it
-        # went, so a five-minute drop on a quiet device reads five
-        # minutes, not the hours of quiet before it.
+        # verdict clears below (rule FRZ-05).
         category = record.get(DEV_FROZEN_CATEGORY)
-        if category is None:
-            self._report_ends_down[device_id] = None
-        else:
-            # A damaged saved value is not trusted, and a standing
-            # freeze can only have begun as a freeze (rule UNAV-07).
-            began_as = record.get(DEV_DOWN_BEGAN_AS)
-            if category == FREEZE_CATEGORY_FROZEN or began_as not in FREEZE_CATEGORY_PRIORITY:
-                began_as = category
-            self._report_ends_down[device_id] = (
-                began_as,
-                record.get(DEV_FROZEN_SINCE),
-            )
 
         # A taint is consumed by a stamp the protocol vouches for:
         # the outage ended here, and the gap across it is set aside
@@ -4552,6 +4484,16 @@ class DeviceSentinelCoordinator(
                 and not isinstance(since, bool)
             ):
                 record[DEV_FROZEN_SINCE] = wall
+            # So does the start a standing trouble saved for its "down
+            # for": kept, it would be read in the old clock after a
+            # restart forgets the step (rules UNAV-07, FRZ-21).
+            began = record.get(DEV_DOWN_FROM)
+            if (
+                record.get(DEV_FROZEN_CATEGORY) is not None
+                and isinstance(began, (int, float))
+                and not isinstance(began, bool)
+            ):
+                record[DEV_DOWN_FROM] = wall
             # The set-aside stamp moves too, so a clock set back while
             # a device is set aside does not read as silence before it
             # (rule WATCH-08).
@@ -4634,7 +4576,6 @@ class DeviceSentinelCoordinator(
         "_handled_at",
         "_taint_consumed_at",
         "_commanded_at",
-        "_silence_began",
     )
     _MOMENT_PAIRS = (
         "_bridge_handback",

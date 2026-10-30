@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.10 (2026-10-27)
+# File: normalise.py, Version: 0.27.15 (2026-10-30)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -77,6 +77,7 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_DOWN_FROM,
     DEV_HELD_VALUES,
     HELD_VALUE_LENGTH,
     DEV_LAST_ACTIVITY,
@@ -312,6 +313,7 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_EVIDENCE: EVIDENCE_LOG,
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: MOMENT,
+    DEV_DOWN_FROM: MOMENT,
     DEV_DOWN_BEGAN_AS: STRING,
     DEV_HELD_VALUES: HELD_VALUES,
 }

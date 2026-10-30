@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.14 (2026-10-29)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.15 (2026-10-30)
 
 """Acting from the device page (rule DASH-09).
 
@@ -151,7 +151,10 @@ class DeviceActionsMixin:
         Classification. "here" is whether the device is on the kind's own
         list, whatever else also mutes it, since that is what its button
         lifts; one from a label, an integration or a hub is lifted where
-        it was set (rule MUTE-09).
+        it was set (rule MUTE-09). "labels" holds the ids of the labels
+        the mute comes from, so the page lights each one by its id: a
+        label's name may hold any punctuation, a comma included, and
+        reading names back out of the source text would split it.
         """
         options = self.entry.options
         found: dict[str, dict[str, Any]] = {}
@@ -162,10 +165,19 @@ class DeviceActionsMixin:
                 options.get(labels, []),
                 options.get(devices, []),
             )
+            from_labels = (
+                sorted(
+                    self._device_labels.get(device_id, frozenset())  # type: ignore[attr-defined]
+                    & set(options.get(labels, []))
+                )
+                if isinstance(source, str) and source.startswith("label: ")
+                else []
+            )
             found[kind] = {
                 "on": source is not None,
                 "source": source,
                 "here": device_id in options.get(devices, []),
+                "labels": from_labels,
             }
         return found
 

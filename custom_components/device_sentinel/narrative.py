@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.10 (2026-10-27)
+# File: narrative.py, Version: 0.27.15 (2026-10-30)
 
 """How to say what happened: the composer.
 
@@ -548,7 +548,11 @@ class NarrativeMixin:
             quiet = f"{quiet} {local_start.strftime('%Z')}"
             back = f"{back} {local_end.strftime('%Z')}"
         if local_start.date() != local_end.date():
+            # Across midnight both times carry their day, or a stop at
+            # 1:04 AM and a return at 1:48 AM the next night read as 44
+            # minutes (rule BRIEF-02).
             quiet = local_start.strftime("%b %-d, ") + quiet
+            back = local_end.strftime("%b %-d, ") + back
         name = self._told_name(opened)
         # "Recovered", not "reported again": a freeze can also clear
         # because its wait grew, with no report, and the row cannot

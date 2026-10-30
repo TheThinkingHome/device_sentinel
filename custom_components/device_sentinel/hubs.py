@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.27.10 (2026-10-27)
+# File: hubs.py, Version: 0.27.15 (2026-10-30)
 
 """Judged by its hub (rules STACK-09, STACK-10).
 
@@ -502,14 +502,17 @@ class HubMixin:
             if row.get(INC_EVENT) == INCIDENT_OPENED:
                 opened.append(float(when))
             elif row.get(INC_EVENT) == INCIDENT_RESOLVED:
+                # A resolution closes the opening before it. Its down
+                # time can begin before that opening, since an outage
+                # counts from when the hub went (rule UNAV-07), so the
+                # two are paired by order, not by matching times.
+                paired = opened.pop() if opened else None
                 duration = row.get(INC_DURATION)
                 start = (
                     float(when) - float(duration)
                     if isinstance(duration, (int, float)) and not isinstance(duration, bool)
-                    else (opened.pop() if opened else None)
+                    else paired
                 )
-                if opened and start is not None:
-                    opened = [o for o in opened if o > start + 1]
                 if start is not None and start >= since:
                     rows.append({"start": _iso(start), "end": _iso(float(when))})
         for start in opened:

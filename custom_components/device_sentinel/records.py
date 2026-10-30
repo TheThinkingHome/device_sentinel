@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.27.10 (2026-10-27)
+# File: records.py, Version: 0.27.15 (2026-10-30)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -53,6 +53,7 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
+    DEV_DOWN_FROM,
     DEV_HELD_VALUES,
     DEV_LAST_ACTIVITY,
     DEV_REMOVED_NAME,
@@ -204,6 +205,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_FROZEN_CATEGORY: None,
         DEV_FROZEN_SINCE: None,
         DEV_DOWN_BEGAN_AS: None,
+        DEV_DOWN_FROM: None,
         # The last good value of each of its own entities while a
         # verdict stands, None otherwise (rule WATCH-12).
         DEV_HELD_VALUES: None,

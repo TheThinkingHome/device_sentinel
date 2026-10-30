@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.11 (2026-10-28)
+# File: report_brief.py, Version: 0.27.15 (2026-10-30)
 
 """The daily brief: the one report written for a person.
 
@@ -846,11 +846,9 @@ class BriefMixin:
                 else f"{device} back, its {title} connection came back"
             ) + tail
         if kind == SYS_RESTART:
-            return (
-                f"system restarted, {held} unwatched"
-                if held
-                else "system restarted"
-            )
+            # The row's device column already reads "The system" (rule
+            # BRIEF-07).
+            return f"restarted, {held} unwatched" if held else "restarted"
         if kind == SYS_INTEGRATION_DOWN:
             return f"{self._integration_title(str(scope))} integration went down"
         if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == REMOVED:
