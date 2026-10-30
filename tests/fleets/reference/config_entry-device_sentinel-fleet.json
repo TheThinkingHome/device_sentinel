@@ -375,9 +375,8 @@
    "study_hardware": [],
    "trim_devices": [],
    "trim_integrations": [],
-   "unavailable_muted_devices": [
-    "02fa000000000000000000000000004e"
-   ],
+   "unavailable_muted_devices": [],
+   "unavailable_muted_labels": [],
    "wifi_confirm_seconds": 45.0,
    "wifi_networks": [
     "network_1"
