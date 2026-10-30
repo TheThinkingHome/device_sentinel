@@ -7,7 +7,7 @@ the favicon in the same repository. Both are used under the licence below.
 Device Sentinel as a whole is licensed under GPL-3.0-or-later; see the 
 LICENSE file in the repository.
 
-Copied for Device Sentinel 0.27.10 on 27 October 2026: 2,347 devices.
+Copied for Device Sentinel 0.27.15 on 30 October 2026: 2,359 devices.
 
 ```
 MIT License
