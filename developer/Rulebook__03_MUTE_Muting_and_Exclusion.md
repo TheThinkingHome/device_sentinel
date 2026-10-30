@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 A person makes two choices about what Device Sentinel reports. Excluding stops the watching; muting stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md). Battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md), and the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -101,7 +101,7 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 **The device page's Muted row carries Mute freeze, Mute unavailable, Mute battery, Mute signal and Mute everything. Each mute is one press, with no question, and a second press lifts it.**
 - **What the buttons show:** only the device's own mutes, so every lit button lifts its mute when pressed. A lit button is filled and reads with "✓ " before its name, and its hover reads "Muted. Press to lift the mute." There is no "nothing".
 - **Set by a label, an integration or a hub:** such a mute, Mute everything included, lights no button. A line says where it came from and where it is changed: an integration's on the Integrations tab, a hub's on the hub's page. A label's reads "Remove the label above to lift it for this device, or change it in Device Sentinel's settings", with the settings section for its kind: Exclusions and Muting, Freeze and Unavailable Detection, Low Battery or Signal Strength. In Simple it reads "Switch to Advanced to change it." ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).
-- **The label that mutes:** in Advanced the Labels row draws it lit. Its × takes the label off this device in Home Assistant, which lifts the mute for this device only; its hover says so.
+- **The label that mutes:** in Advanced the Labels row draws it lit. It is found by the label itself, not by its name, so a name holding a comma, an emoji or any other mark is still drawn lit. Its × takes the label off this device in Home Assistant, which lifts the mute for this device only; its hover says so.
 - **A device's own mute under a broader one:** it still lights its button, and pressing it lifts only the device's own. Under a label the line reads "… is also muted by the label Outdoor, which stays when you lift your own."; under an integration it names the integration. A hub's mute is not named while the device has its own.
 - **Mute everything:** set on the device, it shows the four single mutes lit and held.
 - **Label mutes:** they are made and lifted in settings only. The device page offers no Mute by label.

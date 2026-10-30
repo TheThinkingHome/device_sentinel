@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -111,7 +111,8 @@ This section covers what a device is called, what kind of device it is, what pow
 
 **Battery Trends, Classification and the Devices tab each sort and filter by type.**
 - **Choosing a type:** from the list at the top, it narrows the whole page to that type, "Not Set" included. Classification's filter combines with its All, Watched, Muted and Set aside chips.
-- **A type in a row:** it is words, with nothing to press. A row with no type reads "Not Set", which sets it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).
+- **A type in a row:** it is a link. Pressing it narrows the page to that type, the same as choosing it from the list, in Simple and Advanced. A row with no type reads "Not Set", which sets it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).
+- **A device not watched:** on Classification, one Device Sentinel does not watch and knows no type for reads "Not Watched" in grey, with nothing to press. The Type filter counts it under "Not Watched", so "Not Set" holds only watched devices with no type.
 - **By Model:** it counts by type, and lists each type with its count where a model's devices disagree.
 - **Each page its own:** each page keeps its own type choice; switching tabs never carries it over.
 

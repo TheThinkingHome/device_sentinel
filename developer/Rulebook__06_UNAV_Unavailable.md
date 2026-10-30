@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Unavailable (UNAV)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 When a device is unavailable, when its outage began and ended, how a device that keeps dropping out is told, and how long a recovered device is said to have been down. Frozen and never reported devices, and what an outage does to learning, are under [FRZ](Rulebook__05_FRZ_Freeze.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). A bridge, broker or integration going down is under [UP](Rulebook__07_UP_Upstream_Outages.md), and the mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -63,13 +63,14 @@ When a device is unavailable, when its outage began and ended, how a device that
 
 ### UNAV-07 How Long a Device Was Down
 
-**A recovery's "down for", on the `device_sentinel_recovered` event and in the Daily Brief, counts from one of two moments.**
-- **The two starts:** from the device's last report when the trouble began as a freeze, and from when the device went down when it went straight to unavailable.
-- **Saved with the record:** how the trouble began is saved with the record, so a restart cannot change it. A damaged saved value is not trusted, and a standing freeze always began as a freeze.
-- **Taken back from set aside:** a device taken back, then judged frozen a window later and reporting, or cleared with no report, counts from when it was taken back. One that came back already past its window counts from the opening.
-- **After a clock step:** each "down for" counts from the step (FRZ).
+**A recovery's "down for", on the `device_sentinel_recovered` event and in the Daily Brief, counts from a start saved with the record when the trouble opens, and read back when the recovery is told.**
+- **The start:** a freeze saves the device's last report. Straight to unavailable or unknown saves when the device went. A freeze that turns unavailable keeps the freeze's start. Never reported and dropping out count from the opening.
+- **Saved once:** no report, no minute waiting on the Problem List ([LIST-06](Rulebook__11_LIST_Problem_List.md#list-06-a-problem-is-announced-once)) and no restart moves it, so a device that reports several times as it comes back is timed from its silence. The next trouble writes over it.
+- **Taken back from set aside:** a freeze on a device taken back saves when it was watched again. One that came back already past its window counts from the opening.
+- **Not trusted:** a damaged saved start, or one later than the recovery, counts from the opening. A record from before the start was saved has none, so a trouble standing at the upgrade counts from its opening.
+- **After a clock step:** each "down for" counts from the step (FRZ). The start a standing trouble saved moves to the step, so a restart that forgets the step still counts from it.
 
-*Proof:* [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_unavailable_opening_time.py`](../tests/test_unavailable_opening_time.py), [`test_unwatched_time_cases.py`](../tests/test_unwatched_time_cases.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py).
+*Proof:* [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_unavailable_opening_time.py`](../tests/test_unavailable_opening_time.py), [`test_unwatched_time_cases.py`](../tests/test_unwatched_time_cases.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_recovery_down_time.py`](../tests/test_recovery_down_time.py).
 
 ### UNAV-08 "Became Unavailable"
 

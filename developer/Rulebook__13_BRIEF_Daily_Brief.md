@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -18,6 +18,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 **In Short is written to be read, not scanned.**
 - **Order:** it opens with the storage restore sentence in the one brief whose window holds the restore (see [STOR](Rulebook__18_STOR_Storage.md)). Then it tells the house's events. Then it tells the window's history as episodes in the order each began ("Since …"), with the sentences for a device dropping out and for a stitched silence ([BRIEF-06](#brief-06-a-device-that-goes-and-returns)) last. Then it tells what stands ("Right now: …"): devices oldest problem first, and each device's problems worst first inside its line.
 - **Stop and recovery:** a stop and its recovery are one sentence, with the recovery's clock time left to the table. A device that has never reported does not pair.
+- **Across midnight:** when a stop and its recovery fall on different days, both times carry their date: "stopped reporting at Oct 29, 1:04 AM and recovered at Oct 30, 1:48 AM".
 - **Quiet windows:** with no device incidents in the window it says "No device problems started or ended in this window." With nothing standing, it says "Nothing needs attention right now."
 - **Never capped:** In Short names each device, where a push names three and counts the rest (see [NOTE](Rulebook__12_NOTE_Notifications.md)).
 - **Rewording:** a sentence in it that reads badly is fixed when it is seen. In Short is not searched for rewording.
@@ -71,6 +72,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 **Last 24 Hours is the tester's log: each device incident and house event in the window, newest first, with its time to the second.** The summary above keeps minutes.
 - **Going unavailable:** a device that became unavailable or unknown is timed from when it went, if that was within 15 minutes of its listing. In Short and the dashboard date it the same way.
 - **Wi-Fi outages:** a recovery beginning and stalling each get a row, and the row that closes the outage says it ended.
+- **A restart:** it is a row on the system's line, "The system", reading "restarted, 76s unwatched", so the word "system" is not said twice.
 - **A person's acts on a device:** each act (a mute, an exclusion, a sensor turned on, a power source, a type, an area or a name set) is one row on the device's own line, saying where it was done: "from its device page", "from the Recommendations tab", "from the Problem List", "from the Devices tab", "from the Battery Trends tab" or "from the Classification tab".
 - **Acts on an integration:** an act on a whole integration says "from its integration page", "from the Integrations tab" or, for Exclude on its card, "from the Recommendations tab". A page mute's options stay out of the Settings changed row.
 - **Batteries and handling:** a battery change and a device handled by hand go on the device's own line here and on the Daily Brief tab.
