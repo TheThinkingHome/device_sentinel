@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_recovery_one_way.py, Version: 0.27.15 (2026-10-30)
 
 """A recovery goes one way, and the other rules it travels with
 (rules LIST-08, UP-06, FRZ-11, GEN-07, GEN-08, UNAV-07).
@@ -606,18 +606,18 @@ async def test_a_battery_recovery_keeps_its_own_opening(hass: HomeAssistant, fre
     from custom_components.device_sentinel.const import TODO_KIND_LOW_BATTERY
 
     coord, device, eid = await _armed_device(hass, freezer, "silent2")
-    coord._silence_began[device.id] = 100.0
-    coord._report_ends_down[device.id] = ("frozen", 400.0)
+    record = coord.data["devices"][device.id]
+    record["down_from"] = 100.0
     assert coord._down_for(device.id, TODO_KIND_LOW_BATTERY, 1000.0, 1600.0) == 600.0
-    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 1500.0, "a freeze: from the last report"
-    coord._report_ends_down[device.id] = ("frozen", 400.0)
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 1500.0, "from the start saved when it opened"
     assert coord._down_for(device.id, "frozen", None, 1600.0) == 1500.0
-    coord._report_ends_down[device.id] = ("unavailable", 900.0)
+    record["down_from"] = 900.0
     assert coord._down_for(device.id, "unavailable", 1000.0, 1600.0) == 700.0, "straight to unavailable: from when it went"
-    coord._silence_began.pop(device.id)
-    coord._report_ends_down[device.id] = ("frozen", 400.0)
-    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "no silence seen: the opening"
-    coord.data["devices"][device.id]["last_activity"] = float("-inf")
+    record["down_from"] = None
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "nothing saved: the opening"
+    record["down_from"] = 1700.0
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "a start later than now: the opening"
+    record["down_from"] = float("-inf")
     assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "a damaged stamp: the opening"
 
 

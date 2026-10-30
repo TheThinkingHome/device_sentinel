@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.27.14 (2026-10-29)
+# File: tests/test_device_actions.py, Version: 0.27.15 (2026-10-30)
 
 """Acting from the device page (rule DASH-09).
 
@@ -158,7 +158,7 @@ async def test_a_page_mute_equals_a_settings_mute_with_one_row(hass: HomeAssista
         options={**coord.entry.options, CONF_FREEZE_MUTED_DEVICES: [*coord.entry.options[CONF_FREEZE_MUTED_DEVICES], other.id]},
     )
     await hass.async_block_till_done()
-    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "device", "here": True}
+    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "device", "here": True, "labels": []}
     assert coord.page_mutes(other.id)["freeze"] == coord.page_mutes(device.id)["freeze"], "the two paths differ"
     assert coord.mute_text(device.id) == coord.mute_text(other.id)
     page_rows = _rows(coord, SYS_DEVICE_PAGE)
@@ -181,6 +181,27 @@ async def test_a_mute_from_a_label_cannot_be_lifted_here(hass: HomeAssistant, ha
     coord._rebuild_registry_view()
     state = coord.page_mutes(device.id)["freeze"]
     assert state["on"] is True and state["here"] is False and state["source"] == "label: Quiet"
+    assert state["labels"] == [quiet.label_id]
+
+
+async def test_a_muting_label_named_with_a_comma_is_named_by_its_id(hass: HomeAssistant, hass_ws_client):
+    """A label's name may hold a comma: the page is given the muting
+    labels by id, so it lights the one that mutes, whatever its name
+    (rule MUTE-09)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    registry = lr.async_get(hass)
+    garden = registry.async_create("Garden, Front 🌷")
+    other = registry.async_create("Indoors")
+    dr.async_get(hass).async_update_device(device.id, labels={garden.label_id, other.label_id})
+    hass.config_entries.async_update_entry(
+        coord.entry, options={**coord.entry.options, CONF_FREEZE_MUTED_LABELS: [garden.label_id]}
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    state = coord.page_mutes(device.id)["freeze"]
+    assert state["source"] == "label: Garden, Front 🌷"
+    assert state["labels"] == [garden.label_id]
+    assert coord.page_mutes(device.id)["battery"]["labels"] == []
 
 
 async def test_a_devices_own_mute_under_a_label_mute_is_its_own(hass: HomeAssistant, hass_ws_client):
@@ -196,12 +217,12 @@ async def test_a_devices_own_mute_under_a_label_mute_is_its_own(hass: HomeAssist
     )
     await hass.async_block_till_done()
     coord._rebuild_registry_view()
-    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": True}
+    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": True, "labels": [quiet.label_id]}
     reply = await _ws(client, type="device_sentinel/device_mute", device_id=device.id, kind="freeze", on=False)
     await hass.async_block_till_done()
     assert reply["success"], reply
     # The label's mute stands; the device's own is gone.
-    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": False}
+    assert coord.page_mutes(device.id)["freeze"] == {"on": True, "source": "label: Quiet", "here": False, "labels": [quiet.label_id]}
 
 
 @pytest.mark.parametrize(

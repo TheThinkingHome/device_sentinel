@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_steps.py, Version: 0.27.10 (2026-10-27)
+# File: test_clock_steps.py, Version: 0.27.15 (2026-10-30)
 
 """Time across a clock step is unknown (rule FRZ-21).
 
@@ -198,3 +198,29 @@ async def test_a_frozen_device_stays_frozen_across_a_restart_and_a_clock_step(ha
         seen.append(record[DEV_FROZEN_CATEGORY])
     assert set(seen) == {"frozen"}, seen
     assert not downs(events, device.id)
+
+
+async def test_a_trouble_across_a_clock_step_and_a_restart_counts_from_the_step(hass: HomeAssistant, freezer):
+    """Frozen, the clock set forward an hour, then Home Assistant
+    restarted: the step is forgotten at the restart, so the start the
+    freeze saved moved to the step with it, and the recovery counts from
+    the step, not across the hour nobody lived (rules UNAV-07, FRZ-21)."""
+    from homeassistant.util import dt as dt_util
+
+    coord, device, eids, _, _ = await ready(hass, freezer, "k10", count=1)
+    await _minute(hass, freezer, coord, 3 * 60)
+    assert rec(coord, device.id)[DEV_FROZEN_CATEGORY] == "frozen"
+    box = _mono(coord)
+    await _step(hass, freezer, coord, box, H)
+    stepped = dt_util.utcnow().timestamp()
+    assert abs(rec(coord, device.id)["down_from"] - stepped) <= 120, rec(coord, device.id)["down_from"]
+    coord = await restart(hass, freezer, down=300)
+    await past_grace(hass, freezer)
+    events = record_events(hass, EVENT_RECOVERED)
+    hass.states.async_set(eids[0], "22.0")
+    await hass.async_block_till_done()
+    back = dt_util.utcnow().timestamp()
+    await _minute(hass, freezer, coord, 3)
+    told = downs(events, device.id)
+    assert told and told[0][1] is not None, told
+    assert told[0][1] <= back - stepped + 120, (told, back - stepped)

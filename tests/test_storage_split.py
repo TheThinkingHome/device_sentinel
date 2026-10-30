@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.27.10 (2026-10-27)
+# File: test_storage_split.py, Version: 0.27.15 (2026-10-30)
 
 """The main and clocks files: the shadow, the merge, and the stamps
 (rules STOR-01, STOR-02, STOR-19).
@@ -715,8 +715,9 @@ def test_the_kept_set_and_the_wipe_partition_the_schema():
     # None, the whole (empty) history.
     # The saved outage start goes with the taint it feeds (rule UNAV-04).
     # How the current trouble began goes with the verdict, and so do
+    # when it began, for its recovery's "down for" (rule UNAV-07), and
     # the values held while it stands (rule WATCH-12).
-    assert len(wiped) == 10, sorted(wiped)
+    assert len(wiped) == 11, sorted(wiped)
     assert wiped == {
         "down_since",
         "daily_max",
@@ -727,6 +728,7 @@ def test_the_kept_set_and_the_wipe_partition_the_schema():
         "frozen_category",
         "frozen_since",
         "down_began_as",
+        "down_from",
         "held_values",
     }
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_unavailable_split.py, Version: 0.27.10 (2026-10-27)
+# File: test_freeze_unavailable_split.py, Version: 0.27.15 (2026-10-30)
 
 """Freeze and unavailable, muted apart (rules MUTE-06, UNAV-02).
 
@@ -190,7 +190,7 @@ async def test_the_unavailable_mute_is_set_from_the_device_page_and_leaves_silen
     await walk(hass, freezer, 120)
     assert not any(i["device_id"] == device.id for i in coord.todo_items)
     assert not _mine(back, device.id), "a mute is not a recovery"
-    assert coord.page_mutes(device.id)["unavailable"] == {"on": True, "source": "device", "here": True}
+    assert coord.page_mutes(device.id)["unavailable"] == {"on": True, "source": "device", "here": True, "labels": []}
     assert "unavailable" in coord.mute_text(device.id)
 
 

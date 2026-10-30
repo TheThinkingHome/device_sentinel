@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_brief.py, Version: 0.27.15 (2026-10-30)
 
 """The Daily Brief tab, and stepping back through the days
 (rules BRIEF-07, BRIEF-10).
@@ -117,7 +117,7 @@ async def test_a_past_day_rebuilds_what_stood_that_night(hass: HomeAssistant, ha
     # Both of the plug's rows and the restart fall in that day.
     what = [f"{row['who']}: {row['what']}" for row in page["events"]]
     assert any("Plug Living Room Router" in line and "recovered after" in line for line in what)
-    assert any(line.startswith("The system: system restarted") for line in what)
+    assert any(line.startswith("The system: restarted") for line in what)
     assert page["counts"] == {"events": 3, "opened": 1, "resolved": 1}
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_hub.py, Version: 0.27.10 (2026-10-27)
+# File: test_lutron_hub.py, Version: 0.27.15 (2026-10-30)
 
 """Lutron: judged by its hub (rules STACK-09, STACK-10).
 
@@ -618,7 +618,7 @@ async def test_a_muted_hub_page_says_its_devices_are_muted_with_it(hass: HomeAss
     assert {row["standing"] for row in page["behind"]} == {"Muted with its hub"}
     assert c.hub_view(h.flood.id, now)["up"] is False
     assert c.mute_text(h.flood.id) == "freeze (with its hub)"
-    assert c.page_mutes(h.flood.id)["freeze"] == {"on": True, "source": "hub", "here": False}
+    assert c.page_mutes(h.flood.id)["freeze"] == {"on": True, "source": "hub", "here": False, "labels": []}
 
 
 async def test_a_hub_muted_from_everything_mutes_its_devices(hass: HomeAssistant, freezer):

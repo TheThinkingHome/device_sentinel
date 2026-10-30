@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.27.10 (2026-10-27)
+# File: test_brief_wording.py, Version: 0.27.15 (2026-10-30)
 
 """How the brief says things: prose, device lines, pairing
 (rules BRIEF-02, BRIEF-03, BRIEF-04, BRIEF-06, BRIEF-09, DEV-02).
@@ -1966,7 +1966,7 @@ async def test_a_frozen_device_is_told_from_when_it_went_quiet(hass: HomeAssista
     resolved = dict(opened, **{INC_EVENT: INCIDENT_RESOLVED, INC_WHEN: back_at, INC_DURATION: 13431.0})
     sentence = coord._compose_episode(opened, resolved)
     assert sentence.startswith(
-        "Presence Master stopped reporting at Oct 15, 10:37 PM and recovered at 2:21 AM"
+        "Presence Master stopped reporting at Oct 15, 10:37 PM and recovered at Oct 16, 2:21 AM"
     ), sentence
     assert "3.7h later" not in sentence
 
