@@ -35,10 +35,10 @@ test sees the whole house as it would before 0.26.2. A house with no
 history file, such as the upgrade houses and `fourth/`, reads as it
 stands.
 
-Last refreshed 21 October 2026: `reference/` from the owner's files of
-that morning on 0.26.8 (105 records, the newest 30 days in the storage
-file and up to 102 days with its history), `second/` from Tim Plas's
-files of that morning on 0.26.8 (230 records, up to 60 days, his
+Last refreshed 30 October 2026: `reference/` from the owner's files of
+that morning on 0.27.14 (105 records, the newest 30 days in the storage
+file and up to 111 days with its history), `second/` from Tim Plas's
+files of that morning on 0.27.14 (230 records, up to 60 days, his
 History setting); `fourth/` unchanged since 21 September and
 byte-identical after the refresh, which shows the alias key held. The
-houses of 11 October moved to `upgrade/` unchanged.
+houses of 11 October stay in `upgrade/` unchanged.
