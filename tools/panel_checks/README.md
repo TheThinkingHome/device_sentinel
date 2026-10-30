@@ -16,8 +16,8 @@ written rather than what it proves).
 | Every tab | `check_tables_hold_columns.js` | 15 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
-| Every tab | `check_type_filters.js` | 34 | types on Battery Trends, Classification, Devices and Recommendations, a type in a row as words and Not Set to set one, a type set from a card saying so, and no "null" on a quiet day |
-| Every tab | `check_not_set.js` | 13 | "Not Set" for a type, an area or a battery: a link that sets it in place on the Devices tab, Battery Trends and the device page, saved with where it was pressed, and the Excluded list's own widths |
+| Every tab | `check_type_filters.js` | 38 | types on Battery Trends, Classification, Devices and Recommendations, a type in a row as a link that narrows the tab and Not Set to set one, a type set from a card saying so, and no "null" on a quiet day |
+| Every tab | `check_not_set.js` | 19 | "Not Set" for a type, an area or a battery: a link that sets it in place on the Devices tab, Battery Trends and the device page, saved with where it was pressed, and the Excluded list's own widths, and "Not Watched" on Classification for a device not watched, counted under its own words in the Type filter |
 | Every tab | `check_acknowledged_rows.js` | 13 | an acknowledged row fades to 75% but its tick and "Acknowledged", with the hover, on the Problem List, the Daily Brief tab and the Recommendations cards; the Maintenance Mode button's words |
 | Every tab | `check_no_stray_words.js` | 64 | no "null" or "undefined" drawn on any tab, in Simple or Advanced |
 | Integrations | `check_integrations_tab.js` | 56 | the Integrations tab's columns and buttons in both views, its chips and recommendations, and Simple's Devices columns |
@@ -31,7 +31,7 @@ written rather than what it proves).
 | Integrations | `check_no_hardware_integrations.js` | 8 | an integration with no hardware of its own on the Integrations tab, and a summary led by the All chip's total |
 | Integrations | `check_no_hardware_pages.js` | 18 | its page, and a helper's, naming the devices it adds entities to |
 | A device's page | `check_device_page_layout.js` | 40 | the page's order and groups, the Firmware row with its history, live values, sensor links, both rule charts, headings in Title Case, Previous and Next, and the device cards, which say where each answer was given |
-| A device's page | `check_device_actions.js` | 50 | rename, area, labels with the one that mutes drawn lit, Last Seen and the sensors turned on from the page, saying so, mute buttons showing only the device's own mutes, a refused write, and excluding one device |
+| A device's page | `check_device_actions.js` | 55 | rename, area with No area asking first, labels with the one that mutes drawn lit by its id (a comma in its name included), Last Seen and the sensors turned on from the page, saying so, mute buttons showing only the device's own mutes, a refused write, and excluding one device |
 | A device's page | `check_names_and_mutes.js` | 17 | names, the Last seen fallback and inherited mutes, on the page and the Problem List |
 | A device's page | `check_power_row.js` | 38 | the Power row: its words and icons, the shield naming the device an answer was set on, the pencil, an answer saying it came from the page, and the report to Battery Notes; Battery Last Replaced beside it |
 | A device's page | `check_node_status.js` | 12 | the Z-Wave status row: the node's status, red when dead, any other reading as not known yet, a switched-off sensor with its button, which says it was pressed on the page, and no row for other stacks |
@@ -47,7 +47,7 @@ written rather than what it proves).
 | A device's page | `check_mutes_shown.js` | 7 | mutes named on the page, the Devices tab and an integration's page, which counts them as the Integrations tab does |
 | A device's page | `check_dated_histories.js` | 4 | a skipped day breaks a chart's line |
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
-| Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
+| Devices | `check_device_finders.js` | 32 | the Devices tab's search, Area and Label filters, an area in a row as a link that narrows the list, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 9 | how a battery reports, on its page and on Battery Trends |
 | Battery | `check_battery_weeks.js` | 46 | five weekly averages, a model's pace as the slowest to the fastest of its other cells, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
@@ -56,7 +56,7 @@ written rather than what it proves).
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-978 checks in 45 files, as of 29 October 2026 (0.27.14).
+997 checks in 45 files, as of 30 October 2026 (0.27.15).
 
 ## Running Them
 

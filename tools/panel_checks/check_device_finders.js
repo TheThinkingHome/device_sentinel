@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.27.15 (2026-10-30)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
 // dashboard (rules DASH-12, MUTE-03). The Devices tab's name
@@ -148,6 +148,18 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   await choose(root, "Show one area", "");
   await choose(root, "Show one label", "");
 
+  // A set area in a row is a link that narrows the list as the Area
+  // filter does (rule DASH-12).
+  const areaColumn = [...root.querySelectorAll(".pane table thead th")].findIndex((th) => th.textContent === "AREA");
+  const kitchenLink = bodyRows(root).map((tr) => tr.children[areaColumn].querySelector("button.linkbtn"))
+    .find((b) => b && b.textContent === "Kitchen");
+  check("A set area in a row is a link", Boolean(kitchenLink), areaColumn);
+  kitchenLink.click();
+  await settle();
+  check("Pressing an area lists its devices only, and the Area filter shows it",
+    bodyRows(root).length === kitchen && select(root, "Show one area").value === "Kitchen", bodyRows(root).length);
+  await choose(root, "Show one area", "");
+
   console.log("\nThe Excluded list");
   const show = linkButton(root, "Show the 3 excluded devices");
   check("A link offers the excluded devices, with their count", Boolean(show), [...root.querySelectorAll(".pane button.linkbtn")].map((b) => b.textContent));
@@ -174,6 +186,12 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   await type(root, "");
   await choose(root, "Show one area", "Garage");
   check("So does the Area filter", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
+  await choose(root, "Show one area", "");
+  const garageLink = row("Old Plug").children[2].querySelector("button.linkbtn");
+  check("An excluded device's area is a link too", Boolean(garageLink) && garageLink.textContent === "Garage");
+  garageLink.click();
+  await settle();
+  check("Pressing it narrows the Excluded list to that area", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
   await choose(root, "Show one area", "");
   const before = calls.length;
   last(row("Old Plug")).querySelector("button").click();

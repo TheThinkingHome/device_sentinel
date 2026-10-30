@@ -1,4 +1,4 @@
-// File: check_hub_pages.js, Version: 0.27.10 (2026-10-27)
+// File: check_hub_pages.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: a device judged by its hub (rule STACK-10). A hub's
 // page, the pages of the devices it controls, and the Classification
 // tick.
@@ -28,8 +28,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

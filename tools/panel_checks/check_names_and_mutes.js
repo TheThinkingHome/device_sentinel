@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_names_and_mutes.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: names, Last seen and mutes on the device page and the
 // Problem List (rule MUTE-09). The Last
 // seen fallback is checked on real_device.json, a real mains plug's page
@@ -29,8 +29,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],
@@ -180,7 +180,7 @@ const realPage = (tweak = () => {}) => (m) => {
       p.identity.actions.mutes = {
         everything: { on: false, source: null, here: false },
         freeze: { on: true, source: "integration: mqtt", here: false },
-        battery: { on: true, source: "label: Quiet", here: false },
+        battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
         signal: { on: true, source: "device", here: true },
       };
       p.identity.muted = "freeze (integration: mqtt), battery (label: Quiet), signal (device)";

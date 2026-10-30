@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -28,8 +28,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

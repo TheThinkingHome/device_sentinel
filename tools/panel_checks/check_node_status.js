@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_node_status.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_node_status.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: the Z-Wave status row (rule STACK-05). A Z-Wave
 // device's page shows what Z-Wave says of the node, in red when it is
 // dead, and a switched-off sensor with the button that turns it on; a
@@ -31,8 +31,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

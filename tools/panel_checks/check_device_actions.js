@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -31,8 +31,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],
@@ -169,7 +169,7 @@ const excludedPage = (excluded) => (p) => {
   await click(ownFreeze);
   check("Muted: pressing it lifts the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "freeze" && c.on === false));
   const bothPage = await open({}, (p) => {
-    p.identity.actions.mutes.battery = { on: true, source: "label: Quiet", here: true };
+    p.identity.actions.mutes.battery = { on: true, source: "label: Quiet", here: true, labels: ["quiet"] };
   });
   const both = rowCell(bothPage.root, "Muted");
   check("Muted: its own mute under a label's: lit, and the line says the label's stays",
@@ -226,7 +226,7 @@ const excludedPage = (excluded) => (p) => {
     p.identity.actions.mutes = {
       everything: { on: false, source: null, here: false },
       freeze: { on: false, source: null, here: false },
-      unavailable: { on: true, source: "label: Wall switched", here: false },
+      unavailable: { on: true, source: "label: Wall switched", here: false, labels: ["wall_switched"] },
       battery: { on: false, source: null, here: false },
       signal: { on: false, source: null, here: false },
     };
@@ -236,6 +236,22 @@ const excludedPage = (excluded) => (p) => {
     /Unavailable is muted by the label Wall switched\. Remove the label above to lift it for this device, or change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection\./.test(unl.textContent), unl.textContent);
   check("Muted: a label's unavailable mute lights no button",
     buttonIn(unl, "Mute unavailable") && !buttonIn(unl, "Mute unavailable").classList.contains("on"));
+  // A label's name may hold a comma or any other mark: the label that
+  // mutes is lit by its id, and its neighbour is not (rule MUTE-09).
+  ({ root, calls } = await open({}, (p) => {
+    p.identity.actions.labels = [{ id: "garden_front", name: "Garden, Front \u{1F337}", meaning: "mutes freeze" },
+      { id: "front", name: "Front", meaning: "" }];
+    p.identity.actions.mutes = {
+      everything: { on: false, source: null, here: false },
+      freeze: { on: true, source: "label: Garden, Front \u{1F337}", here: false, labels: ["garden_front"] },
+      unavailable: { on: false, source: null, here: false },
+      battery: { on: false, source: null, here: false },
+      signal: { on: false, source: null, here: false },
+    };
+  }));
+  const commaLit = [...rowCell(root, "Labels").querySelectorAll(".labelchip.on")].map((c) => c.firstChild.textContent);
+  check("Labels: a muting label whose name holds a comma is drawn lit, and only it",
+    commaLit.length === 1 && commaLit[0] === "Garden, Front \u{1F337}", commaLit);
 
   console.log("\nRenaming");
   ({ root, calls } = await open({
@@ -274,6 +290,37 @@ const excludedPage = (excluded) => (p) => {
   await settle();
   const note = rowCell(root, "Area").querySelector(".actnote.refused");
   check("Refusal: Home Assistant's reason shows under the row", note && note.textContent === "Home Assistant has no such area", note ? note.textContent : null);
+
+  console.log("\nNo area asks first");
+  ({ root, calls } = await open({}));
+  await click(rowCell(root, "Area").querySelector('button[aria-label="Change area"]'));
+  const pickNoArea = () => {
+    const input = [...rowCell(root, "Area").querySelectorAll("label.pick")].find((l) => l.textContent === "No area").querySelector("input");
+    input.checked = true;
+    input.dispatchEvent(new (input.ownerDocument.defaultView.Event)("change"));
+  };
+  const areaCalls = () => calls.filter((c) => c.type === "device_sentinel/device_area");
+  pickNoArea();
+  await settle();
+  check("No area: choosing it asks first and changes nothing yet",
+    areaCalls().length === 0 && /from Master Bedroom in Home Assistant\?/.test(rowCell(root, "Area").textContent),
+    rowCell(root, "Area").textContent);
+  await click(buttonIn(rowCell(root, "Area"), "Keep its area"));
+  check("No area: Keep its area changes nothing and the question goes",
+    areaCalls().length === 0 && !/in Home Assistant\?/.test(rowCell(root, "Area").textContent));
+  pickNoArea();
+  await settle();
+  await click(buttonIn(rowCell(root, "Area"), "Remove from area"));
+  check("No area: Remove from area takes the device out of its area",
+    areaCalls().length === 1 && areaCalls()[0].area_id === null, areaCalls());
+  ({ root, calls } = await open({}));
+  await click(rowCell(root, "Area").querySelector('button[aria-label="Change area"]'));
+  const laundryPick = [...rowCell(root, "Area").querySelectorAll("label.pick")].find((l) => l.textContent === "Laundry").querySelector("input");
+  laundryPick.checked = true;
+  laundryPick.dispatchEvent(new (laundryPick.ownerDocument.defaultView.Event)("change"));
+  await settle();
+  check("Area: choosing another area moves it without asking",
+    areaCalls().length === 1 && areaCalls()[0].area_id === "laundry", areaCalls());
 
   console.log("\nAfter a change, every tab is fetched again (0.25.0)");
   ({ root, calls } = await open({}));

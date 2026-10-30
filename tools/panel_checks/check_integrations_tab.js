@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -28,8 +28,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

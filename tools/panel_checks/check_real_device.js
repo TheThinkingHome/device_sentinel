@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_real_device.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_real_device.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: a device page built from real data (rule CODE-16). The page
 // comes from real_device.json, a real mains plug's history run through the
 // server's own device view, so a mismatch between what the server sends and
@@ -29,8 +29,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

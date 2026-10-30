@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -125,10 +125,16 @@ const BATTERY = {
     motion && text(motion.children[1]) === "Motion Sensor 2, Presence Sensor 1" && text(motion.children[2]) === "3", motion && text(motion));
   check("A model with no type reads Not Set, a link that sets it", tableRows(models).some((tr) => text(tr.children[1]) === "Not Set"
     && tr.children[1].querySelector("button.linkbtn")));
-  // A type that is set is words, not a button: the Type filter narrows
-  // the lists (rule DEV-12).
-  check("A type that is set is plain words, nothing to press",
-    !linkNamed(root, "Motion Sensor") && !linkNamed(root, "Leak Sensor"));
+  // A type that is set is a link that narrows the tab to it, the same
+  // as choosing it in the Type filter (rule DEV-12).
+  check("A type that is set is a link", Boolean(linkNamed(root, "Leak Sensor")));
+  await click(linkNamed(root, "Leak Sensor"));
+  models = section(root, "By Model");
+  check("Pressing a type narrows the tab to it, and says so",
+    tableRows(models).length > 0 && tableRows(models).every((tr) => /Leak Sensor/.test(text(tr.children[1])))
+    && /Showing Leak Sensor only/.test(root.textContent), tableRows(models).map((tr) => text(tr.children[1])));
+  await click([...root.querySelectorAll("button.linkbtn")].find((b) => b.textContent === "Show all"));
+  models = section(root, "By Model");
   for (const title of ["Falling", "Other Cells"]) {
     check(`${title} has a TYPE column`, headers(section(root, title)).includes("TYPE"), headers(section(root, title)));
   }
@@ -173,6 +179,12 @@ const BATTERY = {
   check("TYPE sits after INTEGRATION", headers(table).slice(0, 3).join("|") === "DEVICE|INTEGRATION|TYPE", headers(table));
   check("Every column sorts", headers(table).every((h) => h) && table.querySelectorAll("thead button.sort").length === headers(table).length);
   const plugs = classification.rows.filter((r) => r.type === "Plug");
+  await click(linkNamed(root, "Plug"));
+  check("Classification: pressing a type in a row narrows the list to it",
+    tableRows(root.querySelector("table")).length === plugs.length
+    && root.querySelector('select[aria-label="Show one type"]').value === "Plug",
+    tableRows(root.querySelector("table")).length);
+  await click(linkNamed(root, "Show all"));
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Plug");
   table = root.querySelector("table");
   check("Choosing a type narrows the table", tableRows(table).length === plugs.length, tableRows(table).length);
@@ -188,7 +200,15 @@ const BATTERY = {
   devices.rows.forEach((r, i) => { r.type = ["Plug", "Switch", null][i % 3]; });
   let devCalls;
   ({ root, window, calls: devCalls } = await open(`${PREFIX}/devices`, { devices }));
-  check("A type in a row is words, nothing to press", !linkNamed(root, "Switch") && !linkNamed(root, "Plug"));
+  check("A type in a row is a link", Boolean(linkNamed(root, "Switch")) && Boolean(linkNamed(root, "Plug")));
+  await click(linkNamed(root, "Switch"));
+  const pressed = tableRows(root.querySelector("table")).map((tr) => text(tr.children[1]));
+  check("Pressing a type in a row narrows the rows to it, as the filter does",
+    pressed.length && pressed.every((t) => t === "Switch")
+    && root.querySelector('select[aria-label="Show one type"]').value === "Switch", pressed);
+  await click([...root.querySelectorAll("button.linkbtn")].find((b) => b.textContent === "Show all"));
+  check("Show all brings every type back",
+    tableRows(root.querySelector("table")).length === devices.rows.length, tableRows(root.querySelector("table")).length);
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Switch");
   const shown = tableRows(root.querySelector("table")).map((tr) => text(tr.children[1]));
   check("The Type filter narrows the rows", shown.length && shown.every((t) => t === "Switch"), shown);

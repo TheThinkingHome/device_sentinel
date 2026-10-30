@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -30,8 +30,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

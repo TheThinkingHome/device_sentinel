@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: the Power row. Words, the source icon in light and
 // dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library; the Battery Last
@@ -30,8 +30,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],

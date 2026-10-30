@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.15 (2026-10-30)
 // Panel checks: a device never judged for freezing. One rule for the
 // whole page: no freeze window, no wait rule
 // and no learning line, and in their place one sentence, "Judged by its
@@ -32,8 +32,8 @@ const ACTIONS = {
   mutes: {
     everything: { on: false, source: null, here: false },
     freeze: { on: false, source: null, here: false },
-    battery: { on: true, source: "label: Quiet", here: false },
-    signal: { on: true, source: "label: Quiet", here: false },
+    battery: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
+    signal: { on: true, source: "label: Quiet", here: false, labels: ["quiet"] },
   },
 };
 const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laundry", name: "Laundry" }],
