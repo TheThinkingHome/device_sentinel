@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_last_replaced.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_last_replaced.py, Version: 0.27.16 (2026-10-31)
 
 """Battery Last Replaced and a person's answer to a detected one
 (rules BAT-06, BAT-07).
@@ -99,7 +99,7 @@ async def test_a_detected_replacement_waits_for_a_person(hass: HomeAssistant):
     assert record[DEV_LOGNORMAL_DAYS] == 0
     view = coord.battery_replacement_view(device.id)
     assert view["waiting"] is True and view["how"] == "detected" and view["day"] == _rise_day()
-    assert view["words"]["row"] == "Battery Last Replaced"
+    assert view["words"]["row"] == "Battery last replaced"
     card = _card(coord)
     assert card is not None and card["simple"] is True and card["title"] == "Confirm Battery Replacement"
     assert "Hall Motion, detected" in card["brief"]
@@ -291,7 +291,7 @@ async def test_a_rechargeable_cell_reads_charged(hass: HomeAssistant):
     _entry, coord, device, _record = await _detected(hass)
     coord.page_set_power(device.id, "Rechargeable", 1)
     words = coord.battery_replacement_view(device.id)["words"]
-    assert words["row"] == "Battery Last Charged" and words["card"] == "Confirm Battery Charge"
+    assert words["row"] == "Battery last charged" and words["card"] == "Confirm Battery Charge"
     assert _card(coord)["title"] == "Confirm Battery Charge"
 
 

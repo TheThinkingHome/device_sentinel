@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_rules.py, Version: 0.27.10 (2026-10-27)
+# File: test_freeze_rules.py, Version: 0.27.16 (2026-10-31)
 
 """The freeze wait as the shorter of two rules
 (rules FRZ-03, FRZ-04, FRZ-05).
@@ -28,6 +28,7 @@ from custom_components.device_sentinel.const import (
     DEV_DAILY_MAX,
     DEV_FIRMWARE_HISTORY,
     DEV_LOGNORMAL_DAYS,
+    DEV_LOGNORMAL_REASON,
     RULE_LOGNORMAL,
     RULE_TRIMMED,
 )
@@ -172,6 +173,7 @@ def test_a_new_firmware_resets_the_count_and_the_first_sighting_does_not():
     assert record[DEV_LOGNORMAL_DAYS] is None
     assert note_firmware(record, "1.1", 1_790_000_200.0)
     assert record[DEV_LOGNORMAL_DAYS] == 0
+    assert record[DEV_LOGNORMAL_REASON] == "firmware"
     assert record[DEV_FIRMWARE_HISTORY][-1][0] == "1.1"
 
 
@@ -183,6 +185,7 @@ async def test_a_battery_replacement_resets_the_count(hass: HomeAssistant):
     coord._roll_battery(record)
     coord._roll_battery(record)
     assert record[DEV_LOGNORMAL_DAYS] == 0
+    assert record[DEV_LOGNORMAL_REASON] == "battery"
 
 
 async def test_a_re_pair_resets_the_count(hass: HomeAssistant):
@@ -193,6 +196,7 @@ async def test_a_re_pair_resets_the_count(hass: HomeAssistant):
     # Filed as a re-pair by the ZHA observer (rule FRZ-05).
     coord._record_device_handled(device.id, "re-pair")
     assert record[DEV_LOGNORMAL_DAYS] == 0
+    assert record[DEV_LOGNORMAL_REASON] == "repair"
 
 
 async def test_the_fold_counts_days_and_lets_go_at_42(hass: HomeAssistant):
@@ -238,6 +242,7 @@ async def test_the_fold_resets_after_three_slow_days(hass: HomeAssistant):
     record["today_max"] = 5.5 * HOUR
     await coord._on_midnight(None)
     assert record[DEV_LOGNORMAL_DAYS] == 0
+    assert record[DEV_LOGNORMAL_REASON] == "slower"
     found = coord._freeze_rhythm(record)
     assert found["rule"] == RULE_TRIMMED and found["lognormal"] is None
 
@@ -254,6 +259,7 @@ async def test_the_button_sets_the_trimmed_maximum(hass: HomeAssistant, hass_ws_
     reply = await client.receive_json()
     assert reply["success"], reply
     assert record[DEV_LOGNORMAL_DAYS] == 0
+    assert record[DEV_LOGNORMAL_REASON] == "by_hand"
     assert coord._freeze_rhythm(record)["rule"] == RULE_TRIMMED
     await client.send_json({"id": 2, "type": "device_sentinel/use_trimmed_maximum", "device_id": "no-such"})
     reply = await client.receive_json()

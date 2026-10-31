@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_attribution.py, Version: 0.27.16 (2026-10-31)
 
 """What explains an incident, and what a flood reads as
 (rules BRIEF-05, UP-17, UP-06, BRIEF-04).
@@ -50,6 +50,8 @@ from custom_components.device_sentinel.const import (
     SYS_DEVICES,
     SYS_DURATION,
     SYS_KIND,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
     SYS_RESTART,
     SYS_SCOPE,
     SYS_STORM_CLOSED,
@@ -276,6 +278,69 @@ async def test_unrelated_devices_are_not_swept_in(hass: HomeAssistant):
     assert len(told) == 2
     assert any(line.startswith("2 devices became unavailable") for line in told)
     assert any(line.startswith("HomeKit One") for line in told)
+
+
+async def test_devices_that_only_came_back_during_one_window_keep_their_own_sentences(
+    hass: HomeAssistant,
+):
+    """Two windows that stopped reporting separately, at 10:36 and 10:43,
+    and both came back while Zigbee2MQTT was pairing. The
+    window explains the returns, not the failures, so each keeps its
+    own sentence and times (rule BRIEF-05)."""
+    coord = await setup_coordinator(hass)
+    for device_id in ("left", "right"):
+        coord._watched[device_id] = "mqtt"
+        coord._stack_keys[device_id] = ("z2m", device_id)
+    pairing = [
+        _event(SYS_PAIRING_OPEN, "z2m", T0 + 3600),
+        _event(SYS_PAIRING_CLOSED, "z2m", T0 + 3840, duration=240.0),
+    ]
+    pairs = [
+        (
+            _incident("left", "Window Left", T0),
+            _incident("left", "Window Left", T0 + 3650, event=INCIDENT_RESOLVED),
+        ),
+        (
+            _incident("right", "Window Right", T0 + 420),
+            _incident("right", "Window Right", T0 + 3660, event=INCIDENT_RESOLVED),
+        ),
+    ]
+    told = coord._tell_episodes(pairs, pairing)
+    assert len(told) == 2, told
+    assert told[0].startswith("Window Left ") and told[1].startswith("Window Right "), told
+    assert all("revived by a Zigbee2MQTT pairing window" in line for line in told), told
+    assert not any(line.startswith("2 devices") for line in told)
+
+
+async def test_devices_that_went_during_one_outage_still_group(hass: HomeAssistant):
+    """The grouping stays where the event explains the failure: two
+    devices that went while the broker was down."""
+    coord = await setup_coordinator(hass)
+    for device_id in ("a", "b"):
+        coord._watched[device_id] = "mqtt"
+    pairs = [
+        (
+            _incident(device_id, f"Device {device_id}", T0 + 60),
+            _incident(device_id, f"Device {device_id}", T0 + 1030, event=INCIDENT_RESOLVED),
+        )
+        for device_id in ("a", "b")
+    ]
+    told = coord._tell_episodes(pairs, BROKER_OUTAGE)
+    assert len(told) == 1 and told[0].startswith("2 devices"), told
+
+
+async def test_the_pairing_window_is_named_alike_when_it_opens_and_closes(hass: HomeAssistant):
+    """Both sentences name the integration, never its short id: the
+    brief once read "A z2m pairing window opened" (rule
+    GEN-07)."""
+    coord = await setup_coordinator(hass)
+    opened = coord._system_event_sentence(_event(SYS_PAIRING_OPEN, "z2m", T0))
+    closed = coord._system_event_sentence(
+        _event(SYS_PAIRING_CLOSED, "z2m", T0 + 240, duration=240.0)
+    )
+    assert opened.startswith("A Zigbee2MQTT pairing window opened at "), opened
+    assert closed.startswith("The Zigbee2MQTT pairing window closed at "), closed
+    assert "z2m" not in opened + closed
 
 
 # The two shapes a house produces every night (rule BRIEF-05).

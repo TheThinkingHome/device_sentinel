@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.13 (2026-10-28)
+# File: tests/test_dashboard_devices.py, Version: 0.27.16 (2026-10-31)
 
 """The Devices tab and each device's page (rules DASH-08, DASH-16).
 
@@ -178,7 +178,16 @@ async def test_the_page_says_when_the_log_normal_count_started_again(hass: HomeA
     record[DEV_LOGNORMAL_DAYS] = 8
     again = coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]
     today = dt_util.now().date()
-    assert again == {"since": (today - timedelta(days=8)).isoformat(), "to_go": 20}
+    # A reset saved before the reason was kept names none, and the page
+    # lists the possible causes.
+    assert again == {"since": (today - timedelta(days=8)).isoformat(), "to_go": 20, "reason": None}
+    # The reason recorded with the reset is passed on; one the page has
+    # no words for is not (rule FRZ-05).
+    record["lognormal_reason"] = "repair"
+    assert coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]["reason"] == "repair"
+    record["lognormal_reason"] = "<b>made up</b>"
+    assert coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]["reason"] is None
+    record["lognormal_reason"] = None
     # A day with no learned gap since does not move the restart date,
     # because the history's own days date it.
     from custom_components.device_sentinel.daily_dates import FAMILY_GAP, set_dates
