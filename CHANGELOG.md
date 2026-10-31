@@ -2,9 +2,9 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
-## [0.27.15](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.15), October 30, 2026 (Pre-release)
+## [0.27.16](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.16), October 31, 2026 (Pre-release)
 
-A device that comes back reports how long it was really down, in your automations and the Daily Brief. You can press a type or an area to filter a list, Classification shows "Not Watched" for a device Device Sentinel does not watch, and choosing "No area" on a device's page asks first.
+Each device's page reads more clearly and names why its 42-day rhythm started again. Re-pairing one Zigbee2MQTT device restarts that device alone, and the Daily Brief tells two separate failures in two sentences even when both came back during the same pairing window.
 
 ## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026 (Latest)
 
