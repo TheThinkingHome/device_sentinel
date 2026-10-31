@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.13 (2026-10-28)
+# File: dashboard.py, Version: 0.27.16 (2026-10-31)
 
 """What the dashboard reads from the coordinator.
 
@@ -73,6 +73,8 @@ from .const import (
     RULE_LOGNORMAL,
     STACK_DISPLAY_NAMES,
     DEV_LOGNORMAL_DAYS,
+    DEV_LOGNORMAL_REASON,
+    LOGNORMAL_RESTART_REASONS,
     CONNECTS_WORDS,
     BATTERY_STEPS_SMOOTH,
     BATTERY_WEEK_DAYS,
@@ -938,9 +940,13 @@ class DeviceViewMixin:
             yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
             dates = dates_for(record, FAMILY_GAP, len(daily), yesterday)
             restarted = dates[-since_reset] if since_reset and len(dates) >= since_reset else dt_util.now().date()
+            # Why, when the reset recorded it (rule FRZ-05); None for a
+            # reset saved before the reason was kept, and the page lists the causes.
+            reason = record.get(DEV_LOGNORMAL_REASON)
             out["counting_again"] = {
                 "since": restarted.isoformat(),
                 "to_go": CLIP_START_DAYS - since_reset,
+                "reason": reason if reason in LOGNORMAL_RESTART_REASONS else None,
             }
         if not found:
             return out

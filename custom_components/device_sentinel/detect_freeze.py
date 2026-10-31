@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.15 (2026-10-30)
+# File: detect_freeze.py, Version: 0.27.16 (2026-10-31)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -39,7 +39,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from .device_fields import device_field
 from .device_type import SOURCE_OWNER, TYPES_THAT_REPORT_ON_USE, list_name, measures
-from .records import BAD_STATES
+from .records import BAD_STATES, restart_lognormal
 from .outage_detail import parse_detail
 from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
@@ -48,6 +48,7 @@ from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     EVENT_RESTING,
     DEV_LOGNORMAL_DAYS,
+    LOGNORMAL_RESTART_BY_HAND,
     RULE_LOGNORMAL,
     RULE_TRIMMED,
     BROKER_SCOPE,
@@ -579,7 +580,7 @@ class FreezeMixin:
         if record is None or self.is_held(device_id):  # type: ignore[attr-defined]
             # A removed device's held record has no page (rule WATCH-07).
             return False
-        record[DEV_LOGNORMAL_DAYS] = 0
+        restart_lognormal(record, LOGNORMAL_RESTART_BY_HAND)
         self._mark_cold_dirty()
         self._mark_changed()
         # Kept in the log: the learned day count is gone for good, and
@@ -645,6 +646,25 @@ class FreezeMixin:
                 device_id,
                 err,
             )
+            return False
+
+    def _joins_seen(self, device_id: str) -> bool:
+        """Whether this device's stack heard every join of its pairing
+        window, so a re-pair was already named by the device that
+        joined (rule FRZ-05). False with no reader, a
+        reader that names no joins, a window already open when Device
+        Sentinel started, or any fault: the caller then judges by the
+        silence, as before."""
+        reader = reader_for_domain(
+            self._bridge_readers, self._watched.get(device_id)
+        )
+        seen = getattr(reader, "joins_seen", None)
+        if not callable(seen):
+            return False
+        try:
+            return bool(seen())
+        except Exception as err:  # noqa: BLE001 - a fault falls back
+            LOGGER.debug("Join reader for %s faulted: %s", device_id, err)
             return False
 
     @staticmethod

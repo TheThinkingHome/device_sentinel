@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.15 (2026-10-30)
+# File: coordinator.py, Version: 0.27.16 (2026-10-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -141,6 +141,8 @@ from .const import (
     DATA_HISTORY_LINE,
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
+    LOGNORMAL_RESTART_REPAIR,
+    LOGNORMAL_RESTART_SLOWER,
     RULE_TRIMMED,
     SLOWDOWN_DAYS,
     DAILY_SERIES_FIELDS,
@@ -326,6 +328,7 @@ from .records import (
     _reset_signal_day,
     _shift,
     forget_signal_history,
+    restart_lognormal,
 )
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
@@ -4244,17 +4247,25 @@ class DeviceSentinelCoordinator(
         if self._recovered_during_pairing(device_id, now):
             learned = LEARNED_PAIRING
             # A re-pair starts the device's 42-day count again, as a
-            # ZHA re-pair does (rule FRZ-05): a device that was down, or
+            # ZHA re-pair does (rule FRZ-05). A stack that names the
+            # device joining has already started that one device's
+            # count, so a device that only came back during the window
+            # keeps its own. Where the joins were not
+            # heard (no such reader, or a window already open when
+            # Device Sentinel started), a device that was down, or
             # silent past its window, and came back while pairing was
-            # open. A device reporting on its rhythm while someone pairs
-            # another keeps its count.
+            # open is taken as re-paired. A device reporting on its
+            # rhythm while someone pairs another keeps its count.
             window = self._freeze_window(record)
-            if category is not None or (
-                last is not None
-                and window is not None
-                and stamp - last > window
+            if not self._joins_seen(device_id) and (
+                category is not None
+                or (
+                    last is not None
+                    and window is not None
+                    and stamp - last > window
+                )
             ):
-                record[DEV_LOGNORMAL_DAYS] = 0
+                restart_lognormal(record, LOGNORMAL_RESTART_REPAIR)
                 self._mark_cold_dirty()
             if not tainted and learned_gap is not None:
                 # Undo the daily-max update this gap just made, so a
@@ -5159,7 +5170,7 @@ class DeviceSentinelCoordinator(
             except Exception:  # noqa: BLE001 - a reader never breaks a rebuild
                 pairing = False
             if pairing:
-                record[DEV_LOGNORMAL_DAYS] = 0
+                restart_lognormal(record, LOGNORMAL_RESTART_REPAIR)
                 break
         self._mark_cold_dirty()
 
@@ -5423,7 +5434,7 @@ class DeviceSentinelCoordinator(
                 if found is not None and slowed_down(
                     record[DEV_DAILY_MAX], lognormal_days(record), found.get("fit")
                 ):
-                    record[DEV_LOGNORMAL_DAYS] = 0
+                    restart_lognormal(record, LOGNORMAL_RESTART_SLOWER)
                     LOGGER.debug(
                         "%s has reported more slowly for %d days in a row; "
                         "its wait follows the %s until it has 28 new days",

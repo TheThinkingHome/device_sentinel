@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.27.10 (2026-10-27)
+# File: model_groups.py, Version: 0.27.16 (2026-10-31)
 
 """Devices read as groups of the same maker, model and hardware (rule DEV-14).
 
@@ -47,7 +47,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DEV_LOGNORMAL_DAYS,
+    LOGNORMAL_RESTART_FIRMWARE,
     BATTERY_READABLE_MAX,
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
@@ -63,6 +63,7 @@ from .const import (
 )
 from .detect_battery import clear_raw_battery
 from .device_fields import device_field
+from .records import restart_lognormal
 
 SECONDS_PER_DAY = 86400.0
 
@@ -110,7 +111,7 @@ def note_firmware(record: dict[str, Any], firmware: str | None, now: float) -> b
         # A new version, not the first one seen: the device's reporting
         # habit may have changed with it, so the Log-Normal Percentile
         # counts again from here (rule FRZ-05).
-        record[DEV_LOGNORMAL_DAYS] = 0
+        restart_lognormal(record, LOGNORMAL_RESTART_FIRMWARE)
     history.append([firmware, now])
     return True
 

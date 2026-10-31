@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.10 (2026-10-27)
+# File: interventions.py, Version: 0.27.16 (2026-10-31)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -40,9 +40,10 @@ from .stacks import (
 )
 from .transport_mqtt import MQTTBrokerReader
 from .normalise import COUNT_HIGHEST, MOMENT_HIGHEST, MOMENT_LOWEST
+from .records import restart_lognormal
 
 from .const import (
-    DEV_LOGNORMAL_DAYS,
+    LOGNORMAL_RESTART_REPAIR,
     FLAP_CHECK_WORDS,
     SYS_DETAIL,
     SYS_DEVICES,
@@ -267,6 +268,12 @@ class InterventionMixin:
             if reader is None:
                 continue
             self._bridge_readers[stack] = reader
+            # A reader that names the device joining while pairing is
+            # open is told whom to tell, before it subscribes, so no
+            # join is heard with nobody to tell (rule FRZ-05).
+            give = getattr(reader, "set_join_recorder", None)
+            if callable(give):
+                give(self._record_repaired)
             await reader.async_start()
 
         # The join observers. A pairing window opened from the Home
@@ -317,7 +324,7 @@ class InterventionMixin:
         # harmless: zero is zero.
         record = self.data[DATA_DEVICES].get(device_id)
         if record is not None and kind == ZHA_REPAIR:
-            record[DEV_LOGNORMAL_DAYS] = 0
+            restart_lognormal(record, LOGNORMAL_RESTART_REPAIR)
             self._mark_cold_dirty()
         now = dt_util.utcnow().timestamp()
         last = self._handled_at.get(device_id)
@@ -343,6 +350,37 @@ class InterventionMixin:
             self._device_name(device_id),
             kind,
         )
+
+    @callback
+    def _record_repaired(self, stack: str, key: str) -> None:
+        """Start one re-paired device's 42-day count again (rule FRZ-05).
+
+        A stack's reader calls this when a device joins while pairing
+        is open, naming it by the key that stack knows it by: a
+        Zigbee2MQTT re-pair names its address. Only that device's count
+        starts again, never another device that came back during the
+        same window. A key no device record carries is
+        a new device, with no count to restart. A device set aside for
+        a moment, its entities gone while it leaves and joins, still has
+        its count restarted, since it is the device that was re-paired;
+        one removed from Home Assistant is restarted on its return
+        instead, while pairing is open. Nothing else is written: the
+        pairing window already explains its recovery, and the brief
+        already tells the window.
+        """
+        for device_id, owner in list(self._stack_keys.items()):
+            if owner != (stack, key):
+                continue
+            record = self.data[DATA_DEVICES].get(device_id)
+            if not isinstance(record, dict):
+                continue
+            restart_lognormal(record, LOGNORMAL_RESTART_REPAIR)
+            self._mark_cold_dirty()
+            self._mark_changed()
+            LOGGER.debug(
+                "%s joined while pairing was open; its 42-day count starts again",
+                self._device_name(device_id),
+            )
 
     def _handled_recently(self, device_id: str, now: float) -> bool:
         """Return whether a person handled this device just now.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.15 (2026-10-30)
+# File: report_brief.py, Version: 0.27.16 (2026-10-31)
 
 """The daily brief: the one report written for a person.
 
@@ -638,7 +638,7 @@ class BriefMixin:
                 f"{when}{levels}. Its history starts again from that day."
             )
         if kind == SYS_PAIRING_OPEN:
-            return f"A {scope} pairing window opened at {when}."
+            return f"A {self._integration_title(str(scope))} pairing window opened at {when}."
         if kind == SYS_PAIRING_CLOSED:
             if held:
                 return (
@@ -1807,6 +1807,15 @@ class BriefMixin:
                 opened.get(escalation.ESCALATED_FROM),
                 resolved is not None,
             )
+            # Grouped only when the event explains the failure: it was
+            # under way when the device went. Devices that merely came
+            # back during the same event, a pairing window say, failed
+            # each on its own, so each keeps its own sentence and times
+            # (rule BRIEF-05).
+            if not window.in_effect_at(opened[INC_WHEN]):
+                told.append(self._compose_flood(key, [(opened, resolved)], spans))
+                owners.append({device_id})
+                continue
             if key not in placed:
                 placed[key] = len(told)
                 told.append("")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.27.10 (2026-10-27)
+# File: stack_z2m.py, Version: 0.27.16 (2026-10-31)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -21,6 +21,13 @@ bridge/state (online or offline) and bridge/info (which carries
 permit_join and the absolute permit_join_end). Retained means the
 current state arrives the moment Device Sentinel subscribes, so a restart in the
 middle of a pairing window loses nothing.
+
+A third topic, bridge/event, names the device that joins while the
+window is open, so a re-pair restarts that one device's 42-day count
+rather than every device that happens to come back during the window
+(rule FRZ-05). It is not retained: a window already open when Device
+Sentinel starts has joins it never heard, and for that window the
+detector falls back to judging by the silence.
 
 Everything in the reader is guarded. If MQTT is not available, if the
 topics never arrive, or if a payload will not parse, the state stays
@@ -49,6 +56,7 @@ from .const import (
     BRIDGE_RUNNING,
     BRIDGE_UNKNOWN,
     LOGGER,
+    PAIRING_GRACE_SECONDS_DEFAULT,
     STACK_Z2M,
     Z2M_BASE_TOPIC_DEFAULT,
     Z2M_BRIDGE_MANUFACTURER,
@@ -57,7 +65,11 @@ from .const import (
     Z2M_IDENTIFIER_MARK,
     Z2M_TOPIC_AVAILABILITY,
     Z2M_TOPIC_AVAILABILITY_LEAF,
+    Z2M_EVENT_INTERVIEW,
+    Z2M_EVENT_JOINED,
+    Z2M_INTERVIEW_STARTED,
     Z2M_TOPIC_DEVICES,
+    Z2M_TOPIC_EVENT,
     Z2M_TOPIC_INFO,
     Z2M_TOPIC_STATE,
 )
@@ -198,6 +210,18 @@ class Z2MBridgeReader:
         # than crediting the device with recovering on its own
         # (rule FRZ-16). None until a window has closed.
         self._pairing_closed_at: float | None = None
+        # Joins (rule FRZ-05). The recorder is the coordinator's, given
+        # after the reader is made, and is called with the registry id
+        # of a device that joined while pairing was open. joins_live is
+        # set once bridge/event is subscribed; info_heard once a
+        # bridge/info has been read, so the retained one that arrives at
+        # subscribe is told apart from a window opening later. A window
+        # whose opening was heard live, with bridge/event already
+        # subscribed, is one whose joins were all heard.
+        self._join_recorder: Any = None
+        self._joins_live: bool = False
+        self._info_heard: bool = False
+        self._window_heard: bool = False
         # Reachability. Zigbee2MQTT publishes its own verdict on every
         # device to <name>/availability, retained, and the verdict is
         # keyed by friendly name while Home Assistant knows a device
@@ -380,6 +404,20 @@ class Z2MBridgeReader:
             return False
         return (now - self._pairing_closed_at) <= grace_seconds
 
+    def set_join_recorder(self, recorder: Any) -> None:
+        """Name who is told when a device joins while pairing is open:
+        called with the stack and the device's address."""
+        self._join_recorder = recorder
+
+    def joins_seen(self) -> bool:
+        """Whether every join of the current or last window was heard.
+
+        False when the window was already open when Device Sentinel
+        subscribed, since bridge/event is not retained: the caller then
+        falls back to judging a recovery by its silence (rule FRZ-05).
+        """
+        return self._window_heard
+
     async def async_start(self) -> bool:
         """Subscribe to the bridge topics once MQTT is available.
 
@@ -414,6 +452,16 @@ class Z2MBridgeReader:
             )
             return False
         try:
+            # bridge/event first, so a window opening is never heard
+            # before its joins can be (rule FRZ-05).
+            self._unsubs.append(
+                await mqtt.async_subscribe(
+                    self._hass,
+                    f"{self._base}/{Z2M_TOPIC_EVENT}",
+                    self._on_event,
+                )
+            )
+            self._joins_live = True
             self._unsubs.append(
                 await mqtt.async_subscribe(
                     self._hass,
@@ -465,6 +513,7 @@ class Z2MBridgeReader:
                     err,
                 )
         self._unsubs.clear()
+        self._joins_live = False
 
     @callback
     def _on_state(self, msg: mqtt.ReceiveMessage) -> None:
@@ -499,6 +548,22 @@ class Z2MBridgeReader:
         # than to itself (rule FRZ-16).
         if was_open and not self._permit_join:
             self._pairing_closed_at = dt_util.utcnow().timestamp()
+        # A window opening heard live, after bridge/event was
+        # subscribed, is one whose joins are all heard. The retained
+        # info read at subscribe, already open, is not; nor is the one
+        # Home Assistant's MQTT client replays after it reconnects to
+        # the broker, which carries the retain flag, since joins sent
+        # while it was cut off were never heard (rule FRZ-05).
+        replayed = bool(getattr(msg, "retain", False))
+        if self._permit_join and not was_open:
+            self._window_heard = (
+                self._info_heard and self._joins_live and not replayed
+            )
+        elif self._permit_join and replayed:
+            # Still open, or open again, when the client reconnects:
+            # joins sent while it was cut off were never heard.
+            self._window_heard = False
+        self._info_heard = True
         end = data.get("permit_join_end")
         self._permit_join_end = str(end) if end is not None else None
         # The availability settings, read rather than assumed. Absent
@@ -530,6 +595,48 @@ class Z2MBridgeReader:
                 # published. Enabled is known; the timeouts are not,
                 # and a caller reads None as "cannot say how long".
                 self._availability_enabled = availability
+
+    @callback
+    def _on_event(self, msg: mqtt.ReceiveMessage) -> None:
+        """Handle bridge/event: a device joining while pairing is open.
+
+        device_joined, or device_interview started, names the device by
+        its IEEE address. Counted only while pairing is open, or within
+        the grace after it closed, so an interview asked for by hand
+        from Zigbee2MQTT outside a window is not a re-pair. The device
+        is named by the address Zigbee2MQTT gives Home Assistant; a
+        device Device Sentinel does not know yet is a new one, with no
+        count to restart (rule FRZ-05).
+        """
+        self._last_heard = dt_util.utcnow().isoformat()
+        data = _load(_decode(msg.payload))
+        if not isinstance(data, dict):
+            return
+        kind = data.get("type")
+        body = data.get("data")
+        if not isinstance(body, dict):
+            return
+        if not (
+            kind == Z2M_EVENT_JOINED
+            or (kind == Z2M_EVENT_INTERVIEW and body.get("status") == Z2M_INTERVIEW_STARTED)
+        ):
+            return
+        ieee = body.get("ieee_address")
+        if not isinstance(ieee, str) or not ieee.startswith("0x"):
+            return
+        now = dt_util.utcnow().timestamp()
+        if not self.pairing_active_within(PAIRING_GRACE_SECONDS_DEFAULT, now):
+            LOGGER.debug("Zigbee2MQTT %s for %s with pairing closed; not a re-pair", kind, ieee)
+            return
+        if self._join_recorder is None:
+            return
+        try:
+            # Named by its address, the key Device Sentinel already
+            # keeps for each Zigbee2MQTT device (`device_key`); the
+            # recorder finds the device it belongs to.
+            self._join_recorder(STACK_Z2M, ieee)
+        except Exception as err:  # noqa: BLE001 - a join never breaks the reader
+            LOGGER.debug("Zigbee2MQTT join for %s not recorded: %s", ieee, err)
 
     @callback
     def _on_devices(self, msg: mqtt.ReceiveMessage) -> None:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.15 (2026-10-30)
+# File: const.py, Version: 0.27.16 (2026-10-31)
 
 """Constants for the Device Sentinel integration."""
 
@@ -150,6 +150,18 @@ Z2M_TOPIC_STATE = "bridge/state"
 # friendly name containing a slash publishes deeper and is not seen; Z2M
 # permits it but it is rare (rule STACK-03).
 Z2M_TOPIC_DEVICES = "bridge/devices"
+# bridge/event names each device that joins or is interviewed, by its
+# IEEE address. Not retained. A re-pair by the device's button sends
+# device_leave, device_joined, device_interview (started, then
+# successful) and device_announce; a device rejoining on its own sends
+# device_announce only, and the coordinator restarting sends nothing
+# (measured with a probe on a live bridge). So a join, or an interview
+# started while pairing is open, marks the one device re-paired
+# (rule FRZ-05).
+Z2M_TOPIC_EVENT = "bridge/event"
+Z2M_EVENT_JOINED = "device_joined"
+Z2M_EVENT_INTERVIEW = "device_interview"
+Z2M_INTERVIEW_STARTED = "started"
 # The Z2M discovery identifier reads ('mqtt', 'zigbee2mqtt_0x282c...'),
 # so the IEEE address follows this mark. It is the base topic by
 # default and does not follow a renamed one, which is why it is a
@@ -445,6 +457,24 @@ DEV_DAILY_MAX = "daily_max"
 # CLIP_MAX_DAYS it returns to None, since the rule never reads further
 # back than that.
 DEV_LOGNORMAL_DAYS = "lognormal_days"
+# Why the Log-Normal Percentile last started again, so the device page
+# can name it (rule FRZ-05): one of the LOGNORMAL_RESTART_ values, set
+# with DEV_LOGNORMAL_DAYS at each reset and wiped with it. None when no
+# reset is recorded, or for a reset saved before the field existed, and the page
+# then lists the possible reasons.
+DEV_LOGNORMAL_REASON = "lognormal_reason"
+LOGNORMAL_RESTART_BATTERY = "battery"
+LOGNORMAL_RESTART_REPAIR = "repair"
+LOGNORMAL_RESTART_FIRMWARE = "firmware"
+LOGNORMAL_RESTART_SLOWER = "slower"
+LOGNORMAL_RESTART_BY_HAND = "by_hand"
+LOGNORMAL_RESTART_REASONS = frozenset({
+    LOGNORMAL_RESTART_BATTERY,
+    LOGNORMAL_RESTART_REPAIR,
+    LOGNORMAL_RESTART_FIRMWARE,
+    LOGNORMAL_RESTART_SLOWER,
+    LOGNORMAL_RESTART_BY_HAND,
+})
 # The two freeze rules, by the names the device page and the reports
 # give them, each preceded by the days it read: "14-Day Trimmed
 # Maximum", "37-Day Log-Normal Percentile" (rule FRZ-04).

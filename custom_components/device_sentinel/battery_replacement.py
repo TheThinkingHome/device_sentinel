@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.16 (2026-10-31)
 
 """Battery Last Replaced, and a person's answer to a detected one (rule BAT-07).
 
@@ -205,13 +205,13 @@ class BatteryReplacementMixin:
         cell (rule BAT-07)."""
         if self._rechargeable(device_id):
             return {
-                "row": "Battery Last Charged",
+                "row": "Battery last charged",
                 "none": "No battery charge seen yet",
                 "card": "Confirm Battery Charge",
                 "done": "charged",
             }
         return {
-            "row": "Battery Last Replaced",
+            "row": "Battery last replaced",
             "none": "No battery replacement yet",
             "card": "Confirm Battery Replacement",
             "done": "replaced",

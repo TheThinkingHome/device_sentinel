@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.27.15 (2026-10-30)
+# File: records.py, Version: 0.27.16 (2026-10-31)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -29,6 +29,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
 from .const import (
     DEV_LOGNORMAL_DAYS,
+    DEV_LOGNORMAL_REASON,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -136,12 +137,24 @@ def forget_signal_history(record: dict[str, Any]) -> None:
     set_dates(record, FAMILY_SIGNAL_ALT, [])
 
 
+def restart_lognormal(record: dict[str, Any], reason: str) -> None:
+    """Start the device's Log-Normal Percentile count again, and say why.
+
+    The count goes to zero and the reason is kept with it, so the device
+    page names what happened rather than listing every possible cause
+    (rule FRZ-05).
+    """
+    record[DEV_LOGNORMAL_DAYS] = 0
+    record[DEV_LOGNORMAL_REASON] = reason
+
+
 def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
     """Return a fresh per-device statistics record."""
     return {
         DEV_LAST_ACTIVITY: seed_ts,
         DEV_DAILY_MAX: [],
         DEV_LOGNORMAL_DAYS: None,
+        DEV_LOGNORMAL_REASON: None,
         DEV_DAILY_DATES: None,
         DEV_TODAY_MAX: None,
         DEV_FIRST_OBSERVED: now_iso,
