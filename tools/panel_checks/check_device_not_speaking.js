@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_not_speaking.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_device_not_speaking.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: what a device page says when the device is not speaking.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_not_speaking.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
@@ -125,7 +125,9 @@ const states = {
   });
   const asidePage = text(aside.root);
   check("its pill reads Set aside", asidePage.includes("Set aside"), asidePage.slice(0, 260));
-  check("and not Reporting", !asidePage.includes("Reporting"), asidePage.slice(0, 260));
+  // Its status, above Identity: the Reporting heading in the table below
+  // is a group's name, not a status.
+  check("and not Reporting", !asidePage.split("Identity")[0].includes("Reporting"), asidePage.slice(0, 260));
 
   console.log("A device that has never spoken");
   const never = await open(`${PREFIX}/device/${DEVICE}`, {

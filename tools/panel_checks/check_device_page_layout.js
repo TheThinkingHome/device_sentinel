@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -133,12 +133,13 @@ const rowCell = (root, label) => {
   // A row with nothing to show is left out: this test device
   // reports no manufacturer, model, hardware version or address.
   const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration",
-    "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
-    "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted",
-    // Excluded, with its button, last.
+    "[Power]", "Battery level", "Battery sensor", "Powered by", "[Signal]", "Signal", "Signal sensor",
+    // Reporting, and the Wait rule under Its Rhythm; Muted
+    // and Excluded, with its button, last under Actions (rule DASH-08).
+    "[Reporting]", "Last seen", "Last seen sensor", "First seen", "Events seen", "[Actions]", "Muted",
     "Excluded"];
   const shown = order.filter((l) => l !== "Connects" && l !== "Battery steps");
-  check("Rows in the approved order, in three groups", JSON.stringify(shown) === JSON.stringify(want), shown);
+  check("Rows in the approved order, in four groups", JSON.stringify(shown) === JSON.stringify(want), shown);
   ({ root } = await open({ tweak: (p) => {
     Object.assign(p.identity, { manufacturer: "Acme", model: "Door sensor", model_id: "DS-1", hw_version: "2",
       addresses: [{ label: "MAC Address", value: "aa:bb" }, { label: "Zigbee Address", value: "0x00158d0001" }] });
@@ -156,11 +157,13 @@ const rowCell = (root, label) => {
   const link = rowCell(root, "Battery sensor").querySelector("a.entitylink");
   link.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
   check("A sensor link opens its own Home Assistant dialog", events.length === 1 && events[0].entityId === "sensor.bravo_battery", events);
-  check("The heartbeat tag sits on the Last seen sensor", /heartbeat$/.test(rowCell(root, "Last seen sensor").textContent),
+  check("The Last seen sensor says it tells the device is alive", /used to tell it's alive$/.test(rowCell(root, "Last seen sensor").textContent),
     rowCell(root, "Last seen sensor").textContent);
-  const wait = rowCell(root, "Wait rule");
-  check("The Trimmed Maximum button sits in the Wait rule row",
-    !!wait && [...wait.querySelectorAll("button")].some((b) => b.textContent === "Use the 14-Day Trimmed Maximum"));
+  const waitSpan = [...root.querySelectorAll(".actcol > span")].find((s) => s.textContent.startsWith("Wait rule:"));
+  const wait = waitSpan ? waitSpan.parentNode : null;
+  check("The Trimmed Maximum button sits beside the Wait rule, under Its Rhythm",
+    !!wait && [...wait.querySelectorAll("button")].some((b) => b.textContent === "Use the 14-Day Trimmed Maximum")
+    && wait.previousSibling && wait.previousSibling.textContent === "Its Rhythm", wait && wait.textContent);
   hass.states["sensor.bravo_battery"] = { ...hass.states["sensor.bravo_battery"], state: "19", last_changed: new Date().toISOString() };
   panel.hass = { ...hass };
   await settle();
@@ -170,11 +173,11 @@ const rowCell = (root, label) => {
   check("No sensors: no battery or signal rows, and no empty Signal group",
     ["Battery level", "Battery sensor", "Signal", "Signal sensor"].every((l) => rowCell(root, l) === null)
     && !labelsOf(root).includes("[Signal]") && labelsOf(root).includes("[Power]"), labelsOf(root));
-  check("No Last seen sensor: says how the heartbeat is kept",
-    rowCell(root, "Last seen sensor").textContent === "noneheartbeat: updates from its entities", rowCell(root, "Last seen sensor").textContent);
+  check("No Last seen sensor: says how it is known to be alive",
+    rowCell(root, "Last seen sensor").textContent === "noneits entities' updates tell it's alive", rowCell(root, "Last seen sensor").textContent);
   ({ root } = await open({ tweak: (p) => { p.readings = []; p.identity.clock = "zha"; } }));
-  check("A ZHA device: its heartbeat is ZHA's own Last Seen",
-    rowCell(root, "Last seen sensor").textContent === "ZHA's ownheartbeat: when ZHA last heard it", rowCell(root, "Last seen sensor").textContent);
+  check("A ZHA device: ZHA's own Last Seen tells it is alive",
+    rowCell(root, "Last seen sensor").textContent === "ZHA's ownwhen ZHA last heard it, used to tell it's alive", rowCell(root, "Last seen sensor").textContent);
 
   console.log("\nIts rhythm: both rules");
   ({ root } = await open());
@@ -299,6 +302,17 @@ const rowCell = (root, label) => {
   check("A version with no history yet: the version alone", !!rowCell(root, "Firmware")
     && rowCell(root, "Firmware").textContent === "2.0" && !rowCell(root, "Firmware").querySelector("li"),
     rowCell(root, "Firmware") && rowCell(root, "Firmware").innerHTML);
+  // One version ever seen: one line, not the version and its list
+  // (rule DEV-15).
+  ({ root } = await open({ tweak: (p) => { p.identity.firmware = { current: "1.00.69",
+    history: [{ version: "1.00.69", since: "2025-09-25T15:39:00+00:00" }] }; } }));
+  const one = rowCell(root, "Firmware");
+  check("One version: one line with when it was first seen", !!one && /^1\.00\.69, first seen .*\d{1,2}:\d\d/.test(one.textContent)
+    && !one.querySelector("li") && one.textContent.split("1.00.69").length === 2, one && one.textContent);
+  ({ root } = await open({ tweak: (p) => { p.identity.firmware = { current: "1.00.70",
+    history: [{ version: "1.00.69", since: "2025-09-25T15:39:00+00:00" }] }; } }));
+  check("One version in the history that is not the current one: the list stays", !!rowCell(root, "Firmware")
+    && rowCell(root, "Firmware").querySelectorAll("li").length === 1, rowCell(root, "Firmware") && rowCell(root, "Firmware").textContent);
   ({ root } = await open({ tweak: (p) => { p.identity.firmware = null; } }));
   check("No firmware known: no row", rowCell(root, "Firmware") === null, labelsOf(root));
 

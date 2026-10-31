@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: how a battery reports, on the device page and on Battery
 // Trends.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_steps.js [path/to/panel.js]
@@ -81,17 +81,18 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
     const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
       device: (d) => ({ ...d, identity: { ...d.identity, battery_steps: "Coarse" } }),
     });
-    const row = rows(root).find((cells) => cells[0] === "Battery steps");
-    check("has a Battery steps row", !!row, rows(root).map((r) => r[0]));
-    check("reading the word it was given", row && row[1] === "Coarse", row);
+    // In plain words: "Coarse" reads as the steps it takes.
+    const row = rows(root).find((cells) => cells[0] === "Battery reports in");
+    check("has a Battery reports in row", !!row, rows(root).map((r) => r[0]));
+    check("reading the step in plain words", row && row[1] === "steps of 5% or more", row);
     const order = rows(root).map((r) => r[0]);
-    check("beneath Power", order.indexOf("Battery steps") === order.indexOf("Power") + 1, order);
+    check("beneath Powered by", order.indexOf("Battery reports in") === order.indexOf("Powered by") + 1, order);
   }
   {
     const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
       device: (d) => ({ ...d, identity: { ...d.identity, battery_steps: "" } }),
     });
-    check("a device with no battery has no such row", !rows(root).some((cells) => cells[0] === "Battery steps"));
+    check("a device with no battery has no such row", !rows(root).some((cells) => cells[0] === "Battery reports in"));
   }
   // A coarse cell is judged by the low threshold alone, never read as
   // steady (rule BAT-10).

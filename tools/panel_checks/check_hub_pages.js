@@ -1,4 +1,4 @@
-// File: check_hub_pages.js, Version: 0.27.15 (2026-10-30)
+// File: check_hub_pages.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: a device judged by its hub (rule STACK-10). A hub's
 // page, the pages of the devices it controls, and the Classification
 // tick.
@@ -156,6 +156,8 @@ const hubPage = (tweak) => (m) => {
   check("An open outage reads still down", text.includes("still down"));
   check("No rhythm charts on a hub", r.root.querySelectorAll(".rulechart").length === 0);
   check("No Last seen on a hub's page", !text.includes("Last seen sensor") && !text.includes("Events seen"));
+  check("Nor an empty Reporting heading", ![...r.root.querySelectorAll("tr.kvgroup")].some((tr) => tr.textContent === "Reporting"),
+    [...r.root.querySelectorAll("tr.kvgroup")].map((tr) => tr.textContent));
   check("Nothing says held under", !/held under/i.test(text));
 
   r = await open({ answers: { device: hubPage((p) => {

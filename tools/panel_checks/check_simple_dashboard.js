@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -89,6 +89,12 @@ const rowCell = (root, label) => {
   const row = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild && tr.firstChild.textContent === label);
   return row ? row.lastChild : null;
 };
+// The wait rule sits under Its Rhythm, as its own line
+// with the Trimmed Maximum button beside it (rule DASH-08).
+const waitLine = (root) => {
+  const span = [...root.querySelectorAll(".actcol > span")].find((s) => s.textContent.startsWith("Wait rule:"));
+  return span ? span.parentNode : null;
+};
 const buttonIn = (node, text) => node && [...node.querySelectorAll("button")].find((b) => b.textContent === text);
 const click = async (node) => { node.click(); await settle(); };
 
@@ -144,8 +150,8 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
     && buttons(rowCell(root, "Type")).join() === "Not Set", rowCell(root, "Type").innerHTML);
   check("an area that is set is grey, with nothing to press", rowCell(root, "Area").textContent === "Master Bedroom"
     && !buttons(rowCell(root, "Area")).length && Boolean(rowCell(root, "Area").querySelector("span.muted")), rowCell(root, "Area").innerHTML);
-  check("an unanswered Power reads Not Set, a link", rowCell(root, "Power").textContent === "Not Set"
-    && buttons(rowCell(root, "Power")).join() === "Not Set", rowCell(root, "Power").textContent);
+  check("an unanswered Power reads Not Set, a link", rowCell(root, "Powered by").textContent === "Not Set"
+    && buttons(rowCell(root, "Powered by")).join() === "Not Set", rowCell(root, "Powered by").textContent);
   await click(buttonIn(rowCell(root, "Type"), "Not Set"));
   check("pressing Not Set opens the type choices in place, with Save and Cancel",
     Boolean(rowCell(root, "Type").querySelector('select[aria-label="What this device is"]'))
@@ -168,7 +174,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("Advanced, in the line, switches the view to Advanced, where the Labels row is",
     modeButton(root, "Advanced").getAttribute("aria-pressed") === "true" && Boolean(rowCell(root, "Labels")));
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.status.category = "reporting"; }));
-  check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !rowCell(root, "Wait rule"));
+  check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !waitLine(root));
   // A device its hub judges shows no gaps, as in Advanced (rule STACK-10).
   ({ root } = await open({ __mode: "simple" }, (p) => {
     p.status.category = "never_reported";
@@ -199,7 +205,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("Last seen sensor shows while it is switched off", !!rowCell(root, "Last seen sensor"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.actions.last_seen_off = false; p.status.category = "frozen"; }));
   check("and not once it is on", !rowCell(root, "Last seen sensor"));
-  check("a frozen device shows its rhythm and wait rule", text(root).includes("Its Rhythm") && !!rowCell(root, "Wait rule"));
+  check("a frozen device shows its rhythm and wait rule", text(root).includes("Its Rhythm") && !!waitLine(root));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.node_status = "alive"; }));
   check("a live Z-Wave node's status row is hidden", !rowCell(root, "Z-Wave status"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.node_status = "dead"; }));
@@ -253,10 +259,23 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   };
   ({ root } = await open({ __mode: "simple" }, frozenLognormal));
   check("Simple: a frozen device's Wait rule offers no Use the 14-Day Trimmed Maximum",
-    !!rowCell(root, "Wait rule") && !anyButton(root, "Use the 14-Day Trimmed Maximum") && !text(root).includes("press Use the 14-Day"),
-    rowCell(root, "Wait rule") && rowCell(root, "Wait rule").textContent);
+    !!waitLine(root) && !anyButton(root, "Use the 14-Day Trimmed Maximum") && !text(root).includes("press Use the 14-Day"),
+    waitLine(root) && waitLine(root).textContent);
   check("Simple: the Mute buttons stay", ["Mute freeze", "Mute everything"].every((w) => buttons(rowCell(root, "Muted")).includes(w)),
     buttons(rowCell(root, "Muted")));
+  // Identity in Simple: the Device ID stays, the Model ID and the
+  // radio addresses are Advanced's (rule DASH-04).
+  const ids = (p) => Object.assign(p.identity, { model_id: "DS-1",
+    addresses: [{ label: "Zigbee Address", value: "0x00158d0001" }, { label: "Z-Wave Node", value: "12" }] });
+  ({ root } = await open({ __mode: "simple" }, ids));
+  check("Simple: Device ID shown, no Model ID or address rows",
+    !!rowCell(root, "Device ID") && !rowCell(root, "Model ID") && !rowCell(root, "Zigbee Address") && !rowCell(root, "Z-Wave Node"));
+  check("Simple: no Battery reports in row", !rowCell(root, "Battery reports in") && !rowCell(root, "Battery steps"));
+  check("Simple: no developer's note at the foot of the page", !text(root).includes("where a battery or signal question ends"));
+  ({ root } = await open({ __mode: "advanced" }, ids));
+  check("Advanced: Device ID, Model ID and the address rows",
+    ["Device ID", "Model ID", "Zigbee Address", "Z-Wave Node"].every((l) => !!rowCell(root, l)));
+  check("Advanced: no developer's note at the foot of the page", !text(root).includes("where a battery or signal question ends"));
   // Advanced keeps every one of them.
   ({ root } = await open({ __mode: "advanced" }, (p) => { p.status.category = "reporting"; p.identity.node_status = "off"; p.identity.actions.battery_off = true; }));
   check("Advanced keeps Rename and the turn-on buttons", nameMarks(root).includes("Rename")

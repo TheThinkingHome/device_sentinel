@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_judged_by_line.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: a device never judged for freezing. One rule for the
 // whole page: no freeze window, no wait rule
 // and no learning line, and in their place one sentence, "Judged by its
@@ -126,6 +126,12 @@ const rowCell = (root, label) => {
   const row = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild.textContent === label);
   return row ? row.lastChild : null;
 };
+// The wait rule sits under Its Rhythm, as its own line
+// with the Trimmed Maximum button beside it (rule DASH-08).
+const waitLine = (root) => {
+  const span = [...root.querySelectorAll(".actcol > span")].find((s) => s.textContent.startsWith("Wait rule:"));
+  return span ? span.parentNode : null;
+};
 const HUB = "hub0garage";
 const BY_HUB = (page) => ({ how: "hub", hub_id: HUB, hub_name: "Garage Smart Bridge", hub_page: page });
 const statusLine = (root) => {
@@ -135,8 +141,8 @@ const statusLine = (root) => {
 const noWindow = (root, label) => {
   const text = root.textContent;
   check(`${label}: no freeze window, no wait rule, no learning line`,
-    !root.querySelector(".devstatus .bar") && rowCell(root, "Wait rule") === null
-    && !/Called frozen after a gap|Still learning its rhythm|not yet judged for freezing|Not enough days yet to learn/.test(text)
+    !root.querySelector(".devstatus .bar") && waitLine(root) === null
+    && !/Called frozen after|Still learning its rhythm|not yet judged for freezing|Not enough days yet to learn/.test(text)
     && !/window \d/.test(text), { labels: labelsOf(root), line: statusLine(root) });
 };
 
@@ -175,8 +181,8 @@ const noWindow = (root, label) => {
     p.status.judged_by = BY_HUB(true);
     p.hub = { name: "Garage Smart Bridge", device_id: HUB, up: true, since: new Date(NOW - 86400e3).toISOString(), kind: "switch", battery: false };
   } });
-  check("Its Identity carries no Wait rule", rowCell(view.root, "Wait rule") === null, labelsOf(view.root));
-  check("and no Called frozen", !/Called frozen after a gap/.test(view.root.textContent));
+  check("Its Identity carries no Wait rule", waitLine(view.root) === null, labelsOf(view.root));
+  check("and no Called frozen", !/Called frozen after/.test(view.root.textContent));
 
   console.log("\nAn ESPHome device judged by its connection, with learned days");
   view = await open({ tweak: (p) => {
@@ -185,7 +191,7 @@ const noWindow = (root, label) => {
     p.status.window = null;
   } });
   check("The status line keeps its connection words", statusLine(view.root) === "Judged by its connection: connected.", statusLine(view.root));
-  check("No Wait rule reading 0s", rowCell(view.root, "Wait rule") === null && !/, 0s/.test(view.root.textContent), labelsOf(view.root));
+  check("No Wait rule reading 0s", waitLine(view.root) === null && !/, 0s/.test(view.root.textContent), labelsOf(view.root));
   noWindow(view.root, "Connection");
 
   console.log("\nA hub, not watched, judged by its connection");
@@ -203,8 +209,8 @@ const noWindow = (root, label) => {
 
   console.log("\nAn ordinary device keeps its window");
   view = await open({ tweak: (p) => { p.status.last_activity = new Date(NOW - 3600e3).toISOString(); } });
-  check("Called frozen after a gap, and the Wait rule", /Called frozen after a gap of 2.0h/.test(statusLine(view.root) || "")
-    && rowCell(view.root, "Wait rule") !== null, [statusLine(view.root), labelsOf(view.root)]);
+  check("Called frozen after its silence, and the Wait rule", /Called frozen after 2.0h of silence/.test(statusLine(view.root) || "")
+    && waitLine(view.root) !== null, [statusLine(view.root), labelsOf(view.root)]);
 
   console.log("\nThe Devices tab's WINDOW column");
   const devices = () => {

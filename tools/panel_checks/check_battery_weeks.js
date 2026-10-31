@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -202,7 +202,9 @@ const trends = {
     });
     check(`a pace of ${low} to ${high} reads "${words}"`, text(one.root).includes(`Others of this model ${words}`), text(one.root).match(/Others of this model[^.]*\./));
   }
-  check("its day's evidence is shown, for later", coinText.includes("Kept each day for a better forecast later: 2.95 V, 182 messages, 21.5 \u00b0C on"));
+  // Advanced, in plain words.
+  check("its day's evidence is shown, for later", coinText.includes("Saved for future battery forecasts: 2.95 V, 182 messages and 21.5 \u00b0C on"),
+    (coinText.match(/Saved for future.{0,80}/) || [""])[0]);
   const falling = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => { steady.device(page); Object.assign(page.battery, { lithium: "CR2032", reading: "falling" }); return page; },
   });

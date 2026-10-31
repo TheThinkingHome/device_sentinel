@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: the Power row. Words, the source icon in light and
 // dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library; the Battery Last
@@ -114,8 +114,8 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
 (async () => {
   console.log("\nThe Power row (0.24.7)");
   let { root, calls } = await open({}, LIBRARY);
-  let cell = rowCell(root, "Power");
-  check("The row is called Power and Battery type is gone", cell && !rowCell(root, "Battery type"));
+  let cell = rowCell(root, "Powered by");
+  check("The row is called Powered by and Battery type is gone", cell && !rowCell(root, "Battery type"));
   const link = cell && cell.querySelector("a.powericon");
   check("Library: words, then the icon linking to Battery Notes in a new tab",
     cell && cell.textContent.startsWith("CR1632") && link && link.getAttribute("href") === LIBRARY.library_home
@@ -124,11 +124,11 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   const fill = (r) => [...r.querySelectorAll("rect")].map((x) => x.getAttribute("fill")).join(",");
   check("Library icon: light colours on the light theme", link && fill(link).includes("#4CA8F2"), link && fill(link));
   ({ root } = await open({}, LIBRARY, true));
-  const darkLink = rowCell(root, "Power").querySelector("a.powericon");
+  const darkLink = rowCell(root, "Powered by").querySelector("a.powericon");
   check("Library icon: its dark version on the dark theme", darkLink && fill(darkLink).includes("#64B5F6"), darkLink && fill(darkLink));
 
   ({ root } = await open({}, OWNER, true));
-  cell = rowCell(root, "Power");
+  cell = rowCell(root, "Powered by");
   const mine = cell.querySelector("span.powericon");
   check("Owner: words, then the shield titled Entered on this page", cell.textContent.startsWith("2× AAA") && mine
     && mine.getAttribute("title") === "Entered on this page");
@@ -136,10 +136,10 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Owner: no report button until a save", !cell.querySelector("a.chip"));
 
   ({ root } = await open({}, block({ words: "<img src=x onerror=1>", source: "library" })));
-  cell = rowCell(root, "Power");
+  cell = rowCell(root, "Powered by");
   check("Words are shown as text, never markup", cell.textContent.startsWith("<img src=x onerror=1>") && !cell.querySelector("img"));
   ({ root } = await open({}, block({})));
-  cell = rowCell(root, "Power");
+  cell = rowCell(root, "Powered by");
   // Nothing known reads "Not Set", a link that opens the choices, with
   // the pencil beside it (rule DASH-04).
   check("Nothing known: Not Set, a link, the pencil beside it, no source icon",
@@ -147,11 +147,11 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
     && !cell.querySelector(".powericon"), cell.innerHTML);
   await click(cell.querySelector("button.linkbtn"));
   check("Pressing Not Set opens the same choices as the pencil",
-    Boolean(rowCell(root, "Power").querySelector('select[aria-label="What powers this device"]')));
+    Boolean(rowCell(root, "Powered by").querySelector('select[aria-label="What powers this device"]')));
 
   ({ root, calls } = await open({}, LIBRARY));
-  await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));
-  cell = rowCell(root, "Power");
+  await click(rowCell(root, "Powered by").querySelector('button[aria-label="Change what powers this device"]'));
+  cell = rowCell(root, "Powered by");
   const select = cell.querySelector('select[aria-label="What powers this device"]');
   const options = select ? [...select.options].map((o) => o.textContent) : [];
   check("Pencil: the dropdown offers the ten types, Mains, USB, PoE and Other", options.join("|") === ["Choose…", ...CHOICES_P].join("|"), options);
@@ -173,67 +173,67 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Save sends the choice, the text and the quantity", sent && sent.choice === "Other" && sent.other === "9V" && sent.quantity === 2, sent);
   // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
   check("It says it was set on the device page", sent && sent.source === "device_page", sent);
-  cell = rowCell(root, "Power");
+  cell = rowCell(root, "Powered by");
   const report = [...cell.querySelectorAll("a.chip")].find((a) => a.textContent === "Send to Battery Notes");
   check("After a save: Send to Battery Notes opens the filled form in a new tab",
     report && report.getAttribute("href") === OWNER.report_url && report.getAttribute("target") === "_blank", cell.innerHTML);
 
   ({ root, calls } = await open({}, OWNER));
-  await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));
-  const back = buttonIn(rowCell(root, "Power"), "Use the library (CR1632)");
+  await click(rowCell(root, "Powered by").querySelector('button[aria-label="Change what powers this device"]'));
+  const back = buttonIn(rowCell(root, "Powered by"), "Use the library (CR1632)");
   check("Use the library names what it goes back to", !!back);
   current.power = LIBRARY;
   await click(back);
   const cleared = calls.filter((c) => c.type === "device_sentinel/device_power").pop();
   check("Use the library clears the entry, from the device page", cleared && cleared.choice === null && cleared.source === "device_page", cleared);
-  check("No report after going back to the library", !rowCell(root, "Power").querySelector("a.chip"));
+  check("No report after going back to the library", !rowCell(root, "Powered by").querySelector("a.chip"));
 
   // A device's own entry, under a model with an answer of its own.
   ({ root } = await open({}, Object.assign({}, OWNER, { model_answer: "2× AAA" })));
-  await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));
+  await click(rowCell(root, "Powered by").querySelector('button[aria-label="Change what powers this device"]'));
   check("Clearing its own entry names the model's answer it goes back to",
-    !!buttonIn(rowCell(root, "Power"), "Use the model's answer (2× AAA)") && !buttonIn(rowCell(root, "Power"), "Use the library (CR1632)"));
+    !!buttonIn(rowCell(root, "Powered by"), "Use the model's answer (2× AAA)") && !buttonIn(rowCell(root, "Powered by"), "Use the library (CR1632)"));
 
   console.log("\nThe Power row, 0.24.8");
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: "other", set_on_name: "Button Master Shower", covers: 4 })));
-  let whence = rowCell(root, "Power").querySelector(".powerwhence");
+  let whence = rowCell(root, "Powered by").querySelector(".powerwhence");
   check("Set on another device: names it and how many it covers",
     whence && whence.textContent === "set on Button Master Shower, covers 4 devices of this model", whence && whence.textContent);
-  let shield = rowCell(root, "Power").querySelector(".powericon");
+  let shield = rowCell(root, "Powered by").querySelector(".powericon");
   check("and its shield's hover names it too (DEV-07)", shield && shield.getAttribute("title") === "Entered on Button Master Shower"
     && shield.getAttribute("aria-label") === "Entered on Button Master Shower", shield && shield.outerHTML.slice(0, 160));
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, set_on_name: "Button Randy Night Table", covers: 4 })));
-  whence = rowCell(root, "Power").querySelector(".powerwhence");
+  whence = rowCell(root, "Powered by").querySelector(".powerwhence");
   check("Set here on a model of four: says so", whence && whence.textContent === "set here, covers 4 devices of this model",
     whence && whence.textContent);
-  shield = rowCell(root, "Power").querySelector(".powericon");
+  shield = rowCell(root, "Powered by").querySelector(".powericon");
   check("and its shield reads Entered on this page", shield && shield.getAttribute("title") === "Entered on this page",
     shield && shield.getAttribute("title"));
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, covers: 1 })));
-  check("Set here on a one-off: no extra line", !rowCell(root, "Power").querySelector(".powerwhence"));
+  check("Set here on a one-off: no extra line", !rowCell(root, "Powered by").querySelector(".powerwhence"));
   ({ root } = await open({}, LIBRARY));
-  check("Library answers carry no set-on line", !rowCell(root, "Power").querySelector(".powerwhence"));
+  check("Library answers carry no set-on line", !rowCell(root, "Powered by").querySelector(".powerwhence"));
   const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("\n");
   check("Dropdown choices take the theme's card and text colours",
     /select option, select optgroup \{ background-color: var\(--card-background-color, #ffffff\);\s*color: var\(--primary-text-color, #212121\); \}/.test(css));
 
-  console.log("\nBattery Last Replaced");
-  const WORDS = { row: "Battery Last Replaced", none: "No battery replacement yet", card: "Confirm Battery Replacement", done: "replaced" };
+  console.log("\nBattery last replaced");
+  const WORDS = { row: "Battery last replaced", none: "No battery replacement yet", card: "Confirm Battery Replacement", done: "replaced" };
   let bpage = await open({}, LIBRARY, false, null);
-  check("A device on mains has no row", rowCell(bpage.root, "Battery Last Replaced") === null);
+  check("A device on mains has no row", rowCell(bpage.root, "Battery last replaced") === null);
   bpage = await open({}, LIBRARY, false, { words: WORDS, day: null, how: null, waiting: false });
-  let bcell = rowCell(bpage.root, "Battery Last Replaced");
+  let bcell = rowCell(bpage.root, "Battery last replaced");
   check("Never seen replaced reads so, with a pencil", !!bcell && /No battery replacement yet/.test(bcell.textContent)
     && !!bcell.querySelector("button.edit"), bcell && bcell.textContent);
   // With no replacement on record, the day the device was first seen
   // (rule BAT-07).
   const firstPage = await open({}, LIBRARY, false, { words: WORDS, first_seen: "2026-08-12", day: null, how: null, waiting: false });
-  const firstCell = rowCell(firstPage.root, "Battery Last Replaced");
+  const firstCell = rowCell(firstPage.root, "Battery last replaced");
   check("No replacement yet says when the device was first detected",
     !!firstCell && firstCell.textContent.includes("Device first detected August 12, 2026. No battery replacement yet.")
     && !!firstCell.querySelector("button.edit"), firstCell && firstCell.textContent);
   await click(bcell.querySelector("button.edit"));
-  bcell = rowCell(bpage.root, "Battery Last Replaced");
+  bcell = rowCell(bpage.root, "Battery last replaced");
   const input = bcell.querySelector('input[type="date"]');
   check("The pencil offers a day, no later than today", !!input && !!input.getAttribute("max"));
   input.value = "2026-10-01";
@@ -241,7 +241,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   const saved = bpage.calls.find((c) => c.type === "device_sentinel/device_battery");
   check("Save sends the day as the person's own", !!saved && saved.action === "date" && saved.day === "2026-10-01", saved);
   bpage = await open({}, LIBRARY, false, { words: WORDS, day: "2026-10-18", how: "detected", waiting: true });
-  bcell = rowCell(bpage.root, "Battery Last Replaced");
+  bcell = rowCell(bpage.root, "Battery last replaced");
   check("A detected replacement waits with Confirm, Change date and Cancel",
     !!bcell && /Detected replaced on/.test(bcell.textContent) && ["Confirm", "Change date", "Cancel"].every((t) => buttonIn(bcell, t)),
     bcell && bcell.textContent);

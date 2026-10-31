@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.16 (2026-10-31)
 //
 // Panel checks: the device page reads at one size (rule DASH-06).
 // Secondary text such as "heard by Device Sentinel 9m ago" and
@@ -209,7 +209,7 @@ const PAGES = [
     const { window, root } = await open({ tweak: PAGES[0][1] });
     const host = lightCopy(window, root);
     const tag = host.querySelector(".hbtag");
-    check("The heartbeat line reads \"heartbeat: when ZHA last heard it\"", tag && tag.textContent === "heartbeat: when ZHA last heard it", tag && tag.textContent);
+    check("The line reads \"when ZHA last heard it, used to tell it's alive\"", tag && tag.textContent === "when ZHA last heard it, used to tell it's alive", tag && tag.textContent);
     const cs = tag ? window.getComputedStyle(tag) : null;
     check("The heartbeat line is plain grey text, not a pill",
       cs && (cs.paddingLeft === "0px" || cs.padding === "0px") && /none|transparent|rgba\(0, 0, 0, 0\)/.test(cs.background || cs.backgroundColor || "none"),

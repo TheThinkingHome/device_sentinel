@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -361,7 +361,9 @@ const excludedPage = (excluded) => (p) => {
   const order = labelsOf(root);
   check("Excluded is the last row, after Muted", order.slice(-2).join() === "Muted,Excluded", order.slice(-3));
   const excludedRow = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild.textContent === "Excluded");
-  check("It sits outside the Last seen group", !!excludedRow && !excludedRow.classList.contains("kvsub"));
+  // Under Actions with Muted (rule DASH-08).
+  check("It sits in the Actions group, after Muted", !!excludedRow && excludedRow.classList.contains("kvsub")
+    && order.slice(-3).join() === "[Actions],Muted,Excluded", order.slice(-4));
   cell = rowCell(root, "Excluded");
   check("A watched device offers only Exclude this device, with no 'no'",
     cell.textContent === "Exclude this device" && buttons(cell).join() === "Exclude this device", cell.textContent);

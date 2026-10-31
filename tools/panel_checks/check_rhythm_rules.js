@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_rhythm_rules.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_rhythm_rules.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: the rhythm chart shows both freeze rules, its marks follow the
 // pointer, the device page names the rule in use, and every chart legend
 // leads with a swatch (rule FRZ-22). The Use the 14-Day Trimmed
@@ -96,8 +96,10 @@ const withRules = {
   console.log("\nThe device page with both freeze rules");
   const { window, root } = await open(`${PREFIX}/device/${DEVICE}`, withRules);
   const pane = root.querySelector(".pane");
-  check("Identity names the rule in use and its wait",
-    /Wait rule\s*40-Day Log-Normal Percentile, 2\.6h/.test(pane.textContent.replace(/\s+/g, " ")), pane.textContent.slice(0, 0));
+  // Under Its Rhythm (rule DASH-08).
+  check("Its Rhythm names the rule in use and its wait",
+    /Its Rhythm\s*Wait rule: 40-Day Log-Normal Percentile, 2\.6h/.test(pane.textContent.replace(/\s+/g, " ")),
+    (pane.textContent.replace(/\s+/g, " ").match(/Its Rhythm.{0,80}/) || [""])[0]);
   const charts = [...root.querySelectorAll(".chart")];
   const byTitle = (t) => charts.find((c) => c.querySelector(".statusline strong") && c.querySelector(".statusline strong").textContent === t);
   for (const title of ["Battery", "Signal", "Rhythm"]) {
@@ -131,12 +133,12 @@ const withRules = {
   check("Rhythm: the set-aside day is crossed", cross && cross.getAttribute("opacity") === "1");
 
   const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Use the 14-Day Trimmed Maximum");
-  // In the Wait rule row, beneath the rule it changes, with no helper
-  // text beside it.
-  const waitRow = button && button.closest("tr");
-  check("Identity: the button sits in the Wait rule row, beneath the rule",
-    waitRow && waitRow.firstChild.textContent === "Wait rule" && button.previousSibling
-      && /Log-Normal Percentile|Trimmed Maximum/.test(button.previousSibling.textContent),
+  // Beside the Wait rule under Its Rhythm, after the rule it changes,
+  // with no helper text beside it.
+  const waitRow = button && button.parentNode;
+  check("Its Rhythm: the button sits beside the Wait rule, after the rule",
+    waitRow && waitRow.firstChild.textContent.startsWith("Wait rule: ") && button.previousSibling
+      && /Log-Normal Percentile|Trimmed Maximum/.test(button.previousSibling.textContent) && !button.closest("tr"),
     waitRow ? waitRow.textContent : null);
 
   // With the Trimmed Maximum in use the button changes nothing to be

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_signal_chart.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_signal_chart.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: the Signal chart on a device's page. Its card names
 // RSSI as RSSI, its legend explains the rings drawn on days with
 // railed readings, and "recording began" sits inside the chart's
@@ -85,7 +85,7 @@ const withSignal = (scale, railedOn, reports = 2 * DAYS) => ({
   const rings = card ? card.querySelectorAll('circle[fill="none"]').length : 0;
   const legend = card && card.querySelector(".legend");
   check("Three railed days draw three rings", rings === 3, rings);
-  check("The legend explains the rings", !!legend && /railed readings that day/.test(legend.textContent), legend && legend.textContent);
+  check("The legend explains the rings", !!legend && /readings stuck at the end of the scale that day/.test(legend.textContent), legend && legend.textContent);
   const began = card && [...card.querySelectorAll("text")].find((t) => /recording began/.test(t.textContent));
   check("Recording began is drawn", !!began, card && [...card.querySelectorAll("text")].map((t) => t.textContent));
   // Inside the chart: from the axis at 44 to the right edge at 1090,

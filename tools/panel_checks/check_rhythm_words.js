@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.16 (2026-10-31)
 // Panel checks: how a device's rhythm and gaps are worded. A
 // window still being learned reads "learning" on the Devices tab; a
 // device judged by its connection says it has no rhythm to learn and
@@ -98,9 +98,11 @@ const pane = (root) => root.querySelector(".pane").textContent;
     return page;
   } }));
   text = pane(root);
-  check("Called frozen after a gap of 64m", text.includes("Called frozen after a gap of 64m."), text.match(/Called frozen.{0,40}/));
+  check("Called frozen after 64m of silence", text.includes("Called frozen after 64m of silence."), text.match(/Called frozen.{0,40}/));
   // In Title Case (rule GEN-06).
-  check("Its section is Gaps, Last 14 Days", text.includes("Gaps, Last 14 Days") && !/silence/i.test(text.replace(/its silence cannot be judged/g, "")),
+  // "silence" only in the status line's "of silence" and in "its
+  // silence cannot be judged".
+  check("Its section is Gaps, Last 14 Days", text.includes("Gaps, Last 14 Days") && !/silence/i.test(text.replace(/its silence cannot be judged/g, "").replace(/ of silence\./g, "")),
     text.match(/.{0,30}[Ss]ilen.{0,30}/g));
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
     page.status.category = "frozen";
@@ -108,7 +110,7 @@ const pane = (root) => root.querySelector(".pane").textContent;
     page.status.last_activity = new Date(Date.now() - 9 * H * 1000).toISOString();
     return page;
   } }));
-  check("A gap of 8h reads as one", /Called frozen after a gap of 8(\.0)?h\./.test(pane(root)), pane(root).match(/Called frozen.{0,40}/));
+  check("A gap of 8h reads as one", /Called frozen after 8(\.0)?h of silence\./.test(pane(root)), pane(root).match(/Called frozen.{0,40}/));
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
     page.status.category = "frozen";
     page.status.window = 11 * 86400;
@@ -116,7 +118,26 @@ const pane = (root) => root.querySelector(".pane").textContent;
     return page;
   } }));
   check("A gap of days reads as words, with no doubled article (adversarial round)",
-    /Called frozen after a gap of [a-z0-9]/.test(pane(root)) && !/after a a |after an? \d+ days gap/.test(pane(root)), pane(root).match(/Called frozen.{0,50}/));
+    /Called frozen after [a-z0-9][^.]* of silence\./.test(pane(root)) && !/after a a |after an? \d+ days|days gap/.test(pane(root)), pane(root).match(/Called frozen.{0,50}/));
+
+  console.log("The Gaps table's LEARNED column, in plain words (0.27.16)");
+  ({ root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
+    const at = new Date(Date.now() - 5 * H * 1000).toISOString();
+    page.silences = [
+      { since: at, silence: 4000, window: 3600, ended: "reported", at, learned: "no (pairing)" },
+      { since: at, silence: 4000, window: 3600, ended: "reported", at, learned: "yes (downtime out)" },
+      { since: at, silence: 4000, window: 3600, ended: "reported", at, learned: "yes" },
+      { since: at, silence: 4000, window: 3600, ended: "reported", at, learned: "no (bridge down)" },
+      { since: at, silence: 4000, window: 3600, ended: "reported", at, learned: "no (something new)" },
+    ];
+    return page;
+  } }));
+  const heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
+  const learned = [...root.querySelectorAll(".pane tbody tr")].map((tr) => tr.lastChild.textContent)
+    .filter((t) => /^(Yes|No,|no )/.test(t));
+  check("Its heading is LEARNED", heads.includes("LEARNED") && !heads.includes("LEARNED FROM"), heads);
+  check("Each value in plain words, an unknown one as sent",
+    JSON.stringify(learned) === JSON.stringify(["No, re-paired", "Yes, less Device Sentinel's own stops", "Yes", "No, its bridge was down", "no (something new)"]), learned);
 
   console.log("The Log-Normal Percentile counting again");
   const withAgain = (rules) => ({ device: (page) => {
@@ -133,6 +154,23 @@ const pane = (root) => root.querySelector(".pane").textContent;
     && text.includes("the 14-Day Trimmed Maximum rule is used to calculate the freeze interval."),
     text.match(/Log-Normal Percentile.{0,300}/));
   check("And the two-rules paragraph is not shown", !text.includes("uses whichever of the two is shorter"));
+  // The reason, when the reset recorded it (rule FRZ-05).
+  const reasons = {
+    repair: "restarted on Oct 16, when it was re-paired.",
+    battery: "restarted on Oct 16, when its battery was changed.",
+    firmware: "restarted on Oct 16, when its firmware was updated.",
+    slower: "restarted on Oct 16, after three days in a row of slower reporting.",
+    by_hand: "restarted on Oct 16, when Use the 14-Day Trimmed Maximum was pressed.",
+  };
+  for (const [reason, words] of Object.entries(reasons)) {
+    ({ root } = await open(`${PREFIX}/device/${DEVICE}`, withAgain({ counting_again: { since: "2026-10-16", to_go: 20, reason } })));
+    text = pane(root);
+    check(`A known reason is named, not listed: ${reason}`, text.includes(words) && !text.includes("one of the following")
+      && text.includes("the 14-Day Trimmed Maximum rule is used"), text.match(/restarted on.{0,80}/));
+  }
+  ({ root } = await open(`${PREFIX}/device/${DEVICE}`, withAgain({ counting_again: { since: "2026-10-16", to_go: 20, reason: "something new" } })));
+  check("A reason the page has no words for falls back to the list",
+    pane(root).includes("because of one of the following 5 reasons:") && !pane(root).includes("something new"));
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, withAgain({})));
   check("No line when it is not counting again", !pane(root).includes("statistics were restarted"));
 
