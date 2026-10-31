@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -45,10 +45,12 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **Starting the count again:** the Log-Normal Percentile starts its count again after a firmware update, a battery replacement Device Sentinel detects from the level, a re-pair, three days in a row set aside as longer than the device's usual, or a press of "Use the 14-Day Trimmed Maximum" on the device page. The device then waits on the Trimmed Maximum until it has 28 new days.
 - **What does not restart it:** a replacement date a person enters, a reconfigure and a removal do not start the count again, since none of them changes how a device reports.
 - **A re-pair on ZHA:** a join followed by its setup.
-- **A re-pair on Zigbee2MQTT:** Zigbee2MQTT does not say which device was paired. There a re-pair is a device removed and added again while pairing is open or within 120 seconds after it closes, or one that was frozen, unavailable or silent past its window and comes back in that time. A device reporting on its rhythm while another is paired keeps its count.
-- **On the device page:** the button shows only while the Log-Normal Percentile is in use, and while the count runs again the device page says why.
+- **A re-pair on Zigbee2MQTT:** a device that joins, or whose interview starts, while pairing is open or within 120 seconds after it closes. Zigbee2MQTT names it by its address on its bridge events, and only that device starts again. A device that came back on its own during the same window keeps its count, and so does a device reporting on its rhythm while another is paired. A device removed and added again in that time starts again too.
+- **A Zigbee2MQTT window already open at a start:** its bridge events are not kept, so Device Sentinel cannot know who joined before it started. For that window, a device that was frozen, unavailable or silent past its window and comes back during it is taken as re-paired.
+- **The reason is kept:** each restart of the count saves why (a battery change, a re-pair, a firmware update, three slower days, or by hand), and is wiped with the count at a statistics epoch.
+- **On the device page:** the button shows only while the Log-Normal Percentile is in use. While the count runs again the device page names the reason ("restarted on Oct 30, when it was re-paired"), or lists the five possible reasons for a count restarted before 0.27.16.
 
-*Proof:* [`test_freeze_rules.py`](../tests/test_freeze_rules.py), [`test_repair_restarts_count.py`](../tests/test_repair_restarts_count.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`tools/panel_checks/check_rhythm_rules.js`](../tools/panel_checks/check_rhythm_rules.js).
+*Proof:* [`test_freeze_rules.py`](../tests/test_freeze_rules.py), [`test_repair_restarts_count.py`](../tests/test_repair_restarts_count.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_dashboard_devices.py`](../tests/test_dashboard_devices.py), [`tools/panel_checks/check_rhythm_rules.js`](../tools/panel_checks/check_rhythm_rules.js), `check_rhythm_words.js`.
 
 ### FRZ-06 The Freeze Window and Its Sliders
 

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -38,7 +38,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 
 **For a ZHA device, Device Sentinel reads the time ZHA last heard it, which ZHA sets from each radio message (under [STACK-08](#stack-08-reading-an-integrations-private-state)).**
 - **What it decides:** one thing. A value handed back after a ZHA restart or reload is the device speaking only if ZHA has heard the device since its last report. It does not date contact or start a new device's clock.
-- **On the device page:** in Advanced, the Last seen sensor row names it: "ZHA's own", "heartbeat: when ZHA last heard it". Simple shows that row only when the sensor is switched off.
+- **On the device page:** in Advanced, the Last seen sensor row names it: "ZHA's own", "when ZHA last heard it, used to tell it's alive". Simple shows that row only when the sensor is switched off.
 - **Other stacks:** Zigbee2MQTT and Z-Wave JS devices have their own Last Seen entities. Once switched on, those also date contact and start a new device's clock.
 - **Coordinator:** ZHA's coordinator is watched as an upstream through its config entry (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
 
@@ -106,7 +106,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Problem List:** "Hub down, 2 devices that it controls", with "Down since 1:28 PM. The 2 devices it controls are listed on its page, not on the Problem List, until it is back."
 - **Notification card:** "Garage Lutron Caseta hub down, 2 devices that it controls".
 - **Daily Brief:** it says a hub "went down" and "has been down", and lists a hub that is down as "hub down, 2 devices that it controls".
-- **Hub's page:** Up or Down with when, how it is judged, Devices This Hub Controls (DEVICE, TYPE, STANDING, LAST SEEN, PROBLEM) and its outages over 14 days (WENT DOWN, BACK, DOWN FOR, DEVICES IT CONTROLS), with no Last seen group. The TYPE column shows Device Sentinel's type.
+- **Hub's page:** Up or Down with when, how it is judged, Devices This Hub Controls (DEVICE, TYPE, STANDING, LAST SEEN, PROBLEM) and its outages over 14 days (WENT DOWN, BACK, DOWN FOR, DEVICES IT CONTROLS), with no Reporting group. The TYPE column shows Device Sentinel's type.
 - **Controlled device's page:** it reads "Judged by its hub", links the hub and says why its silence cannot be judged. While the hub's connection cannot be read it says "Device Sentinel cannot read {Hub}'s connection right now."
 - **Muted with its hub:** the device reads "Muted with its hub" on the hub's page and "Freeze is muted with its hub. Change it on {Hub}'s page." on its own.
 

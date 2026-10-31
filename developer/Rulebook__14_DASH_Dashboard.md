@@ -1,8 +1,8 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
-This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Power, Type and Battery Last Replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
+This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
 ### DASH-01 How the Dashboard Is Registered
 
@@ -36,11 +36,11 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **Battery Trends' tables:** they share one scale, so DEVICE, TYPE and LEVEL stand in the same place in each. A table with few columns ends short of the edge.
 - **Devices tab in Simple:** it shows TYPE and its filter. It leaves out the label filter, AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW.
 - **"Not Set":** a type, an area or a battery type nobody has set reads "Not Set", in Simple and Advanced, on every tab and on the device page. It is a link that opens the way to set it in place, with no question first. A type or a battery type is set for every device of the model; an area for that one device, in Home Assistant. The brief says where it was set ([BRIEF-07](Rulebook__13_BRIEF_Daily_Brief.md#brief-07-last-24-hours)). A value that is set is words, with nothing to press; on Simple's device page it is grey. In Advanced the device page keeps the pencil beside each value, set or not, so anything set can be changed. The Type and Area filters name the choice "Not Set" too.
-- **Asking for input:** nothing in Simple asks for more, except "Not Set", the Battery Last Replaced pencil, the Confirm Battery Replacement card and the Mute buttons.
+- **Asking for input:** nothing in Simple asks for more, except "Not Set", the Battery last replaced pencil, the Confirm Battery Replacement card and the Mute buttons.
 - **Device page actions in Simple:** no Rename, no "Use the 14-Day Trimmed Maximum" and no button to turn a sensor on. A switched-off sensor is turned on from its Recommendations card (REC). Type, Area and Power (with the battery type) are read-only once set.
 - **Labels in Simple:** the device page has no Labels row. A mute from a label is one line in the Muted row, "Freeze is muted by the label Outdoor. Switch to Advanced to change it.", where "Advanced" switches the view ([MUTE-09](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-09-mutes-on-the-device-page-and-the-problem-list)).
 - **Exclusions in Simple:** Exclude this device is hidden. An exclusion already made still shows with its way back. Whole integrations are excluded and muted on the Integrations tab ([MUTE-03](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-03-excluding-one-device-or-one-integration)).
-- **Device page rows in Simple:** the rhythm chart, its figures, the Wait rule row and the gaps table show only for a device that is frozen or has never reported. The Signal group shows only when the device's latest signal day is railed. The Last seen sensor row shows only when its sensor is switched off. The Z-Wave status row shows only when the node is dead or its sensor is switched off. The dropout counts show only while the device is dropping out. The firmware history never shows.
+- **Device page rows in Simple:** the Device ID shows; the Model ID, the addresses (Zigbee Address, Z-Wave Node and the like), Battery reports in and the battery evidence line do not. The rhythm chart, its figures, the wait rule and the gaps table show only for a device that is frozen or has never reported. The Signal group shows only when the device's latest signal day is railed. The Last seen sensor row shows only when its sensor is switched off. The Z-Wave status row shows only when the node is dead or its sensor is switched off. The dropout counts show only while the device is dropping out. The firmware history never shows.
 
 *Proof:* [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js), `check_integrations_tab.js`, `check_not_set.js`, `check_battery_weeks.js`, `check_type_filters.js`.
 
@@ -56,8 +56,8 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-06 The Device Page Reads at One Size
 
 **On a device's page, text reads at the page's size, 14px, in the page's own font.**
-- **What this covers:** the secondary text in its rows (such as "heard by Device Sentinel 9m ago" and "changed 3m ago"), the rhythm line, the chart notes and the page's closing note.
-- **Heartbeat and sensor names:** the heartbeat line is plain grey text, not a pill, and a sensor's name is not monospace.
+- **What this covers:** the secondary text in its rows (such as "heard by Device Sentinel 9m ago" and "changed 3m ago"), the rhythm line and the chart notes. The page has no closing note since 0.27.16.
+- **Sensor notes and names:** the note beside the Last seen sensor ("used to tell it's alive") is plain grey text, not a pill, and a sensor's name is not monospace.
 - **What keeps its size:** headings, column headings, the large figures, buttons, chips, the charts' own labels and the release line at the foot ([DASH-15](#dash-15-the-footer)).
 - **Elsewhere:** other tabs and the printout are unchanged.
 
@@ -73,14 +73,16 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-08 The Identity Section
 
 **Below the status, the Identity section lists who the device is. There is no separate Live readings section.**
-- **Identity rows:** Name, Type, Device ID, Area, Labels, Manufacturer, Model, Model ID, Hardware version, Integration, Connects, Same hardware (for a device another integration also lists) and its addresses.
-- **Then three groups:** Power: Battery level, Battery sensor, Power, Battery Last Replaced and Battery steps. Signal: Signal and Signal sensor. Last seen: Last seen, Last seen sensor with its heartbeat tag, Z-Wave status, First seen, Events seen and Wait rule. A hub's own page leaves the Last seen group out.
-- **Then:** Muted and Excluded.
+- **Identity rows:** Name, Type, Device ID, Area, Labels, Manufacturer, Model, Model ID, Hardware version, Firmware, Integration, Connects, Same hardware (for a device another integration also lists) and its addresses.
+- **Then four groups:** Power: Battery level, Battery sensor, Powered by, Battery last replaced and Battery reports in. Signal: Signal and Signal sensor. Reporting: Last seen, Last seen sensor with a note saying how it tells the device is alive, Z-Wave status, First seen and Events seen. Actions: Muted and Excluded. A hub's own page leaves the Reporting group out.
+- **The wait rule:** under the Its Rhythm heading, "Wait rule: 40-Day Log-Normal Percentile, 2.6h", with Use the 14-Day Trimmed Maximum beside it.
+- **The status line:** a reporting device reads "Last report 28s ago. Called frozen after 62m of silence."
+- **Plain words:** Battery reports in reads "small steps", "steps of 5% or more" or "not known yet". The Gaps table's LEARNED column reads "Yes", "No, re-paired" and the like. The signal legend calls a railed day "readings stuck at the end of the scale that day". The battery evidence line, in Advanced, reads "Saved for future battery forecasts: 2.9 V and 311 messages on Oct 30."
 - **Each row:** each value shows when it changed, and each sensor is a link that opens the entity in Home Assistant.
 - **No readable Last seen sensor:** the device shows when Device Sentinel last heard it, which repeats the status line by choice.
 - **Below:** everything from the gaps table, "Gaps, Last 14 Days", down is unchanged by this order.
 
-*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`.
+*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`, `check_rhythm_words.js`, [`test_device_page_words.py`](../tests/test_device_page_words.py).
 
 ### DASH-09 Acting From the Device Page
 

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -143,7 +143,7 @@ This section covers what a device is called, what kind of device it is, what pow
 - **Checking:** each minute after the startup grace.
 - **Keeping:** firmware history is kept for the How Much History to Keep setting's days, and the current version always stays.
 - **After an update:** a recorded update has the battery's scale measured again (see [BAT](Rulebook__09_BAT_Battery.md)).
-- **On the device page:** in Advanced it shows the current firmware with its recorded history beneath. Simple never shows it.
+- **On the device page:** in Advanced it shows the current firmware with its recorded history beneath, or one line ("1.00.69, first seen Sep 25, 10:39 AM") when the only version recorded is the current one. Simple never shows it.
 
 *Proof:* [`test_firmware_hold.py`](../tests/test_firmware_hold.py), [`test_model_groups.py`](../tests/test_model_groups.py), [`test_device_page_firmware.py`](../tests/test_device_page_firmware.py), `check_device_page_layout.js`, `check_simple_dashboard.js`.
 

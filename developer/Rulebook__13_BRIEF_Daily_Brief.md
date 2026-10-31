@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -51,7 +51,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Scope:** a restart covers each device, a broker the MQTT devices, a bridge or a pairing window its own stack's devices, an integration outage or a storm its own integration's devices, a Wi-Fi outage each device, and a person handling a ZHA device that device alone.
 - **Several matches:** the one already in effect when the device went quiet wins, and the earliest of those. Where none was in effect, one covering the recovery is used.
 - **Announced outages:** each outage kind the brief announces takes part in this matching, so its devices are never counted as mysteries.
-- **One sentence per event:** devices one event took down are told as one sentence ("2 devices became unavailable at 3:35 PM, with a restart.") while the table still lists each.
+- **One sentence per event:** devices one event took down are told as one sentence ("2 devices became unavailable at 3:35 PM, with a restart.") while the table still lists each. Only an event already under way when each device went groups them. Devices that only came back during the same event, a pairing window say, failed on their own, so each keeps its own sentence and times.
 - **Recoveries:** a restart or an outage is never credited with a recovery.
 
 *Proof:* [`test_attribution.py`](../tests/test_attribution.py), [`test_forward_outage_shape.py`](../tests/test_forward_outage_shape.py).

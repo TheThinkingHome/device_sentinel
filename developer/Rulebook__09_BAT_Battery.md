@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -53,18 +53,18 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 **A new battery is a rise of 25 points or more from one day to the next, or a cell at or under 90 percent landing at or over 95.** It counts once the next day's reading confirms it against the level before the rise.
 - **The history:** starts again from the day the rise appeared, so each trend and forecast describes the battery in the device today. The old history is kept, unread.
 - **Raw scale:** a new battery is measured again for the raw scale ([BAT-02](#bat-02-what-counts-as-a-reading)).
-- **The words:** each surface says "replaced or recharged", because one reading a day cannot tell the two apart. The exception is the device page's Battery Last Replaced row and its card, which [BAT-07](#bat-07-battery-last-replaced) governs.
+- **The words:** each surface says "replaced or recharged", because one reading a day cannot tell the two apart. The exception is the device page's Battery last replaced row and its card, which [BAT-07](#bat-07-battery-last-replaced) governs.
 
 *Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
 
 ### BAT-07 Battery Last Replaced
 
-**The device page shows the day the battery was last replaced, in Simple and Advanced.**
+**The device page shows the day the battery was last replaced, in Simple and Advanced, in a row named "Battery last replaced".**
 - **A detected replacement:** is used until the person answers, and the Confirm Battery Replacement card asks. Confirm keeps it, Change date splits the history at the day the person gives, and Cancel joins the history back.
 - **Dates the person gives:** a future date is refused. A date older than the oldest kept day gives the whole kept history to the new battery.
 - **Cancel:** leaves the 42-Day Log-Normal Percentile's day count as it stands.
 - **Older detections:** a replacement detected before 0.26.7 counts as confirmed.
-- **Rechargeable:** a device whose power answer is Rechargeable reads Battery Last Charged and Confirm Battery Charge.
+- **Rechargeable:** a device whose power answer is Rechargeable reads Battery last charged and Confirm Battery Charge.
 - **No replacement yet:** the row reads, for example, "Device first detected August 12, 2026. No battery replacement yet."
 
 *Proof:* [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py).
@@ -85,7 +85,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 **A fall of 5 points or more from one day to the next is a coarse step.**
 - **When a battery is coarse:** after two coarse steps, while its kept history of at least 30 days holds no smaller change. Any smaller change makes it smooth again. A battery that never changed is not coarse.
 - **What it changes:** its forecast is withheld from the first coarse step, and a coarse battery is judged by the low threshold alone.
-- **On screen:** the device page's Battery steps row and Battery Trends read Smooth, Not enough data or Coarse.
+- **On screen:** Battery Trends reads Smooth, Not enough data or Coarse. The device page's Battery reports in row, in Advanced, reads the same in plain words: "small steps", "not known yet" or "steps of 5% or more".
 
 *Proof:* [`test_battery_steps.py`](../tests/test_battery_steps.py).
 
@@ -94,7 +94,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 **A battery is judged for falling and given a time left only when all three hold:**
 - **Level:** it reads at or under three times the low threshold (45 percent at the default 15).
 - **History:** it was heard on at least 28 of the last 42 days.
-- **Steps:** it reads Smooth under Battery steps ([BAT-09](#bat-09-coarse-batteries)).
+- **Steps:** it is smooth ([BAT-09](#bat-09-coarse-batteries)).
 - **Otherwise:** its page and Battery Trends row show the level and the weekly averages, and say nothing more.
 - **Coarse batteries:** are judged by the low threshold alone, and the page reads "Coarse", never steady or falling.
 - **Low:** low ([BAT-03](#bat-03-low-battery)) is judged whatever the history.
