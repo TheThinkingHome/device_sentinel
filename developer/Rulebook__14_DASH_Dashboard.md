@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -58,7 +58,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 **On a device's page, text reads at the page's size, 14px, in the page's own font.**
 - **What this covers:** the secondary text in its rows (such as "heard by Device Sentinel 9m ago" and "changed 3m ago"), the rhythm line and the chart notes. The page has no closing note since 0.27.16.
 - **Sensor notes and names:** the note beside the Last seen sensor ("used to tell it's alive") is plain grey text, not a pill, and a sensor's name is not monospace.
-- **What keeps its size:** headings, column headings, the large figures, buttons, chips, the charts' own labels and the release line at the foot ([DASH-15](#dash-15-the-footer)).
+- **What keeps its size:** headings (the rhythm charts' titles among them), column headings, the large figures, buttons, chips, the charts' own labels and the release line at the foot ([DASH-15](#dash-15-the-footer)).
 - **Elsewhere:** other tabs and the printout are unchanged.
 
 *Proof:* [`tools/panel_checks/check_device_page_text.js`](../tools/panel_checks/check_device_page_text.js).
@@ -75,14 +75,15 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 **Below the status, the Identity section lists who the device is. There is no separate Live readings section.**
 - **Identity rows:** Name, Type, Device ID, Area, Labels, Manufacturer, Model, Model ID, Hardware version, Firmware, Integration, Connects, Same hardware (for a device another integration also lists) and its addresses.
 - **Then four groups:** Power: Battery level, Battery sensor, Powered by, Battery last replaced and Battery reports in. Signal: Signal and Signal sensor. Reporting: Last seen, Last seen sensor with a note saying how it tells the device is alive, Z-Wave status, First seen and Events seen. Actions: Muted and Excluded. A hub's own page leaves the Reporting group out.
-- **The wait rule:** under the Its Rhythm heading, "Wait rule: 40-Day Log-Normal Percentile, 2.6h", with Use the 14-Day Trimmed Maximum beside it.
-- **The status line:** a reporting device reads "Last report 28s ago. Called frozen after 62m of silence."
+- **The wait rule:** under the Its Rhythm heading, "Wait rule: 40-Day Log-Normal Percentile, 2.6h", with Use the 14-Day Trimmed Maximum at its own width beneath it, and a line under both before the charts. The charts' titles read at 16px, the size of Its Rhythm, with room between the two charts.
+- **The status line:** a reporting device reads "Last report 28s ago. Called frozen after 62m of silence." An unavailable or unknown device reads "Unavailable since 7:49 AM, 43m ago." (or "Unknown since"), with the date in front of the time when it went on an earlier day. The time is when the device itself went, so a device frozen first and unavailable later is dated from when it became unavailable. Without that moment, such a device keeps its freeze line rather than show the freeze's time. A time that cannot be read leaves the freeze line in place.
+- **The status bar:** it fills toward the freeze window. Green while the device is within its rhythm, yellow once it is past its rhythm and not yet called frozen, red when frozen. Unavailable is gray, its dot too, and its bar stops where it stood when the device became unavailable. A muted device's bar is gray.
 - **Plain words:** Battery reports in reads "small steps", "steps of 5% or more" or "not known yet". The Gaps table's LEARNED column reads "Yes", "No, re-paired" and the like. The signal legend calls a railed day "readings stuck at the end of the scale that day". The battery evidence line, in Advanced, reads "Saved for future battery forecasts: 2.9 V and 311 messages on Oct 30."
 - **Each row:** each value shows when it changed, and each sensor is a link that opens the entity in Home Assistant.
 - **No readable Last seen sensor:** the device shows when Device Sentinel last heard it, which repeats the status line by choice.
 - **Below:** everything from the gaps table, "Gaps, Last 14 Days", down is unchanged by this order.
 
-*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`, `check_rhythm_words.js`, [`test_device_page_words.py`](../tests/test_device_page_words.py).
+*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`, `check_rhythm_words.js`, `check_status_bar.js`, [`test_device_page_words.py`](../tests/test_device_page_words.py), [`test_dashboard_devices.py`](../tests/test_dashboard_devices.py).
 
 ### DASH-09 Acting From the Device Page
 

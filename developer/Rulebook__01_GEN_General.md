@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -52,7 +52,7 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 **An integration is named as Home Assistant shows it ("Z-Wave", not "zwave_js").**
 - **Dashboard and brief:** where the dashboard's status boxes and outage lines already name an integration, the dashboard and the brief name it that way everywhere ("ZHA", not "Zigbee Home Automation").
 - **Settings device lists:** these keep the integration's short id beside a name (see [DEV](Rulebook__04_DEV_Device_Identity.md)).
-- **Zigbee2MQTT:** a device of Zigbee2MQTT is named Zigbee2MQTT wherever its integration is named (Problem List, Devices tab, device page). A child device keeps its own integration's name. The brief's pairing sentences name it alike when the window opens and when it closes.
+- **Zigbee2MQTT:** a device of Zigbee2MQTT is named Zigbee2MQTT wherever its integration is named (Problem List, Devices tab, device page). A child device keeps its own integration's name. The brief's pairing sentences name it alike when the window opens and when it closes, and an outage's own row is told by the integration's name ("Matter acknowledged at 9:30 AM"), never its short id.
 - **MQTT:** a mute set on the MQTT integration still names MQTT. Tasmota devices, which reach Home Assistant through the MQTT broker, are listed on MQTT's page.
 
 *Proof:* [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_child_devices.py`](../tests/test_child_devices.py), [`test_dashboard_problem_list.py`](../tests/test_dashboard_problem_list.py), [`test_integration_names.py`](../tests/test_integration_names.py), `check_integration_names.js`.

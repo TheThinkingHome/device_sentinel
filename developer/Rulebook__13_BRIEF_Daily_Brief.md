@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -49,7 +49,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 
 **An incident is matched to a recorded event whose window overlapped it and whose scope covers the device.**
 - **Scope:** a restart covers each device, a broker the MQTT devices, a bridge or a pairing window its own stack's devices, an integration outage or a storm its own integration's devices, a Wi-Fi outage each device, and a person handling a ZHA device that device alone.
-- **Several matches:** the one already in effect when the device went quiet wins, and the earliest of those. Where none was in effect, one covering the recovery is used.
+- **Several matches:** the one already in effect when the device went quiet wins, and the earliest of those. When it went is the moment the row keeps, not when it was listed, which for an unavailable device can be up to three minutes later. The cause saved with the recovery, which the automation event carries, and the repeat offenders table (its days and typical length) use the same moment. Its WITH column still matches devices listed in the same second, since devices one cause takes down go seconds apart and are listed on the same check. Where none was in effect, one covering the recovery is used.
 - **Announced outages:** each outage kind the brief announces takes part in this matching, so its devices are never counted as mysteries.
 - **One sentence per event:** devices one event took down are told as one sentence ("2 devices became unavailable at 3:35 PM, with a restart.") while the table still lists each. Only an event already under way when each device went groups them. Devices that only came back during the same event, a pairing window say, failed on their own, so each keeps its own sentence and times.
 - **Recoveries:** a restart or an outage is never credited with a recovery.
@@ -130,7 +130,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 **Links in Reports decides whether device names are links: None, Internal URL or External URL, defaulting to None.**
 - **Choosing:** each choice shows the address it would publish, and one Home Assistant does not hold is refused.
 - **Strict:** None prints names plain, Internal uses only the internal address, External only the external one, and a chosen address later removed prints names plain.
-- **Where a link goes:** a device's link opens its page on the Device Sentinel dashboard, /device-sentinel/device/<id>.
+- **Where a link goes:** a device's link opens its page on the Device Sentinel dashboard, /device-sentinel/device/<id>. An integration outage's own row, such as "Zigbee2MQTT", belongs to the house and has no link. Two rows of the same name each link to their own device, in the order the table prints them.
 - **The area:** the area beside a name is not an address, so this setting never withholds it. It is left out only where the name already ends in a bracket, as "Soil Moisture (Monstera)" does.
 
 *Proof:* [`test_www_retired.py`](../tests/test_www_retired.py), [`test_device_labels.py`](../tests/test_device_labels.py), [`test_settings.py`](../tests/test_settings.py).

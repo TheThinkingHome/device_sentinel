@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -45,8 +45,9 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **Starting the count again:** the Log-Normal Percentile starts its count again after a firmware update, a battery replacement Device Sentinel detects from the level, a re-pair, three days in a row set aside as longer than the device's usual, or a press of "Use the 14-Day Trimmed Maximum" on the device page. The device then waits on the Trimmed Maximum until it has 28 new days.
 - **What does not restart it:** a replacement date a person enters, a reconfigure and a removal do not start the count again, since none of them changes how a device reports.
 - **A re-pair on ZHA:** a join followed by its setup.
-- **A re-pair on Zigbee2MQTT:** a device that joins, or whose interview starts, while pairing is open or within 120 seconds after it closes. Zigbee2MQTT names it by its address on its bridge events, and only that device starts again. A device that came back on its own during the same window keeps its count, and so does a device reporting on its rhythm while another is paired. A device removed and added again in that time starts again too.
+- **A re-pair on Zigbee2MQTT:** a device that joins while pairing is open or within 120 seconds after it closes. An interview on its own is not a re-pair: Zigbee2MQTT interviews a half-interviewed device again when it announces itself, with nobody re-pairing it. Zigbee2MQTT names it by its address on its bridge events, and only that device starts again. A device that came back on its own during the same window keeps its count, and so does a device reporting on its rhythm while another is paired. A device removed and added again in that time starts again too.
 - **A Zigbee2MQTT window already open at a start:** its bridge events are not kept, so Device Sentinel cannot know who joined before it started. For that window, a device that was frozen, unavailable or silent past its window and comes back during it is taken as re-paired.
+- **In the diagnostics:** each bridge's join state, whether every join of its current or last window was heard and when it last said pairing opened or closed, so a restart that did or did not happen can be explained.
 - **The reason is kept:** each restart of the count saves why (a battery change, a re-pair, a firmware update, three slower days, or by hand), and is wiped with the count at a statistics epoch.
 - **On the device page:** the button shows only while the Log-Normal Percentile is in use. While the count runs again the device page names the reason ("restarted on Oct 30, when it was re-paired"), or lists the five possible reasons for a count restarted before 0.27.16.
 
@@ -153,6 +154,7 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 
 **A device behind Zigbee2MQTT that comes back while its bridge is open for pairing, or within 120 seconds after it closes, has its gap set aside as pairing.**
 - **Which devices:** any device on the MQTT integration counts, since pairing is open for the whole coordinator. A non-Zigbee2MQTT MQTT device coming back by chance loses one gap.
+- **When the window is dated:** from the bridge's own message saying pairing opened or closed, not from Device Sentinel's next check a minute later, so the brief's times and the window's length match Zigbee2MQTT's. A window closed by the bridge going offline brings no message, and its close is dated by the check. A change is never dated before the one it follows: a reopening after a bridge restart is dated after the last close.
 - **Diagnostics:** the bridge's state is in the diagnostics download.
 
 *Proof:* [`test_bridge_pairing.py`](../tests/test_bridge_pairing.py).
