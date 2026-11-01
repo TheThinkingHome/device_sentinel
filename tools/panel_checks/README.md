@@ -46,6 +46,7 @@ written rather than what it proves).
 | A device's page | `check_connects_line.js` | 4 | the Connects line, after Integration, absent where nothing is declared |
 | A device's page | `check_mutes_shown.js` | 7 | mutes named on the page, the Devices tab and an integration's page, which counts them as the Integrations tab does |
 | A device's page | `check_dated_histories.js` | 4 | a skipped day breaks a chart's line |
+| A device's page | `check_status_bar.js` | 16 | the status bar: green within the rhythm, yellow past it, red when frozen, gray for unavailable with "Unavailable since" (with the date when it went on an earlier day) and the bar stopped when the device went, and no NaN from a time that cannot be read; and Its Rhythm's line under the wait rule, the button at its own width, chart titles at 16px and room between the charts |
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
 | Devices | `check_device_finders.js` | 32 | the Devices tab's search, Area and Label filters, an area in a row as a link that narrows the list, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 9 | how a battery reports, "Battery reports in" on its page in Advanced, and on Battery Trends |
@@ -56,7 +57,7 @@ written rather than what it proves).
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1013 checks in 45 files, as of 31 October 2026 (0.27.16).
+1029 checks in 46 files, as of 1 November 2026 (0.27.17).
 
 ## Running Them
 

@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.17 (2026-11-01)
 //
 // Panel checks: the device page reads at one size (rule DASH-06).
 // Secondary text such as "heard by Device Sentinel 9m ago" and
@@ -141,11 +141,13 @@ const rowCell = (root, label) => {
 const REAL = JSON.parse(fs.readFileSync(__dirname + "/real_device.json", "utf8")).device;
 
 // Controls, headings (a table's column headings among them, the same
-// capitals as on every tab), the big figures and the charts' own labels
-// keep their sizes; everything else on the page is text.
+// capitals as on every tab, and the rhythm charts' titles, the size of
+// Its Rhythm), the big figures and the charts' own labels keep their
+// sizes; everything else on the page is text.
 const KEEPS_ITS_SIZE = [
   "button", "select", "option", "input", "textarea", "svg", "svg *", "h2", "h3", "th",
   ".chip", ".reading .v", ".stat .v", ".ruleline span", ".statusline > div:first-child",
+  ".ruletitle", ".ruletitle *",
 ].join(", ");
 
 function lightCopy(window, root) {
