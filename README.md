@@ -125,15 +125,15 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 | **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. Administrators only. |
 | **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. Devices with four or more weeks of history get a steadier rhythm that a few bad days can't stretch. An ESPHome device is judged by its connection. Freeze and unavailable mute apart. |
 | **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up, with the time left to your threshold as a range drawn from each cell's own history. Records the day a battery was replaced and asks you to confirm it. |
-| **Storage** | Stable | Survives power cuts and restores itself from a backup. Long histories live in a file of their own. |
+| **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
+| **Storage** | Hardened | Survives power cuts and restores itself from a backup. Long histories live in a file of their own. |
 | **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
 | **MQTT** | Working | A broker outage is one alert, not one per device. |
 | **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
-| **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
-| **WiFi** | Experimental | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
+| **WiFi** | Working | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
 | **Z-Wave** | Working | A node Z-Wave JS reports dead makes its device unavailable, and an integration outage is one alert. |
-| **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
 | **Matter** | Working | A device that loses power is reported unavailable within minutes. A light, plug or button that reports only when used is judged by being available, so it is not reported frozen because it is quiet. |
+| **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
 
 ## AI Disclosure
 
