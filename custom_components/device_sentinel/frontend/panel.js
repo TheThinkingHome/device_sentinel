@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.16 (2026-10-31)
+// File: panel.js, Version: 0.27.17 (2026-11-01)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -164,10 +164,16 @@ const DEVICE_FILTERS = [
 // The Area filter's choice for a device with no area (rule DASH-12).
 const NO_AREA = "\u0000no area";
 const RANGES = [["all", "All"], [360, "360 Days"], [180, "180 Days"], [90, "90 Days"], [30, "30 Days"], [14, "14 Days"]];
+// Unavailable's colour, and the bar's colour past a device's rhythm
+// while it is not yet called frozen (rule DASH-08).
+const UNAVAILABLE_COLOUR = "#8a8a8a";
+const OVERDUE_COLOUR = "var(--warning-color, #ffa600)";
 const STATUS_WORDS = {
   reporting: ["Reporting", "var(--success-color, #43a047)"],
   frozen: ["Frozen", "var(--error-color, #db4437)"],
-  unavailable: ["Unavailable", "var(--error-color, #db4437)"],
+  // Gray, apart from frozen's red: Home Assistant says the device is
+  // gone, which is not a freeze (rule DASH-08).
+  unavailable: ["Unavailable", UNAVAILABLE_COLOUR],
   // A device that keeps dropping out (rule UNAV-06).
   flapping: ["Flapping", "var(--error-color, #db4437)"],
   unknown: ["Unknown", "var(--warning-color, #ffa600)"],
@@ -619,8 +625,8 @@ const STYLE = `
   .rulechart { position: relative; height: 110px; }
   .rulechart > .ruleline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid #E24B4A; border-radius: 0; flex: none; background: none; }
   .ruleline > span { position: absolute; right: 0; top: -18px; font-size: 11px; color: #E24B4A; }
-  .rulebox { margin-bottom: 14px; }
-  .ruletitle { font-weight: 500; margin-bottom: 2px; }
+  .rulebox { margin-bottom: 28px; }
+  .ruletitle { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
   .inuse { font-size: 11px; padding: 1px 8px; margin-left: 8px; border-radius: 10px; background: var(--success-color, #43a047); color: #fff; }
   .kv tr.kvgroup td { padding-top: 14px; font-weight: 500; color: var(--primary-text-color); border-bottom: 1px solid var(--divider-color); }
   .kv tr.kvsub td { background: var(--secondary-background-color, rgba(127,127,127,.06)); }
@@ -3721,7 +3727,21 @@ class DeviceSentinelPanel extends HTMLElement {
       colour = "var(--disabled-text-color, #888)";
     }
     const quiet = status.last_activity ? (now - new Date(status.last_activity).getTime()) / 1000 : null;
-    const fill = status.window && quiet !== null ? Math.min(1, quiet / status.window) : 0;
+    // Unavailable or unknown: the bar stops where it stood when the
+    // device went, since a freeze window means nothing once Home
+    // Assistant has said so (rule DASH-08).
+    // A time that cannot be read is treated as none, so the bar never
+    // reads NaN.
+    const wentAt = ["unavailable", "unknown"].includes(status.category) && status.since ? new Date(status.since).getTime() : NaN;
+    const went = Number.isFinite(wentAt) ? wentAt : null;
+    // Today's time alone; an earlier day's with its date.
+    const wentClock = went === null ? ""
+      : localDay(new Date(went)) === localDay(new Date(now))
+        ? new Date(went).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : moment(new Date(went).toISOString());
+    const counted = went !== null && status.last_activity
+      ? Math.max(0, (went - new Date(status.last_activity).getTime()) / 1000) : quiet;
+    const fill = status.window && counted !== null ? Math.min(1, counted / status.window) : 0;
     const standing = who.watched ? (who.muted ? `Watched, muted: ${who.muted}` : "Watched") : `Set aside: ${who.set_aside}`;
     // Judged by its hub (rule STACK-10): a hub reads up
     // or down from its connection, and a device it controls is judged by it.
@@ -3758,6 +3778,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const rhythmShown = !simple || ["frozen", "never_reported"].includes(status.category);
     // By its hub or by its connection: never judged for freezing.
     const judged = status.judged_by || null;
+    // Green within its rhythm, yellow past it until it is called frozen,
+    // then the status's own colour (rule DASH-08). A muted device keeps
+    // its gray.
+    const overdue = status.category === "reporting" && !(who && who.muted)
+      && status.rhythm && quiet !== null && quiet > status.rhythm;
+    const barColour = overdue ? OVERDUE_COLOUR : colour;
     const statusBox = el("div", { class: "devstatus" },
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
@@ -3772,11 +3798,14 @@ class DeviceSentinelPanel extends HTMLElement {
           // A Matter device of a type that reports only on use (rule STACK-06).
           : status.available_rule
             ? `Last report ${ago(status.last_activity, now)}. Not called frozen while Home Assistant shows it available.`
+          // Unavailable or unknown: since when, not the freeze window.
+          : went !== null
+            ? `${status.category === "unknown" ? "Unknown" : "Unavailable"} since ${wentClock}, ${ago(status.since, now)}.`
           : status.window
             ? `Last report ${ago(status.last_activity, now)}. Called frozen after ${span(status.window)} of silence.`
             : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
       rhythmShown && status.window && !status.connection && !judged && !status.available_rule ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
-        el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${colour}` })) : null,
+        el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${barColour}` })) : null,
       rhythmShown && status.window && !status.connection && !judged && !status.available_rule ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
@@ -3830,7 +3859,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // the 42-day chart for 28 days. Never in Simple, which asks
     // for nothing it does not need (rule DASH-04).
     const lognormalInUse = Boolean(page.rhythm && page.rhythm.rules && page.rhythm.rules.in_use === "lognormal");
-    const useTrimmed = status.rule && lognormalInUse && !simple ? el("button", { class: "chip", type: "button", style: "margin-top:6px",
+    const useTrimmed = status.rule && lognormalInUse && !simple ? el("button", { class: "chip", type: "button", style: "margin-top:6px;align-self:flex-start",
       onclick: async () => {
         try {
           await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
@@ -3994,7 +4023,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // Headings in Title Case, book-title style (rule GEN-06).
     // The rule in use and its wait, under its rhythm (rule DASH-08).
     const waitRule = status.rule && rhythmShown && !status.available_rule && !judged
-      ? el("div", { class: "actcol", style: "margin:0 0 8px" }, el("span", {}, `Wait rule: ${status.rule}, ${span(status.window)}`), useTrimmed) : null;
+      ? el("div", { class: "actcol", style: "margin:4px 0 16px;padding-bottom:16px;border-bottom:1px solid var(--divider-color)" }, el("span", {}, `Wait rule: ${status.rule}, ${span(status.window)}`), useTrimmed) : null;
     const rhythm = el("div", {}, el("h3", { class: "section" }, "Its Rhythm"), waitRule,
       // A device judged by its connection reports nothing to learn a
       // rhythm from (rule STACK-07).
