@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.10 (2026-10-27)
+# File: journal.py, Version: 0.27.17 (2026-11-01)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -712,6 +712,22 @@ class JournalMixin:
                 opened = None
         return opened
 
+    def _opening_began_at(self, device_id: str, opened: float) -> float:
+        """When the device went, for the opening written at `opened`.
+
+        The opening row keeps when an unavailable or unknown device went,
+        minutes before it was listed; any other opening, or none found,
+        is dated when it was written (rule BRIEF-05).
+        """
+        for row in reversed(self.incident_rows()):
+            if (
+                row[INC_DEVICE_ID] == device_id
+                and row[INC_EVENT] == INCIDENT_OPENED
+                and row[INC_WHEN] == opened
+            ):
+                return self._began_at(row)  # type: ignore[attr-defined]
+        return opened
+
     def _recovery_cause(
         self, device_id: str, opened: float = 0.0
     ) -> str | None:
@@ -736,7 +752,9 @@ class JournalMixin:
                 spans,
                 self._watched.get(device_id),
                 self._stack_for_device(device_id),
-                opened,
+                # When the device went, not when it was listed, as the
+                # brief matches it (rule BRIEF-05).
+                self._opening_began_at(device_id, opened),
                 dt_util.utcnow().timestamp(),
                 device_id,
             )

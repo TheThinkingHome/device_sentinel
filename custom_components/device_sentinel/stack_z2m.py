@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.27.16 (2026-10-31)
+# File: stack_z2m.py, Version: 0.27.17 (2026-11-01)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -65,9 +65,7 @@ from .const import (
     Z2M_IDENTIFIER_MARK,
     Z2M_TOPIC_AVAILABILITY,
     Z2M_TOPIC_AVAILABILITY_LEAF,
-    Z2M_EVENT_INTERVIEW,
     Z2M_EVENT_JOINED,
-    Z2M_INTERVIEW_STARTED,
     Z2M_TOPIC_DEVICES,
     Z2M_TOPIC_EVENT,
     Z2M_TOPIC_INFO,
@@ -218,6 +216,10 @@ class Z2MBridgeReader:
         # subscribe is told apart from a window opening later. A window
         # whose opening was heard live, with bridge/event already
         # subscribed, is one whose joins were all heard.
+        # When the bridge last said pairing opened or closed, as a UTC
+        # timestamp, so the window is dated from the bridge's own
+        # message rather than from the next check (rule FRZ-16).
+        self._pairing_changed_at: float | None = None
         self._join_recorder: Any = None
         self._joins_live: bool = False
         self._info_heard: bool = False
@@ -409,6 +411,11 @@ class Z2MBridgeReader:
         called with the stack and the device's address."""
         self._join_recorder = recorder
 
+    @property
+    def pairing_changed_at(self) -> float | None:
+        """When the bridge last said pairing opened or closed, or None."""
+        return self._pairing_changed_at
+
     def joins_seen(self) -> bool:
         """Whether every join of the current or last window was heard.
 
@@ -548,6 +555,8 @@ class Z2MBridgeReader:
         # than to itself (rule FRZ-16).
         if was_open and not self._permit_join:
             self._pairing_closed_at = dt_util.utcnow().timestamp()
+        if was_open != self._permit_join:
+            self._pairing_changed_at = dt_util.utcnow().timestamp()
         # A window opening heard live, after bridge/event was
         # subscribed, is one whose joins are all heard. The retained
         # info read at subscribe, already open, is not; nor is the one
@@ -600,10 +609,12 @@ class Z2MBridgeReader:
     def _on_event(self, msg: mqtt.ReceiveMessage) -> None:
         """Handle bridge/event: a device joining while pairing is open.
 
-        device_joined, or device_interview started, names the device by
-        its IEEE address. Counted only while pairing is open, or within
-        the grace after it closed, so an interview asked for by hand
-        from Zigbee2MQTT outside a window is not a re-pair. The device
+        device_joined names the device by its IEEE address. Counted only
+        while pairing is open, or within the grace after it closed. An
+        interview on its own is not a re-pair: Zigbee2MQTT interviews a
+        half-interviewed device again when it announces itself, and a
+        person can ask for one by hand, with nobody re-pairing it; a
+        real re-pair always sends device_joined first. The device
         is named by the address Zigbee2MQTT gives Home Assistant; a
         device Device Sentinel does not know yet is a new one, with no
         count to restart (rule FRZ-05).
@@ -616,10 +627,7 @@ class Z2MBridgeReader:
         body = data.get("data")
         if not isinstance(body, dict):
             return
-        if not (
-            kind == Z2M_EVENT_JOINED
-            or (kind == Z2M_EVENT_INTERVIEW and body.get("status") == Z2M_INTERVIEW_STARTED)
-        ):
+        if kind != Z2M_EVENT_JOINED:
             return
         ieee = body.get("ieee_address")
         if not isinstance(ieee, str) or not ieee.startswith("0x"):

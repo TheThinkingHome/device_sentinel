@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.16 (2026-10-31)
+# File: interventions.py, Version: 0.27.17 (2026-11-01)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -209,6 +209,34 @@ def _moment(value: Any) -> float | None:
     return float(value)
 
 
+# How far back a bridge's own pairing message may date a window. The
+# check runs each minute; anything older than this is from another
+# window, and the check's own time is used instead.
+PAIRING_MOMENT_REACH = 300.0
+
+
+def _pairing_moment(reader: Any, now: float, after: float | None = None) -> float:
+    """When a pairing window opened or closed, as the bridge said it
+    (rule FRZ-16). The reader's moment when it holds one from the last
+    few minutes, never in the future and later than `after`; the
+    check's own time otherwise, as for a reader that keeps no such
+    moment. A window closed by its bridge going offline brings no
+    message, so the reader's moment is still the opening, and the close
+    is dated by the check."""
+    try:
+        at = getattr(reader, "pairing_changed_at", None)
+    except Exception:  # noqa: BLE001 - never break the tick
+        return now
+    if (
+        isinstance(at, (int, float))
+        and not isinstance(at, bool)
+        and now - PAIRING_MOMENT_REACH <= at <= now
+        and (after is None or at > after)
+    ):
+        return float(at)
+    return now
+
+
 def _reader_loaded(reader: Any) -> bool:
     """Whether a reader says its upstream has loaded (rule UP-04).
 
@@ -293,6 +321,27 @@ class InterventionMixin:
                 continue
             if observer.async_start():
                 self._join_observers[stack] = observer
+
+    def bridge_join_state(self, stack: str) -> dict[str, Any] | None:
+        """A bridge's join state for the diagnostics, or None for a
+        stack whose reader names no joins (rule FRZ-05)."""
+        reader = self._bridge_readers.get(stack)
+        seen = getattr(reader, "joins_seen", None)
+        if not callable(seen):
+            return None
+        try:
+            changed = getattr(reader, "pairing_changed_at", None)
+            return {
+                "joins_heard": bool(seen()),
+                "pairing_changed": (
+                    dt_util.utc_from_timestamp(changed).isoformat()
+                    if isinstance(changed, (int, float)) and not isinstance(changed, bool)
+                    else None
+                ),
+            }
+        except Exception as err:  # noqa: BLE001 - diagnostics never fail on a reader
+            LOGGER.debug("Join state for %s not read: %s", stack, err)
+            return None
 
     def bridge_state(self, stack: str) -> str | None:
         """Return a stack's bridge state, or None if it has no reader."""
@@ -2252,18 +2301,32 @@ class InterventionMixin:
             open_was = self._pairing_seen.get(stack)
             self._pairing_seen[stack] = pairing
             if open_was is not None and open_was != pairing:
+                # Dated from the bridge's own message when its reader
+                # heard one lately, not from this check, which can come
+                # up to a minute later (rule FRZ-16). Never before the
+                # change it follows: an opening after the last close, a
+                # close after its opening.
+                at = _pairing_moment(
+                    reader,
+                    now,
+                    self._pairing_closed_at.get(stack)
+                    if pairing
+                    else self._pairing_open_at.get(stack),
+                )
                 if pairing:
-                    self._pairing_open_at[stack] = now
+                    self._pairing_open_at[stack] = at
                     self._record_system_event(
-                        SYS_PAIRING_OPEN, scope=stack
+                        SYS_PAIRING_OPEN, scope=stack, when=at
                     )
                 else:
                     since = self._pairing_open_at.pop(stack, None)
+                    self._pairing_closed_at[stack] = at
                     self._record_system_event(
                         SYS_PAIRING_CLOSED,
                         scope=stack,
+                        when=at,
                         duration=(
-                            now - since if since is not None else None
+                            max(0.0, at - since) if since is not None else None
                         ),
                     )
 

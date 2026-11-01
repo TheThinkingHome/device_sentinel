@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.15 (2026-10-30)
+# File: narrative.py, Version: 0.27.17 (2026-11-01)
 
 """How to say what happened: the composer.
 
@@ -122,6 +122,13 @@ class NarrativeMixin:
         stored = row.get(INC_NAME)
         if not device_id:
             return stored or "unknown device"
+        # An outage's own row names an integration or a coordinator by
+        # its short id ("matter", "z2m"), which a person reads by the
+        # name Home Assistant shows: "Matter acknowledged at 9:30 AM"
+        # (rule GEN-07).
+        if str(device_id).startswith("upstream:"):
+            short = stored or str(device_id).split(":", 1)[1]
+            return str(self._integration_title(short))  # type: ignore[attr-defined]
         current = self._trim_name(device_id)
         if current != device_id:
             return current

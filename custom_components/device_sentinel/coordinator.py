@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.16 (2026-10-31)
+# File: coordinator.py, Version: 0.27.17 (2026-11-01)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -919,6 +919,9 @@ class DeviceSentinelCoordinator(
         self._study_unsub = None
         self._study_watching: dict[str, str] = {}
         self._pairing_open_at: dict[str, float] = {}
+        # When each stack's last pairing window closed, so a reopen is
+        # never dated before it (rule FRZ-16).
+        self._pairing_closed_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # The first is how many devices this boot reset after an
         # unclean stop, held until setup succeeds so the system event
@@ -4584,6 +4587,7 @@ class DeviceSentinelCoordinator(
         "_bridge_recovering_at",
         "_integration_recovering_at",
         "_pairing_open_at",
+        "_pairing_closed_at",
         "_handled_at",
         "_taint_consumed_at",
         "_commanded_at",

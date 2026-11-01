@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.16 (2026-10-31)
+# File: report_brief.py, Version: 0.27.17 (2026-11-01)
 
 """The daily brief: the one report written for a person.
 
@@ -804,6 +804,12 @@ class BriefMixin:
         if device_id:
             return str(self._device_name(device_id))  # type: ignore[attr-defined]
         return "The system"
+
+    def _live_device(self, device_id: str | None) -> str | None:
+        """The device, unless it has since been removed from Home Assistant."""
+        if device_id is None or self.is_held(device_id):  # type: ignore[attr-defined]
+            return None
+        return device_id
 
     @staticmethod
     def _system_event_device(row: dict[str, Any]) -> str | None:
@@ -1784,7 +1790,9 @@ class BriefMixin:
                     spans,
                     self._watched.get(device_id),
                     self._device_stack(device_id),
-                    opened[INC_WHEN],
+                    # When the device went, not when it was listed
+                    # minutes later (rules BRIEF-05, UNAV-07).
+                    self._began_at(opened),
                     resolved[INC_WHEN] if resolved is not None else None,
                     device_id,
                 )
@@ -1812,7 +1820,7 @@ class BriefMixin:
             # back during the same event, a pairing window say, failed
             # each on its own, so each keeps its own sentence and times
             # (rule BRIEF-05).
-            if not window.in_effect_at(opened[INC_WHEN]):
+            if not window.in_effect_at(self._began_at(opened)):
                 told.append(self._compose_flood(key, [(opened, resolved)], spans))
                 owners.append({device_id})
                 continue
@@ -2228,7 +2236,9 @@ class BriefMixin:
                 wins,
                 self._watched.get(device_id),
                 self._device_stack(device_id),
-                when,
+                # When the device went, not when it was listed (rule
+                # BRIEF-05).
+                self._began_at(row),
                 closed,
                 device_id,
             )
@@ -2244,15 +2254,22 @@ class BriefMixin:
                     "n": 0,
                     "days": {},
                     "whens": [],
+                    "listed": [],
                     "durations": [],
                 },
             )
             entry["n"] += 1
-            entry["whens"].append(when)
+            # Its day and its length from when the device went, as its
+            # attribution above (rule BRIEF-05). Its companions from when
+            # it was listed: devices one cause takes down go seconds
+            # apart and are listed on the same check (rule BRIEF-09).
+            began = self._began_at(row)
+            entry["whens"].append(began)
+            entry["listed"].append(when)
             if closed is not None:
-                entry["durations"].append(closed - when)
+                entry["durations"].append(max(0.0, closed - began))
             day = dt_util.as_local(
-                dt_util.utc_from_timestamp(when)
+                dt_util.utc_from_timestamp(began)
             ).strftime("%Y-%m-%d")
             entry["days"][day] = entry["days"].get(day, 0) + 1
         table: list[dict[str, Any]] = []
@@ -2366,12 +2383,12 @@ class BriefMixin:
         whole record. A partner that matched one time in six is a
         coincidence wearing the same column as a cause.
         """
-        mine = [int(moment) for moment in entry["whens"]]
+        mine = [int(moment) for moment in entry["listed"]]
         partners: list[str] = []
         for key, other in found.items():
             if other is entry or key[0] == entry.get("device_id"):
                 continue
-            theirs = {int(moment) for moment in other["whens"]}
+            theirs = {int(moment) for moment in other["listed"]}
             matched = sum(1 for second in mine if second in theirs)
             if matched < 2 and len(mine) > 1:
                 continue
@@ -2759,25 +2776,29 @@ class BriefMixin:
                 "| TIME | DEVICE | WHAT HAPPENED |",
                 "|---|---|---|",
             ]
-            merged: list[tuple[float, str, str]] = [
+            merged: list[tuple[float, str | None, str, str]] = [
                 # An unavailable opening at when the device went.
-                (self._began_at(row),
-                 self._note_brief_device(
-                     row.get(INC_DEVICE_ID), self._told_name(row)
-                 ),
-                 self._brief_phrase(row))
+                (self._began_at(row), row.get(INC_DEVICE_ID),
+                 self._told_name(row), self._brief_phrase(row))
                 for row in shown
             ] + [
                 # Each cell through the report escape: a device name, a
                 # name typed on its page, a battery typed into Other or
                 # an integration's title can hold a pipe or a line
                 # break, which would split the row.
-                (row[SYS_WHEN], self._report_cell(self._system_event_who(row)),
+                # A device since removed from Home Assistant has no page
+                # to link to (rule WATCH-07).
+                (row[SYS_WHEN], self._live_device(self._system_event_device(row)),
+                 self._system_event_who(row),
                  self._report_cell(self._system_event_phrase(row)))
                 for row in sys_events
             ]
             merged.sort(key=lambda item: item[0], reverse=True)
-            for moment, who, what in merged:
+            # Each name noted with its device, or none, in the order the
+            # rows are printed, so a row never takes the link of another
+            # row of the same name (rule BRIEF-13).
+            for moment, row_device, name, what in merged:
+                who = self._note_brief_device(row_device, name)
                 lines.append(
                     f"| {self._brief_log_moment(moment)} | {who} | "
                     f"{what} |"
@@ -2864,6 +2885,10 @@ class BriefMixin:
         so a name two devices share still links each row to its own.
         """
         shown = self._report_cell(name)
+        # An outage's own row belongs to the house, not to a device, so
+        # it has no device page to link to.
+        if device_id is not None and str(device_id).startswith("upstream:"):
+            device_id = None
         self._brief_devices.setdefault(shown, []).append(device_id)
         return shown
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.16 (2026-10-31)
+# File: dashboard.py, Version: 0.27.17 (2026-11-01)
 
 """What the dashboard reads from the coordinator.
 
@@ -120,7 +120,10 @@ from .const import (
     DEV_FIRMWARE_HISTORY,
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
+    DEV_DOWN_BEGAN_AS,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_UNKNOWN,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
@@ -874,6 +877,26 @@ def _firmware(device: Any, record: dict[str, Any]) -> dict[str, Any] | None:
 
 
 class DeviceViewMixin:
+
+    def _went_at(self, record: dict[str, Any]) -> str | None:
+        """When an unavailable or unknown device went, else None (rule DASH-08).
+
+        The device's saved outage start first, which is set when it went
+        as a whole; then the verdict's own start, but only for trouble
+        that began this way. A device frozen before it went keeps its
+        freeze as the verdict's start, hours earlier, so without a saved
+        outage start it gives no time and the page keeps its freeze line.
+        """
+        category = record.get(DEV_FROZEN_CATEGORY)
+        if category not in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN):
+            return None
+        saved = self._saved_down_since(record)  # type: ignore[attr-defined]
+        if saved is not None:
+            return _iso(saved[0])
+        if record.get(DEV_DOWN_BEGAN_AS) != category:
+            return None
+        verdict = self._verdict_start(record)  # type: ignore[attr-defined]
+        return _iso(verdict[0]) if verdict is not None else None
     """The Devices tab and each device's page."""
 
     def _device_rhythm(self, record: dict[str, Any]) -> tuple[float | None, list[int]]:
@@ -1438,6 +1461,13 @@ class DeviceViewMixin:
                     else ""
                 ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
+                # When an unavailable or unknown device went, for the
+                # page's "Unavailable since" and where its bar stops
+                # (rule DASH-08); None otherwise. The device's own outage
+                # start comes first: a device frozen before it went keeps
+                # its freeze as the verdict's start, which is not when it
+                # went.
+                "since": self._went_at(record),
                 # A device judged by its connection alone: "connected" or
                 # "dropped", else None.
                 # "not known" when it cannot be read, or the device

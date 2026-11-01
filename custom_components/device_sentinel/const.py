@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.16 (2026-10-31)
+# File: const.py, Version: 0.27.17 (2026-11-01)
 
 """Constants for the Device Sentinel integration."""
 
@@ -155,13 +155,12 @@ Z2M_TOPIC_DEVICES = "bridge/devices"
 # device_leave, device_joined, device_interview (started, then
 # successful) and device_announce; a device rejoining on its own sends
 # device_announce only, and the coordinator restarting sends nothing
-# (measured with a probe on a live bridge). So a join, or an interview
-# started while pairing is open, marks the one device re-paired
+# (measured with a probe on a live bridge). So a join while pairing is
+# open marks the one device re-paired. An interview alone does not:
+# Zigbee2MQTT interviews a half-interviewed device again on its own
 # (rule FRZ-05).
 Z2M_TOPIC_EVENT = "bridge/event"
 Z2M_EVENT_JOINED = "device_joined"
-Z2M_EVENT_INTERVIEW = "device_interview"
-Z2M_INTERVIEW_STARTED = "started"
 # The Z2M discovery identifier reads ('mqtt', 'zigbee2mqtt_0x282c...'),
 # so the IEEE address follows this mark. It is the base topic by
 # default and does not follow a renamed one, which is why it is a
