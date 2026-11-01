@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.27.15 (2026-10-30)
+# File: tests/test_dashboard_brief.py, Version: 0.27.17 (2026-11-01)
 
 """The Daily Brief tab, and stepping back through the days
 (rules BRIEF-07, BRIEF-10).
@@ -164,12 +164,15 @@ async def test_it_is_admin_only(hass: HomeAssistant, hass_ws_client, hass_read_o
 # ==================================================================
 
 async def test_a_day_ends_at_the_next_midnight_across_a_clock_change(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer
 ):
     """A finished day ends at the next local midnight, not midnight plus 24
     hours: that would lose the last hour of the 25-hour day the clocks go
     back, and repeat the next day's first hour on the 23-hour day they go
     forward."""
+    # The clock is pinned after all three days, so none of them is today
+    # (rule CODE-13).
+    freezer.move_to("2026-12-15T12:00:00+00:00")
     await hass.config.async_set_time_zone("America/Chicago")
     coord = await setup_coordinator(hass)
     for day, hours in (

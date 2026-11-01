@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_window.py, Version: 0.27.10 (2026-10-27)
+# File: test_brief_window.py, Version: 0.27.17 (2026-11-01)
 
 """Which window the brief covers, and where it is written (rules
 BRIEF-10, BRIEF-14).
@@ -58,10 +58,14 @@ def _text(path):
 
 
 async def test_the_closed_window_is_the_one_that_just_ended(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer
 ):
     """It finishes the day behind it rather than the one starting, so
     the completed brief covers brief hour to brief hour."""
+    # The clock is pinned: on the day the clocks change the window is 23
+    # or 25 hours, and the test would fail on the wall clock alone (rule
+    # CODE-13).
+    freezer.move_to("2026-08-04T12:00:00-05:00")
     coord = await setup_coordinator(hass)
     start, end = coord._brief_close_bounds()
     assert end - start == 86400.0
@@ -90,8 +94,12 @@ async def test_the_schedule_follows_the_configured_time(
 
 
 async def test_a_nonsense_time_falls_back_rather_than_raising(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer
 ):
+    # The clock is pinned: on the day the clocks change the window is 23
+    # or 25 hours, and the test would fail on the wall clock alone (rule
+    # CODE-13).
+    freezer.move_to("2026-08-04T12:00:00-05:00")
     coord = await setup_coordinator(hass, {CONF_REMINDER_TIME: "not a time"})
     assert coord._brief_hour_minute() == (8, 0)
     start, end = coord._brief_close_bounds()
@@ -103,6 +111,10 @@ async def test_the_scheduled_write_survives_a_day_boundary(
 ):
     """Whatever the clock says when the callback lands, the window it
     closes is the one that ended at the configured hour."""
+    # The clock is pinned: on the day the clocks change the window is 23
+    # or 25 hours, and the test would fail on the wall clock alone (rule
+    # CODE-13).
+    freezer.move_to("2026-08-04T12:00:00-05:00")
     coord = await setup_coordinator(hass, {CONF_REMINDER_TIME: "07:00:00"})
     freezer.tick(timedelta(seconds=2))
     start, end = coord._brief_close_bounds()

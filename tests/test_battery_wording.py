@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_wording.py, Version: 0.27.17 (2026-11-01)
 
 """What the brief says when a battery level jumps (rule BAT-06).
 
@@ -106,7 +106,9 @@ async def test_the_change_is_told_on_the_devices_own_line(hass: HomeAssistant):
     path = hass.config.path("device_sentinel", "daily_brief.html")
     text = await hass.async_add_executor_job(lambda: open(path, encoding="utf-8").read())
     cells = re.sub(r"<[^>]+>", "|", text)
-    assert re.search(r"Living Room Curtain\|+battery replaced or recharged \(54% to 86%\)", cells)
+    # The device's row carries its link and area, as any device's row
+    # in the brief does (rule BRIEF-13).
+    assert re.search(r"Living Room Curtain(?: \[[^\]]+\])?\|+battery replaced or recharged \(54% to 86%\)", cells)
     assert not re.search(r"The system\|+battery replaced", cells)
 
 

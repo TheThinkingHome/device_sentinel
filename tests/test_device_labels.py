@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_device_labels.py, Version: 0.27.17 (2026-11-01)
 
 """A device's name in an HTML report: its area, and a link to it
 (rules BRIEF-13, CODE-10).
@@ -256,6 +256,127 @@ async def test_a_name_that_repeats_keeps_its_own_device(
     rendered = [coord._brief_cells(line)[0] for line in lines]
     assert f"/device-sentinel/device/{first.id}" in rendered[0]
     assert f"/device-sentinel/device/{second.id}" in rendered[1]
+
+
+async def test_an_outage_row_has_no_link_and_takes_none(
+    hass: HomeAssistant, freezer
+):
+    """An outage's own row reads "Zigbee2MQTT" and belongs to the house,
+    so it links nowhere, and a system event named like a device's row
+    keeps that row's link where it is (rule BRIEF-13)."""
+    device, _ = register_device(hass, "hall1", name="Hall Light")
+    coord = await setup_coordinator(hass)
+    await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
+
+    coord._brief_devices = {}
+    coord._brief_cursor = {}
+    outage = f"| {coord._note_brief_device('upstream:z2m', 'Zigbee2MQTT')} | a |"
+    event = f"| {coord._note_brief_device(None, 'Hall Light')} | b |"
+    own = f"| {coord._note_brief_device(device.id, 'Hall Light')} | c |"
+    cells = [coord._brief_cells(line)[0] for line in (outage, event, own)]
+    assert "<a " not in cells[0] and "upstream" not in cells[0], cells[0]
+    assert "<a " not in cells[1], cells[1]
+    assert f"/device-sentinel/device/{device.id}" in cells[2], cells[2]
+
+
+async def test_two_devices_of_one_name_keep_their_links_in_the_sorted_table(
+    hass: HomeAssistant, freezer
+):
+    """Last 24 Hours prints its rows newest first, whichever list they
+    came from. Two devices named "Motion Sensor": the newer row, a battery
+    change on the second, links to the second, and the older row, the
+    first going unavailable, to the first (rule BRIEF-13)."""
+    import re
+
+    from custom_components.device_sentinel.const import (
+        DATA_INCIDENTS,
+        DATA_SYSTEM_EVENTS,
+        INC_DEVICE_ID,
+        INC_EVENT,
+        INC_KIND,
+        INC_NAME,
+        INC_WHEN,
+        INCIDENT_OPENED,
+        SYS_BATTERY_REPLACED,
+        SYS_DETAIL,
+        SYS_KIND,
+        SYS_SCOPE,
+        SYS_WHEN,
+        TODO_KIND_UNAVAILABLE,
+    )
+    from homeassistant.util import dt as dt_util
+
+    first, _ = register_device(hass, "same1", name="Motion Sensor")
+    second, _ = register_device(hass, "same2", name="Motion Sensor")
+    coord = await setup_coordinator(hass)
+    await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_INCIDENTS] = [
+        {
+            INC_DEVICE_ID: first.id,
+            INC_NAME: "Motion Sensor",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: now - 3600,
+        }
+    ]
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 600,
+            SYS_KIND: SYS_BATTERY_REPLACED,
+            SYS_SCOPE: "device",
+            SYS_DETAIL: f"{second.id} battery replaced or recharged (17% to 100%)",
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = coord.hass.config.path("device_sentinel/daily_brief.html")
+    with open(page, encoding="utf-8") as handle:
+        html = handle.read()
+    table = html[html.index("Last 24 Hours"):]
+    linked = re.findall(r"/device-sentinel/device/([^\"]+)\">Motion Sensor</a>", table)
+    assert linked[:2] == [second.id, first.id], linked
+
+
+async def test_a_removed_device_s_system_row_links_nowhere(
+    hass: HomeAssistant, freezer
+):
+    """A battery change on a device since removed from Home Assistant
+    stays in Last 24 Hours with its name plain: the device has no page
+    to open (rules BRIEF-13, WATCH-07)."""
+    from custom_components.device_sentinel.const import (
+        DATA_DEVICES,
+        DATA_SYSTEM_EVENTS,
+        DEV_REMOVED_SINCE,
+        SYS_BATTERY_REPLACED,
+        SYS_DETAIL,
+        SYS_KIND,
+        SYS_SCOPE,
+        SYS_WHEN,
+    )
+    from homeassistant.util import dt as dt_util
+
+    gone, _ = register_device(hass, "gone1", name="Old Sensor")
+    coord = await setup_coordinator(hass)
+    await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_DEVICES].setdefault(gone.id, {})[DEV_REMOVED_SINCE] = now - 60
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 600,
+            SYS_KIND: SYS_BATTERY_REPLACED,
+            SYS_SCOPE: "device",
+            SYS_DETAIL: f"{gone.id} battery replaced or recharged (17% to 100%)",
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = coord.hass.config.path("device_sentinel/daily_brief.html")
+    with open(page, encoding="utf-8") as handle:
+        html = handle.read()
+    table = html[html.index("Last 24 Hours"):]
+    assert f"/device-sentinel/device/{gone.id}" not in table
 
 
 async def test_a_brief_rendered_twice_reads_the_same(

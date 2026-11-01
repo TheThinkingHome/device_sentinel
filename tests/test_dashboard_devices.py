@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.16 (2026-10-31)
+# File: tests/test_dashboard_devices.py, Version: 0.27.17 (2026-11-01)
 
 """The Devices tab and each device's page (rules DASH-08, DASH-16).
 
@@ -270,3 +270,51 @@ async def test_both_are_admin_only(hass: HomeAssistant, hass_ws_client, hass_rea
         {"type": "device_sentinel/device", "device_id": device.id},
     ):
         assert (await _call(client, **message))["error"]["code"] == "unauthorized"
+
+
+async def test_the_page_says_when_an_unavailable_device_went(hass: HomeAssistant):
+    """The page reads "Unavailable since" and stops the bar where it
+    stood, so it needs when the device went; a reporting device sends
+    none (rule DASH-08)."""
+    coord, device, _, _ = await _door(hass)
+    record = coord.data["devices"][device.id]
+    assert coord.dashboard_device(device.id)["status"]["since"] is None
+    went = dt_util.utcnow().timestamp() - 600
+    record["frozen_category"] = "unavailable"
+    record["frozen_since"] = went
+    record["down_began_as"] = "unavailable"
+    status = coord.dashboard_device(device.id)["status"]
+    assert status["category"] == "unavailable"
+    assert status["since"] == dt_util.utc_from_timestamp(went).isoformat()
+    record["frozen_category"] = "frozen"
+    assert coord.dashboard_device(device.id)["status"]["since"] is None
+
+
+async def test_a_device_frozen_before_it_went_is_dated_from_when_it_went(
+    hass: HomeAssistant,
+):
+    """A frozen device that later goes unavailable keeps its freeze as the
+    verdict's start; the page says when it went, from the device's own
+    outage start (rule DASH-08)."""
+    coord, device, _, _ = await _door(hass)
+    record = coord.data["devices"][device.id]
+    now = dt_util.utcnow().timestamp()
+    froze, went = now - 22 * 3600, now - 600
+    record["frozen_category"] = "unavailable"
+    record["frozen_since"] = froze
+    record["down_since"] = [went, "unavailable"]
+    status = coord.dashboard_device(device.id)["status"]
+    assert status["since"] == dt_util.utc_from_timestamp(went).isoformat()
+    # With its outage start damaged or cleared, a device frozen first
+    # gives no time rather than the freeze's, and keeps its freeze line.
+    record["down_began_as"] = "frozen"
+    record["down_since"] = ["soon", "unavailable"]
+    assert coord.dashboard_device(device.id)["status"]["since"] is None
+    record["down_since"] = None
+    assert coord.dashboard_device(device.id)["status"]["since"] is None
+    # One that went unavailable without freezing first is dated from
+    # its verdict, which began when it went.
+    record["down_began_as"] = "unavailable"
+    record["frozen_since"] = went
+    status = coord.dashboard_device(device.id)["status"]
+    assert status["since"] == dt_util.utc_from_timestamp(went).isoformat()

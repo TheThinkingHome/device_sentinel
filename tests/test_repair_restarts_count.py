@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_repair_restarts_count.py, Version: 0.27.16 (2026-10-31)
+# File: tests/test_repair_restarts_count.py, Version: 0.27.17 (2026-11-01)
 
 """A re-pair restarts the 42-Day Log-Normal Percentile; a reconfigure or
 a removal does not, since neither changes how a device reports (rule
@@ -261,15 +261,20 @@ async def test_only_the_device_that_joined_starts_its_count_again(hass: HomeAssi
     assert right_rec[DEV_LOGNORMAL_REASON] is None
 
 
-async def test_an_interview_started_while_pairing_counts_as_a_re_pair(hass: HomeAssistant):
+async def test_an_interview_alone_while_pairing_keeps_the_count(hass: HomeAssistant):
+    """Zigbee2MQTT interviews a half-interviewed device again when it
+    announces itself, with nobody re-pairing it. Only a join counts
+    (rule FRZ-05)."""
     device = _z2m(hass, "iv", "0x00000000000000b1")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
     record = _armed(coord, device, 60.0)
     reader = _live_reader(coord)
+    reader._on_event(_event("device_announce", "0x00000000000000b1"))
+    reader._on_event(_event("device_interview", "0x00000000000000b1", "started"))
     reader._on_event(_event("device_interview", "0x00000000000000b1", "successful"))
     assert record[DEV_LOGNORMAL_DAYS] == 35
-    reader._on_event(_event("device_interview", "0x00000000000000b1", "started"))
+    reader._on_event(_event("device_joined", "0x00000000000000b1"))
     del coord._bridge_readers[STACK_Z2M]
     assert record[DEV_LOGNORMAL_DAYS] == 0
 
@@ -383,3 +388,23 @@ async def test_a_window_open_across_a_broker_reconnect_falls_back_to_the_silence
     coord._record_activity(device.id, coord.entry.entry_id)
     del coord._bridge_readers[STACK_Z2M]
     assert record[DEV_LOGNORMAL_DAYS] == 0
+
+
+def test_a_pairing_window_is_dated_from_the_bridge_s_own_message(hass: HomeAssistant):
+    """The reader keeps when the bridge said pairing opened and closed,
+    and the minute check dates the window from it, not from itself
+    (rule FRZ-16). A moment from long ago, or the future, is not used."""
+    from custom_components.device_sentinel.interventions import _pairing_moment
+
+    reader = Z2MBridgeReader(hass)
+    reader._on_state(_msg("online"))
+    assert reader.pairing_changed_at is None
+    reader._on_info(_msg('{"permit_join": false}'))
+    assert reader.pairing_changed_at is None
+    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    opened = reader.pairing_changed_at
+    assert opened is not None
+    assert _pairing_moment(reader, opened + 40.0) == opened
+    assert _pairing_moment(reader, opened + 1000.0) == opened + 1000.0
+    assert _pairing_moment(reader, opened - 5.0) == opened - 5.0
+    assert _pairing_moment(SimpleNamespace(), 123.0) == 123.0

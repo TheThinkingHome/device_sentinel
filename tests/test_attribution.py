@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.27.16 (2026-10-31)
+# File: tests/test_attribution.py, Version: 0.27.17 (2026-11-01)
 
 """What explains an incident, and what a flood reads as
 (rules BRIEF-05, UP-17, UP-06, BRIEF-04).
@@ -36,6 +36,7 @@ from custom_components.device_sentinel.const import (
     INC_EVENT,
     INC_KIND,
     INC_NAME,
+    INC_SINCE,
     INC_WHEN,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -341,6 +342,67 @@ async def test_the_pairing_window_is_named_alike_when_it_opens_and_closes(hass: 
     assert opened.startswith("A Zigbee2MQTT pairing window opened at "), opened
     assert closed.startswith("The Zigbee2MQTT pairing window closed at "), closed
     assert "z2m" not in opened + closed
+
+
+async def test_an_outage_is_matched_to_when_the_device_went_not_when_it_was_listed(
+    hass: HomeAssistant,
+):
+    """An unavailable device is listed up to three minutes after it went.
+    Two devices that went during a short broker outage, and were listed
+    after it ended, are still told as the outage's, together (rules
+    BRIEF-05, UNAV-07)."""
+    coord = await setup_coordinator(hass)
+    pairs = []
+    for device_id in ("a", "b"):
+        coord._watched[device_id] = "mqtt"
+        opened = _incident(device_id, f"Device {device_id}", T0 + 1020 + 150)
+        opened[INC_SINCE] = T0 + 900
+        closed = _incident(device_id, f"Device {device_id}", T0 + 3000, event=INCIDENT_RESOLVED)
+        pairs.append((opened, closed))
+    told = coord._tell_episodes(pairs, BROKER_OUTAGE)
+    assert len(told) == 1 and told[0].startswith("2 devices"), told
+    assert "MQTT broker" in told[0], told
+
+
+async def test_the_stored_cause_matches_when_the_device_went_as_the_brief_does(
+    hass: HomeAssistant, monkeypatch
+):
+    """The recovery's stored cause, and the automation event built from
+    it, ask attribution about when the device went, as the brief does,
+    so the two cannot disagree (rule BRIEF-05)."""
+    coord = await setup_coordinator(hass)
+    coord._watched["a"] = "mqtt"
+    opened = _incident("a", "Device a", T0 + 1170)
+    opened[INC_SINCE] = T0 + 900
+    coord.data[DATA_INCIDENTS] = [opened]
+    asked: list[float] = []
+
+    def spy(spans, stack, own, began, *rest):
+        asked.append(began)
+
+    monkeypatch.setattr(attribution, "attribute", spy)
+    coord._recovery_cause("a", T0 + 1170)
+    assert asked == [T0 + 900]
+    # An opening with no "went" is dated when it was written.
+    coord.data[DATA_INCIDENTS] = [_incident("a", "Device a", T0 + 1170)]
+    coord._recovery_cause("a", T0 + 1170)
+    assert asked[-1] == T0 + 1170
+
+
+async def test_an_outage_row_is_named_by_its_integration(hass: HomeAssistant):
+    """A brief once read "matter acknowledged at 9:30 AM": an outage's
+    own row names the integration as Home Assistant does (rule GEN-07)."""
+    coord = await setup_coordinator(hass)
+    row = {
+        INC_DEVICE_ID: "upstream:z2m",
+        INC_NAME: "z2m",
+        INC_KIND: "upstream",
+        INC_EVENT: "action",
+        INC_WHEN: T0,
+        INC_CAUSE: "acknowledged",
+    }
+    told = coord._compose_event(row)
+    assert told.startswith("Zigbee2MQTT acknowledged at "), told
 
 
 # The two shapes a house produces every night (rule BRIEF-05).

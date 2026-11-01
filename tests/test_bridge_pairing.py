@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.27.10 (2026-10-27)
+# File: test_bridge_pairing.py, Version: 0.27.17 (2026-11-01)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override (rules
 STACK-01, STACK-03, FRZ-16).
@@ -746,6 +746,98 @@ async def test_a_pairing_window_is_recorded_with_its_span(
     closed = _kinds(coord, SYS_PAIRING_CLOSED)
     assert len(closed) == 1
     assert closed[0]["duration"] >= 60
+
+
+async def test_a_pairing_window_is_dated_when_the_bridge_says_so(
+    hass: HomeAssistant, freezer
+):
+    """A window Zigbee2MQTT opened at 8:32:44 and closed at 8:33:50 was
+    told as 8:33:24 and 8:34:24, "after 60s", the minute check's own
+    times. The window is dated from the bridge's message, and its
+    length is the bridge's (rule FRZ-16)."""
+    from homeassistant.util import dt as dt_util
+
+    coord = await setup_coordinator(hass)
+    reader = _running_reader(hass)
+    coord._bridge_readers[STACK_Z2M] = reader
+    await coord._on_render_tick(None)
+
+    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    opened_at = dt_util.utcnow().timestamp()
+    freezer.tick(40)
+    await coord._on_render_tick(None)
+    opened = _kinds(coord, SYS_PAIRING_OPEN)
+    assert len(opened) == 1
+    assert abs(opened[0]["when"] - opened_at) < 1.0, (opened[0]["when"], opened_at)
+
+    freezer.tick(26)
+    reader._on_info(_msg('{"permit_join": false}'))
+    closed_at = dt_util.utcnow().timestamp()
+    freezer.tick(34)
+    await coord._on_render_tick(None)
+    closed = _kinds(coord, SYS_PAIRING_CLOSED)
+    assert len(closed) == 1
+    assert abs(closed[0]["when"] - closed_at) < 1.0
+    assert abs(closed[0]["duration"] - 66.0) < 1.0, closed[0]["duration"]
+
+
+async def test_a_window_closed_by_its_bridge_going_offline_is_dated_by_the_check(
+    hass: HomeAssistant, freezer
+):
+    """A bridge that goes offline while pairing is open sends no close,
+    so the reader's moment is still the opening. The close is dated by
+    the check, never at the opening with no length (rule FRZ-16)."""
+    from homeassistant.util import dt as dt_util
+
+    coord = await setup_coordinator(hass)
+    reader = _running_reader(hass)
+    coord._bridge_readers[STACK_Z2M] = reader
+    await coord._on_render_tick(None)
+    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    opened_at = dt_util.utcnow().timestamp()
+    freezer.tick(40)
+    await coord._on_render_tick(None)
+    freezer.tick(60)
+    reader._on_state(_msg("offline"))
+    freezer.tick(20)
+    checked_at = dt_util.utcnow().timestamp()
+    await coord._on_render_tick(None)
+    closed = _kinds(coord, SYS_PAIRING_CLOSED)
+    assert len(closed) == 1
+    assert abs(closed[0]["when"] - checked_at) < 1.0, (closed[0]["when"], opened_at)
+    assert abs(closed[0]["duration"] - 120.0) < 1.0, closed[0]["duration"]
+
+
+async def test_a_window_reopened_after_a_bridge_restart_is_not_dated_before_its_close(
+    hass: HomeAssistant, freezer
+):
+    """After the bridge drops while pairing is open, Zigbee2MQTT comes back
+    online before it repeats its info, so the reader still says pairing.
+    That reopening is dated by the check, never at the old opening before
+    the close it follows (rule FRZ-16)."""
+    from homeassistant.util import dt as dt_util
+
+    coord = await setup_coordinator(hass)
+    reader = _running_reader(hass)
+    coord._bridge_readers[STACK_Z2M] = reader
+    await coord._on_render_tick(None)
+    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    freezer.tick(40)
+    await coord._on_render_tick(None)
+    freezer.tick(20)
+    reader._on_state(_msg("offline"))
+    freezer.tick(20)
+    await coord._on_render_tick(None)
+    freezer.tick(20)
+    reader._on_state(_msg("online"))
+    freezer.tick(10)
+    checked_at = dt_util.utcnow().timestamp()
+    await coord._on_render_tick(None)
+    opened = _kinds(coord, SYS_PAIRING_OPEN)
+    closed = _kinds(coord, SYS_PAIRING_CLOSED)
+    assert len(opened) == 2 and len(closed) == 1, (opened, closed)
+    assert opened[1]["when"] > closed[0]["when"], (opened[1]["when"], closed[0]["when"])
+    assert abs(opened[1]["when"] - checked_at) < 1.0
 
 
 # ------------------------------------- the bridge hand-back and recovery

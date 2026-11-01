@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.27.15 (2026-10-30)
+# File: test_brief_wording.py, Version: 0.27.17 (2026-11-01)
 
 """How the brief says things: prose, device lines, pairing
 (rules BRIEF-02, BRIEF-03, BRIEF-04, BRIEF-06, BRIEF-09, DEV-02).
@@ -58,6 +58,7 @@ from custom_components.device_sentinel.const import (
     INC_EVENT,
     INC_KIND,
     INC_NAME,
+    INC_SINCE,
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_KIND_FROZEN,
@@ -1117,6 +1118,81 @@ async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
     rows = coord._repeat_offender_rows(now)
     assert len(rows) == 1
     assert len(rows[0]["days"]) == 1
+
+
+async def test_a_repeat_row_is_timed_from_when_the_device_went(
+    hass: HomeAssistant,
+):
+    """An unavailable device is listed minutes after it went. Its row's
+    typical length counts from when it went, as its attribution does,
+    not from when it was listed (rule BRIEF-05)."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "ro5", name="Late Listed")
+    coord._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    for index in range(3):
+        listed = now - (index + 1) * 7200.0
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Late Listed",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: listed,
+                INC_SINCE: listed - 150.0,
+                INC_DURATION: None,
+            }
+        )
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Late Listed",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_RESOLVED,
+                INC_WHEN: listed + 600.0,
+                INC_DURATION: 750.0,
+            }
+        )
+    coord.data[DATA_INCIDENTS] = sorted(incidents, key=lambda row: row[INC_WHEN])
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    rows = coord._repeat_offender_rows(now)
+    assert len(rows) == 1
+    assert rows[0]["durations"] == [750.0, 750.0, 750.0]
+    assert rows[0]["typical"] == coord._human_span(750.0)
+
+
+async def test_devices_that_went_seconds_apart_are_still_companions(
+    hass: HomeAssistant,
+):
+    """Two devices behind one router go a few seconds apart and are listed
+    on the same check. The WITH column still names each as the other's
+    companion (rule BRIEF-09)."""
+    coord = await setup_coordinator(hass)
+    first, _ = register_device(hass, "ro6", name="Hall Child")
+    second, _ = register_device(hass, "ro7", name="Stair Child")
+    coord._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    for index in range(3):
+        listed = now - (index + 1) * 7200.0
+        for device, lead in ((first, 150.0), (second, 137.0)):
+            incidents.append(
+                {
+                    INC_DEVICE_ID: device.id,
+                    INC_NAME: "x",
+                    INC_KIND: TODO_KIND_UNAVAILABLE,
+                    INC_EVENT: INCIDENT_OPENED,
+                    INC_WHEN: listed,
+                    INC_SINCE: listed - lead,
+                    INC_DURATION: None,
+                }
+            )
+    coord.data[DATA_INCIDENTS] = sorted(incidents, key=lambda row: row[INC_WHEN])
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    rows = {row["device_id"]: row for row in coord._repeat_offender_rows(now)}
+    assert "Stair Child, every time" in rows[first.id]["with"], rows[first.id]["with"]
+    assert "Hall Child, every time" in rows[second.id]["with"], rows[second.id]["with"]
 
 
 async def test_the_repeat_floor_is_the_slider(hass: HomeAssistant):
