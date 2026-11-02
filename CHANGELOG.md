@@ -2,15 +2,13 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
-## [0.27.17](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.17), November 1, 2026 (Pre-release)
+## [0.27.17](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.17), November 1, 2026
 
-The dashboard is finished in Simple and Advanced. A device's status bar turns yellow once it is late but not yet frozen, and an unavailable device is gray and states the time it became unavailable. A Zigbee2MQTT pairing window shows the times Zigbee2MQTT gave it, and the Daily Brief matches an outage to when a device went, not when it was listed, and names each integration as Home Assistant does.
+Bug fixes and a finished dashboard. Simple shows only what is necessary to act on, and Advanced adds the trends, charts and setup. Each device's page groups its details under Power, Signal, Reporting and Actions, and its status bar turns yellow when the device is late and gray when it is unavailable. There are fewer false alarms: down times are truer, re-pairing one device restarts only that device, and a Matter button nobody has pressed is no longer reported frozen. Battery Trends gives each falling battery's time left as a range, and the Daily Brief tells separate failures separately and names each integration as Home Assistant does.
 
-## [0.27.16](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.16), October 31, 2026 (Pre-release)
+Co-authored with Tim Plas (@tplas).
 
-Each device's page reads more clearly and names why its 42-day rhythm started again. Re-pairing one Zigbee2MQTT device restarts that device alone, and the Daily Brief tells two separate failures in two sentences even when both came back during the same pairing window.
-
-## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026 (Latest)
+## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026
 
 A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
