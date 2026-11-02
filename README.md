@@ -54,6 +54,8 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 | **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
 | **Weak or stuck signal** | Links degrade before they fail. |
 
+![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
+
 ![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Accelerating%20-%20Door%202nd%20Bedroom.png)
 
 ![The same device's radio link against its own normal and its bad-day line](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Signal%20Failing%20-%20Temperature%20Living%20Room.png)
