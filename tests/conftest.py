@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.27.10 (2026-10-27)
+# File: conftest.py, Version: 0.27.17 (2026-11-02)
 
 """Shared test fixtures: clean report folders, the fleets, and a failure
 on any deprecation Home Assistant reports (rules REL-03, CODE-16).
@@ -289,6 +289,19 @@ def fleet_param(*parts: str, id: str, clocks: tuple[str, ...] | None = None):
 # ------------------------------------------------------ the real disk
 
 
+@pytest.fixture(autouse=True)
+def _no_stale_files_on_disk(hass):
+    """On Home Assistant 2026.11 a store made while real_disk was in place
+    keeps writing to disk when its test's Home Assistant stops, after
+    real_disk has swept; clear those leftovers before every test."""
+    directory = hass.config.path(".storage")
+    if os.path.isdir(directory):
+        for name in os.listdir(directory):
+            if name.startswith("device_sentinel"):
+                os.remove(os.path.join(directory, name))
+    yield
+
+
 @pytest.fixture
 def real_disk(hass):
     """Put the real Store load and write back for one test.
@@ -317,6 +330,11 @@ def real_disk(hass):
     mocked_write = ha_storage.Store._async_write_data
     ha_storage.Store._async_load = fresh.Store._async_load
     ha_storage.Store._async_write_data = fresh.Store._async_write_data
+    # Home Assistant 2026.11 moved the file reads and writes into
+    # _FileStoreIO, which the harness replaces; put the real one back too.
+    mocked_io = getattr(ha_storage, "_FileStoreIO", None)
+    if mocked_io is not None:
+        ha_storage._FileStoreIO = fresh._FileStoreIO
     directory = hass.config.path(".storage")
     os.makedirs(directory, exist_ok=True)
 
@@ -331,4 +349,6 @@ def real_disk(hass):
     finally:
         ha_storage.Store._async_load = mocked_load
         ha_storage.Store._async_write_data = mocked_write
+        if mocked_io is not None:
+            ha_storage._FileStoreIO = mocked_io
         _sweep()

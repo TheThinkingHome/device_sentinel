@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_answers_store.py, Version: 0.27.17 (2026-11-02)
 
 """The one file of pencil answers, its last-good copy, and the move
 from the old power file (rules STOR-20, STOR-01, WATCH-07).
@@ -22,6 +22,7 @@ test_backup_integrity.py does.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import glob
 import json
 import os
@@ -47,6 +48,7 @@ from .helpers import register_device, registry_settled, setup_coordinator, setup
 REAL_LOAD = Store._async_load
 REAL_WRITE = Store._async_write_data
 REAL_REMOVE = Store.async_remove
+REAL_IO = getattr(ha_storage, "_FileStoreIO", None)
 
 SET = "2026-10-05T12:00:00+00:00"
 MAKER, MODEL, MODEL_ID = "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1"
@@ -403,8 +405,11 @@ def real_disk(hass, hass_storage, _no_files):
     async def list_storage():
         await ha_storage.get_internal_store_manager(hass).async_initialize()
 
+    for path in glob.glob(_disk(hass, "device_sentinel") + "*"):
+        os.remove(path)
     with (patch.object(Store, "_async_load", REAL_LOAD), patch.object(Store, "_async_write_data", REAL_WRITE),
-          patch.object(Store, "async_remove", REAL_REMOVE)):
+          patch.object(Store, "async_remove", REAL_REMOVE),
+          patch.object(ha_storage, "_FileStoreIO", REAL_IO) if REAL_IO is not None else contextlib.nullcontext()):
         yield list_storage
     for path in glob.glob(_disk(hass, "device_sentinel") + "*"):
         os.remove(path)
