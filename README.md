@@ -18,7 +18,7 @@
 &nbsp;
 &nbsp;
 
-![The Device Sentinel dashboard: every watched device with its type, its last report, its learned rhythm and its freeze window](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Dashboard%20Devices.png)
+![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
 
 &nbsp;
 &nbsp;
@@ -53,8 +53,6 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 | **Never reported** | Devices that have never sent a reading, including ones that died before you installed Device Sentinel. |
 | **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
 | **Weak or stuck signal** | Links degrade before they fail. |
-
-![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
 
 ![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Accelerating%20-%20Door%202nd%20Bedroom.png)
 
