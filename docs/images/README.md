@@ -88,12 +88,6 @@ A device's page: its status bar, with how long since its last report against its
 
 ![Dashboard Device Detail](./Dashboard%20Device%20Detail.png)
 
-### Dashboard Device Detail Trouble Frozen.png
-
-The top of a frozen device's page. The status bar leads with the problem: how long the device has been silent and how far past its window it is.
-
-![Dashboard Device Detail Trouble Frozen](./Dashboard%20Device%20Detail%20Trouble%20Frozen.png)
-
 ### Dashboard Device Detail Identity.png
 
 The Identity section: name, type, device ID, area, labels, maker, model, integration, how it connects, and its address, followed by the Power, Signal and Last seen groups, the wait rule and the mute buttons. A pencil marks what you can change.
