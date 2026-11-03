@@ -10,24 +10,24 @@
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)
 
-**Device Sentinel tells you when a device in your house stops working, even while Home Assistant still shows its last value.**
+**Device Sentinel tells you when a device in your house has stops reporting, has a falling battery, or a low signal, even while Home Assistant still shows its last value.**
 
 ![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
 
 ## What It Does
 
-Home Assistant can't tell a quiet device from a dead one: a door sensor with a dead battery keeps reading "closed". Device Sentinel learns how often each device reports and tells you when one goes quiet for longer than its own usual. It also watches batteries and radio links, each against that device's own history.
+Home Assistant can't tell a quiet device from a dead one: a door sensor with a dead battery keeps reading "closed". Device Sentinel learns how often each device in your home reports and tells you when one goes quiet for longer than its normal. It also watches batteries and radio links, each against that device's own history.
 
 | Problem | What Device Sentinel reports |
 |---|---|
 | **Frozen** | A device that stopped reporting while still showing a value. |
 | **Unavailable** | A device Home Assistant has marked unavailable. |
-| **Flapping** | A device that drops out and comes back again and again, as one problem. |
+| **Flapping** | A device that drops out and comes back again and again. |
 | **Never reported** | A device that has never sent a reading. |
-| **Low or falling battery** | A battery under your threshold, or draining fast enough to reach it within your warning time. |
-| **Weak or stuck signal** | A radio link weaker than its own normal, or a reading stuck at one value. |
+| **Low or falling battery** | A battery under your threshold, or draining fast enough to reach it soon. |
+| **Weak or stuck signal** | A radio link weaker than normal, or a reading stuck at one value. |
 
-When a Zigbee coordinator, the MQTT broker or your Wi-Fi network goes down, Device Sentinel reports that one failure, not each device behind it.
+When a Zigbee coordinator, the MQTT broker or your Wi-Fi network goes down, Device Sentinel reports that one failure, not each of its devices individually.
 
 The story behind Device Sentinel, with more pictures, is in the [overview](docs/OVERVIEW.md).
 
@@ -45,11 +45,11 @@ Device Sentinel is in the HACS default store.
 
 ## Your First Two Weeks
 
-Device Sentinel works with its defaults from the start. It learns your house over the first two weeks.
+Device Sentinel works with its defaults at the start. It begins learning your house during the first two weeks.
 
-1. **Day one.** Open the integration settings and set up **Notifications and Daily Brief**. Leave High-Priority targets empty for now, set Quiet Hours, and send the Daily Brief when they end. Then open the **Recommendations** tab on the Device Sentinel dashboard and turn on any Last Seen, Battery or Z-Wave status sensor it lists as switched off. With Last Seen on, a frozen device is caught in minutes rather than hours.
-2. **Week one: clear out the noise.** While Device Sentinel learns, you may hear about things that aren't hardware, such as ping trackers, phone apps or a wall tablet. On the **Exclusions and Muting** screen, exclude what isn't hardware that can fail, and mute what you don't mind going quiet. Leave the Freeze Detection sliders alone.
-3. **Week two: frozen devices are reported.** From day 7, a device that stays quiet longer than its own usual is reported frozen. Expect a few false alarms. Mute devices that come and go by nature, such as a car sensor that leaves the driveway. By day 14, you can trust a frozen report.
+1. **Day one.** Open the integration settings and set up **Notifications and Daily Brief**. Leave High-Priority targets empty for now, set Quiet Hours, and choose where to send the Daily Brief. Then open the **Recommendations** tab on the Device Sentinel dashboard and turn on any Last Seen, Battery or Z-Wave status sensors it lists as switched off. With Last Seen on, a frozen device is caught in minutes rather than hours.
+2. **Week one: clear out the noise.** While Device Sentinel learns, you may see things that aren't hardware, such as ping trackers, phone apps or a wall tablet. On the **Exclusions and Muting** screen in settings, or the dashboards Integration or Device tab, exclude what isn't hardware, and mute what you don't mind going quiet. 
+3. **Week two: frozen devices are reported.** From day 7, a device that stays quiet longer than its own usual is reported frozen. Expect a few false alarms. Mute devices that come and go by nature, such as a car sensor that leaves the driveway, or a device that becomes unavailable when switched off, like most TVs. By day 14, you can trust a frozen report.
 4. **After that.** Signal baselines settle after three weeks, and a battery is judged falling after four weeks of readings.
 
 [Installation and Setup](https://github.com/TheThinkingHome/device_sentinel/wiki/Installation-and-Setup) in the wiki has each step in full.
@@ -66,7 +66,7 @@ The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) explains eac
 
 ## Getting Help
 
-- **Something isn't working:** open a [bug report](https://github.com/TheThinkingHome/device_sentinel/issues/new/choose) and attach your diagnostics download (**Settings > Devices and Services > Device Sentinel**, the three dots, **Download diagnostics**). If you'd rather not post it publicly, open the issue without it and you'll be given an email address to send it to.
+- **Something isn't working:** open a [bug report](https://github.com/TheThinkingHome/device_sentinel/issues/new/choose) and attach your diagnostics download (**Settings > Devices and Services > Device Sentinel**, the three dots, **Download diagnostics**). Some questions don't require it, but for us to see what your system is up to, it is recommended to be sent so we can diagnose your problem and tell you about anything else we see quickly. For your privacy the data inside the diagnostics file is anonymized and never carries passwords, MAC Addresses, tokens, your notification targets, or anything else considered sensitive data.
 - **A question:** ask in the [Device Sentinel thread](https://community.home-assistant.io/t/1029252) on the Home Assistant forum, or open an issue.
 - **An idea:** open a [feature request](https://github.com/TheThinkingHome/device_sentinel/issues/new/choose). Say what happened in your home that it would have caught.
 - **A security problem:** report it privately, as [SECURITY.md](SECURITY.md) describes. Don't open a public issue.
@@ -86,8 +86,8 @@ The hardware that has already run on real houses is listed in [TESTED_HARDWARE.m
 | Area | Status | Notes |
 |---|---|---|
 | **Dashboard** | Working | Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. Administrators only. |
-| **Freeze Detection** | Stable | Frozen, unavailable and flapping devices, each judged on its own rhythm. |
-| **Battery** | Stable | Low batteries, and batteries falling or speeding up, with the time left as a range. |
+| **Freeze Detection** | Stable | Frozen, unavailable and flapping devices, each judged has its own rhythm. |
+| **Battery** | Stable | Low batteries, and batteries falling or speeding up, predicting their time left. |
 | **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
 | **Storage** | Hardened | Survives power cuts and restores itself from a backup. |
 | **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
@@ -98,11 +98,11 @@ The hardware that has already run on real houses is listed in [TESTED_HARDWARE.m
 | **Matter** | Working | A light, plug or button that reports only when used is not reported frozen because it is quiet. |
 | **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
 
-Each release is listed in the [changelog](CHANGELOG.md) and on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
+Each Latest release is listed in the [changelog](CHANGELOG.md) and on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
 ## AI Disclosure
 
-Device Sentinel was built with AI assistance under my direction. Every design decision is mine, and nothing reaches this repository without my review and a full test gate, with detection proven on real hardware. [AI_DISCLOSURE.md](AI_DISCLOSURE.md) explains exactly what the AI did and how every release is checked.
+Device Sentinel was built with AI assistance under our direction. Every design decision is ours, and nothing reaches this repository without our review and a full test gate, with detection proven on real hardware. [AI_DISCLOSURE.md](AI_DISCLOSURE.md) explains exactly what the AI did and how every release is checked.
 
 ---
 
