@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.14 (2026-10-29)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.0 (2026-11-03)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -78,9 +78,12 @@ SWITCHED_OFF_CARDS = {
 # page offers no turn-on button, so each sensor a Simple user may need
 # on has its card here (rule REC-09).
 KIND_BATTERY_CONFIRM = "battery_confirm"
+# Two devices holding one network address at once (rule UP-19): in
+# Simple too, because it makes a working device look dead.
+KIND_SHARED_ADDRESS = "shared_address"
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
-    KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF,
+    KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF, KIND_SHARED_ADDRESS,
 })
 
 
@@ -258,6 +261,31 @@ class DeviceRecommendationsMixin:
             name = str(self._device_name(device_id) or "").strip().casefold()  # type: ignore[attr-defined]
             if name:
                 by_name.setdefault(name, []).append(device_id)
+        # Devices holding one network address at once, each row naming the
+        # address it shares (rule UP-19).
+        shared_ips = self.shared_addresses()  # type: ignore[attr-defined]
+        if shared_ips:
+            listed = []
+            for ip, ids in sorted(shared_ips.items()):
+                for row in rows([d for d in ids if d in watched] or list(ids)):
+                    row["detail"] = ip
+                    listed.append(row)
+            cards.append({
+                "kind": KIND_SHARED_ADDRESS,
+                "title": "Devices Sharing a Network Address",
+                "body": (
+                    "These devices hold the same network address at the same time, so "
+                    "either one can look like it has stopped working. Reserve an address "
+                    "for each device in your router's DHCP settings, so the router gives "
+                    "each one its own."
+                ),
+                "devices": listed,
+                "brief_words": lambda n: (
+                    f"{_count(n, 'device shares', 'devices share')} a network address "
+                    "with another device. Reserve an address for each one in your "
+                    "router's DHCP settings."
+                ),
+            })
         shared = [d for ids in by_name.values() if len(ids) > 1 for d in ids]
         if shared:
             cards.append({

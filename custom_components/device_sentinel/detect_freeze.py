@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.16 (2026-10-31)
+# File: detect_freeze.py, Version: 0.28.0 (2026-11-03)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -1279,8 +1279,18 @@ class FreezeMixin:
         Without the hold, a device frozen before a bridge went down turns
         unavailable the moment the bridge goes, its frozen record closes, the
         bus hears it recover, and the brief tells one silence twice.
+
+        A bridge read down but still inside its wait holds its devices
+        too: the outage it may become is dated from that first reading,
+        and one that ends inside the wait leaves its devices as they
+        were (rule UP-03).
         """
-        return self.upstream_down_since(device_id) is not None
+        if self.upstream_down_since(device_id) is not None:
+            return True
+        pending = getattr(self, "_bridge_down_pending", None)
+        if not pending:
+            return False
+        return self._stack_for_device(device_id) in pending  # type: ignore[attr-defined]
 
     def _observed_silence(
         self,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.27.17 (2026-11-01)
+# File: journal.py, Version: 0.28.0 (2026-11-03)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -45,6 +45,11 @@ from .const import (
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_SIGNAL_STRESS,
+    DATA_SHORT_DROPS,
+    DROP_WENT,
+    DATA_ADDRESS_CHANGES,
+    ADDR_DEVICE_ID,
+    ADDR_WHEN,
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
@@ -664,7 +669,7 @@ class JournalMixin:
             mark()
 
     def _trim_house_tables(self, now: float) -> None:
-        """Hold the house events and the signal stress rows to the
+        """Hold the house events, the signal stress rows and the drops to the
         history length, at the midnight run only (rule STOR-14): a lower
         setting takes effect at the next midnight, as it does for the
         daily histories, so a mistake saved by hand can be undone."""
@@ -687,9 +692,40 @@ class JournalMixin:
             or not isinstance(row.get(EP_SINCE) or now, (int, float))
             or (row.get(EP_SINCE) or now) >= cutoff
         ]
-        if len(kept) != len(events) or len(stress) != len(rows):
+        drops = self.data.setdefault(DATA_SHORT_DROPS, [])
+        # Each drop is held to the history length too (rule SIG-16).
+        held = [
+            row for row in drops
+            if not isinstance(row, dict)
+            or not isinstance(row.get(DROP_WENT), (int, float))
+            or isinstance(row.get(DROP_WENT), bool)
+            or row[DROP_WENT] >= cutoff
+        ]
+        changes = self.data.setdefault(DATA_ADDRESS_CHANGES, [])
+        # An address change is held to it as well, except each device's
+        # latest, which is what it holds now (rule UP-19).
+        latest: dict[str, int] = {}
+        for at, row in enumerate(changes):
+            if isinstance(row, dict) and isinstance(row.get(ADDR_DEVICE_ID), str):
+                latest[row[ADDR_DEVICE_ID]] = at
+        current = set(latest.values())
+        moved = [
+            row for at, row in enumerate(changes)
+            if at in current
+            or not isinstance(row, dict)
+            or not isinstance(row.get(ADDR_WHEN), (int, float))
+            or isinstance(row.get(ADDR_WHEN), bool)
+            or row[ADDR_WHEN] >= cutoff
+        ]
+        if (
+            len(kept) != len(events) or len(stress) != len(rows)
+            or len(held) != len(drops) or len(moved) != len(changes)
+        ):
             self.data[DATA_SYSTEM_EVENTS] = kept
             self.data[DATA_SIGNAL_STRESS] = stress
+            self.data[DATA_SHORT_DROPS] = held
+            self.data[DATA_ADDRESS_CHANGES] = moved
+            self._forget_address_index()  # type: ignore[attr-defined]
             self._mark_cold_dirty()
 
     def _incident_opened_at(

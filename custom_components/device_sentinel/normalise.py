@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.16 (2026-10-31)
+# File: normalise.py, Version: 0.28.0 (2026-11-03)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -141,6 +141,8 @@ from .const import (
     BACKUP_TAKEN_KEY,
     DATA_ASIDE_SEEN,
     DATA_SIGNAL_STRESS,
+    DATA_SHORT_DROPS,
+    DATA_ADDRESS_CHANGES,
     PROBE_AGREES,
     PROBE_DETAIL,
     PROBE_SENTINEL,
@@ -845,6 +847,23 @@ STRESS_SHAPE: dict[str, str] = {
     "signal": NULLABLE_MAPPING,
 }
 
+ADDRESS_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "when": REAL_MOMENT,
+    "ip": STRING,
+    "ap": STRING,
+}
+
+DROP_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "went": REAL_MOMENT,
+    "length": REAL_SPAN,
+    "window": SPAN,
+    "signal_went": READING,
+    "signal_back": READING,
+    "signal_usual": READING,
+}
+
 SYSTEM_EVENT_SHAPE: dict[str, str] = {
     "kind": TEXT,
     "when": REAL_MOMENT,
@@ -914,6 +933,8 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded", "signal"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
+    DATA_SHORT_DROPS: (DROP_SHAPE, frozenset()),
+    DATA_ADDRESS_CHANGES: (ADDRESS_SHAPE, frozenset()),
     # The shadow readers' two keys: absent from every older line,
     # which is not damage.
     DATA_STACK_PROBE: (PROBE_SHAPE, frozenset({PROBE_SENTINEL, PROBE_AGREES})),

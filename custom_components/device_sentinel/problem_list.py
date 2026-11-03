@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.15 (2026-10-30)
+# File: problem_list.py, Version: 0.28.0 (2026-11-03)
 
 """The problem list: the single memory every channel renders.
 
@@ -1512,9 +1512,19 @@ class ProblemListMixin:
             replaced = self._overtaken(kind, gained) or self._still_down(
                 kind, new_kinds
             )
+            # A drop while the dropping-out item stands is a real return,
+            # though the item stays: it is timed from when the device
+            # went, as any other drop, not left to its listing (rules
+            # UNAV-07, SIG-16). Only the headline fires the recovered
+            # event, below.
+            drop_back = (
+                kind == TODO_KIND_UNAVAILABLE
+                and top == TODO_KIND_FLAPPING
+                and TODO_KIND_UNAVAILABLE not in new_kinds
+            )
             down = (
                 self._down_for(device_id, kind, opened, now)
-                if kind == top and not replaced
+                if (kind == top and not replaced) or drop_back
                 else None
             )
             self._resolve_incident(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.27.17 (2026-11-01)
+# File: diagnostics.py, Version: 0.28.0 (2026-11-03)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -45,6 +45,8 @@ from homeassistant.helpers import entity_registry as er
 from . import DeviceSentinelConfigEntry, history_file
 from .const import (
     DATA_SIGNAL_STRESS,
+    DATA_ADDRESS_CHANGES,
+    DATA_SHORT_DROPS,
     BROKER_SCOPE,
     INFRASTRUCTURE_DEVICE_CAP,
     ROUTER_DOMAINS,
@@ -732,6 +734,13 @@ async def async_get_config_entry_diagnostics(
         # and how it ended, the evidence a later signal alert needs
         # (rule SIG-11).
         "signal_stress": coordinator.data.get(DATA_SIGNAL_STRESS, []),
+        # Each drop a device made on its own (rule SIG-16).
+        "short_drops": coordinator.data.get(DATA_SHORT_DROPS, []),
+        # Each Wi-Fi device's address and access point as they changed,
+        # and any address two devices hold at once (rule UP-19); the
+        # addresses themselves are replaced below.
+        "address_changes": coordinator.data.get(DATA_ADDRESS_CHANGES, []),
+        "shared_addresses": coordinator.shared_addresses(),
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal. The split keeps the
         # fast-changing clock fields in a small companion file
@@ -768,9 +777,7 @@ async def async_get_config_entry_diagnostics(
             "orphan_episodes": coordinator.orphan_episodes,
             # How long each bridge, broker and integration took to
             # load after this start (rule UP-04).
-            "upstreams_loaded_after": dict(
-                coordinator.upstreams_loaded_after
-            ),
+            "upstreams_loaded_after": coordinator.upstream_load_times(),
         },
         # Records of devices removed from Home Assistant, held 30 days
         # in case the device comes back (rule WATCH-07).

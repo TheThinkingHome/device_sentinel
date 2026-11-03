@@ -329,6 +329,10 @@
           }
         }
       }
+    },
+    "shared_address": {
+      "title": "Two Devices Share One Network Address",
+      "description": "{detail}. Two devices answering to one address make either one look like it has stopped working. To fix it, reserve an address for each device in your router's DHCP settings, so the router gives each one its own. This card goes away by itself once each device has its own address."
     }
   },
   "entity": {

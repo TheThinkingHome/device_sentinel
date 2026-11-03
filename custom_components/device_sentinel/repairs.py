@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.27.10 (2026-10-27)
+# File: repairs.py, Version: 0.28.0 (2026-11-03)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -87,11 +87,13 @@ from .const import (
     REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
     REPAIR_NOTIFY_TARGET_MISSING,
+    REPAIR_SHARED_ADDRESS,
     REPAIR_STORAGE_SHAPE,
     REPAIR_STORAGE_REPAIRED,
     REPAIR_CONTAINERS_REPAIRED,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
+    WIKI_LINK_WIFI,
     REPAIR_STORAGE_RESTORED,
     STORAGE_KEY,
 )
@@ -390,6 +392,37 @@ def async_evaluate(
         "Repairs evaluated at %s: repair notice %s",
         moment,
         "standing" if (repair_notice or container_notice) else "none",
+    )
+
+
+@callback
+def async_evaluate_shared_addresses(
+    hass: HomeAssistant, entry: Any, shared: dict[str, list[str]]
+) -> None:
+    """Raise or clear the shared-address card, at once (rule UP-19).
+
+    The one card about the house's network rather than Device
+    Sentinel's own working, and the one raised the moment its condition
+    is found rather than at the grace or the brief: two devices that
+    answer to one address make either one look dead, and a person
+    should hear it at once (rules REP-01, REP-07). Acknowledge only: there is nothing Device Sentinel can fix,
+    so the card carries the advice and Home Assistant's own Ignore.
+    """
+    if not shared:
+        _clear(hass, REPAIR_SHARED_ADDRESS)
+        return
+    lines = [
+        f"{_english_list(names)} share {ip}"
+        for ip, names in sorted(shared.items())
+    ]
+    _raise(
+        hass,
+        REPAIR_SHARED_ADDRESS,
+        severity=ir.IssueSeverity.WARNING,
+        is_fixable=False,
+        learn_more_url=WIKI_LINK_WIFI,
+        placeholders={"detail": "; ".join(lines)},
+        data={"entry_id": entry.entry_id},
     )
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.17 (2026-11-01)
+# File: const.py, Version: 0.28.0 (2026-11-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -317,6 +317,14 @@ ZHA_DOWN_DWELL_SECONDS = 60.0
 # to start. Z-Wave and Matter reload their entry on a dropped connection
 # and are the case it is built for.
 INTEGRATION_DOWN_DWELL_SECONDS = 60.0
+
+# How long a bridge must read down before its outage is written down and
+# announced. A bridge that goes down in the seconds before Home Assistant
+# stops is the restart, not an outage of its own, and one back inside
+# this wait leaves nothing behind (rule UP-03). An integration entry
+# already waits INTEGRATION_DOWN_DWELL_SECONDS and a hub
+# HUB_DOWN_CONFIRM_SECONDS, to the same end.
+BRIDGE_DOWN_WAIT_SECONDS = 60.0
 
 # The dispatcher signal ZHA's split library emits gateway messages on,
 # and the three message types that mean a device arrived. Named here
@@ -1135,6 +1143,11 @@ LEARNING_MIN_DAYS = 7
 
 # Storage save cadence: at most one write per render tick when dirty.
 RENDER_TICK_SECONDS = 60
+
+# How often, during the startup grace only, each upstream's first load
+# is looked for, so the diagnostics give its real load time rather than
+# the first minute check's (rule UP-04).
+LOAD_MEASURE_SECONDS = 5
 
 # Freeze detection. The freeze window is the learned rhythm plus a grace
 # margin, and the margin follows a power curve of the rhythm shaped by
@@ -2774,11 +2787,15 @@ REPAIR_CLOCKS_RESET = "clocks_reset"
 # A retired card for a system clock step, which the brief tells now
 # (rule FRZ-21). Named so it can be cleared (rule REP-02).
 REPAIR_CLOCK_RESET = "clock_reset"
+# Two devices holding one network address at once, a fault in the house's
+# network serious enough to be told at once; acknowledge only (rule UP-19).
+REPAIR_SHARED_ADDRESS = "shared_address"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
     REPAIR_CONTAINERS_REPAIRED,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_RESTORED,
+    REPAIR_SHARED_ADDRESS,
 )
 # Retired cards: a card is for what stops Device Sentinel working now, or
 # a repair it made (rule REP-01). Switched-off sensors moved to the
@@ -2863,6 +2880,49 @@ EPISODE_KEEP_DAYS = 14
 # history retention setting rather than the fourteen-day episode trim
 # (rule STOR-14). Episodes explain two weeks; the anchor needs seasons.
 DATA_SIGNAL_STRESS = "signal_stress"
+
+# Each drop a device made on its own, kept to the History setting
+# (rule SIG-16): when it went, how long it was gone, the freeze window it
+# was judged against, and the signal at the drop, at the recovery and as
+# usual. A drop no longer than its window is a short drop.
+DATA_SHORT_DROPS = "short_drops"
+DROP_DEVICE_ID = "device_id"
+DROP_WENT = "went"
+DROP_LENGTH = "length"
+DROP_WINDOW = "window"
+DROP_SIGNAL_WENT = "signal_went"
+DROP_SIGNAL_BACK = "signal_back"
+DROP_SIGNAL_USUAL = "signal_usual"
+# The device page's row counts the last 12 hours (rule SIG-16).
+SHORT_DROP_HOURS = 12
+# The first signal reading this soon after a return is its recovery
+# signal; one later says nothing about the return (rule SIG-16).
+SHORT_DROP_SIGNAL_BACK_SECONDS = 600.0
+# The device's usual signal: the middle of its last 30 daily typical
+# readings (rule SIG-16).
+SHORT_DROP_USUAL_DAYS = 30
+
+# Each Wi-Fi device's address and access point as its router's tracker
+# gives them, one row per change, kept to the History setting
+# (rule UP-19). `ip` is every router tracker's own attribute; `ap_mac`
+# is UniFi's.
+DATA_ADDRESS_CHANGES = "address_changes"
+ADDR_DEVICE_ID = "device_id"
+ADDR_WHEN = "when"
+ADDR_IP = "ip"
+ADDR_AP = "ap"
+TRACKER_ATTR_IP = "ip"
+TRACKER_ATTR_AP = "ap_mac"
+# Two devices holding one address at once for this long are flagged
+# (rule UP-19).
+SHARED_ADDRESS_SECONDS = 600.0
+# The most address rows one device keeps: a device on a mesh network can
+# move between access points every minute, and its oldest changes say
+# nothing a drop needs (rule UP-19).
+ADDRESS_ROWS_PER_DEVICE = 200
+# The longest address or access point kept: an IPv6 address is at most
+# 45 characters, so anything much longer is not one (rule UP-19).
+ADDRESS_MAX_LENGTH = 64
 # The key the stack probe's lines were once stored under. The lines are
 # now appended to stack_probe.md (below), and any stored here are moved
 # into the file once, at the first start that finds them (rule STACK-12).

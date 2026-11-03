@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.17 (2026-11-01)
+# File: coordinator.py, Version: 0.28.0 (2026-11-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -245,6 +245,7 @@ from .const import (
     LEARNED_DOWNTIME_OUT,
     LEARNED_PAIRING,
     LEARNING_MIN_DAYS,
+    LOAD_MEASURE_SECONDS,
     LEGACY_CAUSE_UNOBSERVED,
     LOGGER,
     MAINTENANCE_MINUTES_MAX,
@@ -318,6 +319,8 @@ from .dashboard import (
     TrendsViewMixin,
 )
 from .journal import JournalMixin
+from .short_drops import ShortDropMixin
+from .wifi_addresses import WifiAddressMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .notifier import NotifierMixin
@@ -395,6 +398,8 @@ class DeviceSentinelCoordinator(
     BatteryMixin,
     FreezeMixin,
     FlapMixin,
+    ShortDropMixin,
+    WifiAddressMixin,
     ModelGroupMixin,
     ProblemListMixin,
     StorageMixin,
@@ -847,6 +852,25 @@ class DeviceSentinelCoordinator(
         # Seconds from this run's start to each upstream's first load
         # for the diagnostics download (rule UP-04).
         self.upstreams_loaded_after: dict[str, float] = {}
+        # The same, measured every few seconds during the startup grace
+        # for the diagnostics alone; nothing judges from it (rule UP-04).
+        self.upstreams_load_measured: dict[str, float] = {}
+        # A bridge newly read down, by stack, with the first check that
+        # saw it, until the wait before it is believed is over
+        # (rule UP-03). Memory only: a stop inside the wait forgets it.
+        self._bridge_down_pending: dict[str, float] = {}
+        # A drop waiting for its first signal reading after the return,
+        # by device (rule SIG-16). Memory only: one lost to a restart
+        # keeps no recovery signal.
+        self._drop_awaiting_signal: dict[str, tuple[dict[str, Any], float]] = {}
+        # Each tied device's latest address row, built from the stored
+        # table on first use (rule UP-19), and the addresses two devices
+        # hold at once: when each was first seen shared, and those held
+        # long enough to be flagged.
+        self._address_now: dict[str, dict[str, Any]] | None = None
+        self._shared_since: dict[str, float] = {}
+        self._shared_addresses: dict[str, list[str]] = {}
+        self._load_measure_unsub: Any = None
         # Which device each name in the brief belongs to, kept while
         # one brief is composed so its page can link them (rule BRIEF-13).
         self._brief_devices: dict[str, list[str | None]] = {}
@@ -1921,6 +1945,13 @@ class DeviceSentinelCoordinator(
                 self.hass, STARTUP_GRACE_SECONDS, self._on_grace_closed
             )
         )
+        # Each upstream's load timed to a few seconds, for the
+        # diagnostics; it stops itself when the grace closes (rule UP-04).
+        self._load_measure_unsub = async_track_time_interval(
+            self.hass,
+            self._measure_loading,
+            timedelta(seconds=LOAD_MEASURE_SECONDS),
+        )
         self._unsubs.append(
             self.hass.bus.async_listen(
                 EVENT_HOMEASSISTANT_STOP, self._on_hass_stop
@@ -2128,6 +2159,7 @@ class DeviceSentinelCoordinator(
         # First, so a minute check still running writes nothing from
         # here on; the final save below is the session's last.
         self._stopped = True
+        self._stop_measuring_loads()
         if self._broker_reader is not None:
             self._broker_reader.async_stop()
             self._broker_reader = None
@@ -3637,6 +3669,10 @@ class DeviceSentinelCoordinator(
         if record.get(DEV_DOWN_SINCE) is not None:
             record[DEV_DOWN_SINCE] = None
             self._dirty = True
+        if saved is not None:
+            # The device came back on its own from an outage it went into
+            # as a whole: one drop, recorded (rule SIG-16).
+            self._note_drop(device_id, record, saved[0], dt_util.utcnow().timestamp())
         if saved is None:
             saved = self._verdict_start(record)
         if saved is not None:
@@ -4145,6 +4181,7 @@ class DeviceSentinelCoordinator(
                 device_id, record, now
             ):
                 self._feed_signal(record, value, now)
+                self._drop_signal_back(device_id, value, now)
 
         if foreign:
             return

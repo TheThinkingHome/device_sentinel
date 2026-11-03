@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.17 (2026-11-01)
+# File: interventions.py, Version: 0.28.0 (2026-11-03)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -76,6 +76,7 @@ from .const import (
     ATTR_BROKER_UPTIME,
     DATA_BROKER_SEEN,
     INTEGRATION_DOWN_DWELL_SECONDS,
+    BRIDGE_DOWN_WAIT_SECONDS,
     SYS_INTEGRATION_DOWN,
     SYS_INTEGRATION_UP,
     UPSTREAM_INTEGRATION,
@@ -235,6 +236,18 @@ def _pairing_moment(reader: Any, now: float, after: float | None = None) -> floa
     ):
         return float(at)
     return now
+
+
+def _reader_onset(reader: Any) -> float | None:
+    """When a reader says its upstream went down, if it keeps that
+    moment, else None (rule UP-03)."""
+    try:
+        onset = getattr(reader, "down_since", None)
+    except Exception:  # noqa: BLE001 - never break the tick
+        return None
+    if isinstance(onset, (int, float)) and not isinstance(onset, bool) and onset > 0:
+        return float(onset)
+    return None
 
 
 def _reader_loaded(reader: Any) -> bool:
@@ -2193,6 +2206,11 @@ class InterventionMixin:
         # router integration and a dead MQTT broker says nothing
         # about them.
         self._sample_wifi(now)
+        # Each tied device's address and access point (rule UP-19).
+        try:
+            self._sample_addresses(now)  # type: ignore[attr-defined]
+        except Exception as err:  # noqa: BLE001 - never break the tick
+            LOGGER.debug("Device Sentinel could not read the addresses: %s", err)
         broker = self._sample_broker(now)
         if broker == BROKER_DOWN:
             return
@@ -2210,6 +2228,25 @@ class InterventionMixin:
             )
             if loading:
                 continue
+            # A bridge newly down waits before it is believed: one that
+            # goes down in the seconds before Home Assistant stops is the
+            # restart, and one back inside the wait was never an outage.
+            # Held in memory alone, so a stop inside the wait leaves no
+            # trace; once the wait is over the outage is dated from the
+            # first check that saw it. A reader that dates its own outage
+            # has already waited (ZHA's dwell), so it is believed at once
+            # (rule UP-03).
+            if (
+                state == BRIDGE_DOWN
+                and from_start is None
+                and self._bridge_seen.get(stack) not in (None, BRIDGE_DOWN)
+                and _reader_onset(reader) is None
+            ):
+                first = self._bridge_down_pending.setdefault(stack, now)
+                if now - first < BRIDGE_DOWN_WAIT_SECONDS:
+                    continue
+            elif state != BRIDGE_DOWN:
+                self._bridge_down_pending.pop(stack, None)
             was = self._bridge_seen.get(stack)
             self._bridge_seen[stack] = state
             self._remember_bridge_state(stack, state)
@@ -2235,7 +2272,7 @@ class InterventionMixin:
                     # suppresses the whole fleet's rows behind a
                     # cause, which is the one direction this feature
                     # must never fail in.
-                    began = now
+                    began = self._bridge_down_pending.pop(stack, now)
                     onset = getattr(reader, "down_since", None)
                     if from_start is not None:
                         began = from_start
@@ -2264,8 +2301,10 @@ class InterventionMixin:
                     else:
                         seen.pop(_SEEN_PUSHED, None)
                     self._begin_upstream_peak(stack)
+                    # Dated from when it went down, not from the check
+                    # that ended the wait (rule UP-03).
                     self._record_system_event(
-                        SYS_BRIDGE_DOWN, scope=stack
+                        SYS_BRIDGE_DOWN, scope=stack, when=began
                     )
                     self._say_upstream_down(
                         UPSTREAM_BRIDGE, stack, stack, began, behind
@@ -2736,6 +2775,63 @@ class InterventionMixin:
         for entry_id, storm in list(self._storm_active.items()):
             if now - storm["last_met"] > STORM_RELEASE_SECONDS:
                 self._end_storm(entry_id, storm, now)
+
+    @callback
+    def _measure_loading(self, _now: Any = None) -> None:
+        """Time each upstream's first load to a few seconds, for the
+        diagnostics download (rule UP-04).
+
+        Read every few seconds while the startup grace lasts, then
+        stopped. The bridges and the broker by their readers, each
+        integration entry with a watched device by its state. Nothing
+        judges from these times: the outage rules keep reading
+        `upstreams_loaded_after`, taken on the minute check, so this
+        changes no verdict.
+        """
+        if not self._in_startup_grace():  # type: ignore[attr-defined]
+            self._stop_measuring_loads()
+            return
+        now = dt_util.utcnow().timestamp()
+        start = self._run_start()
+        measured = self.upstreams_load_measured  # type: ignore[attr-defined]
+
+        def note(name: str) -> None:
+            if name not in measured:
+                measured[name] = round(max(0.0, now - start), 1)
+
+        try:
+            for stack, reader in list(self._bridge_readers.items()):
+                if reader is not None and _reader_loaded(reader):
+                    sample = self._read_bridge(stack, reader)
+                    if sample is not None and sample[0] not in (BRIDGE_DOWN, BRIDGE_UNKNOWN):
+                        note(stack)
+            broker = getattr(self, "_broker_reader", None)
+            if broker is not None and _reader_loaded(broker) and self.broker_state == BROKER_RUNNING:
+                note(BROKER_LABEL)
+            for device_id in list(self._watched):
+                entry_id = self._entry_of_device.get(device_id)
+                if entry_id is None:
+                    continue
+                entry = self.hass.config_entries.async_get_entry(entry_id)
+                if entry is not None and entry.state is ConfigEntryState.LOADED:
+                    note(entry.domain)
+        except Exception as err:  # noqa: BLE001 - a measurement never breaks a start
+            LOGGER.debug("Device Sentinel could not time the loads: %s", err)
+
+    def _stop_measuring_loads(self) -> None:
+        """Stop the load timing; safe to call more than once."""
+        unsub = getattr(self, "_load_measure_unsub", None)
+        self._load_measure_unsub = None
+        if unsub is not None:
+            unsub()
+
+    def upstream_load_times(self) -> dict[str, float]:
+        """Each upstream's load time for the diagnostics: measured where
+        the grace's own check saw it, the minute check's otherwise
+        (rule UP-04)."""
+        times = dict(self.upstreams_loaded_after)  # type: ignore[attr-defined]
+        times.update(self.upstreams_load_measured)  # type: ignore[attr-defined]
+        return times
 
     @callback
     def _on_grace_closed(self, _now: Any) -> None:

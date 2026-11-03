@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.17 (2026-11-01)
+# File: dashboard.py, Version: 0.28.0 (2026-11-03)
 
 """What the dashboard reads from the coordinator.
 
@@ -878,7 +878,9 @@ def _firmware(device: Any, record: dict[str, Any]) -> dict[str, Any] | None:
 
 class DeviceViewMixin:
 
-    def _went_at(self, record: dict[str, Any]) -> str | None:
+    def _went_at(
+        self, record: dict[str, Any], device_id: str | None = None
+    ) -> str | None:
         """When an unavailable or unknown device went, else None (rule DASH-08).
 
         The device's saved outage start first, which is set when it went
@@ -886,6 +888,10 @@ class DeviceViewMixin:
         that began this way. A device frozen before it went keeps its
         freeze as the verdict's start, hours earlier, so without a saved
         outage start it gives no time and the page keeps its freeze line.
+        A hub is the exception: its unavailable verdict is dated from its
+        connection loss, even when its trouble began as frozen and its
+        entities do not all read unavailable, so its page reads that
+        moment (rules DASH-08, STACK-10).
         """
         category = record.get(DEV_FROZEN_CATEGORY)
         if category not in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN):
@@ -893,7 +899,8 @@ class DeviceViewMixin:
         saved = self._saved_down_since(record)  # type: ignore[attr-defined]
         if saved is not None:
             return _iso(saved[0])
-        if record.get(DEV_DOWN_BEGAN_AS) != category:
+        hub = device_id is not None and self.is_hub(device_id)  # type: ignore[attr-defined]
+        if record.get(DEV_DOWN_BEGAN_AS) != category and not hub:
             return None
         verdict = self._verdict_start(record)  # type: ignore[attr-defined]
         return _iso(verdict[0]) if verdict is not None else None
@@ -1446,6 +1453,13 @@ class DeviceViewMixin:
                     if record.get(DEV_BATTERY_VALUE) is not None
                     else ""
                 ),
+                # The Short drop-outs row: how many short drops in the
+                # last 12 hours, the longest and the last, or None; and
+                # whether the device is dropping out, which Simple shows
+                # it for (rules SIG-16, DASH-04, DASH-08).
+                "short_drops": self.short_drops_of(device_id),
+                "address": self.address_of(device_id),
+                "dropping_out": self.is_flapping(device_id),
             },
             "readings": readings,
             "status": {
@@ -1467,7 +1481,7 @@ class DeviceViewMixin:
                 # start comes first: a device frozen before it went keeps
                 # its freeze as the verdict's start, which is not when it
                 # went.
-                "since": self._went_at(record),
+                "since": self._went_at(record, device_id),
                 # A device judged by its connection alone: "connected" or
                 # "dropped", else None.
                 # "not known" when it cannot be read, or the device
