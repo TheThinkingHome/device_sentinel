@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -136,9 +136,10 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **What it judges:** one thing only. A device's longest silence is learned at most as long as the retention (FRZ). Each other verdict reads its own fixed window, so on everything else two houses with different settings detect alike.
 - **Lowering it:** a lower setting trims at the next midnight rather than on save, so a mistake can be undone.
 - **House events and signal stress rows:** kept for the same retention.
+- **Drops and address changes (since 0.28.0):** each drop ([SIG-16](Rulebook__10_SIG_Signal.md)) and each change of a Wi-Fi device's address or access point ([UP-19](Rulebook__07_UP_Upstream_Outages.md)) is a row in a table of its own, kept for the same retention and moved to the history file after 30 days, as signal stress rows are. Each device keeps its latest address row however old, so its page still shows the address it has now.
 - **Incidents and silence episodes:** kept for 14 days, except that an opening is kept while its problem stands on the Problem List, and an acknowledgment does not release it (LIST). A silence episode is kept past 14 days while it has no ending, or while it ended other than by the device resuming and is still waiting for its lag.
 
-*Proof:* [`test_retention.py`](../tests/test_retention.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_house_tables_trim.py`](../tests/test_house_tables_trim.py).
+*Proof:* [`test_retention.py`](../tests/test_retention.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_house_tables_trim.py`](../tests/test_house_tables_trim.py), [`test_short_drops.py`](../tests/test_short_drops.py), [`test_wifi_addresses.py`](../tests/test_wifi_addresses.py).
 
 ### STOR-15 What Is Recorded
 
@@ -200,8 +201,8 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-21 The Diagnostics Download
 
 **The diagnostics download carries each device's stored record and the tables, with network addresses hidden.**
-- **The tables:** the to-do list and its additions journal, the house's events, silence episodes, incidents and signal stress rows, the history file's state, the answers (the recommendation ticks and the battery replacement dates included), and the count of open episodes.
-- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file.
+- **The tables:** the to-do list and its additions journal, the house's events, silence episodes, incidents and signal stress rows, the drops and address changes and any address two devices share (since 0.28.0), the history file's state, the answers (the recommendation ticks and the battery replacement dates included), and the count of open episodes.
+- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file, a Wi-Fi device's address and access point included.
 - **Not hidden:** version-like numbers and Zigbee IEEE addresses stay. The reports are not redacted.
 - **Reading it:** a download is read beside the live entities, whose version says which build is running.
 

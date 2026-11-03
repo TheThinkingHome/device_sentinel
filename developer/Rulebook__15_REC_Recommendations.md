@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.14. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -40,14 +40,14 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-04 The Device Cards
 
 **Each card lists the watched devices it covers, by name with the area, and each name opens the device's page.** A device leaves a card once its condition is gone.
-- **The cards, in order:** Confirm Battery Replacement (or Confirm Battery Charge) for a detected new battery (BAT), Power Not Set, the switched-off cards of [REC-05](#rec-05-switched-off-sensors), No Area Assigned, Devices Sharing A Name (names compared without regard to capitals), Slow Reporting Devices ([REC-06](#rec-06-slow-reporting-devices)), and last Type Not Set and Model With More Than One Type.
+- **The cards, in order:** Confirm Battery Replacement (or Confirm Battery Charge) for a detected new battery (BAT), Power Not Set, the switched-off cards of [REC-05](#rec-05-switched-off-sensors), No Area Assigned, Devices Sharing a Network Address ([UP-19](Rulebook__07_UP_Upstream_Outages.md), since 0.28.0, each row naming the address), Devices Sharing A Name (names compared without regard to capitals), Slow Reporting Devices ([REC-06](#rec-06-slow-reporting-devices)), and last Type Not Set and Model With More Than One Type.
 - **Power Not Set:** lists each watched device with no power type, mains included, and stays that way.
 - **Where each is fixed:** every card is answered in its own rows. Power and type are set in the list. A switched-off sensor is turned on in the list. No Area Assigned has an area chooser and Save on each row, which moves that device in Home Assistant. Devices Sharing A Name has a name box and Save on each row; a name another device shows is held for "Save anyway", as on the device page ([DASH-10](Rulebook__14_DASH_Dashboard.md#dash-10-confirmations-and-refusals)). Model With More Than One Type names the model and the device's type now, then the type choices, which set the model's type.
 - **The card sentences:** "Choose each one's area here.", "Rename each one here." and "Pick the type for the model here."
 - **AREA on a card:** an area nobody set reads "Not Set", a link that sets it ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)). On No Area Assigned the row's own chooser does that.
 - **Where it was set:** each save from a card is one brief row "from the Recommendations tab" ([BRIEF-07](Rulebook__13_BRIEF_Daily_Brief.md#brief-07-last-24-hours)).
 
-*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_power_source.py`](../tests/test_power_source.py), [`test_device_type.py`](../tests/test_device_type.py), [`test_device_actions.py`](../tests/test_device_actions.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_device_page_layout.js`, `check_type_filters.js`.
+*Proof:* [`test_recommendations.py`](../tests/test_recommendations.py), [`test_power_source.py`](../tests/test_power_source.py), [`test_device_type.py`](../tests/test_device_type.py), [`test_device_actions.py`](../tests/test_device_actions.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_device_page_layout.js`, `check_type_filters.js`, [`test_wifi_addresses.py`](../tests/test_wifi_addresses.py), `check_wifi_address.js`.
 
 ### REC-05 Switched-Off Sensors
 
@@ -94,7 +94,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-09 What Simple Shows
 
 **Simple shows what Device Sentinel needs to work at its best, and nothing extra.** All other cards and lines are Advanced only.
-- **In Simple:** Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
+- **In Simple:** Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing a Network Address, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
 - **Why the sensor cards:** Simple's device page offers no sensor to turn on, so each such sensor has its card here.
 
 *Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js).

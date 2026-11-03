@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 
@@ -118,3 +118,15 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 ### SIG-15 A Signal Trail on a Freeze
 
 **Retired.** A frozen device's report carries no trail of its last signal readings.
+
+### SIG-16 Short Drops, Recorded
+
+**Since 0.28.0, each drop a device makes is recorded: the device going unavailable as a whole and coming back on its own. A drop no longer than the freeze window it was judged against is a short drop.**
+- **Each row:** when the device went, how long it was gone, its freeze window then, its signal at the drop, its first signal reading within 10 minutes of the return, and its usual signal (the middle of its daily typical signal over its last 30 days).
+- **Not recorded:** a drop an upstream claimed (broker, bridge, network or integration), and one that spans Device Sentinel's own restart, whose end measures the restart.
+- **Kept:** held to the History setting; rows older than 30 days move to the history file.
+- **The device page:** a Short drop-outs row in the Signal group, "3 in the last 12 hours, the longest 21m, the last at 7:41 PM". Advanced shows it whenever there are short drops in the last 12 hours; Simple only while the device is dropping out ([UNAV-06](Rulebook__06_UNAV_Unavailable.md)).
+- **What it changes:** nothing told or pushed. The Problem List, notifications and mutes are as before. The rule that reads these rows is scheduled for 0.28.1.
+- **Diagnostics:** the rows are in the download.
+
+*Proof:* [`test_short_drops.py`](../tests/test_short_drops.py), [`tools/panel_checks/check_dropping_out.js`](../tools/panel_checks/check_dropping_out.js).

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Unavailable (UNAV)
 
-*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 When a device is unavailable, when its outage began and ended, how a device that keeps dropping out is told, and how long a recovered device is said to have been down. Frozen and never reported devices, and what an outage does to learning, are under [FRZ](Rulebook__05_FRZ_Freeze.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). A bridge, broker or integration going down is under [UP](Rulebook__07_UP_Upstream_Outages.md), and the mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -69,8 +69,9 @@ When a device is unavailable, when its outage began and ended, how a device that
 - **Taken back from set aside:** a freeze on a device taken back saves when it was watched again. One that came back already past its window counts from the opening.
 - **Not trusted:** a damaged saved start, or one later than the recovery, counts from the opening. A record from before the start was saved has none, so a trouble standing at the upgrade counts from its opening.
 - **After a clock step:** each "down for" counts from the step (FRZ). The start a standing trouble saved moves to the step, so a restart that forgets the step still counts from it.
+- **A drop under a dropping-out item (since 0.28.0):** while a device is listed as dropping out, each drop that ends is still timed from when the device went, not from when its row was listed. Before, a ten-minute drop read as seven once the item stood.
 
-*Proof:* [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_unavailable_opening_time.py`](../tests/test_unavailable_opening_time.py), [`test_unwatched_time_cases.py`](../tests/test_unwatched_time_cases.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_recovery_down_time.py`](../tests/test_recovery_down_time.py).
+*Proof:* [`test_short_drops.py`](../tests/test_short_drops.py), [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py), [`test_unavailable_opening_time.py`](../tests/test_unavailable_opening_time.py), [`test_unwatched_time_cases.py`](../tests/test_unwatched_time_cases.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_recovery_down_time.py`](../tests/test_recovery_down_time.py).
 
 ### UNAV-08 "Became Unavailable"
 

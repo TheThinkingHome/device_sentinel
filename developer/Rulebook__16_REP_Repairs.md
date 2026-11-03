@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Repairs (REP)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel raises in Home Assistant's Settings, Repairs, and how those cards behave. What is wrong with a device goes on the Problem List (LIST), never here. How storage is checked, repaired and restored is under [STOR](Rulebook__18_STOR_Storage.md). A lost clocks file is in [LIST-12](Rulebook__11_LIST_Problem_List.md#list-12-a-lost-clocks-file). Switched-off sensors are a recommendation under [REC](Rulebook__15_REC_Recommendations.md).
 
@@ -9,12 +9,14 @@ This section covers what Device Sentinel raises in Home Assistant's Settings, Re
 **A Repairs card is about what is wrong with Device Sentinel's ability to do its job, or with the plumbing beneath it. It is never about a device.**
 - **Why:** each open card lights the Settings badge. A frozen sensor there would make Repairs a noisier copy of the Problem List and teach a person to ignore the badge.
 - **Plumbing outages:** an outage of that plumbing never becomes a card. It is told on the Problem List and by its push (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
+- **The one network card (since 0.28.0):** two devices holding one network address at once ([UP-19](Rulebook__07_UP_Upstream_Outages.md)) is a fault in the network beneath Device Sentinel, not in a device: either device can look like it has stopped working while it has not. It is serious enough to be known at once, so it raises a card, Two Devices Share One Network Address, as well as its Recommendations card.
 
 *Proof:* [`test_repairs.py`](../tests/test_repairs.py).
 
-### REP-02 The Four Cards
+### REP-02 The Cards
 
-**Device Sentinel raises four cards: A Device Sentinel Notification Target No Longer Exists, Device Sentinel Restored Its Storage, Device Sentinel Repaired Its Storage, and Device Sentinel Repaired Its Storage Structure.**
+**Device Sentinel raises five cards: A Device Sentinel Notification Target No Longer Exists, Device Sentinel Restored Its Storage, Device Sentinel Repaired Its Storage, Device Sentinel Repaired Its Storage Structure, and (since 0.28.0) Two Devices Share One Network Address.**
+- **The shared address card:** it names the devices and the address, says why it matters, and advises reserving an address for each device in the router's DHCP settings. It has no fix; a person can only acknowledge it, and it carries a link to the wiki's Wi-Fi page. It goes away by itself once each device has its own address.
 - **The target card:** its fix removes the targets whose service is gone from the high-priority, normal-priority and Daily Brief lists, and leaves the rest alone.
 - **The three storage cards:** they say what was done and where the originals are, and ask nothing.
 - **Retired cards:** four older cards are retired and cleared for an install that still holds one: Cannot See Everything It Watches, Has Nowhere to Send Anything, The System Clock Was Reset or Paused, and Activity Clocks Were Reset.
@@ -37,7 +39,7 @@ This section covers what Device Sentinel raises in Home Assistant's Settings, Re
 
 ### REP-05 Severity
 
-**A card is a warning.** Error is kept for setup and storage failing outright. Critical, Home Assistant's word for a house in danger, is never used. All four cards are warnings, since each describes something already handled or easily fixed.
+**A card is a warning.** Error is kept for setup and storage failing outright. Critical, Home Assistant's word for a house in danger, is never used. All five cards are warnings, since each describes something already handled or easily fixed.
 
 *Proof:* [`test_repairs.py`](../tests/test_repairs.py), [`test_restore.py`](../tests/test_restore.py).
 
@@ -56,6 +58,7 @@ This section covers what Device Sentinel raises in Home Assistant's Settings, Re
 - **Not at midnight:** nobody reads a card then, and a nightly restart would clear it before morning.
 - **Not on each tick:** a card that comes back while it is being read is worse than one raised a few hours late.
 - **After the send:** judging after the brief is sent means a card can never delay or stop the brief.
+- **The exception, the shared address card (since 0.28.0):** it is judged at the minute check, because it should be known at once. It is raised only after the same two devices have held one address for 10 minutes, which is never inside the startup grace, and it clears at the first check after each has its own.
 
 *Proof:* [`test_repairs.py`](../tests/test_repairs.py).
 

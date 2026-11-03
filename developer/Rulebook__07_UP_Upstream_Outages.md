@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 29 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -35,8 +35,10 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **After Home Assistant has started:** an entry is called down only after it has been seen loaded (a start is under [UP-04](#up-04-starting-up-during-an-outage)). An integration with no watched device behind it is not watched.
 - **ESPHome and Tasmota:** they never fail setup, so an outage of either integration is not seen this way.
 - **The start time:** where a reader can say when the outage began, that moment is its start, provided it is a real moment in the past. Otherwise the start is when the reader noticed.
+- **The wait (since 0.28.0):** an upstream that goes down in the seconds before a restart is part of the restart, as a broker stopping at a restart is ([UP-02](#up-02-watching-the-broker)). A bridge newly read down waits 60 seconds before its outage is written or announced. A Home Assistant stop inside the wait leaves no trace, and a bridge back inside it was never an outage. One down past the wait is dated from the first check that read it down. Devices behind it are held as they were through the wait. A reader that dates its own outage, as ZHA does after its 60 seconds, is believed at once. An integration entry and a Lutron hub already wait about as long (60 seconds, and a second not-connected reading), so neither is told when lost just before a stop.
+- **Why:** on the reference rig Zigbee2MQTT's bridge goes offline 3 to 8 seconds before Home Assistant stops each night. Whether the minute check fell in that gap decided whether a three-minute bridge outage was written, which it was on 6 of 7 nights.
 
-*Proof:* [`test_zha_reader.py`](../tests/test_zha_reader.py), [`test_stacks.py`](../tests/test_stacks.py), [`test_reachability.py`](../tests/test_reachability.py), [`test_upstream_loading.py`](../tests/test_upstream_loading.py).
+*Proof:* [`test_zha_reader.py`](../tests/test_zha_reader.py), [`test_stacks.py`](../tests/test_stacks.py), [`test_reachability.py`](../tests/test_reachability.py), [`test_upstream_loading.py`](../tests/test_upstream_loading.py), [`test_bridge_down_wait.py`](../tests/test_bridge_down_wait.py).
 
 ### UP-04 Starting Up During an Outage
 
@@ -46,7 +48,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **The Problem List:** it is first written only after the bridge readers run and the remembered upstream state is restored.
 - **An outage from before the restart:** one still open is resumed from when it went down, so its recovery carries its real length.
 - **An outage first found at a start:** with no earlier down on record, it is dated from the start of the run and claims each device behind it, including one that failed before the restart.
-- **Diagnostics:** each start records how long each upstream took to load.
+- **Diagnostics:** each start records how long each upstream took to load. Since 0.28.0 the load is measured every 5 seconds through the startup grace (each bridge, the broker and each watched integration entry), not only at the minute check, so the record says to within 5 seconds when the last upstream loaded. The times are kept to judge how long the grace needs to be.
 
 *Proof:* [`test_boot_claim.py`](../tests/test_boot_claim.py), [`test_upstream_loading.py`](../tests/test_upstream_loading.py), [`test_entry_outages.py`](../tests/test_entry_outages.py), [`test_reachability.py`](../tests/test_reachability.py).
 
@@ -202,3 +204,15 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **When it goes:** the line is gone when the integration quiets or is excluded.
 
 *Proof:* [`test_noisy_integration.py`](../tests/test_noisy_integration.py), [`test_storm_tally.py`](../tests/test_storm_tally.py).
+
+### UP-19 A Wi-Fi Device's Address, and an Address Two Devices Share
+
+**Since 0.28.0, a Wi-Fi device tied to its router's tracker ([UP-13](#up-13-tying-a-device-to-its-router-tracker)) has the address its router gave it, and the access point it is joined to, kept with each change. Two devices holding one address at once for 10 minutes are flagged.**
+- **What is read:** the tracker's `ip` attribute, which every router integration carries, and UniFi's `ap_mac`. Nothing is read from an integration's private state. A row is kept each time either changes, with when, held to the History setting; each device keeps its latest row however old, and at most its newest 200 rows, so a device moving between access points all day cannot fill storage. A value longer than 64 characters is not an address and is not kept.
+- **The device page:** IP Address and Access Point, each with when it last changed, in Advanced. Simple shows IP Address only while another device holds it too.
+- **Shared:** two devices on two different trackers, both seen connected ("home"), holding one address for 10 minutes. A tracker away keeps its last address as a stale attribute, so it is not counted. One tracker tied to two devices (one piece of hardware shown as two) is not a share.
+- **Why it is flagged:** two pieces of hardware answering to one address make either one look like it has stopped working, which is the fault Device Sentinel exists to find.
+- **Where it shows:** a card on the Recommendations tab, in Simple too, each row naming the address; and a Repairs card that can only be acknowledged ([REP-01](Rulebook__16_REP_Repairs.md)), advising an address reserved for each device in the router's DHCP settings. Both go away by themselves once each device has its own address.
+- **Diagnostics:** the address rows and the flagged addresses are in the download, with every address replaced as all others are.
+
+*Proof:* [`test_wifi_addresses.py`](../tests/test_wifi_addresses.py), [`tools/panel_checks/check_wifi_address.js`](../tools/panel_checks/check_wifi_address.js).
