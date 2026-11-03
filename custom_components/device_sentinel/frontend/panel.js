@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.17 (2026-11-01)
+// File: panel.js, Version: 0.28.0 (2026-11-03)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -306,6 +306,15 @@ function halves(value, noun) {
   return `${whole} and a half ${noun}s`;
 }
 
+// The Short drop-outs row (rule SIG-16): "3 in the last 12 hours, the
+// longest 21m, the last at 7:41 PM".
+function shortDropWords(drops) {
+  if (!drops || !drops.count) return "None";
+  const last = new Date(drops.last);
+  const at = Number.isNaN(last.getTime()) ? "" : `, the last at ${last.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return `${drops.count} in the last ${drops.hours || 12} hours, the longest ${span(drops.longest)}${at}`;
+}
+
 function span(seconds) {
   if (seconds < 90) return `${Math.max(0, Math.round(seconds))}s`;
   if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
@@ -542,6 +551,16 @@ const STYLE = `
   .head { display: flex; flex-direction: column; gap: 12px; padding: 14px;
     background: var(--secondary-background-color, rgba(127,127,127,0.08)); border: 1px solid var(--divider-color);
     border-radius: var(--ha-card-border-radius, 12px); margin-bottom: 8px; }
+  /* One row where the screen is wide enough: the tiles at their own
+     width on the left, the buttons on the right, falling back to two
+     rows on a narrower screen; the time the figures were read sits in
+     small text at the band's bottom right (rule DASH-02). */
+  .body > .head { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 20px;
+    position: relative; padding-bottom: 22px; }
+  .body > .head > .status { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .body > .head > .status .part { padding: 6px 12px; flex: 0 0 auto; }
+  .body > .head > .actions { flex: 0 1 auto; }
+  .body > .head > .actions .asof { position: absolute; right: 18px; bottom: 4px; font-size: 12px; margin-left: 0; }
   .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--divider-color); overflow-x: auto;
     background: var(--secondary-background-color, rgba(127,127,127,0.08));
     border-radius: var(--ha-card-border-radius, 12px) var(--ha-card-border-radius, 12px) 0 0; }
@@ -1581,6 +1600,8 @@ class DeviceSentinelPanel extends HTMLElement {
         action = el("span", { class: "actcol" }, el("span", { class: "small" }, `${row.model || "Unknown model"}: ${row.type}`),
           this._recTypePicker(row.device_id, refresh, fail));
       }
+      // The address two devices hold at once (rule UP-19).
+      if (card.kind === "shared_address") action = el("span", { class: "small" }, `Address ${row.detail}`);
       // The switched-off cards (rule REC-05): one device, one kind.
       const TURN_ON = {
         last_seen: ["last_seen", "Turn on its Last Seen"],
@@ -3819,6 +3840,19 @@ class DeviceSentinelPanel extends HTMLElement {
     const addressRows = (Array.isArray(who.addresses) ? who.addresses : [])
       .filter((row) => row && ADDRESS_LABELS.includes(row.label) && typeof row.value === "string" && row.value)
       .map((row) => [row.label, row.value]);
+    // The address its router gave it and the access point it is joined
+    // to, each with when it last changed (rule UP-19). Simple shows the
+    // address only while another device holds it too (rule DASH-04).
+    const net = who.address || null;
+    const sinceCell = (value, since, warn) => el("div", { class: "actcol" },
+      el("span", {}, value),
+      ...(since ? [el("span", { class: "small muted" }, `since ${moment(since)}`)] : []),
+      ...(warn ? [el("span", { class: "recommended" }, warn)] : []));
+    const netRows = net ? [
+      ...(net.ip && (!simple || net.shared) ? [["IP Address", sinceCell(net.ip, net.ip_since,
+        net.shared ? "Another device holds this address too. Reserve an address for each one in your router." : null)]] : []),
+      ...(net.ap && !simple ? [["Access Point", sinceCell(net.ap, net.ap_since, null)]] : []),
+    ] : [];
     const acts = who.actions;
     this._readingCells = {};
     const byKind = (kind) => (page.readings || []).filter((r) => r.kind === kind);
@@ -3878,7 +3912,9 @@ class DeviceSentinelPanel extends HTMLElement {
       const last = [...rail].reverse().find((v) => v !== null && v !== undefined);
       return Boolean(last);
     })();
-    const showSignal = !simple || signalTrouble;
+    // Simple also shows it while the device keeps dropping out, for
+    // the Short drop-outs row (rules DASH-04, SIG-16).
+    const showSignal = !simple || signalTrouble || Boolean(who.short_drops && who.dropping_out);
     const nodeTrouble = who.node_status === "dead" || who.node_status === "off";
     const exclusion = (acts && acts.excluded) || {};
     const identity = [
@@ -3911,6 +3947,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // One piece of hardware shown as several devices (rule WATCH-06).
       ...(who.same_hardware ? [["Same hardware", this._sameHardwareCell(who)]] : []),
       ...(simple ? [] : addressRows),
+      ...netRows,
       group("Power"),
       ...(byKind("battery").length ? [["Battery level", valueCell("battery")]] : []),
       ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]]
@@ -3928,6 +3965,10 @@ class DeviceSentinelPanel extends HTMLElement {
         ...(byKind("signal").length ? [["Signal", valueCell("signal")]] : []),
         ...(byKind("signal").length ? [["Signal sensor", sensorLinks("signal")]]
           : acts && acts.signal_off ? [["Signal sensor", this._switchedOffCell(who, "signal", "signalsensor")]] : []),
+        // Each time it went unavailable and came back within its freeze
+        // window, over the last 12 hours (rule SIG-16).
+        // Simple: only while it keeps dropping out (rule DASH-04).
+        ...(who.short_drops && (!simple || who.dropping_out) ? [["Short drop-outs", shortDropWords(who.short_drops)]] : []),
       ] : []),
       // Not on a hub's page (rule DASH-08): a Lutron hub's only entity
       // changes at a restart, so its Last seen would read as a fault
