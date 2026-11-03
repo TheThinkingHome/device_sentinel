@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_dropping_out.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_dropping_out.js, Version: 0.28.0 (2026-11-03)
 // Panel checks: a device that keeps dropping out, on its page and on Signal
 // Trends (rule UNAV-06).
 // Run with: LC_ALL=en_US.UTF-8 node check_dropping_out.js [path/to/panel.js]
@@ -82,6 +82,43 @@ const DEVICE = payloads._ids.bravo;
     });
     const said = text(root);
     check("reads Flapping with the drop count", said.includes("Flapping, dropped out 5 times since 7:00 AM"), said.slice(0, 200));
+  }
+  console.log("The Short drop-outs row (rule SIG-16)");
+  const drops = { count: 3, longest: 1260, last: "2026-11-01T19:41:00+00:00", hours: 12 };
+  const rowText = (root) => {
+    const cells = [...root.querySelectorAll(".pane td, .pane th")];
+    const at = cells.findIndex((c) => c.textContent === "Short drop-outs");
+    return at < 0 ? null : cells[at + 1].textContent;
+  };
+  {
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      status: (st) => ({ ...st, dashboard: "advanced" }),
+      device: (d) => ({ ...d, identity: { ...d.identity, short_drops: drops, dropping_out: false } }),
+    });
+    const said = rowText(root);
+    check("Advanced shows the row", said !== null, said);
+    check("with the count, the longest and the last", said && said.startsWith("3 in the last 12 hours, the longest 21m, the last at "), said);
+  }
+  {
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      status: (st) => ({ ...st, dashboard: "simple" }),
+      device: (d) => ({ ...d, identity: { ...d.identity, short_drops: drops, dropping_out: false } }),
+    });
+    check("Simple leaves it out while the device is not dropping out", rowText(root) === null, rowText(root));
+  }
+  {
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      status: (st) => ({ ...st, dashboard: "simple" }),
+      device: (d) => ({ ...d, identity: { ...d.identity, short_drops: drops, dropping_out: true } }),
+    });
+    check("Simple shows it while the device keeps dropping out", rowText(root) !== null, rowText(root));
+  }
+  {
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      status: (st) => ({ ...st, dashboard: "advanced" }),
+      device: (d) => ({ ...d, identity: { ...d.identity, short_drops: null, dropping_out: false } }),
+    });
+    check("no short drops, no row", rowText(root) === null, rowText(root));
   }
   console.log("Signal Trends");
   {

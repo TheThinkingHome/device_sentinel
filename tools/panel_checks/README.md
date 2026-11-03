@@ -12,7 +12,7 @@ written rather than what it proves).
 |---|---|---|---|
 | Every tab | `check_tab_addresses.js` | 31 | each tab's own address, and the dashboard opening on the Daily Brief |
 | Every tab | `check_back_links.js` | 19 | back links to the exact page a view was opened from, and Print beside the gear |
-| Every tab | `check_controls_band.js` | 14 | the controls in a band above the tabs, and tabs that read as tabs |
+| Every tab | `check_controls_band.js` | 20 | the controls in a band above the tabs, and tabs that read as tabs |
 | Every tab | `check_tables_hold_columns.js` | 15 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
@@ -53,11 +53,12 @@ written rather than what it proves).
 | Battery | `check_battery_weeks.js` | 46 | five weekly averages, a model's pace as the slowest to the fastest of its other cells, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
-| Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
+| Signal | `check_dropping_out.js` | 10 | a device that keeps dropping out, on its page and on Signal Trends, and its Short drop-outs row |
+| A device's page | `check_wifi_address.js` | 11 | a Wi-Fi device's IP Address and Access Point, and devices sharing one address on the Recommendations tab |
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1029 checks in 46 files, as of 1 November 2026 (0.27.17).
+1051 checks in 47 files, as of 3 November 2026 (0.28.0).
 
 ## Running Them
 

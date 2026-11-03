@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_controls_band.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_controls_band.js, Version: 0.28.0 (2026-11-03)
 // Panel checks: the controls in a band of their own above the tabs, and
 // tabs that read as tabs (rule DASH-02).
 // Run with: LC_ALL=en_US.UTF-8 node check_controls_band.js [path/to/panel.js]
@@ -83,6 +83,19 @@ const rule = (root, selector) => {
     Boolean(head && card) && head.nextElementSibling === card && Boolean(card.querySelector(".tabs")));
   check("the band has a background and a border",
     /background: var\(--secondary-background-color/.test(rule(root, ".head")) && /border: 1px solid/.test(rule(root, ".head")), rule(root, ".head"));
+
+  console.log("One row where the screen is wide enough (rule DASH-02)");
+  const band = rule(root, ".body > .head");
+  check("the band is a row that wraps", /flex-direction: row/.test(band) && /flex-wrap: wrap/.test(band), band);
+  check("with room at its foot for the time", /position: relative/.test(band) && /padding-bottom: 22px/.test(band), band);
+  const tiles = rule(root, ".body > .head > .status");
+  check("the tiles sit side by side and may wrap", /display: flex/.test(tiles) && /flex-wrap: wrap/.test(tiles), tiles);
+  check("each tile takes only its own width", /flex: 0 0 auto/.test(rule(root, ".body > .head > .status .part")), rule(root, ".body > .head > .status .part"));
+  const asof = rule(root, ".body > .head > .actions .asof");
+  check("the time sits at the band's bottom right, in small text",
+    /position: absolute/.test(asof) && /right: 18px/.test(asof) && /bottom: 4px/.test(asof) && /font-size: 12px/.test(asof), asof);
+  const time = root.querySelector(".head .actions .asof");
+  check("the time is still inside the band, after the buttons", Boolean(time) && head.contains(time) && time === time.parentElement.lastElementChild, time && time.outerHTML);
 
   console.log("The tabs read as tabs");
   check("the strip is tinted", /background: var\(--secondary-background-color/.test(rule(root, ".tabs")), rule(root, ".tabs"));
