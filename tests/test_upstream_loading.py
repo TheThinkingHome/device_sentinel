@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_upstream_loading.py, Version: 0.28.0 (2026-11-03)
 
 """An upstream that has not loaded yet is loading, not down
 (rules UP-03, UP-04).
@@ -334,3 +334,96 @@ async def test_a_real_recovery_still_closes_the_problem(hass: HomeAssistant):
     await settle_parked(hass, coord)
     assert coord.data[DATA_TODO_ITEMS] == []
     assert len(_resolved(coord, device.id)) == 1
+
+
+# ------------------------------------------- load times measured (UP-04)
+
+
+async def test_a_load_is_timed_to_a_few_seconds(hass: HomeAssistant, freezer):
+    """The diagnostics give the second a bridge loaded, not the first
+    minute check's (rule UP-04)."""
+    coord = await setup_coordinator(hass)
+    reader = SimpleNamespace(
+        state=BRIDGE_DOWN, pairing_open=False, loaded=False,
+        async_stop=lambda: None,
+    )
+    coord._bridge_readers["z2m"] = reader
+    start = coord._run_start()
+    freezer.move_to(dt_util.utc_from_timestamp(start + 10))
+    coord._measure_loading()
+    assert "z2m" not in coord.upstreams_load_measured
+    reader.state, reader.loaded = BRIDGE_RUNNING, True
+    freezer.move_to(dt_util.utc_from_timestamp(start + 15))
+    coord._measure_loading()
+    freezer.move_to(dt_util.utc_from_timestamp(start + 20))
+    coord._measure_loading()
+    assert coord.upstreams_load_measured["z2m"] == 15.0
+    # The minute check's time stands for the outage rules, unchanged.
+    freezer.move_to(dt_util.utc_from_timestamp(start + 65))
+    coord._sample_bridges()
+    assert coord.upstreams_loaded_after["z2m"] == 65.0
+    assert coord.upstream_load_times()["z2m"] == 15.0
+
+
+async def test_an_integration_load_is_timed(hass: HomeAssistant, freezer):
+    source, device = _plant_integration(hass)
+    source.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+    coord = await setup_coordinator(hass)
+    coord._watched[device.id] = "controller_hub"
+    start = coord._run_start()
+    freezer.move_to(dt_util.utc_from_timestamp(start + 40))
+    coord._measure_loading()
+    assert "controller_hub" not in coord.upstreams_load_measured
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    freezer.move_to(dt_util.utc_from_timestamp(start + 45))
+    coord._measure_loading()
+    assert coord.upstreams_load_measured["controller_hub"] == 45.0
+
+
+async def test_the_timing_stops_when_the_grace_closes(hass: HomeAssistant, freezer):
+    """Nothing is timed after the startup grace, and the timer is gone."""
+    coord = await setup_coordinator(hass)
+    assert coord._load_measure_unsub is not None
+    coord._grace_until = 0.0
+    reader = SimpleNamespace(
+        state=BRIDGE_RUNNING, pairing_open=False, loaded=True,
+        async_stop=lambda: None,
+    )
+    coord._bridge_readers["z2m"] = reader
+    coord._measure_loading()
+    assert "z2m" not in coord.upstreams_load_measured
+    assert coord._load_measure_unsub is None
+    coord._stop_measuring_loads()  # a second stop is harmless
+
+
+async def test_a_measuring_fault_changes_nothing(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+
+    class Broken:
+        @property
+        def loaded(self):
+            return True
+
+        def async_stop(self):
+            return None
+
+        def __getattr__(self, name):
+            raise RuntimeError("broken reader")
+
+    coord._bridge_readers["z2m"] = Broken()
+    coord._measure_loading()
+    assert coord.upstreams_load_measured == {}
+
+
+async def test_diagnostics_prefer_the_measured_time(hass: HomeAssistant):
+    from custom_components.device_sentinel.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+    from tests.helpers import setup_entry
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord.upstreams_loaded_after.update({"zha": 75.0, "z2m": 65.0})
+    coord.upstreams_load_measured["z2m"] = 12.5
+    found = await async_get_config_entry_diagnostics(hass, entry)
+    assert found["restart"]["upstreams_loaded_after"] == {"zha": 75.0, "z2m": 12.5}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.27.17 (2026-11-02)
+# File: conftest.py, Version: 0.28.0 (2026-11-03)
 
 """Shared test fixtures: clean report folders, the fleets, and a failure
 on any deprecation Home Assistant reports (rules REL-03, CODE-16).
@@ -170,6 +170,21 @@ def no_new_deprecations():
             "Home Assistant reported a deprecated use:\n" + "\n".join(found),
             pytrace=False,
         )
+
+
+@pytest.fixture
+def bridge_down_at_once(monkeypatch):
+    """A bridge read down is believed at the first check.
+
+    A bridge newly down waits a minute before its outage is
+    written down and announced (rule UP-03). A test about what an outage
+    does once it stands, its counts, its pushes, its wording, its rows,
+    takes this fixture so it is not about the wait; the wait itself is
+    proven in `test_bridge_down_wait.py`.
+    """
+    from custom_components.device_sentinel import interventions
+
+    monkeypatch.setattr(interventions, "BRIDGE_DOWN_WAIT_SECONDS", 0.0)
 
 
 @pytest.fixture

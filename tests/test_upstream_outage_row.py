@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_upstream_outage_row.py, Version: 0.27.10 (2026-10-27)
+# File: test_upstream_outage_row.py, Version: 0.28.0 (2026-11-03)
 
 """An upstream outage on a healthy house is reported (rules UP-05, UP-08,
 UP-09, UP-11).
@@ -18,6 +18,8 @@ push says how long the upstream was down.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -143,6 +145,7 @@ async def _minutes(hass, coord, freezer, count, devs=None):
         await hass.async_block_till_done()
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_bridge_outage_of_a_healthy_house(hass: HomeAssistant, freezer):
     coord, devs, phone = await _z2m_house(hass)
     await _minutes(hass, coord, freezer, 5, devs)

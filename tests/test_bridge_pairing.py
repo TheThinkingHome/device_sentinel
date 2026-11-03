@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.27.17 (2026-11-01)
+# File: test_bridge_pairing.py, Version: 0.28.0 (2026-11-03)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override (rules
 STACK-01, STACK-03, FRZ-16).
@@ -637,6 +637,7 @@ def _kinds(coord, kind):
     ]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_bridge_going_down_and_back_is_recorded(
     hass: HomeAssistant, freezer
 ):
@@ -695,6 +696,7 @@ class _Stub:
         return None
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_blip_to_unknown_does_not_lose_the_recovery(
     hass: HomeAssistant, freezer
 ):
@@ -781,6 +783,7 @@ async def test_a_pairing_window_is_dated_when_the_bridge_says_so(
     assert abs(closed[0]["duration"] - 66.0) < 1.0, closed[0]["duration"]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_window_closed_by_its_bridge_going_offline_is_dated_by_the_check(
     hass: HomeAssistant, freezer
 ):
@@ -808,6 +811,7 @@ async def test_a_window_closed_by_its_bridge_going_offline_is_dated_by_the_check
     assert abs(closed[0]["duration"] - 120.0) < 1.0, closed[0]["duration"]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_window_reopened_after_a_bridge_restart_is_not_dated_before_its_close(
     hass: HomeAssistant, freezer
 ):
@@ -843,6 +847,7 @@ async def test_a_window_reopened_after_a_bridge_restart_is_not_dated_before_its_
 # ------------------------------------- the bridge hand-back and recovery
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_gives_its_devices_time_to_rejoin(
     hass: HomeAssistant, freezer
 ):

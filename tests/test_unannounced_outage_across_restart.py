@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_unannounced_outage_across_restart.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_unannounced_outage_across_restart.py, Version: 0.28.0 (2026-11-03)
 
 """A bridge or broker outage whose down was never told on the bus,
 standing across a restart (rule UP-10).
@@ -38,6 +38,7 @@ from tests.test_bridge_pairing import _Stub
 from tests.test_broker import _stub
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_down_never_told_is_told_after_the_next_grace(
     hass: HomeAssistant, freezer
 ):

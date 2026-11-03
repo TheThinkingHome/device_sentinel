@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_outage_worst.py, Version: 0.28.0 (2026-11-03)
 
 """The daily brief tells an outage by its worst moment (rule UP-11).
 
@@ -16,6 +16,8 @@ such figure, reads with its total alone.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 
@@ -74,6 +76,7 @@ async def test_a_wifi_outage_records_its_worst_moment(
     assert row[SYS_WORST] == 12
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_outage_records_its_worst_moment(
     hass: HomeAssistant, freezer
 ):

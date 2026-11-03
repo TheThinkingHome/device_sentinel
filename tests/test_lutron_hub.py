@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_hub.py, Version: 0.27.15 (2026-10-30)
+# File: test_lutron_hub.py, Version: 0.28.0 (2026-11-03)
 
 """Lutron: judged by its hub (rules STACK-09, STACK-10).
 
@@ -476,6 +476,39 @@ async def test_a_hub_frozen_from_before_is_cleared_while_connected_and_dated_by_
     await _tick(hass, freezer, n=3)
     assert record[DEV_FROZEN_CATEGORY] == "unavailable"
     assert lost <= record["frozen_since"] <= lost + 62
+
+
+async def test_a_frozen_hub_that_loses_its_connection_reads_unavailable_since_on_its_page(hass: HomeAssistant, freezer):
+    """A hub frozen first and then cut off is dated on its page from the
+    connection loss, not left on its freeze line (rules DASH-08, STACK-10)."""
+    h = await _house(hass, freezer)
+    record = h.coord.data[DATA_DEVICES][h.g_hub.id]
+    await _past_grace(hass, freezer)
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record["frozen_since"] = dt_util.utcnow().timestamp() - 3 * 86400
+    record["down_began_as"] = FREEZE_CATEGORY_FROZEN
+    lost = dt_util.utcnow().timestamp()
+    h.garage.runtime_data.bridge._leap = None
+    await _tick(hass, freezer, n=3)
+    assert record[DEV_FROZEN_CATEGORY] == "unavailable"
+    page = h.coord.dashboard_device(h.g_hub.id)
+    since = _find_since(page)
+    assert since is not None
+    assert lost - 1 <= dt_util.parse_datetime(since).timestamp() <= lost + 62
+
+
+def _find_since(page):
+    """The device page's "since", wherever the payload keeps it."""
+    stack = [page]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if "since" in item and "last_activity" in item:
+                return item["since"]
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return None
 
 
 async def test_an_integration_outage_open_from_before_the_upgrade_is_closed(hass: HomeAssistant, freezer):

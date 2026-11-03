@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_wording.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_outage_wording.py, Version: 0.28.0 (2026-11-03)
 
 """What a bridge's row says, down and recovering (rule UP-11).
 
@@ -15,6 +15,8 @@ with nothing back yet says what it is waiting for.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -70,6 +72,7 @@ async def _bridge_back_with(hass, freezer, down: int, back: int):
     return coord, began
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_back_with_nothing_returned_says_what_it_waits_for(
     hass: HomeAssistant, freezer
 ):
@@ -84,6 +87,7 @@ async def test_a_bridge_back_with_nothing_returned_says_what_it_waits_for(
     assert "reported as its own problem" in body
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_recovery_counts_against_what_went_down(
     hass: HomeAssistant, freezer
 ):
@@ -98,6 +102,7 @@ async def test_a_bridge_recovery_counts_against_what_went_down(
     assert "1 of the 3 devices that went down have already recovered" in body
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_one_device_waiting_reads_in_the_singular(
     hass: HomeAssistant, freezer
 ):
@@ -109,6 +114,7 @@ async def test_one_device_waiting_reads_in_the_singular(
     assert "waiting for the 1 device that went down to reconnect" in body
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_one_device_left_of_several_reads_in_the_singular(
     hass: HomeAssistant, freezer
 ):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_events_fleet.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_upstream_events_fleet.py, Version: 0.28.0 (2026-11-03)
 
 """The upstream event pair, driven against two real houses' records
 (rules UP-02, UP-10).
@@ -182,6 +182,7 @@ def _pairs_close(seen):
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_reference_fleet_pairs_a_bridge_outage(
     hass: HomeAssistant,
 ):
@@ -204,6 +205,7 @@ async def test_the_reference_fleet_pairs_a_bridge_outage(
 
 
 @pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_second_fleet_pairs_a_bridge_outage(
     hass: HomeAssistant,
 ):
@@ -224,6 +226,7 @@ async def test_the_second_fleet_pairs_a_bridge_outage(
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_link_that_will_not_settle_stays_paired(
     hass: HomeAssistant,
 ):
@@ -248,6 +251,7 @@ async def test_a_link_that_will_not_settle_stays_paired(
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_sample_that_repeats_says_nothing_new(
     hass: HomeAssistant,
 ):
@@ -374,6 +378,7 @@ async def test_a_fleet_where_nothing_is_up(hass: HomeAssistant):
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_count_never_exceeds_the_watched_fleet(
     hass: HomeAssistant,
 ):

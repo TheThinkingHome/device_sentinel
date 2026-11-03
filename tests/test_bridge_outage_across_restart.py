@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_bridge_outage_across_restart.py, Version: 0.27.5 (2026-10-26)
+# File: tests/test_bridge_outage_across_restart.py, Version: 0.28.0 (2026-11-03)
 
 """A bridge outage open across a restart (rule UP-10).
 
@@ -83,6 +83,7 @@ async def test_still_down_after_the_grace_is_not_announced_again(
     assert ups[0]["devices"] == 1
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_down_announced_in_this_run_stores_its_count(hass: HomeAssistant):
     """So a restart in the middle can close it with the same count."""
     rider, _ = register_device(hass, "rider", "Rider")
@@ -108,6 +109,7 @@ def _up_rows(coord):
     return [r for r in coord.data[DATA_SYSTEM_EVENTS] if r["kind"] == SYS_BRIDGE_UP]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_worst_count_is_remembered_while_down(hass: HomeAssistant):
     rider, _ = register_device(hass, "rider", "Rider")
     coord = await setup_coordinator(hass)

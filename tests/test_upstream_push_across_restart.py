@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_push_across_restart.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_upstream_push_across_restart.py, Version: 0.28.0 (2026-11-03)
 
 """The phone pushes of a bridge or broker outage open across a restart
 (rule UP-09).
@@ -74,6 +74,7 @@ async def _bridge_pushed_down(hass, freezer, uid):
     return rider
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_bridge_down_is_not_pushed_again_after_a_restart(
     hass: HomeAssistant, freezer
 ):
@@ -121,6 +122,7 @@ async def test_broker_down_is_not_pushed_again_after_a_restart(
     assert sent == []
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_bridge_back_inside_the_grace_still_pushes_over(
     hass: HomeAssistant, freezer
 ):
@@ -138,6 +140,7 @@ async def test_bridge_back_inside_the_grace_still_pushes_over(
     assert [(name, over) for name, over, _sound in sent] == [(STACK_Z2M, True)]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_over_push_survives_a_restart_inside_the_hand_back(
     hass: HomeAssistant, freezer
 ):
@@ -164,6 +167,7 @@ async def test_over_push_survives_a_restart_inside_the_hand_back(
     assert "pushed" not in coord.data[DATA_BRIDGE_SEEN][STACK_Z2M]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_over_push_is_cleared_once_sent(hass: HomeAssistant, freezer):
     """Back and over before any restart: nothing is left owed."""
     await _bridge_pushed_down(hass, freezer, "hb2")
@@ -177,6 +181,7 @@ async def test_over_push_is_cleared_once_sent(hass: HomeAssistant, freezer):
     assert "pushed" not in seen and "devices" not in seen
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_bridge_flap_then_restart_pushes_down_once(
     hass: HomeAssistant, freezer
 ):
@@ -245,6 +250,7 @@ async def _power_cut(hass, freezer, down=120):
     return entry.runtime_data
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_cleared_bridge_record_reaches_the_file(
     hass: HomeAssistant, freezer, hass_storage
 ):
@@ -265,6 +271,7 @@ async def test_cleared_bridge_record_reaches_the_file(
     assert "pushed" not in on_disk, on_disk
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_over_push_not_repeated_after_a_later_power_cut(
     hass: HomeAssistant, freezer
 ):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_outage_fleet_james.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_integration_outage_fleet_james.py, Version: 0.28.0 (2026-11-03)
 
 """The integration outage, driven against a real house's record
 (rule UP-05).
@@ -109,6 +109,7 @@ async def test_an_integration_that_will_not_settle(
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_zigbee_stack_still_answers_for_itself(
     hass: HomeAssistant,
 ):

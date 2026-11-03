@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_reachability.py, Version: 0.28.0 (2026-11-03)
 
 """Zigbee2MQTT reachability, replayed against a captured house, and the
 upstream outages (rules STACK-03, UP-01, UP-03, UP-10).
@@ -20,6 +20,8 @@ which every caller reads as no opinion.
 """
 
 from __future__ import annotations
+
+import pytest
 
 import json
 import pathlib
@@ -352,6 +354,7 @@ def _past_grace(coord):
     coord._grace_until = 0.0
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_a_bridge_going_down_reaches_the_bus(hass: HomeAssistant):
     """The down half, with the count of what it took with it."""
     coord = await setup_coordinator(hass)
@@ -459,6 +462,7 @@ async def test_a_bridge_still_down_across_a_restart_is_announced_once(
     assert back[0]["for_seconds"] >= 900
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_the_count_is_membership_not_casualties(
     hass: HomeAssistant,
 ):
@@ -507,6 +511,7 @@ async def test_the_count_is_membership_not_casualties(
     assert down[0]["devices"] >= 5, down[0]
 
 
+@pytest.mark.usefixtures("bridge_down_at_once")  # rule UP-03: not about the wait
 async def test_an_outage_inside_the_grace_is_held_not_dropped(
     hass: HomeAssistant,
 ):
