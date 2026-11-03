@@ -10,74 +10,26 @@
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)
 
-
-**Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it catches failing batteries and dropping radio links before they take your smart home down.**
-
-> **Pre-Release.** This integration is under rapid development. Expect breaking changes.
-
-&nbsp;
-&nbsp;
+**Device Sentinel tells you when a device in your house stops working, even while Home Assistant still shows its last value.**
 
 ![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
 
-&nbsp;
-&nbsp;
+## What It Does
 
-## The Blind Spot
+Home Assistant can't tell a quiet device from a dead one: a door sensor with a dead battery keeps reading "closed". Device Sentinel learns how often each device reports and tells you when one goes quiet for longer than its own usual. It also watches batteries and radio links, each against that device's own history.
 
-Home Assistant only reacts to what your devices tell it. When a device quietly dies, Home Assistant doesn't blink. The last value reported stays on your dashboard forever. Nothing turns red. Nothing throws an error.
-
-* A freezer sensor drops off the mesh. Your dashboard shows a comfortable -18°C while the food inside slowly thaws.
-* A door sensor dies while the door is closed. Your security automations happily believe that door is secure, indefinitely.
-* The batteries in your smart lock have been draining for a month. Nothing warns you until you are standing outside, locked out.
-
-The early warning signs are usually there, in battery levels and radio signal data, but nobody acts on them, because a battery reading of 20% means "two weeks left" on one device and "dead this afternoon" on another. 
-
-## The Solution
-
-Device Sentinel doesn't guess. It watches how often each device *actually* reports and learns its unique rhythm. 
-
-There are no watch lists to maintain and no arbitrary timeouts to assign. A chatty motion sensor earns a tight window and is reported within minutes if it goes dark. A twice-a-day rain gauge earns a generous window and is left alone. 
-
-Device Sentinel applies the same logic to your batteries and radio links. A radio link is judged against the baseline *that specific device* normally holds. A battery is judged twice: once against a flat level you choose, and again against how fast it is actually draining. 
-
-If a battery is projected to reach empty inside your chosen horizon, say thirty days, Device Sentinel reports it, even if it still reads 80%.
-
-### What It Catches
-
-| Problem | Why you care |
+| Problem | What Device Sentinel reports |
 |---|---|
-| **Frozen** | Silent while still showing a healthy value. Your automations are acting on a dead reading. |
-| **Unavailable** | Home Assistant knows it's gone. You probably don't. |
-| **Flapping** | Drops out and comes back again and again. One alert, not dozens. |
-| **Never reported** | Devices that have never sent a reading, including ones that died before you installed Device Sentinel. |
-| **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
-| **Weak or stuck signal** | Links degrade before they fail. |
+| **Frozen** | A device that stopped reporting while still showing a value. |
+| **Unavailable** | A device Home Assistant has marked unavailable. |
+| **Flapping** | A device that drops out and comes back again and again, as one problem. |
+| **Never reported** | A device that has never sent a reading. |
+| **Low or falling battery** | A battery under your threshold, or draining fast enough to reach it within your warning time. |
+| **Weak or stuck signal** | A radio link weaker than its own normal, or a reading stuck at one value. |
 
-![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Accelerating%20-%20Door%202nd%20Bedroom.png)
+When a Zigbee coordinator, the MQTT broker or your Wi-Fi network goes down, Device Sentinel reports that one failure, not each device behind it.
 
-![The same device's radio link against its own normal and its bad-day line](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Signal%20Failing%20-%20Temperature%20Living%20Room.png)
-
-## What You Get
-
-**Zero-Config Monitoring From Day One**
-Device Sentinel watches the devices in Home Assistant from the moment you install it. Non-hardware entries (like Sun or HACS) and disabled devices are automatically ignored, and hardware that two integrations both list is watched once.
-
-**One Unified Problem List**
-Every fault lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick the item to acknowledge it, and it stops making noise on your phone while staying on the list until it recovers.
-
-**One Alert When a Coordinator, Broker or Wi-Fi Network Goes Down**
-When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, Device Sentinel gives each device time to rejoin, then reports only the ones that didn't. 
-
-**A Dashboard in Your Sidebar**
-The daily brief, the problem list, battery and signal trends, and each device's own page, one click apart. Every device has a type, such as Leak Sensor, Plug or Camera, so you can look at all your door sensors at once, and a recommendations tab lists what you can set right there. Administrators only.
-
-**Alerts That Respect Your Evening**
-Live push notifications are sent for real faults, and quiet hours keep your phone silent overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
-
-Every screen and setting is explained in the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
-
-![A Device Sentinel daily brief as it arrives by email, listing the devices that need attention and what happened over the last day](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Sentinel%20Daily%20Brief%20Hard%20Copy.png)
+The story behind Device Sentinel, with more pictures, is in the [overview](docs/OVERVIEW.md).
 
 ## Installation
 
@@ -91,72 +43,69 @@ Device Sentinel is in the HACS default store.
 
 *(Requires Home Assistant 2026.5 or newer)*
 
-### First Steps
+## Your First Two Weeks
 
-Device Sentinel works with its defaults from the start. Two steps on day one make it far more useful:
-1. Open the integration settings and configure **Notifications and Daily Brief**.
-2. Open the Recommendations tab on the Device Sentinel dashboard. Where a card lists a device whose Battery, Last Seen or Z-Wave status sensor is switched off, turn it on so the integration has data to learn from. Signal and battery voltage sensors are listed when you switch the dashboard to Advanced.
+Device Sentinel works with its defaults from the start. It learns your house over the first two weeks.
 
-![The Device Sentinel device page in Home Assistant, with its controls and sensors](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Page%20Full.png)
+1. **Day one.** Open the integration settings and set up **Notifications and Daily Brief**. Leave High-Priority targets empty for now, set Quiet Hours, and send the Daily Brief when they end. Then open the **Recommendations** tab on the Device Sentinel dashboard and turn on any Last Seen, Battery or Z-Wave status sensor it lists as switched off. With Last Seen on, a frozen device is caught in minutes rather than hours.
+2. **Week one: clear out the noise.** While Device Sentinel learns, you may hear about things that aren't hardware, such as ping trackers, phone apps or a wall tablet. On the **Exclusions and Muting** screen, exclude what isn't hardware that can fail, and mute what you don't mind going quiet. Leave the Freeze Detection sliders alone.
+3. **Week two: frozen devices are reported.** From day 7, a device that stays quiet longer than its own usual is reported frozen. Expect a few false alarms. Mute devices that come and go by nature, such as a car sensor that leaves the driveway. By day 14, you can trust a frozen report.
+4. **After that.** Signal baselines settle after three weeks, and a battery is judged falling after four weeks of readings.
 
-It takes time to learn your house. Freeze detection arms after a week, signal baselines settle after three weeks, and a battery is judged falling after four weeks of readings.
+[Installation and Setup](https://github.com/TheThinkingHome/device_sentinel/wiki/Installation-and-Setup) in the wiki has each step in full.
 
-## Settings
+## Documentation
 
-Device Sentinel's settings are designed to be set once and forgotten. For complete details, see the [Wiki Configuration Guide](https://github.com/TheThinkingHome/device_sentinel/wiki).
+The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) explains each screen and setting.
 
-![Device Sentinel's configuration menu in Home Assistant](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Integration%20Settings%20Main.png)
+- [Installation and Setup](https://github.com/TheThinkingHome/device_sentinel/wiki/Installation-and-Setup)
+- [The Dashboard](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Dashboard)
+- [The Daily Brief](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Daily-Brief)
+- [FAQ and Troubleshooting](https://github.com/TheThinkingHome/device_sentinel/wiki/FAQ-and-Troubleshooting)
+- [Screenshots](https://github.com/TheThinkingHome/device_sentinel/wiki/Screenshots)
 
-| Section | What it controls |
-|---|---|
-| **[Notifications](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications-and-Daily-Brief)** | Where your instant alerts go, your quiet hours, when the Daily Brief is generated and sent, and whether device names in the daily brief open their pages on the dashboard. |
-| **[Exclusions and Muting](https://github.com/TheThinkingHome/device_sentinel/wiki/Exclusions-and-Muting)** | Manage the hardware you want ignored. *Exclude* integrations that provide useless data (like mobile apps). *Mute* devices to stop alerts while keeping their history. |
-| **[Low Battery](https://github.com/TheThinkingHome/device_sentinel/wiki/Low-Battery)** | Set your flat percentage threshold and your "Days Till Empty" horizon. |
-| **[Signal Strength](https://github.com/TheThinkingHome/device_sentinel/wiki/Signal-Strength)** | Define what constitutes a "bad signal day" by adjusting how far a signal must drop below its own normal baseline. |
-| **[Freeze Detection](https://github.com/TheThinkingHome/device_sentinel/wiki/Freeze-Detection)** | Set how much grace a device gets beyond its own rhythm before Device Sentinel reports it frozen. |
-| **[WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi)** | Configure the integration to watch your server's wireless adapter to detect home-wide Wi-Fi outages. |
-| **[Advanced](https://github.com/TheThinkingHome/device_sentinel/wiki/Advanced)** | Storage, history and maintenance-window settings, and the Data Trim tool. |
-| **[Extended Diagnostics](https://github.com/TheThinkingHome/device_sentinel/wiki/Extended-Diagnostics)** | Volunteer hardware data to help build support for new routers and coordinators. |
+## Getting Help
+
+- **Something isn't working:** open a [bug report](https://github.com/TheThinkingHome/device_sentinel/issues/new/choose) and attach your diagnostics download (**Settings > Devices and Services > Device Sentinel**, the three dots, **Download diagnostics**). If you'd rather not post it publicly, open the issue without it and you'll be given an email address to send it to.
+- **A question:** ask in the [Device Sentinel thread](https://community.home-assistant.io/t/1029252) on the Home Assistant forum, or open an issue.
+- **An idea:** open a [feature request](https://github.com/TheThinkingHome/device_sentinel/issues/new/choose). Say what happened in your home that it would have caught.
+- **A security problem:** report it privately, as [SECURITY.md](SECURITY.md) describes. Don't open a public issue.
+
+## Contributing
+
+You don't need to write code to help. Device Sentinel learns from real houses.
+
+- **Your hardware:** if your hub, integration or router isn't fully supported, turn on Extended Diagnostics and send the files. [CONTRIBUTING.md](CONTRIBUTING.md) walks through it.
+- **Your opinion:** run Device Sentinel for a week or two, then open an issue titled "Review" and tell me what worked and what didn't.
+- **Code:** read [CONTRIBUTING.md](CONTRIBUTING.md) first. Device Sentinel's rules are in the [`developer`](developer/Main__Rulebook.md) folder, and the code refers to them by name.
+
+The hardware that has already run on real houses is listed in [TESTED_HARDWARE.md](TESTED_HARDWARE.md).
 
 ## Integration Status
 
 | Area | Status | Notes |
 |---|---|---|
-| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. Administrators only. |
-| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. Devices with four or more weeks of history get a steadier rhythm that a few bad days can't stretch. An ESPHome device is judged by its connection. Freeze and unavailable mute apart. |
-| **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up, with the time left to your threshold as a range drawn from each cell's own history. Records the day a battery was replaced and asks you to confirm it. |
+| **Dashboard** | Working | Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. Administrators only. |
+| **Freeze Detection** | Stable | Frozen, unavailable and flapping devices, each judged on its own rhythm. |
+| **Battery** | Stable | Low batteries, and batteries falling or speeding up, with the time left as a range. |
 | **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
-| **Storage** | Hardened | Survives power cuts and restores itself from a backup. Long histories live in a file of their own. |
+| **Storage** | Hardened | Survives power cuts and restores itself from a backup. |
 | **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
 | **MQTT** | Working | A broker outage is one alert, not one per device. |
 | **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
 | **WiFi** | Working | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
-| **Z-Wave** | Working | A node Z-Wave JS reports dead makes its device unavailable, and an integration outage is one alert. |
-| **Matter** | Working | A device that loses power is reported unavailable within minutes. A light, plug or button that reports only when used is judged by being available, so it is not reported frozen because it is quiet. |
+| **Z-Wave** | Working | A node Z-Wave JS reports dead makes its device unavailable. |
+| **Matter** | Working | A light, plug or button that reports only when used is not reported frozen because it is quiet. |
 | **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
+
+Each release is listed in the [changelog](CHANGELOG.md) and on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
 ## AI Disclosure
 
 Device Sentinel was built with AI assistance under my direction. Every design decision is mine, and nothing reaches this repository without my review and a full test gate, with detection proven on real hardware. [AI_DISCLOSURE.md](AI_DISCLOSURE.md) explains exactly what the AI did and how every release is checked.
 
-## Latest Releases
-
-Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
-
-**[0.27.17](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.17), November 1, 2026.** Bug fixes and a finished dashboard. Simple shows only what is necessary to act on, and Advanced adds the trends, charts and setup. Each device's page groups its details under Power, Signal, Reporting and Actions, and its status bar turns yellow when the device is late and gray when it is unavailable. There are fewer false alarms: down times are truer, re-pairing one device restarts only that device, and a Matter button nobody has pressed is no longer reported frozen. Battery Trends gives each falling battery's time left as a range, and the Daily Brief tells separate failures separately and names each integration as Home Assistant does.
-
-**[0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026.** A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
-
-**[0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026.** Each device has a type you can set from its page, and the tabs sort and filter by it. Hardware that several integrations list is watched once, and you can exclude a single device from its page or from Settings.
-
-## From The Thinking Home
-
-The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/). 
-
 ---
 
 **License:** GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
-
----
 
 Battery types come from the device library of [Battery Notes](https://github.com/andrew-codechimp/HA-Battery-Notes) by Andrew Jackson, shipped with Device Sentinel under its MIT licence. The notice is in `custom_components/device_sentinel/data/BATTERY_LIBRARY_LICENSE.md`.
