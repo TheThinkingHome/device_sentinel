@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.27.10 (2026-10-27)
+# File: config_flow.py, Version: 0.28.2 (2026-11-04)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -123,6 +123,11 @@ from .const import (
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
     CONF_BADDAY_SENSITIVITY,
+    CONF_SHORT_DROP_LIMIT,
+    DEFAULT_SHORT_DROP_LIMIT,
+    SHORT_DROP_LIMIT_MAX,
+    SHORT_DROP_LIMIT_MIN,
+    SHORT_DROP_LIMIT_STEP,
     DEFAULT_BATTERY_DAYS,
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_REPEAT_FLOOR,
@@ -1129,6 +1134,23 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
+                    # How long a drop may last and still be a short
+                    # drop-out (rule SIG-16).
+                    vol.Required(
+                        CONF_SHORT_DROP_LIMIT,
+                        default=options.get(
+                            CONF_SHORT_DROP_LIMIT,
+                            DEFAULT_SHORT_DROP_LIMIT,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=SHORT_DROP_LIMIT_MIN,
+                            max=SHORT_DROP_LIMIT_MAX,
+                            step=SHORT_DROP_LIMIT_STEP,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
                     # The three muting lists move into a section of their
                     # own (rule CFG-02). Collapsed, because a person
                     # opening Signal Strength came for the bad-day
@@ -1210,6 +1232,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             CONF_BADDAY_DROP_LQI,
             CONF_BADDAY_DROP_RSSI,
             CONF_BADDAY_BASELINE_DAYS,
+            CONF_SHORT_DROP_LIMIT,
         ):
             if key in pruned:
                 pruned[key] = int(pruned[key])

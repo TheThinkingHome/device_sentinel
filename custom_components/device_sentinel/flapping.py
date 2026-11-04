@@ -3,19 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.28.1 (2026-11-03)
+# File: flapping.py, Version: 0.28.2 (2026-11-04)
 
 """A device with short drop-outs (rule SIG-17).
 
 A short drop is a device going unavailable and coming back on its own
-within its freeze window (rule SIG-16). Two short drops within 12 hours
+within its limit (rule SIG-16): its freeze margin, never more than the
+Short Drop-Out Limit setting. Two short drops within 12 hours
 put a device on the Problem List as having short drop-outs; it stays
 there until 12 hours pass with no short drop, each short drop starting
 the 12 hours again. One push when it is added and one when it is
 removed; the drops in between push nothing.
 
 While a device has short drop-outs, a drop that has not yet outlasted
-its freeze window is not reported, because it may still prove short. A
+its limit is not reported, because it may still prove short. A
 drop that outlasts it is reported as the device becoming unavailable,
 dated from when it went, as any other.
 
@@ -65,13 +66,16 @@ class FlapMixin:
         added or the table is folded, since the list, the push and each
         device's words all read it on every pass."""
         table = self.data.get(DATA_SHORT_DROPS) or []
-        key = (id(table), len(table), id(table[-1]) if table else None)
+        cap = self._short_drop_cap()  # type: ignore[attr-defined]
+        # The Short Drop-Out Limit is part of the key, so a changed
+        # setting is read at once (rule SIG-16).
+        key = (id(table), len(table), id(table[-1]) if table else None, cap)
         cached = getattr(self, "_short_drops_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
         found: dict[str, list[tuple[float, float]]] = {}
         for row in table:
-            if not isinstance(row, dict) or not is_short(row):
+            if not isinstance(row, dict) or not is_short(row, cap):
                 continue
             device_id = row.get(DROP_DEVICE_ID)
             went = _number(row.get(DROP_WENT))
@@ -112,7 +116,10 @@ class FlapMixin:
             else:
                 ran = [drop for drop in drops if drop[0] >= since]
                 last_back = max((back for _went, back in ran), default=since)
-                if now - last_back > hold:
+                # None of its drops counts as short any more, as when the
+                # Short Drop-Out Limit is lowered below them: there is
+                # nothing to list (rule SIG-16).
+                if not ran or now - last_back > hold:
                     since = None
             record[DEV_FLAP_SINCE] = since
             record[DEV_FLAP_DROPS] = [went for went, _back in drops if since is not None and went >= since]
@@ -130,7 +137,7 @@ class FlapMixin:
     def short_drop_waiting(self, device_id: str, since: Any, now: float) -> bool:
         """Whether a device that went unavailable at `since` is still
         inside the wait of a device with short drop-outs: its drop has
-        not yet outlasted its freeze window (rule SIG-17)."""
+        not yet outlasted its limit (rules SIG-16, SIG-17)."""
         if not self.is_flapping(device_id):
             return False
         record = self.data[DATA_DEVICES].get(device_id)
@@ -143,13 +150,10 @@ class FlapMixin:
             went = _number(since)
         if went is None:
             return False
-        try:
-            window = self._freeze_window(record)
-        except Exception:  # noqa: BLE001 - a record nobody can judge yet
-            window = None
-        if window is None:
+        limit = self._short_drop_limit(record)  # type: ignore[attr-defined]
+        if limit is None:
             return False
-        return now - went <= window
+        return now - went <= limit
 
     @property
     def flapping_list(self) -> list[dict[str, Any]]:

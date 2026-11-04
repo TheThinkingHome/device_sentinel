@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.1 (2026-11-03)
+# File: const.py, Version: 0.28.2 (2026-11-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1776,6 +1776,17 @@ CONF_BADDAY_SENSITIVITY = "badday_sensitivity"
 DEFAULT_BADDAY_SENSITIVITY = 4.0
 BADDAY_SENSITIVITY_MIN = 2.0
 BADDAY_SENSITIVITY_MAX = 8.0
+
+# The Short Drop-Out Limit, in minutes, on the Signal Strength screen
+# (rule SIG-16). A drop is short when the device is back within its
+# freeze margin and never later than this. Thirty fits every short
+# drop-out on the second house, whose real outages all ran past 100
+# minutes.
+CONF_SHORT_DROP_LIMIT = "short_drop_limit"
+DEFAULT_SHORT_DROP_LIMIT = 30
+SHORT_DROP_LIMIT_MIN = 10
+SHORT_DROP_LIMIT_MAX = 60
+SHORT_DROP_LIMIT_STEP = 5
 
 # How many folded days form the normal a day is judged against (rule
 # SIG-08). Seven is a starting figure, not a measured one.

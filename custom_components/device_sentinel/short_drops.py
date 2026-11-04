@@ -3,16 +3,17 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: short_drops.py, Version: 0.28.1 (2026-11-03)
+# File: short_drops.py, Version: 0.28.2 (2026-11-04)
 
 """Each drop a device makes, recorded (rule SIG-16).
 
 A drop is a device going unavailable as a whole and coming back on its
 own. Each is kept with when the device went, how long it was gone, the
-freeze window it was judged against then, the signal at the drop, the
+limit it was judged against then, the signal at the drop, the
 signal at the recovery and the device's usual signal, so a later rule
 can tell a weak-signal drop from one with a strong signal at both ends.
-A drop no longer than its window is a short drop.
+A drop back within its limit is a short drop: the device's freeze
+margin, never more than the Short Drop-Out Limit setting.
 
 Each drop is kept as recorded for 7 days, at most 100 a device a day.
 At midnight older drops are folded into one row per device per day,
@@ -49,7 +50,11 @@ from .const import (
     DROP_WENT,
     DROP_WINDOW,
     FREEZE_UNAVAILABLE_DEBOUNCE,
+    CONF_SHORT_DROP_LIMIT,
+    DEFAULT_SHORT_DROP_LIMIT,
     SHORT_DROP_DAY_LIMIT,
+    SHORT_DROP_LIMIT_MAX,
+    SHORT_DROP_LIMIT_MIN,
     SHORT_DROP_HOURS,
     SHORT_DROP_KEEP_DAYS,
     SHORT_DROP_SIGNAL_BACK_SECONDS,
@@ -86,7 +91,7 @@ def drop_day(moment: float) -> str:
     return dt_util.as_local(dt_util.utc_from_timestamp(moment)).date().isoformat()
 
 
-def add_to_day(days: list[Any], row: dict[str, Any]) -> None:
+def add_to_day(days: list[Any], row: dict[str, Any], cap: float | None = None) -> None:
     """Count one drop into its device's row for the day it went
     (rule SIG-16)."""
     device_id = row.get(DROP_DEVICE_ID)
@@ -110,7 +115,7 @@ def add_to_day(days: list[Any], row: dict[str, Any]) -> None:
         }
         days.append(held)
     held[DROP_DAY_DROPS] += 1
-    held[DROP_DAY_SHORT] += 1 if is_short(row) else 0
+    held[DROP_DAY_SHORT] += 1 if is_short(row, cap) else 0
     held[DROP_DAY_TOTAL] = round(held[DROP_DAY_TOTAL] + length, 1)
     held[DROP_DAY_LONGEST] = round(max(held[DROP_DAY_LONGEST], length), 1)
     for field, count in ((DROP_SIGNAL_WENT, DROP_DAY_SIGNAL_WENT_N), (DROP_SIGNAL_BACK, DROP_DAY_SIGNAL_BACK_N)):
@@ -153,19 +158,59 @@ def forget_restart_drops(data: dict[str, Any]) -> int:
     return gone
 
 
-def is_short(row: dict[str, Any]) -> bool:
-    """A drop no longer than the freeze window it was judged against."""
+def is_short(row: dict[str, Any], cap: float | None = None) -> bool:
+    """A drop no longer than the limit it was judged against, and, with
+    `cap`, no longer than the Short Drop-Out Limit now (rule SIG-16).
+
+    An older row carries the device's whole freeze window; the cap
+    brings it to the limit in force, so no stored row needs rewriting. A drop back inside the three-minute debounce is no drop
+    (rule UNAV-03)."""
     window = row.get(DROP_WINDOW)
     length = row.get(DROP_LENGTH)
     if not isinstance(window, (int, float)) or isinstance(window, bool):
         return False
     if not isinstance(length, (int, float)) or isinstance(length, bool):
         return False
-    return length <= window
+    if length < FREEZE_UNAVAILABLE_DEBOUNCE:
+        return False
+    limit = min(window, cap) if cap is not None else window
+    return length <= limit
 
 
 class ShortDropMixin:
     """Records each drop and answers what the device page shows."""
+
+    def _short_drop_cap(self) -> float:
+        """The Short Drop-Out Limit, in seconds, held to its bounds (rule
+        SIG-16)."""
+        try:
+            minutes = float(self.entry.options.get(CONF_SHORT_DROP_LIMIT, DEFAULT_SHORT_DROP_LIMIT))  # type: ignore[attr-defined]
+        except (TypeError, ValueError):
+            minutes = float(DEFAULT_SHORT_DROP_LIMIT)
+        return max(SHORT_DROP_LIMIT_MIN, min(minutes, SHORT_DROP_LIMIT_MAX)) * 60.0
+
+    def _short_drop_limit(self, record: dict[str, Any]) -> float | None:
+        """How long a drop may last and still be short, for this device:
+        its freeze margin (the patience on top of its rhythm, from Delta
+        Low and Delta High), never more than the Short Drop-Out Limit;
+        None for a device with no learned rhythm yet (rule SIG-16). A
+        device's rhythm says how often it reports, not how long it takes
+        to reconnect, so it is left out."""
+        try:
+            found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - a record nobody can judge yet
+            return None
+        if not found:
+            return None
+        rhythm = found.get("rhythm")
+        if not isinstance(rhythm, (int, float)) or isinstance(rhythm, bool):
+            return None
+        window = found.get("window")
+        if isinstance(window, (int, float)) and not isinstance(window, bool):
+            margin = window - rhythm
+        else:
+            margin = self._freeze_grace(rhythm)  # type: ignore[attr-defined]
+        return min(max(float(margin), 0.0), self._short_drop_cap())
 
     def _note_drop(
         self, device_id: str, record: dict[str, Any], went: float, back: float
@@ -198,10 +243,7 @@ class ShortDropMixin:
             return
         if self.upstream_down_since(device_id) is not None:  # type: ignore[attr-defined]
             return
-        try:
-            window = self._freeze_window(record)  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001 - a record nobody can judge yet
-            window = None
+        window = self._short_drop_limit(record)
         row = {
             DROP_DEVICE_ID: device_id,
             DROP_WENT: float(went),
@@ -221,7 +263,7 @@ class ShortDropMixin:
         if today >= SHORT_DROP_DAY_LIMIT:
             # Past the day's limit a drop counts in the day's row only
             # (rule SIG-16).
-            add_to_day(self.data.setdefault(DATA_SHORT_DROP_DAYS, []), row)  # type: ignore[attr-defined]
+            add_to_day(self.data.setdefault(DATA_SHORT_DROP_DAYS, []), row, self._short_drop_cap())  # type: ignore[attr-defined]
         else:
             drops.append(row)
             self._drop_awaiting_signal[device_id] = (row, float(back))  # type: ignore[attr-defined]
@@ -239,7 +281,7 @@ class ShortDropMixin:
         for row in drops:
             went = row.get(DROP_WENT) if isinstance(row, dict) else None
             if isinstance(went, (int, float)) and not isinstance(went, bool) and went < line:
-                add_to_day(days, row)
+                add_to_day(days, row, self._short_drop_cap())
                 folded += 1
             else:
                 kept.append(row)
@@ -276,7 +318,7 @@ class ShortDropMixin:
             and row.get(DROP_DEVICE_ID) == device_id
             and isinstance(row.get(DROP_WENT), (int, float))
             and row[DROP_WENT] >= since
-            and is_short(row)
+            and is_short(row, self._short_drop_cap())
         ]
         if not rows:
             return None
