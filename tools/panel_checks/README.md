@@ -53,12 +53,12 @@ written rather than what it proves).
 | Battery | `check_battery_weeks.js` | 46 | five weekly averages, a model's pace as the slowest to the fastest of its other cells, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
-| Signal | `check_dropping_out.js` | 10 | a device that keeps dropping out, on its page and on Signal Trends, and its Short drop-outs row |
+| Signal | `check_short_drop_outs.js` | 11 | a device with short drop-outs, on its page and on Signal Trends, and its Short drop-outs row |
 | A device's page | `check_wifi_address.js` | 11 | a Wi-Fi device's IP Address and Access Point, and devices sharing one address on the Recommendations tab |
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1051 checks in 47 files, as of 3 November 2026 (0.28.0).
+1052 checks in 47 files, as of 3 November 2026 (0.28.1).
 
 ## Running Them
 
