@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_short_drop_outs.js, Version: 0.28.1 (2026-11-03)
+// File: tools/panel_checks/check_short_drop_outs.js, Version: 0.28.2 (2026-11-04)
 // Panel checks: a device with short drop-outs, on its page and on Signal
 // Trends (rules SIG-16, SIG-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_short_drop_outs.js [path/to/panel.js]
@@ -134,6 +134,14 @@ const DEVICE = payloads._ids.bravo;
   {
     const { root } = await open(`${PREFIX}/signal-trends`, { signal_trends: (s) => ({ ...s, dropping_out: [] }) });
     check("an empty section says so", text(root).includes("No device has short drop-outs."));
+  }
+  console.log("The Integrations tab's TROUBLE column");
+  for (const [count, words] of [[1, "1 short drop-out"], [2, "2 short drop-outs"]]) {
+    const { root } = await open(`${PREFIX}/integrations`, {
+      integrations: (r) => ({ ...r, rows: r.rows.map((row) => row.domain === "test" ? { ...row, trouble: { short_drop_outs: count } } : row) }),
+    });
+    const said = text(root);
+    check(`reads "${words}"`, said.includes(words) && (count !== 1 || !said.includes("1 short drop-outs")), said.slice(0, 300));
   }
   console.log(`${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
