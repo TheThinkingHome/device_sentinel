@@ -148,7 +148,7 @@
         "sections": {
           "signal_muting": {
             "name": "Signal Muting",
-            "description": "Which devices are left out of signal reporting. Signal keeps being recorded for anything named here, so re-including a device brings its history back at once. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "description": "Which devices are left out of signal reporting, short drop-outs included. Signal keeps being recorded for anything named here, so re-including a device brings its history back at once. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
               "signal_muted_integrations": "Integrations Muted for Signal Reporting",
               "signal_muted_labels": "Labels Muted for Signal Reporting",
@@ -176,7 +176,7 @@
         "sections": {
           "freeze_muting": {
             "name": "Freeze Muting",
-            "description": "Which devices are never called frozen or not reported. Device Sentinel still reports a device muted here when it becomes unavailable or keeps dropping out; to stop that, use Unavailable Muting below. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "description": "Which devices are never called frozen or not reported. Device Sentinel still reports a device muted here when it becomes unavailable; to stop that, use Unavailable Muting below. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
               "freeze_muted_integrations": "Integrations Muted for Freeze Reporting",
               "freeze_muted_labels": "Labels Muted for Freeze Reporting",
@@ -190,14 +190,14 @@
           },
           "unavailable_muting": {
             "name": "Unavailable Muting",
-            "description": "Which devices are never called unavailable or dropping out. Use it for a device that goes unavailable on purpose, such as a TV switched off at the wall. Device Sentinel still reports a device muted here when it is frozen or never reports; to stop that, use Freeze Muting above. The two lists run broad to narrow: label, device. Mute by label and save, and the devices it covers disappear as a choice from the list below it. The device list is the same one the Mute unavailable button on a device's page sets.",
+            "description": "Which devices are never called unavailable. Use it for a device that goes unavailable on purpose, such as a TV switched off at the wall. Device Sentinel still reports a device muted here when it is frozen or never reports; to stop that, use Freeze Muting above. The two lists run broad to narrow: label, device. Mute by label and save, and the devices it covers disappear as a choice from the list below it. The device list is the same one the Mute unavailable button on a device's page sets.",
             "data": {
               "unavailable_muted_labels": "Labels Muted for Unavailable Reporting",
               "unavailable_muted_devices": "Devices Muted for Unavailable Reporting"
             },
             "data_description": {
-              "unavailable_muted_labels": "Devices carrying a ticked label stop being called unavailable or dropping out. Set the label on the device's own page and it applies here.",
-              "unavailable_muted_devices": "A ticked device is never called unavailable or dropping out. It keeps its clock and rhythm, so re-including it is instant."
+              "unavailable_muted_labels": "Devices carrying a ticked label stop being called unavailable. Set the label on the device's own page and it applies here.",
+              "unavailable_muted_devices": "A ticked device is never called unavailable. It keeps its clock and rhythm, so re-including it is instant."
             }
           }
         }
