@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_short_drop_outs.py, Version: 0.28.1 (2026-11-03)
+# File: tests/test_short_drop_outs.py, Version: 0.28.2 (2026-11-04)
 
 """A device with short drop-outs is one problem, a signal problem
 (rule SIG-17).
@@ -299,3 +299,98 @@ async def test_an_older_dropping_out_state_on_the_record_starts_afresh(hass: Hom
     own = {"flap_since": now - 1800, "flap_drops": [now - 1800], "flap_back": now - 300, "flap_longest": 0.0}
     coord._retire_dropping_out({DATA_DEVICES: {device.id: own}, DATA_TODO_ITEMS: []})
     assert own["flap_since"] == now - 1800
+
+
+# ------------------------------------------------ the Short Drop-Out Limit
+
+
+def _limit_house_record(coord, device_id, rhythm_hours: float):
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_DAILY_MAX] = [rhythm_hours * 3600.0] * (LEARNING_MIN_DAYS + 2)
+    return record
+
+
+async def test_a_long_window_device_is_judged_by_the_limit_not_its_window(hass: HomeAssistant, freezer):
+    """A freezer sensor that reports every 400 hours: its freeze window
+    runs to weeks, and a drop is short only within 30 minutes (rule
+    SIG-16)."""
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    record = _limit_house_record(coord, device.id, 400)
+    assert coord._freeze_window(record) > 400 * 3600
+    assert coord._short_drop_limit(record) == 30 * 60
+    now = dt_util.utcnow().timestamp()
+    coord._note_drop(device.id, record, now + 10, now + 10 + 25 * 60)
+    coord._note_drop(device.id, record, now + 7200, now + 7200 + 35 * 60)
+    rows = [r for r in coord.data["short_drops"] if r["device_id"] == device.id]
+    assert [r["window"] for r in rows] == [1800.0, 1800.0]
+    from custom_components.device_sentinel.short_drops import is_short
+    assert [is_short(r, coord._short_drop_cap()) for r in rows] == [True, False]
+
+
+async def test_a_fast_device_keeps_its_own_margin(hass: HomeAssistant, freezer):
+    """A device that reports every 10 minutes has about 31 minutes of
+    margin; with the limit at 60 it keeps its 31, not 60."""
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    found = coord._freeze_rhythm(record)
+    margin = coord._freeze_window(record) - found["rhythm"]
+    hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options, "short_drop_limit": 60})
+    assert abs(coord._short_drop_limit(record) - margin) < 1
+    assert margin < 60 * 60
+
+
+async def test_the_limit_setting_is_held_to_its_range(hass: HomeAssistant, freezer):
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    record = _limit_house_record(coord, device.id, 400)
+    for given, minutes in ((5, 10), (10, 10), (45, 45), (60, 60), (90, 60), ("x", 30)):
+        hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options, "short_drop_limit": given})
+        assert coord._short_drop_limit(record) == minutes * 60, given
+
+
+async def test_a_stored_drop_is_judged_by_the_limit_now(hass: HomeAssistant, freezer):
+    """A row kept with a device's whole window, as before the limit, is
+    held to the limit in force; a blip under three minutes is no drop
+    (rules SIG-16, UNAV-03)."""
+    from custom_components.device_sentinel.short_drops import is_short
+
+    old = {"length": 50 * 60, "window": 474 * 3600.0}
+    assert is_short(old) is True
+    assert is_short(old, 30 * 60) is False
+    assert is_short({"length": 43.0, "window": 2215.0}, 30 * 60) is False
+
+
+async def test_a_long_drop_on_a_long_window_device_is_told_at_the_limit(hass: HomeAssistant, freezer):
+    """Once it has short drop-outs, a real outage on a device that
+    reports rarely is told about 30 minutes after it went, not 12 hours
+    (rule SIG-17)."""
+    coord, device, entity_id, _phone = await _shed(hass, freezer)
+    _limit_house_record(coord, device.id, 400)
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id, down=4, back=5)
+    assert coord.is_flapping(device.id)
+    hass.states.async_set(entity_id, "unavailable")
+    told = None
+    for minute in range(1, 120):
+        await _minutes(hass, coord, freezer, 1)
+        item = _item(coord, device.id)
+        if item and "unavailable" in item[TODO_KINDS]:
+            told = minute
+            break
+    assert told is not None and 30 <= told <= 33, told
+
+
+async def test_lowering_the_limit_below_its_drops_removes_the_device(hass: HomeAssistant, freezer):
+    """Two 20-minute drops list a device that reports rarely; with the
+    limit lowered to 10, neither is short, and the device leaves the
+    list at the next check (rule SIG-16)."""
+    coord, device, entity_id, _phone = await _shed(hass, freezer)
+    _limit_house_record(coord, device.id, 400)
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id, down=20, back=5)
+    assert coord.is_flapping(device.id)
+    hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options, "short_drop_limit": 10})
+    await hass.async_block_till_done()
+    coord = coord.entry.runtime_data
+    await _minutes(hass, coord, freezer, 2)
+    assert not coord.is_flapping(device.id)
+    assert _item(coord, device.id) is None

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_config_screens.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_config_screens.py, Version: 0.28.2 (2026-11-04)
 
 """What the configuration screens promise a person reading them (rules
 CFG-01, CFG-02, CFG-05).
@@ -293,7 +293,8 @@ async def test_every_sectioned_screen_keeps_its_settings_loose(
     entry = await setup_entry(hass)
     expected = {
         "battery": (("battery_muting",), 2),
-        "signal": (("signal_muting",), 4),
+        # Four bad-day settings and the Short Drop-Out Limit (rule SIG-16).
+        "signal": (("signal_muting",), 5),
         "freeze": (("freeze_muting", "unavailable_muting"), 2),
         "exclusions": (("muting",), 1),
     }

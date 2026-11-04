@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_short_drops.py, Version: 0.28.1 (2026-11-03)
+# File: tests/test_short_drops.py, Version: 0.28.2 (2026-11-04)
 
 """Each drop a device makes is recorded, and a drop is timed from when
 the device went (rules SIG-16, UNAV-07).
@@ -156,7 +156,7 @@ async def test_the_page_counts_short_drops_in_the_last_12_hours(hass: HomeAssist
     rows.append({**base, "went": now - 13 * 3600, "length": 60.0, "window": 600.0})  # too old
     rows.append({**base, "went": now - 3600, "length": 1200.0, "window": 600.0})  # long
     rows.append({**base, "went": now - 1800, "length": 300.0, "window": 600.0})
-    rows.append({**base, "went": now - 600, "length": 120.0, "window": 600.0})
+    rows.append({**base, "went": now - 600, "length": 200.0, "window": 600.0})
     found = coord.short_drops_of(device.id, now)
     assert found["count"] == 2
     assert found["longest"] == 300.0
@@ -176,14 +176,14 @@ async def test_a_drop_is_kept_seven_days_then_folded_into_its_day(hass: HomeAssi
     now = dt_util.utcnow().timestamp()
     old = now - 8 * 86400
     rows = coord.data.setdefault(DATA_SHORT_DROPS, [])
-    rows.append(_row(device.id, old, 60.0, 600.0, -80.0, -70.0, -65.0))
+    rows.append(_row(device.id, old, 200.0, 600.0, -80.0, -70.0, -65.0))
     rows.append(_row(device.id, old + 60, 900.0, 600.0, -90.0, None, -65.0))
     rows.append(_row(device.id, now - 86400))
     coord._trim_house_tables(now)
     assert [r["went"] for r in _drops(coord, device.id)] == [now - 86400]
     (day,) = coord.data[DATA_SHORT_DROP_DAYS]
     assert day["day"] == drop_day(old)
-    assert (day["drops"], day["short"], day["total"], day["longest"]) == (2, 1, 960.0, 900.0)
+    assert (day["drops"], day["short"], day["total"], day["longest"]) == (2, 1, 1100.0, 900.0)
     assert day["signal_went"] == -85.0 and day["signal_went_n"] == 2
     assert day["signal_back"] == -70.0 and day["signal_back_n"] == 1
     assert day["signal_usual"] == -65.0
