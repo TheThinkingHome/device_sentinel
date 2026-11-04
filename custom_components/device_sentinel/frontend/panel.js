@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.1 (2026-11-03)
+// File: panel.js, Version: 0.28.2 (2026-11-04)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -153,7 +153,8 @@ const TROUBLE_WORDS = [
   ["never_reported", "never reported"],
   ["low_battery", "battery low"],
   ["falling_battery", "battery falling"],
-  ["short_drop_outs", "short drop-outs"],
+  // A count of one reads singular: "1 short drop-out" (rule SIG-17).
+  ["short_drop_outs", "short drop-outs", "short drop-out"],
   ["railed_signal", "signal railed"],
 ];
 const DEVICE_FILTERS = [
@@ -1899,9 +1900,9 @@ class DeviceSentinelPanel extends HTMLElement {
   _troubleText(row) {
     const parts = [];
     if (row.down_since) parts.push(`Down since ${moment(row.down_since)}`);
-    for (const [kind, words] of TROUBLE_WORDS) {
+    for (const [kind, words, one] of TROUBLE_WORDS) {
       const n = (row.trouble || {})[kind];
-      if (n) parts.push(`${n} ${words}`);
+      if (n) parts.push(`${n} ${n === 1 && one ? one : words}`);
     }
     return parts.join(", ");
   }
