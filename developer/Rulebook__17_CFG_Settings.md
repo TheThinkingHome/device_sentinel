@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Settings (CFG)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 4 November 2026, on Device Sentinel 0.28.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How the configuration screens are laid out and worded, what the entities Device Sentinel creates are called and which are switched on, and the Data Trim tool on the Advanced screen. What each setting judges is in its own section (BAT, SIG, FRZ, UNAV, NOTE, MUTE). What the trim does to the stored files is in [STOR](Rulebook__18_STOR_Storage.md).
 
@@ -15,6 +15,7 @@ How the configuration screens are laid out and worded, what the entities Device 
 ### CFG-02 How a Screen Is Laid Out
 
 **A screen shows its plain settings first, then its lists in a named section below them.** Each section has its heading and explanation above its choosers.
+- **Signal Strength (since 0.28.2):** the four bad-day settings ([SIG-08](Rulebook__10_SIG_Signal.md)), then the Short Drop-Out Limit, in minutes, from 10 to 60 in steps of 5, default 30 ([SIG-16](Rulebook__10_SIG_Signal.md)). An install from before 0.28.2 reads the default until the screen is saved.
 - **Muting sections:** on Low Battery, Signal Strength and Freeze and Unavailable Detection, the muting sections open collapsed, since the settings are what a person came for. Exclusions and Muting has no plain settings and shows its two sections open.
 - **Where a setting sits:** a setting that tunes one detector sits on that detector's screen.
 - **Advanced:** holds what crosses detectors: whether the dashboard opens in Simple or Advanced, the Repeat Offender Threshold, the Storage Write Interval, How Much History to Keep, the Maintenance Window in Minutes, and the Data Trim section.
