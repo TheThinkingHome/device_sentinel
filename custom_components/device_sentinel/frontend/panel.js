@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.0 (2026-11-03)
+// File: panel.js, Version: 0.28.1 (2026-11-03)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -147,13 +147,13 @@ const STANDING_MEANING = {
 };
 // An integration's trouble, each kind in the Problem List's words, worst first.
 const TROUBLE_WORDS = [
-  ["flapping", "dropping out"],
   ["unavailable", "unavailable"],
   ["frozen", "frozen"],
   ["unknown", "unknown"],
   ["never_reported", "never reported"],
   ["low_battery", "battery low"],
   ["falling_battery", "battery falling"],
+  ["short_drop_outs", "short drop-outs"],
   ["railed_signal", "signal railed"],
 ];
 const DEVICE_FILTERS = [
@@ -174,8 +174,9 @@ const STATUS_WORDS = {
   // Gray, apart from frozen's red: Home Assistant says the device is
   // gone, which is not a freeze (rule DASH-08).
   unavailable: ["Unavailable", UNAVAILABLE_COLOUR],
-  // A device that keeps dropping out (rule UNAV-06).
-  flapping: ["Flapping", "var(--error-color, #db4437)"],
+  // A device with short drop-outs (rule SIG-17): a signal problem, in
+  // the warning colour, since it reports between its drops.
+  short_drop_outs: ["Short drop-outs", "var(--warning-color, #ffa600)"],
   unknown: ["Unknown", "var(--warning-color, #ffa600)"],
   never_reported: ["Never reported", "var(--error-color, #db4437)"],
   // Nobody is watching it, so there is no verdict to give (rule WATCH-03).
@@ -2723,23 +2724,23 @@ class DeviceSentinelPanel extends HTMLElement {
       : el("p", { class: "muted", style: "margin:0" }, "No day had more than one device fall below its line.");
     const unsteady = pick("unsteady");
     const steady = pick("steady");
-    // Devices in a flap (rule UNAV-06): worded as something to check,
-    // because a flap does not prove a weak link.
+    // Devices with short drop-outs (rule SIG-17): worded as something
+    // to check, because short drop-outs do not prove a weak link.
     const flapping = page.dropping_out || [];
     const dropping = flapping.length
       ? el("div", { class: "scroll" }, el("table", {},
-          el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", { class: "num" }, "DROPS"),
+          el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", { class: "num" }, "LAST 12 HOURS"),
             el("th", {}, "SINCE"), el("th", { class: "num" }, "SIGNAL"))),
           el("tbody", {}, ...flapping.map((row) => el("tr", {},
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
             el("td", { class: "num" }, String(row.drops)),
             el("td", {}, row.since ? moment(row.since) : ""),
             el("td", { class: "num" }, row.signal === null || row.signal === undefined ? "" : String(Math.round(row.signal))))))))
-      : el("p", { class: "muted", style: "margin:0" }, "No device is dropping out again and again.");
+      : el("p", { class: "muted", style: "margin:0" }, "No device has short drop-outs.");
     this._pane.replaceChildren(summary,
-      el("h3", { class: "section" }, "Devices That Keep Dropping Out"),
+      el("h3", { class: "section" }, "Devices With Short Drop-Outs"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        "A device that goes unavailable three times in two hours, and stays listed until it holds on longer than it has between drops. Check its signal and the router it connects through."),
+        "A device that went unavailable and came back on its own within its freeze window twice in 12 hours. It stays listed until 12 hours pass with none. Check its signal and the router it connects through."),
       dropping,
       el("h3", { class: "section" }, "Days Several Devices Had a Bad Day"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
@@ -3771,7 +3772,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "an unknown time");
     // A verdict of its own, or a mute, is shown as on any page: the hub's
     // words take the place of the plain "reporting" only.
-    const ownVerdict = ["frozen", "unavailable", "unknown", "never_reported", "flapping"].includes(status.category);
+    const ownVerdict = ["frozen", "unavailable", "unknown", "never_reported", "short_drop_outs"].includes(status.category);
     if (hub && !ownVerdict && !(who && who.muted)) {
       word = hub.up === false ? "Its hub is down" : "Judged by its hub";
       colour = hub.up === false ? "var(--error-color, #db4437)" : "var(--success-color, #43a047)";
