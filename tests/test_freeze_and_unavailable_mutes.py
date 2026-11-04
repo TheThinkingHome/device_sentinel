@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_and_unavailable_mutes.py, Version: 0.27.10 (2026-10-27)
+# File: test_freeze_and_unavailable_mutes.py, Version: 0.28.1 (2026-11-03)
 
 """The freeze mute and the unavailable mute, each its own kind (rules
 MUTE-06, MUTE-07, MUTE-08).
@@ -37,6 +37,7 @@ from custom_components.device_sentinel.const import (
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
     CONF_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_DEVICES,
     CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_UNAVAILABLE_MUTED_LABELS,
     DATA_DEVICES,
@@ -46,7 +47,6 @@ from custom_components.device_sentinel.const import (
     DEV_DOWN_SINCE,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
-    DEV_FLAP_DROPS,
     DEV_FLAP_SINCE,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
@@ -442,38 +442,26 @@ async def test_a_mute_from_the_problem_list_takes_the_item_off_at_once(
     assert not _items(coord, device.id), "the item should leave on the save, not a minute later"
 
 
-# A device muted for unavailable mid-flap reads no flap on its page, as
-# it is off the list (rule MUTE-10).
-async def test_an_unavailable_muted_device_does_not_read_flapping(
+# A device muted for signal while it has short drop-outs reads none on
+# its page, as it is off the list; the Unavailable mute does not take
+# them (rules MUTE-10, SIG-17).
+async def test_a_signal_muted_device_does_not_read_short_drop_outs(
     hass: HomeAssistant, freezer
 ):
     coord, device, ids, record = await _ready(
-        hass, freezer, "r6d", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"}
+        hass, freezer, "r6d", {CONF_SIGNAL_MUTED_DEVICES: "SELF"}
     )
     record[DEV_FLAP_SINCE] = dt_util.utcnow().timestamp() - 600
     assert not [r for r in coord.flapping_list if r["device_id"] == device.id]
-    assert coord._page_status(device.id, record) != "flapping"
-    hass.config_entries.async_update_entry(coord.entry, options={})
+    assert coord._page_status(device.id, record) != "short_drop_outs"
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["flap"] == "", ("device page still says", page["status"]["flap"])
+    hass.config_entries.async_update_entry(coord.entry, options={CONF_UNAVAILABLE_MUTED_DEVICES: [device.id]})
     await hass.async_block_till_done()
     coord = coord.entry.runtime_data
     record = coord.data["devices"][device.id]
     record[DEV_FLAP_SINCE] = dt_util.utcnow().timestamp() - 600
-    assert coord._page_status(device.id, record) == "flapping", "unmuted, the flap shows"
-
-
-# 1. A device muted for unavailable shows no flapping on its page: not
-# the status word, and not the "dropped out N times since" suffix the
-# panel appends to it (rule MUTE-10).
-async def test_r16_1_unavailable_muted_page_has_no_flap_words(hass: HomeAssistant, freezer):
-    coord, device, ids, record = await _ready(
-        hass, freezer, "r16a", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"}
-    )
-    now = dt_util.utcnow().timestamp()
-    record[DEV_FLAP_SINCE] = now - 600
-    record[DEV_FLAP_DROPS] = [now - 600, now - 400, now - 200]
-    page = coord.dashboard_device(device.id)
-    assert page["status"]["category"] != "flapping"
-    assert page["status"]["flap"] == "", ("device page still says", page["status"]["flap"])
+    assert coord._page_status(device.id, record) == "short_drop_outs", "the Unavailable mute does not take them"
 
 
 async def _flap(hass, freezer, ids, times=3):
@@ -498,9 +486,10 @@ async def test_r21_3_freeze_muted_flapping_device_is_listed(hass: HomeAssistant,
     assert [i for i in coord.todo_items if i["device_id"] == device.id] or _mine(faults, device.id)
 
 
-# 4. Unavailable-muted device: the page reads no flap and no down word,
-# and the problem list API offers nothing (rules MUTE-07, MUTE-10).
-async def test_r21_4_unavailable_muted_page(hass: HomeAssistant, freezer):
+# 4. Unavailable-muted device with short drop-outs: they are still
+# listed, as a signal problem, while its unavailable verdict is muted
+# (rules MUTE-06, SIG-17).
+async def test_r21_4_unavailable_muted_device_keeps_its_short_drop_outs(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r21d", {CONF_UNAVAILABLE_MUTED_DEVICES: "SELF"})
     await _flap(hass, freezer, ids)
     for eid in ids.values():
@@ -508,8 +497,8 @@ async def test_r21_4_unavailable_muted_page(hass: HomeAssistant, freezer):
     await hass.async_block_till_done()
     await walk(hass, freezer, 10 * 60)
     assert record[DEV_FROZEN_CATEGORY] is None
-    assert not coord.flapping_list
-    assert coord._page_status(device.id, record) not in ("unavailable", "flapping", "frozen", "unknown")
+    assert [r["device_id"] for r in coord.flapping_list] == [device.id]
+    assert coord._page_status(device.id, record) not in ("unavailable", "frozen", "unknown")
 
 
 # ---------------------------------------------- how each mute is named
@@ -1017,22 +1006,18 @@ async def test_4_never_reported_lift_dated_from_start(hass: HomeAssistant, freez
     assert record[DEV_FROZEN_SINCE] <= since0, (record[DEV_FROZEN_SINCE] - since0) / 60
 
 
-# 2. A flapping device muted for unavailable, the mute lifted while it
-# is down and still flapping: listed again and pushed (rule MUTE-08).
-async def test_r21_2_unavailable_mute_lifted_on_a_flapping_device(hass: HomeAssistant, freezer):
+# 2. A device with short drop-outs muted for signal, the mute lifted
+# while they stand: listed again and pushed (rules MUTE-08, SIG-17).
+async def test_r21_2_signal_mute_lifted_on_short_drop_outs(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _ready(hass, freezer, "r21b")
     await _flap(hass, freezer, ids)
     assert record.get(DEV_FLAP_SINCE) is not None
-    coord.page_set_mute(device.id, "unavailable", True)
+    coord.page_set_mute(device.id, "signal", True)
     await hass.async_block_till_done()
     await walk(hass, freezer, 120)
-    for eid in ids.values():
-        hass.states.async_set(eid, "unavailable")
-    await hass.async_block_till_done()
-    await walk(hass, freezer, 10 * 60)
     assert not [i for i in coord.todo_items if i["device_id"] == device.id]
     faults = record_events(hass, EVENT_FAULT)
-    coord.page_set_mute(device.id, "unavailable", False)
+    coord.page_set_mute(device.id, "signal", False)
     await hass.async_block_till_done()
     await walk(hass, freezer, 10 * 60)
     items = [i for i in coord.todo_items if i["device_id"] == device.id]

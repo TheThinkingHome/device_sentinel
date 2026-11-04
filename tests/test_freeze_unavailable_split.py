@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_unavailable_split.py, Version: 0.27.15 (2026-10-30)
+# File: test_freeze_unavailable_split.py, Version: 0.28.1 (2026-11-03)
 
 """Freeze and unavailable, muted apart (rules MUTE-06, UNAV-02).
 
@@ -335,7 +335,8 @@ async def test_an_unavailable_muted_z_wave_node_marked_dead_is_silent(hass: Home
 
 def test_the_problem_list_offers_the_mute_that_matches_each_kind():
     assert mutes_for_kinds({"unavailable": 1.0}) == ["unavailable"]
-    assert mutes_for_kinds({"flapping": 1.0}) == ["unavailable"]
+    # Short drop-outs are a signal problem (rule SIG-17).
+    assert mutes_for_kinds({"short_drop_outs": 1.0}) == ["signal"]
     assert mutes_for_kinds({"unknown": 1.0}) == ["unavailable"]
     assert mutes_for_kinds({"frozen": 1.0}) == ["freeze"]
     assert mutes_for_kinds({"never_reported": 1.0}) == ["freeze"]

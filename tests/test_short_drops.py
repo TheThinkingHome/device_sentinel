@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_short_drops.py, Version: 0.28.0 (2026-11-03)
+# File: tests/test_short_drops.py, Version: 0.28.1 (2026-11-03)
 
 """Each drop a device makes is recorded, and a drop is timed from when
 the device went (rules SIG-16, UNAV-07).
@@ -15,8 +15,8 @@ the window it was judged against, and its signal at the drop, at the
 recovery and as usual. They are recorded and shown on the device page,
 and nothing that is told or pushed changes.
 
-Once a dropping-out item stands, a drop is still timed from when the
-device went, not from when it was listed minutes later.
+A long drop while a device has short drop-outs is timed from when the
+device went (`test_short_drop_outs.py`).
 """
 
 from __future__ import annotations
@@ -26,20 +26,23 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
-    DATA_INCIDENTS,
+    DATA_SHORT_DROP_DAYS,
+    SHORT_DROP_DAY_LIMIT,
     DATA_SHORT_DROPS,
     DEV_DAILY_MAX,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_VALUE,
-    INC_EVENT,
-    INC_KIND,
-    INCIDENT_RESOLVED,
     LEARNING_MIN_DAYS,
 )
 from custom_components.device_sentinel.normalise import check_storage
-from custom_components.device_sentinel.short_drops import is_short, usual_signal
+from custom_components.device_sentinel.short_drops import (
+    drop_day,
+    forget_restart_drops,
+    is_short,
+    usual_signal,
+)
 
-from tests.test_flapping import _drop, _minutes, _shed
+from tests.test_short_drop_outs import _drop, _shed
 
 
 def _drops(coord, device_id):
@@ -102,6 +105,49 @@ async def test_a_drop_across_a_restart_is_not_recorded(hass: HomeAssistant, free
     assert _drops(coord, device.id) == []
 
 
+async def test_a_drop_inside_the_startup_grace_is_not_recorded(hass: HomeAssistant, freezer):
+    """At a restart Zigbee2MQTT's devices read unavailable until the
+    bridge publishes them, about 37 seconds on the reference rig: all
+    69 of them, together. That is the start, not the devices (rule
+    UP-04: nothing is recorded inside the startup grace)."""
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    now = dt_util.utcnow().timestamp()
+    coord._started_at = now - 1
+    coord._grace_until = now + 300
+    coord._note_drop(device.id, record, now, now + 37)
+    assert _drops(coord, device.id) == []
+    # One that went after the grace is recorded as before.
+    coord._note_drop(device.id, record, now + 301, now + 600)
+    assert len(_drops(coord, device.id)) == 1
+
+
+async def test_a_device_unavailable_at_the_start_is_not_a_drop(hass: HomeAssistant, freezer):
+    """Through a real start: the device reads unavailable as Device
+    Sentinel starts and comes back 37 seconds later (rule UP-04)."""
+    from custom_components.device_sentinel.const import DEV_EVENT_COUNT, DEV_LAST_ACTIVITY
+
+    from tests.helpers import register_device, setup_entry
+
+    device, entities = register_device(hass, "z1", name="Door Entryway")
+    entity_id = entities[0] if isinstance(entities, list) else entities
+    hass.states.async_set(entity_id, "unavailable")
+    entry = await setup_entry(hass, {})
+    coord = entry.runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_EVENT_COUNT] = 500
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 60
+    assert coord._grace_until > dt_util.utcnow().timestamp()
+    freezer.tick(37)
+    hass.states.async_set(entity_id, "closed")
+    await hass.async_block_till_done()
+    freezer.tick(60)
+    await coord._on_render_tick(None) if callable(getattr(coord, "_on_render_tick", None)) else None
+    await hass.async_block_till_done()
+    assert _drops(coord, device.id) == []
+    assert coord.short_drops_of(device.id) is None
+
+
 async def test_the_page_counts_short_drops_in_the_last_12_hours(hass: HomeAssistant, freezer):
     coord, device, _entity_id, _phone = await _shed(hass, freezer)
     now = dt_util.utcnow().timestamp()
@@ -120,16 +166,69 @@ async def test_the_page_counts_short_drops_in_the_last_12_hours(hass: HomeAssist
     assert coord.short_drops_of("someone_else", now) is None
 
 
-async def test_drops_are_held_to_the_history_length(hass: HomeAssistant, freezer):
+def _row(device_id, went, length=60.0, window=600.0, went_sig=None, back_sig=None, usual=None):
+    return {"device_id": device_id, "went": went, "length": length, "window": window,
+            "signal_went": went_sig, "signal_back": back_sig, "signal_usual": usual}
+
+
+async def test_a_drop_is_kept_seven_days_then_folded_into_its_day(hass: HomeAssistant, freezer):
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    now = dt_util.utcnow().timestamp()
+    old = now - 8 * 86400
+    rows = coord.data.setdefault(DATA_SHORT_DROPS, [])
+    rows.append(_row(device.id, old, 60.0, 600.0, -80.0, -70.0, -65.0))
+    rows.append(_row(device.id, old + 60, 900.0, 600.0, -90.0, None, -65.0))
+    rows.append(_row(device.id, now - 86400))
+    coord._trim_house_tables(now)
+    assert [r["went"] for r in _drops(coord, device.id)] == [now - 86400]
+    (day,) = coord.data[DATA_SHORT_DROP_DAYS]
+    assert day["day"] == drop_day(old)
+    assert (day["drops"], day["short"], day["total"], day["longest"]) == (2, 1, 960.0, 900.0)
+    assert day["signal_went"] == -85.0 and day["signal_went_n"] == 2
+    assert day["signal_back"] == -70.0 and day["signal_back_n"] == 1
+    assert day["signal_usual"] == -65.0
+    assert check_storage({"short_drop_days": [day]}) == []
+
+
+async def test_day_rows_are_held_to_the_history_length(hass: HomeAssistant, freezer):
     coord, device, _entity_id, _phone = await _shed(hass, freezer)
     now = dt_util.utcnow().timestamp()
     rows = coord.data.setdefault(DATA_SHORT_DROPS, [])
-    base = {"device_id": device.id, "length": 60.0, "window": 600.0,
-            "signal_went": None, "signal_back": None, "signal_usual": None}
-    rows.append({**base, "went": now - (coord.retention_days + 2) * 86400})
-    rows.append({**base, "went": now - 86400})
+    rows.append(_row(device.id, now - (coord.retention_days + 2) * 86400))
+    rows.append(_row(device.id, now - 10 * 86400))
     coord._trim_house_tables(now)
-    assert len(coord.data[DATA_SHORT_DROPS]) == 1
+    assert _drops(coord, device.id) == []
+    assert [d["day"] for d in coord.data[DATA_SHORT_DROP_DAYS]] == [drop_day(now - 10 * 86400)]
+
+
+async def test_past_a_hundred_drops_in_a_day_a_drop_counts_in_the_day_only(hass: HomeAssistant, freezer):
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = [600.0] * (LEARNING_MIN_DAYS + 2)
+    base = dt_util.start_of_local_day().timestamp() + 3600
+    coord._started_at = base - 1
+    for i in range(SHORT_DROP_DAY_LIMIT + 5):
+        coord._note_drop(device.id, record, base + i * 300, base + i * 300 + 200)
+    assert len(_drops(coord, device.id)) == SHORT_DROP_DAY_LIMIT
+    (day,) = coord.data[DATA_SHORT_DROP_DAYS]
+    assert day["day"] == drop_day(base) and day["drops"] == 5 and day["short"] == 5
+    # At the fold, the kept drops join the same day's row.
+    coord._trim_house_tables(base + 8 * 86400)
+    (day,) = coord.data[DATA_SHORT_DROP_DAYS]
+    assert day["drops"] == SHORT_DROP_DAY_LIMIT + 5 and day["total"] == 200.0 * (SHORT_DROP_DAY_LIMIT + 5)
+
+
+def test_the_drops_0_28_0_kept_at_a_start_are_removed():
+    """A restart at which 69 devices read unavailable for 37 seconds."""
+    start = 1_793_746_472.0
+    data = {
+        "system_events": [{"kind": "restart", "when": start, "scope": "system", "detail": None}],
+        "short_drops": [_row("a", start + 0.07, 37.3), _row("b", start + 0.37, 36.9),
+                        _row("c", start + 400, 60.0), _row("d", start - 3600, 60.0)],
+    }
+    assert forget_restart_drops(data) == 2
+    assert [r["device_id"] for r in data["short_drops"]] == ["c", "d"]
+    assert forget_restart_drops(data) == 0
 
 
 def test_a_damaged_drop_row_is_found_by_the_shape_check():
@@ -145,30 +244,33 @@ def test_the_usual_signal_is_the_middle_of_the_last_days():
     assert usual_signal({}) is None
 
 
-async def test_a_drop_while_dropping_out_is_timed_from_when_the_device_went(hass: HomeAssistant, freezer):
-    """Ten-minute drops read ten, not seven, once the item stands."""
+async def test_the_restart_drops_go_at_the_next_start(hass: HomeAssistant):
+    """The rows a start left behind are gone at the next load."""
+    from tests.helpers import setup_entry
+
+    entry = await setup_entry(hass, {})
+    coord = entry.runtime_data
+    start = dt_util.utcnow().timestamp() - 3600
+    coord.data["system_events"].append({"kind": "restart", "when": start, "scope": "system", "detail": None})
+    coord.data.setdefault(DATA_SHORT_DROPS, []).extend(
+        [_row("a", start + 0.07, 37.3), _row("b", start + 1200, 60.0)]
+    )
+    coord._mark_cold_dirty()
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    kept = entry.runtime_data.data.get(DATA_SHORT_DROPS)
+    assert [r["device_id"] for r in kept] == ["b"]
+
+
+async def test_a_return_inside_the_three_minute_debounce_is_not_a_drop(hass: HomeAssistant, freezer):
+    """The device never turned unavailable (rule UNAV-03), so two
+    two-minute blips make no short drop-outs."""
     coord, device, entity_id, _phone = await _shed(hass, freezer)
-    for _ in range(5):
-        await _drop(hass, coord, freezer, entity_id, down=10, back=20)
-    assert coord.is_flapping(device.id)
-    resolved = [
-        r for r in coord.data[DATA_INCIDENTS]
-        if r["device_id"] == device.id and r[INC_KIND] == "unavailable" and r[INC_EVENT] == INCIDENT_RESOLVED
-    ]
-    assert len(resolved) == 5
-    for row in resolved:
-        assert abs(row["duration"] - 600) <= 60, [round(r["duration"]) for r in resolved]
-
-
-async def test_recording_drops_changes_nothing_told(hass: HomeAssistant, freezer):
-    """A short drop pushes nothing new and opens nothing new (rule SIG-16):
-    the dropping-out item and its one push are as before."""
-    coord, device, entity_id, phone = await _shed(hass, freezer)
-    for _ in range(3):
-        await _drop(hass, coord, freezer, entity_id)
-    before = len(phone)
-    for _ in range(4):
-        await _drop(hass, coord, freezer, entity_id)
-    assert len(phone) == before
-    assert len(_drops(coord, device.id)) == 7
-    await _minutes(hass, coord, freezer, 1)
+    record = coord.data[DATA_DEVICES][device.id]
+    now = dt_util.utcnow().timestamp()
+    coord._started_at = now - 3600
+    coord._note_drop(device.id, record, now - 600, now - 480)
+    coord._note_drop(device.id, record, now - 300, now - 120.5)
+    assert _drops(coord, device.id) == []
+    coord._note_drop(device.id, record, now - 200, now)
+    assert len(_drops(coord, device.id)) == 1

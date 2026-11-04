@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_mutes.py, Version: 0.27.10 (2026-10-27)
+# File: test_brief_mutes.py, Version: 0.28.1 (2026-11-03)
 
 """The Daily Brief leaves out what a device is muted for (rule BRIEF-08).
 
@@ -104,14 +104,16 @@ async def test_repeat_offenders_leave_out_each_muted_kind(hass: HomeAssistant):
     shown = _repeat_kinds(coord, now)
 
     freeze_kinds = {TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED}
-    down_kinds = {TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN, TODO_KIND_FLAPPING}
+    down_kinds = {TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN}
     battery_kinds = {TODO_KIND_LOW_BATTERY, TODO_KIND_FALLING_BATTERY}
-    every = freeze_kinds | down_kinds | battery_kinds | {TODO_KIND_RAILED_SIGNAL}
+    # Short drop-outs are a signal problem (rule SIG-17).
+    signal_kinds = {TODO_KIND_RAILED_SIGNAL, TODO_KIND_FLAPPING}
+    every = freeze_kinds | down_kinds | battery_kinds | signal_kinds
     assert {k for i, k in shown if i == d["plain"].id} == every
     assert {k for i, k in shown if i == d["freeze"].id} == every - freeze_kinds
     assert {k for i, k in shown if i == d["unavailable"].id} == every - down_kinds
     assert {k for i, k in shown if i == d["battery"].id} == every - battery_kinds
-    assert {k for i, k in shown if i == d["signal"].id} == every - {TODO_KIND_RAILED_SIGNAL}
+    assert {k for i, k in shown if i == d["signal"].id} == every - signal_kinds
     # Mute everything is filtered here too.
     assert not {k for i, k in shown if i == d["everything"].id}
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_readers.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_stack_readers.py, Version: 0.28.1 (2026-11-03)
 
 """The Z-Wave and Matter readers in shadow (rules STACK-11, STACK-12).
 
@@ -297,19 +297,19 @@ async def test_the_file_rolls_over_at_its_cap(hass: HomeAssistant, monkeypatch):
     with open(f"{base}.3", encoding="utf-8") as handle:
         assert "line 0-0" not in handle.read(), "the oldest file is dropped"
 
-async def test_the_flapping_description_keeps_its_capitals(hass: HomeAssistant, freezer):
-    """The flapping description keeps its capitals: str.capitalize()
-    would read "since september 25, 2026 at 2:04 pm"."""
+async def test_the_short_drop_outs_description_reads_as_a_sentence(hass: HomeAssistant, freezer):
+    """The description opens with a capital and ends each sentence with
+    a full stop, then says what to check (rules LIST-02, SIG-17)."""
     from custom_components.device_sentinel.const import TODO_DESCRIPTION
 
-    from .test_flapping import _drop, _item, _shed
+    from .test_short_drop_outs import _drop, _item, _shed
 
     freezer.move_to("2026-09-25T19:04:00+00:00")
     coord, device, entity_id, _phone = await _shed(hass, freezer)
     for _ in range(4):
         await _drop(hass, coord, freezer, entity_id)
     description = _item(coord, device.id)[TODO_DESCRIPTION]
-    # The Daily Brief's words, with no leading "Flapping," (rule LIST-02).
-    assert description.startswith("Dropped out 4 times since September 25, 2026 at ")
-    assert " PM." in description or " AM." in description, description
-    assert "september" not in description
+    assert description == (
+        "4 short drop-outs in the last 12 hours, each back within 4 minutes. "
+        "Check its signal and the router it connects through."
+    ), description

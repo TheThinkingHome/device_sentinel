@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_campaign.py, Version: 0.27.10 (2026-10-27)
+# File: test_lutron_campaign.py, Version: 0.28.1 (2026-11-03)
 
 """A real Lutron campaign of two hubs, replayed (rules STACK-09, STACK-10).
 
@@ -295,11 +295,11 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
     await _reload(hass, entries["Garage"])
     assert entries["Garage"].state is ConfigEntryState.LOADED
     await _until(hass, freezer, _at("13:50:00"))
-    # Back, and its third drop in a quarter of an hour leaves it listed as
-    # dropping out, as any device that keeps dropping out is (rule UNAV-06);
-    # nothing it controls is listed.
-    assert list(_items(coord)) == [hub_ids["Garage"]]
-    assert ": dropped out 3 times" in _items(coord)[hub_ids["Garage"]]
+    # Back, and nothing listed but rows in their minute's wait: a hub
+    # down for longer than it has a freeze window for has no short
+    # drop-outs, and nothing it controls is listed (rules SIG-17,
+    # STACK-10).
+    assert set(_items(coord)) <= set(coord._parked)
 
     # Through the whole day: no Lutron device frozen or never reported.
     for device_id in controlled:

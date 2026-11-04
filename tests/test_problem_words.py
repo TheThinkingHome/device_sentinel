@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_problem_words.py, Version: 0.27.10 (2026-10-27)
+# File: test_problem_words.py, Version: 0.28.1 (2026-11-03)
 
 """One set of words for each problem, the Daily Brief's (rules NOTE-01,
 NOTE-10, LIST-02, LIST-10, UNAV-08).
@@ -29,7 +29,6 @@ from custom_components.device_sentinel.const import (
     CONF_PERSISTENT_ENABLED,
     DATA_DEVICES,
     DEV_DAILY_MAX,
-    DEV_FLAP_DROPS,
     DEV_FLAP_SINCE,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
@@ -146,9 +145,13 @@ async def test_railed_and_dropping_out_words(hass: HomeAssistant):
     coord, _calls = await _house(hass)
     rec = coord.data[DATA_DEVICES][dev.id]
     now = dt_util.utcnow().timestamp()
-    rec[DEV_FLAP_DROPS] = [now - 300, now - 200, now - 100]
-    rec[DEV_FLAP_SINCE] = now - 300
+    coord.data["short_drops"] = [
+        {"device_id": dev.id, "went": now - 3600 * k, "length": 120.0 * k, "window": 1200.0,
+         "signal_went": None, "signal_back": None, "signal_usual": None}
+        for k in (1, 2, 3)
+    ]
+    rec[DEV_FLAP_SINCE] = now - 3 * 3600
     words = coord.flap_words(dev.id)
-    assert words.startswith("dropped out 3 times since ")
+    assert words == "3 short drop-outs in the last 12 hours, each back within 6 minutes"
     coord._collect_event(TODO_KIND_FLAPPING, "Plug", False, dev.id)
-    assert coord._pending_events[-1][1].endswith(f", Plug {words}.")
+    assert coord._pending_events[-1][1].endswith(f", Plug has {words}. Check its signal.")
