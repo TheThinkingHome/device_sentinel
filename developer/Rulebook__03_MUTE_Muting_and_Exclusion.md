@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 30 October 2026, on Device Sentinel 0.27.15. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 A person makes two choices about what Device Sentinel reports. Excluding stops the watching; muting stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md). Battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md), and the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -70,10 +70,10 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 
 ### MUTE-06 The Freeze Mute and the Unavailable Mute
 
-**A freeze mute silences frozen and never reported, and nothing else. An unavailable mute silences unavailable and dropping out only. To silence both, set both.**
-- **Freeze mute:** set by integration, label, device or hub. A freeze-muted device is still listed and pushed when it becomes unavailable or drops out (its main entities unavailable, an ESPHome connection dropped, a Z-Wave node dead, a Lutron hub down).
+**A freeze mute silences frozen and never reported, and nothing else. An unavailable mute silences unavailable and unknown only. To silence both, set both. Short drop-outs are a signal problem, silenced by the Signal mute (since 0.28.1, [SIG-17](Rulebook__10_SIG_Signal.md)).**
+- **Freeze mute:** set by integration, label, device or hub. A freeze-muted device is still listed and pushed when it becomes unavailable or has short drop-outs (its main entities unavailable, an ESPHome connection dropped, a Z-Wave node dead, a Lutron hub down).
 - **Unavailable mute:** set by label or device, never by integration. A device muted only for unavailable that goes quiet is still listed frozen.
-- **The settings screen:** Freeze and Unavailable Detection, with a Freeze Muting section and an Unavailable Muting section. Both name dropping out.
+- **The settings screen:** Freeze and Unavailable Detection, with a Freeze Muting section and an Unavailable Muting section. Signal Muting, on the Signal Strength screen, names short drop-outs.
 - **Upgrading:** at the first start of 0.26.6 or later on an install from 0.26.5 or earlier, each label and device muted for freeze is muted for unavailable as well, once. An integration muted for freeze stays freeze only.
 
 *Proof:* [`test_freeze_and_unavailable_mutes.py`](../tests/test_freeze_and_unavailable_mutes.py), [`test_freeze_unavailable_split.py`](../tests/test_freeze_unavailable_split.py).
@@ -105,7 +105,7 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 - **A device's own mute under a broader one:** it still lights its button, and pressing it lifts only the device's own. Under a label the line reads "… is also muted by the label Outdoor, which stays when you lift your own."; under an integration it names the integration. A hub's mute is not named while the device has its own.
 - **Mute everything:** set on the device, it shows the four single mutes lit and held.
 - **Label mutes:** they are made and lifted in settings only. The device page offers no Mute by label.
-- **On the Problem List:** beside each item sits only the mute that matches its problem. Frozen and never reported take the freeze mute, unavailable and dropping out the unavailable mute, then battery and signal.
+- **On the Problem List:** beside each item sits only the mute that matches its problem. Frozen and never reported take the freeze mute, unavailable the unavailable mute, then battery, and signal, which short drop-outs take as well.
 - **In Simple:** the mute buttons show in Simple as well as Advanced.
 
 *Proof:* [`test_device_actions.py`](../tests/test_device_actions.py), [`test_freeze_unavailable_split.py`](../tests/test_freeze_unavailable_split.py), `check_device_actions.js`, `check_names_and_mutes.js`, `check_mutes_shown.js`, `check_simple_dashboard.js`.
@@ -115,6 +115,6 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 **A device's mutes are tagged by kind, and the mute text names each kind and its source.**
 - **Tags:** "Muted (FRZ)", "Muted (UNAV)" or "Muted (FRZ, UNAV)", with BAT and SIG for the battery and signal mutes, and "Muted (GLB)" alone for Mute everything.
 - **Mute text:** for example "freeze (device); unavailable (device)".
-- **Flapping:** a device muted for unavailable or for everything shows no flapping status. A device muted only for freeze that keeps dropping out is still listed ([MUTE-06](#mute-06-the-freeze-mute-and-the-unavailable-mute)).
+- **Short drop-outs:** a device muted for signal or for everything shows no short drop-outs status. A device muted only for freeze or only for unavailable that has short drop-outs is still listed ([MUTE-06](#mute-06-the-freeze-mute-and-the-unavailable-mute)).
 
 *Proof:* [`test_freeze_and_unavailable_mutes.py`](../tests/test_freeze_and_unavailable_mutes.py), [`test_freeze_unavailable_split.py`](../tests/test_freeze_unavailable_split.py), [`test_reports.py`](../tests/test_reports.py), [`test_integration_names.py`](../tests/test_integration_names.py).

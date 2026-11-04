@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -44,7 +44,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 
 **An upstream that has not loaded since Home Assistant started is loading, not down. Nothing is recorded for it inside the startup grace.**
 - **After the grace:** one that never loaded and reads down is down from the start of the run. For an integration only a failed setup counts (setup error, retrying setup or migration error).
-- **Inside the grace:** a device whose upstream reads down, or whose integration failed to set up, waits with that upstream.
+- **Inside the grace:** a device whose upstream reads down, or whose integration failed to set up, waits with that upstream. A device that reads unavailable inside the grace, because its integration has not yet published it, records no drop (since 0.28.1, [SIG-16](Rulebook__10_SIG_Signal.md)).
 - **The Problem List:** it is first written only after the bridge readers run and the remembered upstream state is restored.
 - **An outage from before the restart:** one still open is resumed from when it went down, so its recovery carries its real length.
 - **An outage first found at a start:** with no earlier down on record, it is dated from the start of the run and claims each device behind it, including one that failed before the restart.

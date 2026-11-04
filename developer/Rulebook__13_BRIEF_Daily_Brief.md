@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -83,7 +83,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 ### BRIEF-08 What a Mute Leaves Out
 
 **Last 24 Hours, Repeat Offenders, In Short and the dashboard's Daily Brief tab leave out a device's rows of the kinds its mutes cover, read as the device is muted today.**
-- **Which kinds:** Mute everything covers each kind. A freeze mute covers frozen and never reported. An unavailable mute covers unavailable, unknown and dropping out. The battery and signal mutes cover their own.
+- **Which kinds:** Mute everything covers each kind. A freeze mute covers frozen and never reported. An unavailable mute covers unavailable and unknown. The battery mute covers its own, and the signal mute covers a railed signal and short drop-outs.
 - **What stays:** the row saying a device was muted stays, unless it is muted for everything. House events are never left out for a device's mute.
 
 *Proof:* [`test_brief_mutes.py`](../tests/test_brief_mutes.py).
@@ -148,7 +148,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 ### BRIEF-15 The Device Telemetry File
 
 **`device_telemetry.md` opens with Devices With A Fault.**
-- **Devices With A Fault:** each device with a fault, grouped Freeze, Dropping Out, Battery, Signal, alphabetical within each. The header counts distinct devices.
+- **Devices With A Fault:** each device with a fault, grouped Freeze, Short Drop-Outs, Battery, Signal, alphabetical within each. The header counts distinct devices.
 - **Each line:** the fault, its age from that family's own start, and the Problem List state: [○ open], [✓ acknowledged] or [✗ removed from list]. An acknowledged fault is shown, since the tick silences notifications, never diagnostics.
 - **STATUS:** the column reads plain grammar, Reported or Muted with its reasons.
 - **GAPS:** shows the last 14 days' longest gaps. The 14-Day Trimmed Maximum is bold inside that series, and the day it sets aside is struck.
