@@ -137,13 +137,15 @@
           "badday_drop_lqi": "Bad Day Drop, LQI",
           "badday_drop_rssi": "Bad Day Drop, RSSI",
           "badday_sensitivity": "Bad Day Sensitivity",
-          "badday_baseline_days": "Days of Signal History"
+          "badday_baseline_days": "Days of Signal History",
+          "short_drop_limit": "Short Drop-Out Limit (Minutes)"
         },
         "data_description": {
           "badday_drop_lqi": "Sets the fall in LQI points required to flag a bad signal day. A day counts as bad only when it breaches both this threshold and the sensitivity setting below. Raise it to flag fewer days.",
           "badday_drop_rssi": "Sets the same fall in decibels for devices that report in dBm. It works exactly like the LQI slider above.",
           "badday_sensitivity": "Scales the required drop against the device's own historical jitter, which keeps erratic sensors from being flagged daily. A steady sensor is governed by the drop sliders above. At a setting of 4, a jittery sensor that routinely swings 10 points needs a 40-point plunge to trigger. Lower it to flag more days.",
-          "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged."
+          "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged.",
+          "short_drop_limit": "A device that goes unavailable and comes back on its own within this many minutes has made a short drop-out. Two in 12 hours add it to the Problem List as a signal problem. While a device has short drop-outs, a drop longer than this is reported as unavailable. A device that reports often may use a shorter limit of its own. Lower it to hear about an outage sooner; raise it if a device's drop-outs are still being reported as unavailable."
         },
         "sections": {
           "signal_muting": {
