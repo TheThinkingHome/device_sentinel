@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.28.0 (2026-11-03)
+# File: journal.py, Version: 0.28.1 (2026-11-03)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -45,8 +45,6 @@ from .const import (
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_SIGNAL_STRESS,
-    DATA_SHORT_DROPS,
-    DROP_WENT,
     DATA_ADDRESS_CHANGES,
     ADDR_DEVICE_ID,
     ADDR_WHEN,
@@ -692,15 +690,9 @@ class JournalMixin:
             or not isinstance(row.get(EP_SINCE) or now, (int, float))
             or (row.get(EP_SINCE) or now) >= cutoff
         ]
-        drops = self.data.setdefault(DATA_SHORT_DROPS, [])
-        # Each drop is held to the history length too (rule SIG-16).
-        held = [
-            row for row in drops
-            if not isinstance(row, dict)
-            or not isinstance(row.get(DROP_WENT), (int, float))
-            or isinstance(row.get(DROP_WENT), bool)
-            or row[DROP_WENT] >= cutoff
-        ]
+        # Each drop older than 7 days is folded into its day's row, and
+        # the day rows are held to the history length (rule SIG-16).
+        drops_changed = self._fold_short_drops(now, cutoff)  # type: ignore[attr-defined]
         changes = self.data.setdefault(DATA_ADDRESS_CHANGES, [])
         # An address change is held to it as well, except each device's
         # latest, which is what it holds now (rule UP-19).
@@ -719,11 +711,10 @@ class JournalMixin:
         ]
         if (
             len(kept) != len(events) or len(stress) != len(rows)
-            or len(held) != len(drops) or len(moved) != len(changes)
+            or drops_changed or len(moved) != len(changes)
         ):
             self.data[DATA_SYSTEM_EVENTS] = kept
             self.data[DATA_SIGNAL_STRESS] = stress
-            self.data[DATA_SHORT_DROPS] = held
             self.data[DATA_ADDRESS_CHANGES] = moved
             self._forget_address_index()  # type: ignore[attr-defined]
             self._mark_cold_dirty()

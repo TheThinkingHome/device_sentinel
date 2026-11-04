@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.0 (2026-11-03)
+# File: dashboard.py, Version: 0.28.1 (2026-11-03)
 
 """What the dashboard reads from the coordinator.
 
@@ -119,6 +119,7 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FIRMWARE_HISTORY,
     DEV_FIRST_OBSERVED,
+    DEV_DOWN_FROM,
     DEV_FROZEN_CATEGORY,
     DEV_DOWN_BEGAN_AS,
     FREEZE_CATEGORY_FROZEN,
@@ -1121,15 +1122,22 @@ class DeviceViewMixin:
         nobody watches has no verdict to give, and one that has never
         reported has not reported.
         """
-        # A device in a flap reads as the flap, the same word the list
-        # gives it, whether or not it is down this minute. A device
-        # muted for unavailable, or for everything, is off the list and
-        # reads no flap either (rule MUTE-10).
+        # A device with short drop-outs reads so, the same word the list
+        # gives it, unless it is unavailable past its wait, when it
+        # reads unavailable as the list says (rule SIG-17). A device
+        # muted for signal, or for everything, is off the list and reads
+        # no short drop-outs either (rule MUTE-10).
         if (
             device_id in self._watched
             and device_id not in self._muted_devices
-            and not self._unavailable_muted(device_id)  # type: ignore[attr-defined]
+            and not self._signal_muted(device_id)  # type: ignore[attr-defined]
             and self.is_flapping(device_id)
+            and not (
+                record.get(DEV_FROZEN_CATEGORY) == TODO_KIND_UNAVAILABLE
+                and not self.short_drop_waiting(  # type: ignore[attr-defined]
+                    device_id, record.get(DEV_DOWN_FROM), dt_util.utcnow().timestamp()
+                )
+            )
         ):
             return TODO_KIND_FLAPPING
         verdict = record.get(DEV_FROZEN_CATEGORY)
@@ -1464,14 +1472,14 @@ class DeviceViewMixin:
             "readings": readings,
             "status": {
                 "category": self._page_status(device_id, record),
-                # How big the flap is, beside the word.
-                # Not for a device muted for unavailable or for
-                # everything, which reads no flap (rule MUTE-10).
+                # How many, beside the word: "3 in the last 12 hours".
+                # Not for a device muted for signal or for everything
+                # (rules MUTE-10, SIG-17).
                 "flap": (
-                    self.flap_words(device_id).removeprefix("flapping, ")
+                    self.short_drop_count_words(device_id)  # type: ignore[attr-defined]
                     if self.is_flapping(device_id)
                     and device_id not in self._muted_devices
-                    and not self._unavailable_muted(device_id)  # type: ignore[attr-defined]
+                    and not self._signal_muted(device_id)  # type: ignore[attr-defined]
                     else ""
                 ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),

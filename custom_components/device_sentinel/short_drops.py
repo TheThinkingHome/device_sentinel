@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: short_drops.py, Version: 0.28.0 (2026-11-03)
+# File: short_drops.py, Version: 0.28.1 (2026-11-03)
 
 """Each drop a device makes, recorded (rule SIG-16).
 
@@ -14,9 +14,11 @@ signal at the recovery and the device's usual signal, so a later rule
 can tell a weak-signal drop from one with a strong signal at both ends.
 A drop no longer than its window is a short drop.
 
-This release records and shows; it judges nothing. Notifications, the
-Problem List and the mutes are as before. The rule that will read these
-rows comes with the next release.
+Each drop is kept as recorded for 7 days, at most 100 a device a day.
+At midnight older drops are folded into one row per device per day,
+held to the History setting: how many drops, how many short, the total
+and longest time out, and the average signal at the drop and at the
+return beside the usual signal. A day with no drops writes nothing.
 """
 
 from __future__ import annotations
@@ -27,7 +29,16 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DATA_SHORT_DROP_DAYS,
     DATA_SHORT_DROPS,
+    DATA_SYSTEM_EVENTS,
+    DROP_DAY,
+    DROP_DAY_DROPS,
+    DROP_DAY_LONGEST,
+    DROP_DAY_SHORT,
+    DROP_DAY_SIGNAL_BACK_N,
+    DROP_DAY_SIGNAL_WENT_N,
+    DROP_DAY_TOTAL,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_VALUE,
     DROP_DEVICE_ID,
@@ -37,9 +48,16 @@ from .const import (
     DROP_SIGNAL_WENT,
     DROP_WENT,
     DROP_WINDOW,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
+    SHORT_DROP_DAY_LIMIT,
     SHORT_DROP_HOURS,
+    SHORT_DROP_KEEP_DAYS,
     SHORT_DROP_SIGNAL_BACK_SECONDS,
     SHORT_DROP_USUAL_DAYS,
+    STARTUP_GRACE_SECONDS,
+    SYS_KIND,
+    SYS_RESTART,
+    SYS_WHEN,
 )
 
 
@@ -61,6 +79,78 @@ def usual_signal(record: dict[str, Any]) -> float | None:
         if _reading(value) is not None
     ]
     return float(median(days)) if days else None
+
+
+def drop_day(moment: float) -> str:
+    """The local day a drop went on, as YYYY-MM-DD."""
+    return dt_util.as_local(dt_util.utc_from_timestamp(moment)).date().isoformat()
+
+
+def add_to_day(days: list[Any], row: dict[str, Any]) -> None:
+    """Count one drop into its device's row for the day it went
+    (rule SIG-16)."""
+    device_id = row.get(DROP_DEVICE_ID)
+    went = row.get(DROP_WENT)
+    length = row.get(DROP_LENGTH)
+    if not isinstance(device_id, str) or not isinstance(went, (int, float)) or isinstance(went, bool):
+        return
+    length = float(length) if isinstance(length, (int, float)) and not isinstance(length, bool) else 0.0
+    day = drop_day(float(went))
+    held = next(
+        (d for d in days if isinstance(d, dict) and d.get(DROP_DEVICE_ID) == device_id and d.get(DROP_DAY) == day),
+        None,
+    )
+    if held is None:
+        held = {
+            DROP_DEVICE_ID: device_id, DROP_DAY: day, DROP_DAY_DROPS: 0, DROP_DAY_SHORT: 0,
+            DROP_DAY_TOTAL: 0.0, DROP_DAY_LONGEST: 0.0,
+            DROP_SIGNAL_WENT: None, DROP_DAY_SIGNAL_WENT_N: 0,
+            DROP_SIGNAL_BACK: None, DROP_DAY_SIGNAL_BACK_N: 0,
+            DROP_SIGNAL_USUAL: None,
+        }
+        days.append(held)
+    held[DROP_DAY_DROPS] += 1
+    held[DROP_DAY_SHORT] += 1 if is_short(row) else 0
+    held[DROP_DAY_TOTAL] = round(held[DROP_DAY_TOTAL] + length, 1)
+    held[DROP_DAY_LONGEST] = round(max(held[DROP_DAY_LONGEST], length), 1)
+    for field, count in ((DROP_SIGNAL_WENT, DROP_DAY_SIGNAL_WENT_N), (DROP_SIGNAL_BACK, DROP_DAY_SIGNAL_BACK_N)):
+        value = _reading(row.get(field))
+        if value is None:
+            continue
+        n = held[count]
+        before = held[field] if isinstance(held[field], (int, float)) else 0.0
+        held[field] = round((before * n + value) / (n + 1), 2)
+        held[count] = n + 1
+    usual = _reading(row.get(DROP_SIGNAL_USUAL))
+    if usual is not None:
+        held[DROP_SIGNAL_USUAL] = usual
+
+
+def forget_restart_drops(data: dict[str, Any]) -> int:
+    """Remove the drops that went inside the startup grace after a
+    recorded restart, kept for each device its integration had not
+    yet published (rule UP-04). Judged on the
+    rows, so it is the same on every load. Returns how many went."""
+    starts = [
+        row[SYS_WHEN] for row in data.get(DATA_SYSTEM_EVENTS) or []
+        if isinstance(row, dict) and row.get(SYS_KIND) == SYS_RESTART
+        and isinstance(row.get(SYS_WHEN), (int, float)) and not isinstance(row.get(SYS_WHEN), bool)
+    ]
+    drops = data.get(DATA_SHORT_DROPS)
+    if not starts or not isinstance(drops, list):
+        return 0
+
+    def at_a_start(row: Any) -> bool:
+        went = row.get(DROP_WENT) if isinstance(row, dict) else None
+        if not isinstance(went, (int, float)) or isinstance(went, bool):
+            return False
+        return any(start <= went < start + STARTUP_GRACE_SECONDS for start in starts)
+
+    kept = [row for row in drops if not at_a_start(row)]
+    gone = len(drops) - len(kept)
+    if gone:
+        data[DATA_SHORT_DROPS] = kept
+    return gone
 
 
 def is_short(row: dict[str, Any]) -> bool:
@@ -92,8 +182,19 @@ class ShortDropMixin:
             return
         if back <= went:
             return
+        # A device back inside the three-minute debounce never turned
+        # unavailable, so it made no drop (rules UNAV-03, SIG-16).
+        if back - went < FREEZE_UNAVAILABLE_DEBOUNCE:
+            return
         started = getattr(self, "_started_at", None)
         if isinstance(started, (int, float)) and went < started:
+            return
+        # A device unavailable inside the startup grace is waiting for
+        # its integration to publish it, as Zigbee2MQTT's devices do for
+        # about half a minute after each restart: that is the start, not
+        # the device (rule UP-04).
+        grace = getattr(self, "_grace_until", None)
+        if isinstance(grace, (int, float)) and went < grace:
             return
         if self.upstream_down_since(device_id) is not None:  # type: ignore[attr-defined]
             return
@@ -110,9 +211,45 @@ class ShortDropMixin:
             DROP_SIGNAL_BACK: None,
             DROP_SIGNAL_USUAL: usual_signal(record),
         }
-        self.data.setdefault(DATA_SHORT_DROPS, []).append(row)  # type: ignore[attr-defined]
-        self._drop_awaiting_signal[device_id] = (row, float(back))  # type: ignore[attr-defined]
+        drops = self.data.setdefault(DATA_SHORT_DROPS, [])  # type: ignore[attr-defined]
+        day = drop_day(float(went))
+        today = sum(
+            1 for r in drops
+            if isinstance(r, dict) and r.get(DROP_DEVICE_ID) == device_id
+            and isinstance(r.get(DROP_WENT), (int, float)) and drop_day(float(r[DROP_WENT])) == day
+        )
+        if today >= SHORT_DROP_DAY_LIMIT:
+            # Past the day's limit a drop counts in the day's row only
+            # (rule SIG-16).
+            add_to_day(self.data.setdefault(DATA_SHORT_DROP_DAYS, []), row)  # type: ignore[attr-defined]
+        else:
+            drops.append(row)
+            self._drop_awaiting_signal[device_id] = (row, float(back))  # type: ignore[attr-defined]
         self._mark_cold_dirty()  # type: ignore[attr-defined]
+
+    def _fold_short_drops(self, now: float, keep_after: float) -> bool:
+        """At midnight, fold each drop older than 7 days into its day's
+        row, and hold the day rows to the History setting (rule SIG-16).
+        Returns whether anything changed."""
+        drops = self.data.setdefault(DATA_SHORT_DROPS, [])  # type: ignore[attr-defined]
+        days = self.data.setdefault(DATA_SHORT_DROP_DAYS, [])  # type: ignore[attr-defined]
+        line = now - SHORT_DROP_KEEP_DAYS * 86400.0
+        kept: list[Any] = []
+        folded = 0
+        for row in drops:
+            went = row.get(DROP_WENT) if isinstance(row, dict) else None
+            if isinstance(went, (int, float)) and not isinstance(went, bool) and went < line:
+                add_to_day(days, row)
+                folded += 1
+            else:
+                kept.append(row)
+        oldest = drop_day(keep_after)
+        held = [d for d in days if not isinstance(d, dict) or not isinstance(d.get(DROP_DAY), str) or d[DROP_DAY] >= oldest]
+        if folded or len(held) != len(days):
+            self.data[DATA_SHORT_DROPS] = kept  # type: ignore[attr-defined]
+            self.data[DATA_SHORT_DROP_DAYS] = held  # type: ignore[attr-defined]
+            return True
+        return False
 
     def _drop_signal_back(self, device_id: str, value: float, now: float) -> None:
         """The first signal reading after a drop is its recovery signal,

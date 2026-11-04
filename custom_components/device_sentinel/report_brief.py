@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.17 (2026-11-01)
+# File: report_brief.py, Version: 0.28.1 (2026-11-03)
 
 """The daily brief: the one report written for a person.
 
@@ -357,7 +357,7 @@ class BriefMixin:
             return self._battery_phrase(row[INC_DEVICE_ID], False, crossed_at=crossed)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         wording = {
-            TODO_KIND_FLAPPING: "started dropping out again and again",
+            TODO_KIND_FLAPPING: "started having short drop-outs",
             TODO_KIND_FROZEN: "stopped reporting",
             TODO_KIND_NEVER_REPORTED: "has never reported",
             # A hub went down (rule STACK-10).
@@ -419,9 +419,6 @@ class BriefMixin:
                 hub_down = self.hub_problem_words(device_id)  # type: ignore[attr-defined]
                 if kind == TODO_KIND_FLAPPING and hub_down and TODO_KIND_UNAVAILABLE in kinds:
                     # A hub that is down is named for that (rule STACK-10).
-                    continue
-                if kind == TODO_KIND_UNAVAILABLE and TODO_KIND_FLAPPING in kinds and not hub_down:
-                    # The flap is the row; its drops are not.
                     continue
                 problem = {
                     TODO_KIND_FLAPPING: self.flap_words(device_id),
@@ -2100,6 +2097,10 @@ class BriefMixin:
             return "battery read low", "low"
         if kind == TODO_KIND_FALLING_BATTERY:
             return "battery fell", "falling"
+        # A device with short drop-outs reports between its drops, so
+        # the silence verbs would say the opposite (rule SIG-17).
+        if kind == TODO_KIND_FLAPPING:
+            return "had short drop-outs", "having short drop-outs"
         return "went silent", "silent"
 
     def _compose_flood(
@@ -2326,6 +2327,8 @@ class BriefMixin:
             return "became unavailable"
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed"
+        if kind == TODO_KIND_FLAPPING:
+            return "had short drop-outs"
         noun = _REPEAT_NOUNS.get(kind)
         if noun:
             return noun
@@ -2412,9 +2415,9 @@ class BriefMixin:
         that opened before the mute goes with it.
 
         Mute everything covers every kind; a freeze mute covers frozen
-        and never reported; an unavailable mute covers unavailable,
-        unknown and dropping out; the battery and signal mutes cover
-        their own.
+        and never reported; an unavailable mute covers unavailable and
+        unknown; the battery mute covers its own, and the signal mute
+        covers a railed signal and short drop-outs (rule SIG-17).
         """
         if not isinstance(device_id, str):
             return False
@@ -2422,11 +2425,11 @@ class BriefMixin:
             return True
         if kind in (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED):
             return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
-        if kind in (TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN, TODO_KIND_FLAPPING):
+        if kind in (TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN):
             return bool(self._unavailable_muted(device_id))  # type: ignore[attr-defined]
         if kind in (TODO_KIND_LOW_BATTERY, TODO_KIND_FALLING_BATTERY):
             return bool(self._battery_muted(device_id))  # type: ignore[attr-defined]
-        if kind == TODO_KIND_RAILED_SIGNAL:
+        if kind in (TODO_KIND_RAILED_SIGNAL, TODO_KIND_FLAPPING):
             return bool(self._signal_muted(device_id))  # type: ignore[attr-defined]
         return False
 

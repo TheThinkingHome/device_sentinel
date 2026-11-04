@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.27.10 (2026-10-27)
+# File: notifier.py, Version: 0.28.1 (2026-11-03)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -106,7 +106,7 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # read the Daily Brief's words, as its Right Now table says them:
 # "stopped reporting", "signal railed" (rules NOTE-01, LIST-02).
 _SUMMARY_WORD = {
-    TODO_KIND_FLAPPING: "keeps dropping out",
+    TODO_KIND_FLAPPING: "has short drop-outs",
     SIGNAL_ROW_LOW: "low signal",
     **BRIEF_STATE_WORDS,
 }
@@ -322,31 +322,21 @@ class NotifierMixin:
                     _rank(TODO_KIND_RAILED_SIGNAL), _since(row),
                     f"{name} {_SUMMARY_WORD.get(kind, kind)}",
                 ))
-        elif family == NOTIFY_FAMILY_FREEZE:
-            # A device in a flap is named for the flap, down this
-            # minute or not, and its drop is not named again (rule UNAV-06).
-            flapping = set()
-            down_rows = self.reportable_down_rows
-            down_ids = {row.get("device_id") for row in down_rows}
+            # Short drop-outs are a signal problem, named with how many
+            # (rules NOTE-01, SIG-17).
             for row in self.flapping_list:
-                # A hub that is down is named for that, as on the
-                # Problem List (rule STACK-10): its drops stay on its page. Only
-                # once its down row is here to name it.
-                if row.get("device_id") in down_ids and self.hub_problem_words(row.get("device_id")):  # type: ignore[attr-defined]
-                    continue
-                flapping.add(row.get("device_id"))
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")
-                # How often, as the brief says it (rule NOTE-01).
-                entries.append((
-                    _rank(TODO_KIND_FLAPPING), _since(row),
-                    f"{name} {self.flap_words(row['device_id']) if row.get('device_id') else _SUMMARY_WORD[TODO_KIND_FLAPPING]}",  # type: ignore[attr-defined]
-                ))
+                words = (
+                    f"has {self.flap_words(row['device_id'])}"  # type: ignore[attr-defined]
+                    if row.get("device_id") else _SUMMARY_WORD[TODO_KIND_FLAPPING]
+                )
+                entries.append((_rank(TODO_KIND_FLAPPING), _since(row), f"{name} {words}"))
+        elif family == NOTIFY_FAMILY_FREEZE:
+            down_rows = self.reportable_down_rows
             for row in down_rows:
                 if row.get("device_id") in acknowledged:
-                    continue
-                if row.get("device_id") in flapping:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"

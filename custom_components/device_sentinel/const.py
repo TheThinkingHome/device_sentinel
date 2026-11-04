@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.0 (2026-11-03)
+# File: const.py, Version: 0.28.1 (2026-11-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2070,16 +2070,17 @@ TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
 TODO_KIND_NEVER_REPORTED = FREEZE_CATEGORY_NEVER_REPORTED
 TODO_KIND_RAILED_SIGNAL = "railed_signal"
-# A device that keeps dropping out (rule UNAV-06). A door sensor can go
-# unavailable for a few minutes dozens of times a day, each drop past the
-# three-minute wait, each opening and closing a problem. Three drops in
-# two hours make a device flapping; it stays so until it has stayed back
-# longer than the longest it stayed back between drops, plus the freeze
-# grace for a gap that size. One item, one push when it starts and one
-# when it clears; each drop is still recorded.
-TODO_KIND_FLAPPING = "flapping"
-FLAP_DROPS_TO_START = 3
-FLAP_WINDOW_SECONDS = 2.0 * 3600.0
+# A device with short drop-outs (rule SIG-17). A door sensor can go
+# unavailable for a few minutes dozens of times a day and come back on
+# its own each time. Two short drops (rule SIG-16) within 12 hours add
+# it, and 12 hours with none remove it. One item, one push when it is
+# added and one when it is removed. The kind is "short_drop_outs" on
+# the list, the bus and in storage; the constant keeps its older name,
+# which the code knows it by.
+TODO_KIND_FLAPPING = "short_drop_outs"
+# The kind's older spelling, removed from the list at load (rule SIG-17).
+RETIRED_KIND_DROPPING_OUT = "flapping"
+SHORT_DROPS_TO_START = 2
 FLAP_CHECK_WORDS = "Check its signal and the router it connects through."
 # The signal problem rows tag a railed link with the kind above and
 # leave a merely low one untagged. This names that default so the
@@ -2103,6 +2104,9 @@ LEGACY_KIND_RENAMES = {
     "signal": TODO_KIND_RAILED_SIGNAL,
     "rail": TODO_KIND_RAILED_SIGNAL,
     "not_reported": TODO_KIND_NEVER_REPORTED,
+    # Past dropping-out incidents read as short drop-outs; a standing
+    # item is removed before this runs (rule SIG-17).
+    RETIRED_KIND_DROPPING_OUT: TODO_KIND_FLAPPING,
 }
 # Not a TODO_KIND_: those are device faults, and every one has a route to
 # the card, an event wording, and a state template, which a test asserts.
@@ -2117,13 +2121,13 @@ UPSTREAM_KIND = "upstream"
 # hand would miss it too. Anything that maps kinds reads this (rule
 # LIST-02).
 TODO_KINDS_ALL = (
-    TODO_KIND_FLAPPING,
     TODO_KIND_FROZEN,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
     TODO_KIND_NEVER_REPORTED,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_FLAPPING,
     TODO_KIND_RAILED_SIGNAL,
 )
 
@@ -2138,7 +2142,8 @@ TODO_KINDS_ALL = (
 # A battery and a signal are their own families, because a cell dying on
 # a device that is already silent is new and a person wants to hear it.
 TODO_KIND_FAMILIES = {
-    TODO_KIND_FLAPPING: "down",
+    # Its own family: a long drop beside it is news (rule SIG-17).
+    TODO_KIND_FLAPPING: "drop_outs",
     TODO_KIND_FROZEN: "down",
     TODO_KIND_UNAVAILABLE: "down",
     TODO_KIND_UNKNOWN: "down",
@@ -2163,6 +2168,8 @@ EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
 EVENT_WITHDRAWN = "device_sentinel_withdrawn"
 WITHDRAWN_REASON_SET_ASIDE = "set_aside"
 WITHDRAWN_REASON_MUTED = "muted"
+# A dropping-out item replaced by short drop-outs (rule SIG-17).
+WITHDRAWN_REASON_REPLACED = "replaced"
 # A device removed from Home Assistant, its record held (rule WATCH-07).
 WITHDRAWN_REASON_REMOVED = "removed"
 
@@ -2309,16 +2316,14 @@ SUMMARY_NAMES = 3
 # puts it above frozen: an unavailable device is honestly absent and a
 # frozen one is lying (rule LIST-02).
 TODO_KIND_SEVERITY = (
-    # First, so a drop while flapping is never announced as news and a
-    # return between drops is never a recovery: the flap is the problem, and
-    # it outranks each of its drops (rule UNAV-06).
-    TODO_KIND_FLAPPING,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_FROZEN,
     TODO_KIND_UNKNOWN,
     TODO_KIND_NEVER_REPORTED,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_FALLING_BATTERY,
+    # A signal problem (rule SIG-17).
+    TODO_KIND_FLAPPING,
     TODO_KIND_RAILED_SIGNAL,
 )
 
@@ -2331,7 +2336,7 @@ UNASSIGNED_AREA = "Unassigned"
 # kind maps to its own family, and anything else is a freeze-family
 # event. This is the map from a problem kind to its notification family.
 NOTIFY_KIND_FAMILY = {
-    TODO_KIND_FLAPPING: NOTIFY_FAMILY_FREEZE,
+    TODO_KIND_FLAPPING: NOTIFY_FAMILY_SIGNAL,
     TODO_KIND_LOW_BATTERY: NOTIFY_FAMILY_BATTERY,
     TODO_KIND_FALLING_BATTERY: NOTIFY_FAMILY_BATTERY,
     TODO_KIND_RAILED_SIGNAL: NOTIFY_FAMILY_SIGNAL,
@@ -2901,6 +2906,20 @@ SHORT_DROP_SIGNAL_BACK_SECONDS = 600.0
 # The device's usual signal: the middle of its last 30 daily typical
 # readings (rule SIG-16).
 SHORT_DROP_USUAL_DAYS = 30
+# Each drop is kept as recorded for 7 days, then folded at midnight into
+# one row per device per day, held to the History setting (rule SIG-16).
+SHORT_DROP_KEEP_DAYS = 7
+# At most this many drops are kept one by one per device per day; the
+# rest count in that day's row only (rule SIG-16).
+SHORT_DROP_DAY_LIMIT = 100
+DATA_SHORT_DROP_DAYS = "short_drop_days"
+DROP_DAY = "day"
+DROP_DAY_DROPS = "drops"
+DROP_DAY_SHORT = "short"
+DROP_DAY_TOTAL = "total"
+DROP_DAY_LONGEST = "longest"
+DROP_DAY_SIGNAL_WENT_N = "signal_went_n"
+DROP_DAY_SIGNAL_BACK_N = "signal_back_n"
 
 # Each Wi-Fi device's address and access point as its router's tracker
 # gives them, one row per change, kept to the History setting

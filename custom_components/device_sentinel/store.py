@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.27.10 (2026-10-27)
+# File: store.py, Version: 0.28.1 (2026-11-03)
 
 """Storage: the files, the merge, and the unclean restart.
 
@@ -47,7 +47,12 @@ from .const import (
     SYS_OPTIONS_CHANGED,
     DATA_TODO_JOURNAL,
     INC_KIND,
+    DEV_FLAP_BACK,
+    DEV_FLAP_DROPS,
+    DEV_FLAP_LONGEST,
+    DEV_FLAP_SINCE,
     LEGACY_KIND_RENAMES,
+    RETIRED_KIND_DROPPING_OUT,
     TODO_KINDS,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_MAX,
@@ -250,6 +255,50 @@ class StorageMixin:
                 _reset_signal_day(record)
                 reset += 1
         return converted, reset
+
+    def _retire_dropping_out(self, loaded: dict[str, Any]) -> list[tuple[str, str]]:
+        """Take the dropping-out kind off every stored item (rule SIG-17).
+
+        Short drop-outs replace it and count afresh from the next drop,
+        so a standing dropping-out item leaves the list with no recovery
+        and no push. Each item that leaves is returned, as (device id,
+        name), for one withdrawn event once the startup grace closes, so
+        an automation that paired a fault with it gets its answer.
+        Judged on the items, so it is the same on every load.
+        """
+        gone: list[tuple[str, str]] = []
+        # The older rule learned how long the device stayed back between
+        # drops; short drop-outs never do. A record still carrying it
+        # holds the older run, which is cleared so the device is not
+        # listed again with no short drop to count.
+        for record in (loaded.get(DATA_DEVICES) or {}).values():
+            if not isinstance(record, dict):
+                continue
+            longest = record.get(DEV_FLAP_LONGEST)
+            if isinstance(longest, (int, float)) and not isinstance(longest, bool) and longest > 0:
+                record[DEV_FLAP_SINCE] = None
+                record[DEV_FLAP_DROPS] = []
+                record[DEV_FLAP_BACK] = None
+                record[DEV_FLAP_LONGEST] = 0.0
+        items = loaded.get(DATA_TODO_ITEMS)
+        if not isinstance(items, list):
+            return gone
+        kept = []
+        for item in items:
+            kinds = item.get(TODO_KINDS) if isinstance(item, dict) else None
+            if not isinstance(kinds, dict) or RETIRED_KIND_DROPPING_OUT not in kinds:
+                kept.append(item)
+                continue
+            rest = {kind: when for kind, when in kinds.items() if kind != RETIRED_KIND_DROPPING_OUT}
+            device_id = item.get("device_id")
+            if rest:
+                item[TODO_KINDS] = rest
+                kept.append(item)
+            elif isinstance(device_id, str):
+                gone.append((device_id, str(item.get("name") or device_id)))
+        if len(kept) != len(items):
+            loaded[DATA_TODO_ITEMS] = kept
+        return gone
 
     def _rename_stored_kinds(self, loaded: dict[str, Any]) -> int:
         """Bring stored history onto the one kind vocabulary (rule LIST-02).

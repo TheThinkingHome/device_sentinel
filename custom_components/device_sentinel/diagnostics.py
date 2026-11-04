@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.0 (2026-11-03)
+# File: diagnostics.py, Version: 0.28.1 (2026-11-03)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -46,6 +46,7 @@ from . import DeviceSentinelConfigEntry, history_file
 from .const import (
     DATA_SIGNAL_STRESS,
     DATA_ADDRESS_CHANGES,
+    DATA_SHORT_DROP_DAYS,
     DATA_SHORT_DROPS,
     BROKER_SCOPE,
     INFRASTRUCTURE_DEVICE_CAP,
@@ -736,6 +737,7 @@ async def async_get_config_entry_diagnostics(
         "signal_stress": coordinator.data.get(DATA_SIGNAL_STRESS, []),
         # Each drop a device made on its own (rule SIG-16).
         "short_drops": coordinator.data.get(DATA_SHORT_DROPS, []),
+        "short_drop_days": coordinator.data.get(DATA_SHORT_DROP_DAYS, []),
         # Each Wi-Fi device's address and access point as they changed,
         # and any address two devices hold at once (rule UP-19); the
         # addresses themselves are replaced below.

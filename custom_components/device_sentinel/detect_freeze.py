@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.28.0 (2026-11-03)
+# File: detect_freeze.py, Version: 0.28.1 (2026-11-03)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -45,6 +45,7 @@ from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
 from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
+    TODO_KIND_UNAVAILABLE,
     CONF_UNAVAILABLE_MUTED_LABELS,
     EVENT_RESTING,
     DEV_LOGNORMAL_DAYS,
@@ -1668,7 +1669,15 @@ class FreezeMixin:
         # (rule UP-15), and a device whose upstream has not loaded yet waits for
         # it (rule UP-04).
         held = self.wifi_burst_held() | self.loading_held()
+        now = dt_util.utcnow().timestamp()
         for row in self.frozen_devices_list:
+            # A device with short drop-outs that went unavailable waits
+            # one freeze window, since the drop may still prove short
+            # (rule SIG-17).
+            if row.get("category") == TODO_KIND_UNAVAILABLE and self.short_drop_waiting(  # type: ignore[attr-defined]
+                row["device_id"], row.get("since"), now
+            ):
+                continue
             upstream = self.upstream_down_since(row["device_id"])
             if upstream is None:
                 if row["device_id"] not in held:

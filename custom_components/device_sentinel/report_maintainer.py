@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.27.10 (2026-10-27)
+# File: report_maintainer.py, Version: 0.28.1 (2026-11-03)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -523,7 +523,7 @@ class MaintainerReportMixin:
         dropping = sorted(self.flapping_list, key=lambda r: (r["name"] or "").lower())
         dropping_lines = [
             f"- **{self._report_cell(row['name'] or row['device_id'])}** "
-            f"(dropped out {row['drops']} times) for {_age_from_epoch(row.get('since'))} "
+            f"({row['drops']} short drop-out{'' if row['drops'] == 1 else 's'} in the last 12 hours) for {_age_from_epoch(row.get('since'))} "
             f"{self._todo_tag_of(row['device_id'])}"
             for row in dropping
         ]
@@ -541,7 +541,7 @@ class MaintainerReportMixin:
                 "## Devices With a Fault (0)",
                 "",
                 f"As of {as_of}, nothing is frozen, unavailable, "
-                f"unknown, dropping out, low on battery, or railed.",
+                f"unknown, having short drop-outs, low on battery, or railed.",
                 "",
             ]
         out = [
@@ -558,7 +558,7 @@ class MaintainerReportMixin:
         if freeze_lines:
             out += ["### Freeze", "", *freeze_lines, ""]
         if dropping_lines:
-            out += ["### Dropping Out", "", *dropping_lines, ""]
+            out += ["### Short Drop-Outs", "", *dropping_lines, ""]
         if battery_lines:
             out += ["### Battery", "", *battery_lines, ""]
         if signal_lines:

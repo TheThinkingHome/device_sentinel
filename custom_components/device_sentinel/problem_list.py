@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.28.0 (2026-11-03)
+# File: problem_list.py, Version: 0.28.1 (2026-11-03)
 
 """The problem list: the single memory every channel renders.
 
@@ -115,8 +115,8 @@ _EVENT_WORD = {
 # which of them ended (rule NOTE-10).
 _FAULT_LINE = {
     TODO_KIND_FLAPPING: (
-        "{name} keeps dropping out",
-        "{name} keeps dropping out",
+        "{name} has short drop-outs",
+        "{name} has short drop-outs",
     ),
     TODO_KIND_FALLING_BATTERY: (
         "{name} battery is running down, {left}",
@@ -124,7 +124,7 @@ _FAULT_LINE = {
     ),
 }
 _RECOVERY_LINE = {
-    TODO_KIND_FLAPPING: "{name} has stopped dropping out",
+    TODO_KIND_FLAPPING: "{name} no longer has short drop-outs",
     TODO_KIND_LOW_BATTERY: "{name} battery is no longer low",
     TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
 }
@@ -743,10 +743,6 @@ class ProblemListMixin:
         )
         if hub_words:
             order = [kind for kind in order if kind != TODO_KIND_FLAPPING]
-        if TODO_KIND_FLAPPING in order:
-            # The flap is the problem; a drop inside it is not listed
-            # beside it, whether or not the device is down this minute.
-            order = [kind for kind in order if kind != TODO_KIND_UNAVAILABLE]
         words = [
             self.flap_words(device_id)
             if kind == TODO_KIND_FLAPPING and device_id is not None
@@ -1098,11 +1094,6 @@ class ProblemListMixin:
         not stopped running down in any sense a person would accept
         (rule LIST-07).
         """
-        # A drop inside a flap is recorded, never announced: the flap
-        # was, once, and will be again when it ends. Otherwise a
-        # flapping device pushes every drop and every return.
-        if kind == TODO_KIND_UNAVAILABLE and self.is_flapping(device_id):
-            return
         key = (device_id, kind)
         if not final and self._todo_status_of(device_id) == "completed":
             # Ticked: nothing reaches the phone until the item leaves
@@ -1126,7 +1117,7 @@ class ProblemListMixin:
             words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
             said = words[0] if words else None
         elif not recovery and kind == TODO_KIND_FLAPPING:
-            said = self.flap_words(device_id)  # type: ignore[attr-defined]
+            said = f"has {self.flap_words(device_id)}. Check its signal"  # type: ignore[attr-defined]
         elif not recovery and kind == TODO_KIND_LOW_BATTERY:
             # A low battery reads as the brief says it, "battery
             # crossed the threshold on <date>. Its current level is

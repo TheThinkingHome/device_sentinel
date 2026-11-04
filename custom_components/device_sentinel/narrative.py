@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.17 (2026-11-01)
+# File: narrative.py, Version: 0.28.1 (2026-11-03)
 
 """How to say what happened: the composer.
 
@@ -144,7 +144,6 @@ class NarrativeMixin:
     # matters. Silence outranks battery and signal: a device that
     # cannot be heard from cannot be trusted to report either.
     _KIND_SEVERITY = (
-        TODO_KIND_FLAPPING,
         TODO_KIND_UNAVAILABLE,
         TODO_KIND_FROZEN,
         TODO_KIND_UNKNOWN,
@@ -154,6 +153,8 @@ class NarrativeMixin:
         # has crossed the threshold is more urgent than one heading
         # for it (rule LIST-02).
         TODO_KIND_FALLING_BATTERY,
+        # A signal problem (rule SIG-17).
+        TODO_KIND_FLAPPING,
         TODO_KIND_RAILED_SIGNAL,
     )
 
@@ -170,7 +171,7 @@ class NarrativeMixin:
     )
 
     _EVENT_WORDING = {
-        TODO_KIND_FLAPPING: "started dropping out again and again",
+        TODO_KIND_FLAPPING: "started having short drop-outs",
         TODO_KIND_FROZEN: "stopped reporting",
         # The brief's own word for the kind (rule UNAV-08).
         TODO_KIND_UNAVAILABLE: "became unavailable",
@@ -189,8 +190,8 @@ class NarrativeMixin:
     # second form is used when no duration is known.
     _STATE_TEMPLATE = {
         TODO_KIND_FLAPPING: (
-            "has been dropping out for {ago}",
-            "keeps dropping out",
+            "has had short drop-outs for {ago}",
+            "has short drop-outs",
         ),
         TODO_KIND_FROZEN: (
             "stopped reporting {ago} ago",

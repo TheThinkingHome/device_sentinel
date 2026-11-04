@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.0 (2026-11-03)
+# File: interventions.py, Version: 0.28.1 (2026-11-03)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -43,6 +43,8 @@ from .normalise import COUNT_HIGHEST, MOMENT_HIGHEST, MOMENT_LOWEST
 from .records import restart_lognormal
 
 from .const import (
+    RETIRED_KIND_DROPPING_OUT,
+    WITHDRAWN_REASON_REPLACED,
     LOGNORMAL_RESTART_REPAIR,
     FLAP_CHECK_WORDS,
     SYS_DETAIL,
@@ -2849,6 +2851,11 @@ class InterventionMixin:
         # this close announces, so the bus keeps their order
         # (rule WATCH-10).
         self._release_held_recoveries()
+        # Each dropping-out item the upgrade removed gets its closing
+        # event (rule SIG-17).
+        for device_id, name in getattr(self, "_dropping_out_retired", None) or []:
+            self.fire_withdrawn(device_id, name, [RETIRED_KIND_DROPPING_OUT], WITHDRAWN_REASON_REPLACED)
+        self._dropping_out_retired: list[tuple[str, str]] = []
         self._rebuild_registry_view()
         # After the rebuild, so the awaiting-enable counts are taken
         # against the registry view this close has just corrected

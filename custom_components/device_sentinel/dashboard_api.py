@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.14 (2026-10-29)
+# File: dashboard_api.py, Version: 0.28.1 (2026-11-03)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -67,15 +67,16 @@ ACT_SOURCES = list(MUTE_SOURCES_SAID)
 def mutes_for_kinds(kinds: Any) -> list[str]:
     """The mutes offered beside a Problem List item, one per kind it has.
 
-    A silence is the freeze mute's; a device gone, or dropping out, the
-    unavailable mute's; then battery and signal (rule MUTE-06).
+    A silence is the freeze mute's; a device gone the unavailable
+    mute's; then battery, and signal, short drop-outs among it (rules
+    MUTE-06, SIG-17).
     """
     silence = (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED)
     wanted = (
         ("freeze", lambda k: k in silence),
         ("unavailable", lambda k: TODO_KIND_FAMILIES.get(k) == "down" and k not in silence),
         ("battery", lambda k: TODO_KIND_FAMILIES.get(k) == "battery"),
-        ("signal", lambda k: TODO_KIND_FAMILIES.get(k) == "signal"),
+        ("signal", lambda k: TODO_KIND_FAMILIES.get(k) in ("signal", "drop_outs")),
     )
     return [mute for mute, test in wanted if any(test(kind) for kind in kinds)]
 

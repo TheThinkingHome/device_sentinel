@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.0 (2026-11-03)
+# File: coordinator.py, Version: 0.28.1 (2026-11-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -319,7 +319,7 @@ from .dashboard import (
     TrendsViewMixin,
 )
 from .journal import JournalMixin
-from .short_drops import ShortDropMixin
+from .short_drops import ShortDropMixin, forget_restart_drops
 from .wifi_addresses import WifiAddressMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
@@ -613,6 +613,9 @@ class DeviceSentinelCoordinator(
         self.deviceless_count: int = 0
 
         self._grace_until: float = 0.0
+        # The dropping-out items the upgrade removed, each told by a
+        # withdrawn event when the grace closes (rule SIG-17).
+        self._dropping_out_retired: list[tuple[str, str]] = []
         self._grace_stamps: int = 0
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
@@ -1294,6 +1297,7 @@ class DeviceSentinelCoordinator(
                     entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
             # And the same treatment for the four kinds renamed later,
             # for the same reason (rule LIST-02).
+            self._dropping_out_retired = self._retire_dropping_out(loaded)
             self._rename_stored_kinds(loaded)
             # And the renamed option keys: a settings-changed row names
             # keys, and the brief resolves each to its screen label
@@ -1516,6 +1520,9 @@ class DeviceSentinelCoordinator(
                 loaded[DATA_DEVICES], repair
             )
             loaded[DATA_SIGNAL_DAY_REPAIR] = SIGNAL_DAY_REPAIR_MARK
+            # The drops kept at a start, for devices their
+            # integration had not yet published, go (rule UP-04).
+            forget_restart_drops(loaded)
             # A history holding two scales at once cannot be separated
             # after the fact, so it goes (rule SIG-03). Judged on the
             # data rather than on a version, so a device that grows a
