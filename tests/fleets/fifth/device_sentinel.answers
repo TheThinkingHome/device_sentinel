@@ -1,0 +1,32 @@
+{
+ "version": 1,
+ "minor_version": 1,
+ "key": "device_sentinel.answers",
+ "data": {
+  "power": {
+   "models": {
+    "[\"Maker 001\", \"Model 001\", \"\"]": {
+     "kind": "battery",
+     "type": "Rechargeable",
+     "quantity": 1,
+     "set": "2026-10-29T00:28:24.136554+00:00",
+     "device_id": "04fa0000000000000000000000000056"
+    }
+   },
+   "devices": {}
+  },
+  "types": {
+   "models": {},
+   "devices": {}
+  },
+  "battery": {
+   "04fa0000000000000000000000000056": {
+    "day": "2026-10-28",
+    "how": "detected",
+    "stamp": "2026-10-30T05:00:02.014356+00:00",
+    "waiting": true,
+    "history": []
+   }
+  }
+ }
+}
