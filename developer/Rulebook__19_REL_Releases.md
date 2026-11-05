@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Releases (REL)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 5 November 2026, on Device Sentinel 0.28.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how a release reaches a house, how much proof it gets before it is tagged, when it counts as stable, and what is written about it: release notes, the README and the wiki. It also covers the Battery Notes library refresh that rides with each Latest. How the code and the tests are written is under [CODE](Rulebook__20_CODE_Code_and_Tests.md). The battery library's use on the device page is under [DEV](Rulebook__04_DEV_Device_Identity.md).
 
@@ -23,11 +23,12 @@ This section covers how a release reaches a house, how much proof it gets before
 ### REL-03 The Suite Runs on Each Push
 
 **GitHub runs the suite on each push, from the repository, on pinned harnesses.**
-- **Two runs:** one on the lowest Home Assistant release Device Sentinel supports (2026.5.0), and one on the release the test houses run (2026.10.1). This holds until the lowest supported release reaches 2026.8.0.
+- **Three runs:** one on the lowest Home Assistant release Device Sentinel supports (2026.5.0), until it reaches 2026.8.0; one on the release the test houses run (2026.10.4); and one on the newest release (2026.11.0).
+- **Home Assistant's own harness:** from 2026.11, Home Assistant ships its test harness inside its source. Until it is published it is installed from the release's tag, and the root conftest.py lets the tests import it under the older harness's name, so the suite runs unchanged on every release.
 - **Deprecations:** any test during which Home Assistant reports a deprecated use by Device Sentinel fails.
 - **Replacements:** a replacement Home Assistant recommends is tried on each supported release before it is used.
 
-*Proof:* `.github/workflows/test.yml`, `requirements_test.txt`, `requirements_test_floor.txt`, [`test_deprecation_guard.py`](../tests/test_deprecation_guard.py).
+*Proof:* `.github/workflows/test.yml`, `requirements_test.txt`, `requirements_test_floor.txt`, `requirements_test_next.txt`, `conftest.py`, [`test_deprecation_guard.py`](../tests/test_deprecation_guard.py).
 
 ### REL-04 How Much Proof a Build Gets
 
