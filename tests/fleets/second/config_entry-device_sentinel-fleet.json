@@ -782,7 +782,9 @@
    "quiet_hours_start": "22:00:00",
    "repeat_floor": 2.0,
    "report_link_address": "internal",
-   "signal_muted_devices": [],
+   "signal_muted_devices": [
+    "03fa000000000000000000000000004f"
+   ],
    "signal_muted_integrations": [],
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
