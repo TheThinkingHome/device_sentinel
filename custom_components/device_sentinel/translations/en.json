@@ -255,7 +255,7 @@
           "study_hardware": "Hardware to Study"
         },
         "data_description": {
-          "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Choosing something changes nothing about how Device Sentinel behaves."
+          "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Problem Sensors and Polling appears on every system: it records each device's problem sensors and which integrations update all their devices at once. Choosing something changes nothing about how Device Sentinel behaves."
         }
       }
     },
