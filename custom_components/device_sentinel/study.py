@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.27.10 (2026-10-27)
+# File: study.py, Version: 0.28.3 (2026-11-04)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -89,6 +89,7 @@ from .const import (
     PROBE_WAS,
     PROBE_WHEN,
     STUDIABLE,
+    WATCH_KEY,
     STUDY_SHAPE_CAP,
 )
 from .device_fields import device_field, identifier_values
@@ -101,6 +102,7 @@ from .study_stacks import (
     TUYA_DOMAIN,
     ZWAVE_DOMAIN,
     coordinator_rows,
+    probe_key,
     probe_rows,
     zwave_health,
     zwave_nodes,
@@ -228,8 +230,8 @@ class StudyMixin:
     # When each node was first seen in its state, each Hue light's last
     # on or off, and each bridge's or cloud's state changes, for the
     # last hour's count.
-    _probe_since: dict[tuple[str, str], tuple[str, float]]
-    _probe_light: dict[tuple[str, str], bool]
+    _probe_since: dict[tuple[str, ...], tuple[str, float]]
+    _probe_light: dict[tuple[str, ...], bool]
     _probe_changes: dict[tuple[str, str], deque[float]]
     # Node event subscriptions keyed by the node object's id and its
     # name; each controller's counters at the last fold, and the border
@@ -518,6 +520,16 @@ class StudyMixin:
         self._probe_migrate()
         self._probe_flush()
         studied = self.studied
+        # Problem sensors and polling ride on the same minute and file,
+        # with memory of their own, so they run with no stack ticked
+        # (rule STACK-14).
+        if WATCH_KEY in studied:
+            try:
+                self._watch_tick(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(WATCH_KEY, err)
+        else:
+            self._watch_clear()  # type: ignore[attr-defined]
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
             self._probe_since.clear()
@@ -535,13 +547,13 @@ class StudyMixin:
         else:
             self._thread_stop()
         wifi_nodes: dict[str, bool] = {}
-        since: dict[tuple[str, str], tuple[str, float]] = {}
-        lights: dict[tuple[str, str], bool] = {}
+        since: dict[tuple[str, ...], tuple[str, float]] = {}
+        lights: dict[tuple[str, ...], bool] = {}
         for row in probe_rows(self.hass, studied, self._probe_failure):
             views = self._probe_views(row, now)
             if row["stack"] == MATTER_DOMAIN and "wifi" in (row.get("network") or ""):
                 wifi_nodes[self._probe_name(row)] = row["now"] == "available"
-            key = (row["stack"], row["node"])
+            key = probe_key(row)
             held = self._probe_since.get(key)
             since[key] = held if held is not None and held[0] == views["now"] else (views["now"], now)
             switched = self._probe_switched(key, row, lights)
@@ -585,20 +597,20 @@ class StudyMixin:
         # its reader fails, keeps what was known of it.
         read = {key[0] for key in since}
         for held_map, fresh in ((self._probe_since, since), (self._probe_light, lights)):
-            for key, value in held_map.items():
-                if key[0] not in read and key[0] in studied:
-                    fresh.setdefault(key, value)  # type: ignore[arg-type]
+            for kept, value in held_map.items():
+                if kept[0] not in read and kept[0] in studied:
+                    fresh.setdefault(kept, value)  # type: ignore[arg-type]
         self._probe_since = since
         self._probe_light = lights
         changes: dict[tuple[str, str], deque[float]] = {}
         for row in coordinator_rows(self.hass, studied, self._probe_failure):
-            key = (row["stack"], row["node"])
+            bridge = (row["stack"], row["node"])
             stated = (row["now"], row["detail"])
-            before = self._probe_last.get(key)
-            self._probe_last[key] = stated
-            changes[key] = self._probe_changes.get(key) or deque(maxlen=PROBE_CHANGES_KEPT)
+            before = self._probe_last.get(bridge)
+            self._probe_last[bridge] = stated
+            changes[bridge] = self._probe_changes.get(bridge) or deque(maxlen=PROBE_CHANGES_KEPT)
             if before is not None and before[0] != row["now"]:
-                changes[key].append(now)
+                changes[bridge].append(now)
             if before == stated:
                 continue
             self._probe_queue({
@@ -613,7 +625,7 @@ class StudyMixin:
                 PROBE_DETAIL: ", ".join(
                     part for part in (
                         row["detail"],
-                        self._probe_note(row, changes[key], now) if row["stack"] in NOTED_STACKS else "",
+                        self._probe_note(row, changes[bridge], now) if row["stack"] in NOTED_STACKS else "",
                     ) if part
                 ),
             })
@@ -644,7 +656,7 @@ class StudyMixin:
             self._probe_wifi_down = wifi_down
 
     def _probe_switched(
-        self, key: tuple[str, str], row: dict[str, Any], lights: dict[tuple[str, str], bool]
+        self, key: tuple[str, ...], row: dict[str, Any], lights: dict[tuple[str, ...], bool]
     ) -> bool:
         """Whether a Hue light changed on or off while the bridge said
         its link was not connected.
@@ -1056,6 +1068,11 @@ class StudyMixin:
                         for state, count in sorted(by_state.items())
                     ),
                 })
+        if WATCH_KEY in studied:
+            try:
+                self._watch_fold(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(WATCH_KEY, err)
         self._probe_flush()
 
     # -------------------------------------------- Hue and SmartThings
@@ -1089,7 +1106,7 @@ class StudyMixin:
             })
         devices = []
         for row in probe_rows(self.hass, {domain}, failed)[:NODE_ROW_CAP]:
-            held = self._probe_since.get((row["stack"], row["node"]))
+            held = self._probe_since.get(probe_key(row))
             devices.append({
                 "node": row["node"],
                 "device_id": row.get("device_id") or "",
@@ -1147,4 +1164,16 @@ class StudyMixin:
                 for name, shapes in sorted(self._study_shapes.items())
             },
             "snapshot": self.study_snapshot(),
+            **(
+                {"problem_sensors_and_polling": self._watch_download()}
+                if WATCH_KEY in self.studied else {}
+            ),
         }
+
+    def _watch_download(self) -> dict[str, Any]:
+        """Problem sensors and polling for the download, or what stopped
+        them, so the download still arrives (rule STACK-14)."""
+        try:
+            return self.watch_diagnostics()  # type: ignore[attr-defined, no-any-return]
+        except Exception as err:  # noqa: BLE001 - the download must still arrive
+            return {"unreadable": f"{type(err).__name__}: {err}"}

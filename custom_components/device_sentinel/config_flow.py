@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.2 (2026-11-04)
+# File: config_flow.py, Version: 0.28.3 (2026-11-04)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -71,6 +71,7 @@ from .const import (
     REPORT_LINKS_NONE,
     CONF_STUDY_HARDWARE,
     STUDIABLE,
+    STUDY_ALWAYS_OFFERED,
     CONF_WIFI_CONFIRM_SECONDS,
     CONF_WIFI_NETWORKS,
     DEFAULT_WIFI_CONFIRM_SECONDS,
@@ -677,7 +678,8 @@ def _studiable(hass) -> list[str]:
         entry.domain for entry in hass.config_entries.async_entries()
     }
     return [
-        label for domain, label in STUDIABLE.items() if domain in present
+        label for domain, label in STUDIABLE.items()
+        if domain in present or domain in STUDY_ALWAYS_OFFERED
     ]
 
 

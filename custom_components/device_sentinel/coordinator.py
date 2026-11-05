@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.1 (2026-11-03)
+# File: coordinator.py, Version: 0.28.3 (2026-11-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -296,6 +296,7 @@ from .const import (
     DEV_SIGNAL_DAILY_COUNT,
     DEV_DAILY_DATES,
     PAIRING_GRACE_SECONDS_DEFAULT,
+    WATCH_STOPS_KEPT,
 )
 from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
@@ -310,6 +311,7 @@ from .hardware_copies import choose_copies, find_groups, rank_of
 from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
+from .study_watch import WatchStudyMixin
 from .wifi import WifiScanMixin
 from .dashboard import (
     BriefViewMixin,
@@ -407,6 +409,7 @@ class DeviceSentinelCoordinator(
     RouterTiesMixin,
     WifiScanMixin,
     StudyMixin,
+    WatchStudyMixin,
     DashboardMixin,
     IntegrationViewMixin,
     DeviceViewMixin,
@@ -905,12 +908,12 @@ class DeviceSentinelCoordinator(
         self._study_shapes: dict[str, dict[str, dict]] = {}
         # What each studied stack's nodes last said, so a line is
         # written when that changes (rule STACK-12).
-        self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
+        self._probe_last: dict[tuple[str, ...], tuple[str, ...]] = {}
         # When each node was first seen in its state, each Hue light's
         # last on or off, and each bridge's or cloud's recent state
         # changes. Rebuilt each minute from what was read.
-        self._probe_since: dict[tuple[str, str], tuple[str, float]] = {}
-        self._probe_light: dict[tuple[str, str], bool] = {}
+        self._probe_since: dict[tuple[str, ...], tuple[str, float]] = {}
+        self._probe_light: dict[tuple[str, ...], bool] = {}
         self._probe_changes: dict[tuple[str, str], deque[float]] = {}
         # Probe lines rendered and waiting for the next flush, and the
         # lock that keeps two flushes from rolling the file at once
@@ -923,6 +926,15 @@ class DeviceSentinelCoordinator(
         # this start, and whether the file has refused a write.
         self._probe_failed: set[str] = set()
         self._probe_write_failed = False
+        # Problem sensors and polling under Extended Diagnostics, in
+        # memory only (rule STACK-14): each sensor's last state and when
+        # it took it, each integration's lockstep measure, the stops
+        # still open and the last ones ended.
+        self._watch_last: dict[str, str] = {}
+        self._watch_since: dict[str, float] = {}
+        self._watch_lockstep: dict[str, dict[str, Any]] | None = None
+        self._watch_stops: dict[str, dict[str, Any]] = {}
+        self._watch_ended: deque[dict[str, Any]] = deque(maxlen=WATCH_STOPS_KEPT)
         self._probe_lock = threading.Lock()
         self._init_rule_counts()
         # Whether Device Sentinel's Wi-Fi outage was open at the last

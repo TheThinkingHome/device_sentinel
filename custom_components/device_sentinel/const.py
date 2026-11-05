@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.2 (2026-11-04)
+# File: const.py, Version: 0.28.3 (2026-11-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2307,7 +2307,30 @@ STUDIABLE = {
     "smartthings": "SmartThings",
     "tuya": "Tuya",
     "lutron_caseta": "Lutron Caséta",
+    # Not a stack: every problem sensor, and which integrations update
+    # in lockstep, recorded on any house (rule STACK-14).
+    "problem_polling": "Problem Sensors and Polling",
 }
+# Offered on every house, since they are not hardware a house may lack
+# (rule STACK-14).
+STUDY_ALWAYS_OFFERED = {"problem_polling"}
+WATCH_KEY = "problem_polling"
+# Lockstep: an integration with at least this many devices measurable
+# over this many days, of which at least this share keep each day's
+# longest gap within this tolerance of the integration's median that
+# day. A tester's Alarm.com: 15 of 15 within 1% over 5 days; nothing else
+# on three houses (rule STACK-14).
+WATCH_LOCKSTEP_DAYS = 5
+WATCH_LOCKSTEP_MIN_DEVICES = 3
+WATCH_LOCKSTEP_TOLERANCE = 0.01
+WATCH_LOCKSTEP_SHARE = 0.8
+# A stop of a lockstep integration's updates: no device of it heard for
+# this many times its usual longest gap, and never less than the floor.
+WATCH_STOP_FACTOR = 2.0
+WATCH_STOP_FLOOR = 600.0
+# Ended stops kept for the download, and problem sensors listed in it.
+WATCH_STOPS_KEPT = 20
+WATCH_PROBLEM_CAP = 200
 
 # A study keeps the shapes it has seen, not every reading: one stored
 # example per distinct transition, counted thereafter. Capped so a

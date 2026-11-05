@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.28.1 (2026-11-03)
+# File: report_maintainer.py, Version: 0.28.3 (2026-11-04)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -266,8 +266,13 @@ class MaintainerReportMixin:
             "Device Sentinel's view of the same device at that moment, and "
             "AGREES whether the two agree it is quiet. Lines for a "
             "controller, bridge, hub, server or cloud say whether the stack "
-            "itself is there. Neither side acts on the other: these are the "
-            "readers in shadow. At "
+            "itself is there. With Problem Sensors and Polling chosen, a "
+            "NODE of problem is a device's problem sensor, on or off, and "
+            "polling is an integration that updates all its devices at "
+            "once: lockstep or independent each day, and each time its "
+            "updates stopped and started again, with how many of its "
+            "devices Device Sentinel listed. Neither side acts on the "
+            "other: these are the readers in shadow. At "
             f"{PROBE_FILE_MAX_BYTES // 1_000_000} MB this file becomes "
             f"stack_probe.md.1, and older ones move up to .{PROBE_FILE_ROLLS}.",
             "",

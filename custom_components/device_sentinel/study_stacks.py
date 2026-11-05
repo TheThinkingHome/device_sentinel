@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.27.10 (2026-10-27)
+# File: study_stacks.py, Version: 0.28.3 (2026-11-04)
 
 """What six stacks say about their devices, gathered so their support
 can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
@@ -657,6 +657,23 @@ def _matter_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     return rows
 
 
+def probe_key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    """A device row's key in the probe's memory (rule STACK-12).
+
+    The stack, the node's full id and the device. The NODE column shows
+    a Hue, SmartThings or Tuya id cut to eight characters, and two of
+    a tester's Tuya dimmers shared those eight; an entry left behind by an
+    older setup can list the same node as an empty copy of the device.
+    Keyed by the short id alone, the two views took turns and each turn
+    was written as a change: 2,310 lines in three and a half hours.
+    """
+    return (
+        str(row["stack"]),
+        str(row.get("id") or row["node"]),
+        str(row.get("device_id") or ""),
+    )
+
+
 def probe_rows(
     hass: HomeAssistant,
     studied: set[str],
@@ -829,6 +846,7 @@ def _hue_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
             rows.append({
                 "stack": HUE_DOMAIN,
                 "node": node_id[:8],
+                "id": node_id,
                 "device_id": mapped.get(node_id, ""),
                 "now": now,
                 "quiet": quiet,
@@ -917,6 +935,7 @@ def _smartthings_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
             rows.append({
                 "stack": SMARTTHINGS_DOMAIN,
                 "node": node_id[:8],
+                "id": node_id,
                 "device_id": device_id,
                 "now": now,
                 "quiet": quiet,
@@ -948,6 +967,7 @@ def _tuya_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
             rows.append({
                 "stack": TUYA_DOMAIN,
                 "node": node_id[:8],
+                "id": node_id,
                 "device_id": mapped.get(node_id, ""),
                 "now": "online" if online else "offline",
                 "quiet": not online,
