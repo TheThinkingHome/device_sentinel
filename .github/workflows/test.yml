@@ -19,9 +19,8 @@ on:
 
 jobs:
   pytest:
-    # Two harnesses until the minimum Home Assistant version reaches
-    # 2026.8.0: the minimum hacs.json declares, and the release the
-    # fleets run. A test that passes on only one of them proves only
+    # Three harnesses: the minimum hacs.json declares, until it reaches
+    # 2026.8.0; the release the fleets run; and the newest release. A test that passes on only one of them proves only
     # half the range a user can install on.
     name: Tests (Home Assistant ${{ matrix.home-assistant }})
     runs-on: ubuntu-latest
@@ -31,8 +30,12 @@ jobs:
         include:
           - home-assistant: "2026.5.0"
             requirements: requirements_test_floor.txt
-          - home-assistant: "2026.10.1"
+          - home-assistant: "2026.10.4"
             requirements: requirements_test.txt
+          # Home Assistant 2026.11 ships its own harness, installed from
+          # the release's source until it is on PyPI (rule REL-03).
+          - home-assistant: "2026.11.0"
+            requirements: requirements_test_next.txt
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
