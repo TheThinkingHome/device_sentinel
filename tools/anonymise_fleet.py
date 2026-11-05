@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.27.10 (2026-10-27)
+# File: tools/anonymise_fleet.py, Version: 0.28.3 (2026-11-05)
 
 """Build the committed fleet set from real houses' files.
 
@@ -88,7 +88,10 @@ UPSTREAM_PREFIX = "upstream:"
 def _is_upstream(value: dict[str, Any]) -> bool:
     device_id = value.get("device_id")
     return isinstance(device_id, str) and device_id.startswith(UPSTREAM_PREFIX)
-SENTENCE_FIELDS = {"summary", "detail"}
+# A Problem List item's description can name a device too, as "Its
+# iRobot Roomba and Braava connection failed to start" does a device
+# named Roomba.
+SENTENCE_FIELDS = {"summary", "detail", "description"}
 
 STORAGE_NAMES = (
     ("device_sentinel.storage", "device_sentinel.clocks"),
