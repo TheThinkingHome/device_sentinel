@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 4 November 2026, on Device Sentinel 0.28.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -118,7 +118,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Turning one on:** it gathers for that integration only, into the diagnostics download the person attaches to an issue. Nothing is sent anywhere.
 - **Turning it off:** gathering stops. The shapes it gathered are dropped at the next midnight fold. Lines already written to the probe file stay until they roll out ([STACK-12](#stack-12-the-stack-probe-file)).
 - **Built stacks:** a stack whose support is built may stay on the list, so its data can be gathered if trouble comes.
-- **What is offered:** the routers (UniFi, FRITZ!Box, AsusWRT, NETGEAR and MikroTik), Z-Wave, Matter, Hue, SmartThings, Tuya and Lutron Caséta. HomeKit Device and deCONZ are not, and Shelly needs nothing.
+- **What is offered:** the routers (UniFi, FRITZ!Box, AsusWRT, NETGEAR and MikroTik), Z-Wave, Matter, Hue, SmartThings, Tuya and Lutron Caséta, each only where the house has it, and Problem Sensors and Polling on every house ([STACK-14](#stack-14-problem-sensors-and-polling)). HomeKit Device and deCONZ are not, and Shelly needs nothing.
 - **Hue and SmartThings:** read by sampling only, once a minute from memory, beside Device Sentinel's own record of each device's state changes, with no callback added to either library. A change shorter than a minute can be missed. Nothing judges from them until a house with them has sent its data.
 - **SmartThings and Tuya:** they are there for a cloud outage. Once each has recorded a real one, one rule for cloud integrations is built from them and those probes retire.
 - **Judging goes on:** whatever a studied library does, Device Sentinel goes on judging, listing, saving and folding.
@@ -133,8 +133,9 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Matter:** the probe records each Thread border router appearing and disappearing, with its network name and ID, each Thread device's network ID, and which Matter Wi-Fi devices were away when a Wi-Fi outage opens or closes.
 - **Which entries:** only entries set up to run are read. An ignored discovery or a disabled entry is not a controller, bridge, hub or cloud.
 - **Several entries:** where a stack has several, each one's lines carry the last eight characters of its entry id, never its title. A lone entry keeps the plain name.
+- **A line only when something changes (since 0.28.3):** each device row is remembered by its stack, its node's full id and its device. The NODE column shows a Hue, SmartThings or Tuya id cut to eight characters, and two devices can share those eight; an entry left by an older setup can list the same node as an empty copy of the device. Remembered by the short id alone, the two views took turns and each turn was written: on a tester's house, 2,310 Tuya lines in three and a half hours.
 
-*Proof:* [`test_stack_readers.py`](../tests/test_stack_readers.py), [`test_stack_probes_hubs.py`](../tests/test_stack_probes_hubs.py), [`test_probe_additions.py`](../tests/test_probe_additions.py), [`test_hue_smartthings_probe.py`](../tests/test_hue_smartthings_probe.py), [`test_study_live_entries.py`](../tests/test_study_live_entries.py).
+*Proof:* [`test_stack_readers.py`](../tests/test_stack_readers.py), [`test_stack_probes_hubs.py`](../tests/test_stack_probes_hubs.py), [`test_probe_additions.py`](../tests/test_probe_additions.py), [`test_hue_smartthings_probe.py`](../tests/test_hue_smartthings_probe.py), [`test_study_live_entries.py`](../tests/test_study_live_entries.py), [`test_stack_probe_duplicates.py`](../tests/test_stack_probe_duplicates.py).
 
 ### STACK-13 What Device Sentinel Never Sends to a Stack
 
@@ -143,3 +144,16 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Recovery by writing:** recovering a device by writing to its stack is set aside whole until a real incident shows one it would have fixed, and nothing a person reads promises it.
 
 *Proof:* [`test_maintenance.py`](../tests/test_maintenance.py), [`test_hue_smartthings_probe.py`](../tests/test_hue_smartthings_probe.py), [`test_lutron_hub.py`](../tests/test_lutron_hub.py), [`test_lutron_study_gating.py`](../tests/test_lutron_study_gating.py).
+
+### STACK-14 Problem Sensors and Polling
+
+**Since 0.28.3, the Extended Diagnostics choice Problem Sensors and Polling records every problem sensor's state and which integrations update all their devices at once. It records and never judges.**
+- **Why:** on a tester's house, Alarm.com polls a cloud and updates its 16 devices together, so what is heard from each device is the poll. When the poll stopped for hours with the integration loaded, every device was reported frozen one by one and the gap was learned as their rhythm. Each device publishes its own health as a Malfunction sensor, a binary sensor of class problem, which nothing read. Problem sensors mean other things elsewhere: a printer's can mean it is out of paper. Both are recorded before either is judged.
+- **Offered on every house,** since neither is hardware a house may lack.
+- **Problem sensors:** every enabled binary sensor of class problem on a device. A line in stack_probe.md when its state changes, NODE problem, with Device Sentinel's view of the device beside it and the entity in DETAIL; a count a day per integration by state; and each one's state, since when, in the diagnostics download.
+- **Lockstep:** an integration with at least 3 watched devices that each have 5 days of daily longest gaps is measured: a device is in step when each of those gaps is within 1% of the integration's median that day, and the integration is lockstep when at least 80% are. Measured at the start and at each fold, with a line a day, NODE polling, lockstep or independent. On three houses, Alarm.com is lockstep and nothing else watched is.
+- **A stop:** a lockstep integration none of whose watched devices has been heard for twice its usual longest gap, never less than 10 minutes, outside the startup grace. A line when it stops and when any of its devices is heard again, with how long, how many devices and the most of them Device Sentinel listed meanwhile. Ended stops are kept for the download, the last 20.
+- **Memory only:** nothing is stored. A restart measures again, and taking the choice off forgets it at once.
+- **Next:** a rule for polled integrations and Alarm.com's Malfunction sensor waits on these recordings.
+
+*Proof:* [`test_problem_sensors_and_polling.py`](../tests/test_problem_sensors_and_polling.py).
