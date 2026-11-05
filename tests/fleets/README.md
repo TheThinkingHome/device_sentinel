@@ -11,6 +11,7 @@ committed.
 | `reference/` | the owner's own system, Zigbee2MQTT and ZHA |
 | `second/` | the second fleet: ZHA, Z-Wave, Matter, ESPHome and UniFi |
 | `fourth/` | the fourth fleet: Lutron Caseta, Z-Wave and Frigate |
+| `fifth/` | the fifth fleet: Alarm.com, SmartThings, Tuya, Hue, ZHA, Z-Wave and ESPHome |
 | `upgrade/reference/`, `upgrade/second/` | the first two houses as they stood on 0.25, kept for the tests that prove an upgrade from a house written before the history file |
 
 Each holds the storage file, the clocks file, the history file where the
@@ -35,10 +36,9 @@ test sees the whole house as it would before 0.26.2. A house with no
 history file, such as the upgrade houses and `fourth/`, reads as it
 stands.
 
-Last refreshed 30 October 2026: `reference/` from the owner's files of
-that morning on 0.27.14 (105 records, the newest 30 days in the storage
-file and up to 111 days with its history), `second/` from Tim Plas's
-files of that morning on 0.27.14 (230 records, up to 60 days, his
-History setting); `fourth/` unchanged since 21 September and
-byte-identical after the refresh, which shows the alias key held. The
-houses of 11 October stay in `upgrade/` unchanged.
+Last refreshed 5 November 2026: `reference/` from the owner's files of
+that morning on 0.28.3, `second/` from Tim Plas's files of 2 November on
+0.27.17, and the new `fifth/` from the house of a friend of his, of
+4 November on 0.27.17 (115 devices, no history file: a house that sends
+only the diagnostics, storage, clocks and answers files). `fourth/` came
+out byte-identical.
