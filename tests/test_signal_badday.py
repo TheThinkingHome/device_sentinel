@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_signal_badday.py, Version: 0.28.3 (2026-11-05)
 
 """The bad signal day detector (rules SIG-01, SIG-08).
 
@@ -251,6 +251,7 @@ _FLEETS = [
     fleet_param(
         "fourth", "device_sentinel_storage.json", id="fourth"
     ),
+    fleet_param("fifth", "device_sentinel.storage", id="fifth"),
 ]
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_disk.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_history_file_disk.py, Version: 0.28.3 (2026-11-05)
 
 """The history file on disk: the four steps, a stop between any two,
 the restores, the evidence, the backups and the uninstall
@@ -287,6 +287,7 @@ async def test_backup_copies_go_after_thirty_days_except_the_newest(
         fleet_param("reference", "device_sentinel.storage", id="reference"),
         fleet_param("second", "device_sentinel_storage.json", id="second"),
         fleet_param("fourth", "device_sentinel_storage.json", id="fourth"),
+        fleet_param("fifth", "device_sentinel.storage", id="fifth"),
         fleet_param("upgrade", "reference", "device_sentinel.storage", id="upgrade_reference"),
         fleet_param("upgrade", "second", "device_sentinel_storage.json", id="upgrade_second"),
     ],

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_pages.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_fleet_pages.py, Version: 0.28.3 (2026-11-05)
 
 """Every device of a real house through the server's device page
 (rules FRZ-05, FRZ-22).
@@ -45,6 +45,8 @@ HOUSES = [
                 clocks=("reference", "device_sentinel.clocks")),
     fleet_param("second", "device_sentinel_storage.json", id="second",
                 clocks=("second", "device_sentinel_clocks.json")),
+    fleet_param("fifth", "device_sentinel.storage", id="fifth",
+                clocks=("fifth", "device_sentinel.clocks")),
 ]
 # A house whose records carry no day dates is left out: this test seats
 # records as the page reads them, past the load that would date them.

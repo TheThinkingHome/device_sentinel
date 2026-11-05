@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.27.10 (2026-10-27)
+# File: test_storage_shape.py, Version: 0.28.3 (2026-11-05)
 
 """The shape check names what does not fit, and last-good follows it
 (rules STOR-04, STOR-05, STOR-06, STOR-07, STOR-09, STOR-12).
@@ -487,6 +487,10 @@ FLEETS = [
     fleet_param(
         "fourth", "device_sentinel_storage.json", id="fourth",
         clocks=("fourth", "device_sentinel_clocks.json"),
+    ),
+    fleet_param(
+        "fifth", "device_sentinel.storage", id="fifth",
+        clocks=("fifth", "device_sentinel.clocks"),
     ),
 ]
 
