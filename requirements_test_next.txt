@@ -1,0 +1,23 @@
+# The third test harness, at the Home Assistant release now current:
+# 2026.11.0 under Python 3.14.6 (rule REL-03). From 2026.11 Home
+# Assistant ships its own harness, pytest-homeassistant, inside its
+# source, and it is not yet published on PyPI, so it is installed from
+# the release tag of its own source. The root conftest.py points the
+# older harness name the tests import at it. When it is published this
+# line becomes an ordinary pin, and this file replaces
+# requirements_test.txt as the current harness.
+homeassistant==2026.11.0
+pytest-homeassistant @ git+https://github.com/home-assistant/core.git@2026.11.0#subdirectory=packages/pytest-homeassistant
+# respx 0.23 needs the httpx Home Assistant 2026.11 still accepts.
+httpx==0.28.1
+httpcore==1.0.9
+pytest-timeout==2.4.0
+pytest-unordered==0.8.0
+#
+# Serial only, for the reason requirements_test.txt gives.
+# The libraries Home Assistant 2026.11.0 pins, for the reasons
+# requirements_test.txt gives.
+pylutron-caseta==0.30.1
+aiohue==4.9.0
+pysmartthings==4.0.3
+home-assistant-frontend==20261028.4

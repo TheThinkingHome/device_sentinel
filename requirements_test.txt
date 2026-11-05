@@ -1,20 +1,21 @@
 # The test harness at the Home Assistant release the fleets run:
-# 2026.10.1 under Python 3.14.6. requirements_test_floor.txt pins the
+# 2026.10.4 under Python 3.14.6. requirements_test_floor.txt pins the
 # second harness, at the minimum version hacs.json declares. The suite
-# runs on both until that minimum reaches 2026.8.0.
-pytest-homeassistant-custom-component==0.13.372
+# runs on both until that minimum reaches 2026.8.0, and on
+# requirements_test_next.txt, Home Assistant 2026.11.0.
+pytest-homeassistant-custom-component==0.13.375
 #
 # The suite must run serially (no pytest -n). The harness shares one
 # testing_config/www/ across xdist workers, so parallel runs race the
 # daily brief's atomic write and fail intermittently. See pytest.ini.
 # The Lutron library Home Assistant 2026.10 pins, so the Lutron hub tests
 # run against the library itself.
-pylutron-caseta==0.29.0
+pylutron-caseta==0.30.0
 # The Hue and SmartThings libraries Home Assistant 2026.10 pins, so the
 # Extended Diagnostics tests read the libraries themselves.
 aiohue==4.9.0
 pysmartthings==4.0.3
-# The frontend Home Assistant 2026.10.1 pins. Device Sentinel names
+# The frontend Home Assistant 2026.10.4 pins. Device Sentinel names
 # frontend and panel_custom as dependencies (rule DASH-01), so a test
 # setup brings the frontend up, and it needs its files.
-home-assistant-frontend==20260930.3
+home-assistant-frontend==20260930.5

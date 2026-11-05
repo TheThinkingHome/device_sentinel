@@ -12,6 +12,22 @@ the resolution to this repo's tree before any test collects.
 import pathlib
 import sys
 
+# Home Assistant 2026.11 ships its own test harness, pytest_homeassistant,
+# in place of pytest_homeassistant_custom_component, with the same
+# helpers. The tests import the older name; on a 2026.11 harness that
+# name is pointed at the new one, so the suite runs unchanged on both
+# (rule REL-03).
+try:
+    import pytest_homeassistant_custom_component  # noqa: F401
+except ImportError:
+    import pytest_homeassistant
+    import pytest_homeassistant.common
+    import pytest_homeassistant.typing
+
+    sys.modules["pytest_homeassistant_custom_component"] = pytest_homeassistant
+    sys.modules["pytest_homeassistant_custom_component.common"] = pytest_homeassistant.common
+    sys.modules["pytest_homeassistant_custom_component.typing"] = pytest_homeassistant.typing
+
 _ROOT = str(pathlib.Path(__file__).parent)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
