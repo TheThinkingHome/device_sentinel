@@ -173,7 +173,7 @@
     "name": "Device 001"
    },
    "02fa000000000000000000000000003a": {
-    "name": "Device 111"
+    "name": "Device 112"
    },
    "02fa000000000000000000000000003b": {
     "name": "Device 049"
@@ -368,11 +368,14 @@
    "quiet_hours_start": "22:00:00",
    "repeat_floor": 2.0,
    "report_link_address": "none",
+   "short_drop_limit": 30,
    "signal_muted_devices": [],
    "signal_muted_integrations": [],
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
-   "study_hardware": [],
+   "study_hardware": [
+    "Problem Sensors and Polling"
+   ],
    "trim_devices": [],
    "trim_integrations": [],
    "unavailable_muted_devices": [],
