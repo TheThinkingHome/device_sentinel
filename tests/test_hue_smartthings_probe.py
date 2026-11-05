@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hue_smartthings_probe.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_hue_smartthings_probe.py, Version: 0.28.3 (2026-11-04)
 
 """Hue and SmartThings in Extended Diagnostics, read more fully
 (rules STACK-11, STACK-13).
@@ -456,7 +456,9 @@ async def test_a_reload_keeps_what_was_known(hass: HomeAssistant):
     coord.probe_tick(1060.0)
     entry.runtime_data = runtime
     coord.probe_tick(1120.0)
-    assert coord._probe_since[(HUE_DOMAIN, LAMP[:8])] == ("connected", 1000.0)
+    # Remembered by the stack, the node's full id and the device (rule STACK-12).
+    held = [value for key, value in coord._probe_since.items() if key[:2] == (HUE_DOMAIN, LAMP)]
+    assert held == [("connected", 1000.0)]
 
 
 # ----------------------------------------------------------- downloads
