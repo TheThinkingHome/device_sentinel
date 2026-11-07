@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.28.1 (2026-11-03)
+# File: problem_list.py, Version: 0.28.4 (2026-11-07)
 
 """The problem list: the single memory every channel renders.
 
@@ -46,6 +46,7 @@ from .battery_level import level_text
 from .events import sort_kinds
 from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS
 from .normalise import row_damage
+from .removed_days import counted_gaps
 from .const import (
     INCIDENT_SETTLE_SECONDS,
     TODO_KIND_FLAPPING,
@@ -62,7 +63,6 @@ from .const import (
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     SETTLE_SHARE_PCT,
-    DEV_DAILY_MAX,
     FREEZE_CATEGORY_NEVER_REPORTED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -2078,7 +2078,8 @@ class ProblemListMixin:
         record = self.data[DATA_DEVICES].get(device_id)
         if record is None:
             return 0.0
-        basis, _ = self._trimmed_maximum(record[DEV_DAILY_MAX])
+        # Days removed by hand are not counted (rule FRZ-25).
+        basis, _ = self._trimmed_maximum(counted_gaps(record))
         if basis is None or basis <= 0:
             return 0.0
         return basis * self.notification_debounce

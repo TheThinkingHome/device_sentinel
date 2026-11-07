@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.27.16 (2026-10-31)
+# File: records.py, Version: 0.28.4 (2026-11-07)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -30,6 +30,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from .const import (
     DEV_LOGNORMAL_DAYS,
     DEV_LOGNORMAL_REASON,
+    DEV_REMOVED_DAYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -155,6 +156,8 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_DAILY_MAX: [],
         DEV_LOGNORMAL_DAYS: None,
         DEV_LOGNORMAL_REASON: None,
+        # Days removed by hand from the gap history (rule FRZ-25).
+        DEV_REMOVED_DAYS: None,
         DEV_DAILY_DATES: None,
         DEV_TODAY_MAX: None,
         DEV_FIRST_OBSERVED: now_iso,

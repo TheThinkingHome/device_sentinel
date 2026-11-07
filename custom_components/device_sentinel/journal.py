@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.28.1 (2026-11-03)
+# File: journal.py, Version: 0.28.4 (2026-11-07)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -30,6 +30,7 @@ from homeassistant.util import dt as dt_util
 
 from .normalise import row_damage
 from . import attribution
+from .removed_days import counted_gaps, is_counted
 from .const import (
     DATA_DEVICES,
     DEV_DOWN_BEGAN_AS,
@@ -49,7 +50,6 @@ from .const import (
     ADDR_DEVICE_ID,
     ADDR_WHEN,
     DATA_SYSTEM_EVENTS,
-    DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_VALUE,
     EP_AT,
@@ -240,8 +240,9 @@ class JournalMixin:
             last = record.get(DEV_LAST_ACTIVITY)
             if last is None:
                 continue
-            daily = record.get(DEV_DAILY_MAX) or []
-            if len(daily) < FREEZE_ARMING_DAYS:
+            # Days removed by hand are not counted (rule FRZ-25).
+            daily = counted_gaps(record)
+            if sum(1 for gap in daily if is_counted(gap)) < FREEZE_ARMING_DAYS:
                 continue
             # The rhythm of the rule in use, the one the freeze line is
             # built from, so the episode always opens before the device

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.1 (2026-11-03)
+# File: dashboard_api.py, Version: 0.28.4 (2026-11-07)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -108,6 +108,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
+    websocket_api.async_register_command(hass, ws_device_day)
     # The device page's actions (rule DASH-09).
     websocket_api.async_register_command(hass, ws_device_choices)
     websocket_api.async_register_command(hass, ws_device_rename)
@@ -480,6 +481,30 @@ def ws_use_trimmed_maximum(
         connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
         return
     connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_day",
+        vol.Required("device_id"): str,
+        vol.Required("day"): str,
+        vol.Required("removed"): bool,
+    }
+)
+@callback
+def ws_device_day(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """A bar on the device page's freeze charts pressed: remove that day
+    from both rules, or count it again. Admin only, as every act on the
+    dashboard is (rule FRZ-25)."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.set_day_removed(msg["device_id"], msg["day"], msg["removed"]),
+    )
 
 
 def _page_act(

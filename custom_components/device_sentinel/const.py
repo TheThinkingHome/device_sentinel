@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.3 (2026-11-04)
+# File: const.py, Version: 0.28.4 (2026-11-07)
 
 """Constants for the Device Sentinel integration."""
 
@@ -470,6 +470,12 @@ DEV_LOGNORMAL_DAYS = "lognormal_days"
 # reset is recorded, or for a reset saved before the field existed, and the page
 # then lists the possible reasons.
 DEV_LOGNORMAL_REASON = "lognormal_reason"
+# The days a person removed from the device's learned history by hand,
+# on the device page: ISO dates, oldest first, or None when there are
+# none. A removed day keeps its figure and its place, and neither freeze
+# rule counts it; pressed again, it counts again. Its date leaves the
+# list when the day leaves the history (rule FRZ-25).
+DEV_REMOVED_DAYS = "removed_days"
 LOGNORMAL_RESTART_BATTERY = "battery"
 LOGNORMAL_RESTART_REPAIR = "repair"
 LOGNORMAL_RESTART_FIRMWARE = "firmware"

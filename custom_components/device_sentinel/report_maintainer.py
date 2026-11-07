@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.28.3 (2026-11-04)
+# File: report_maintainer.py, Version: 0.28.4 (2026-11-07)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -28,6 +28,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
+from .removed_days import counted_gaps, is_counted
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     CONF_BATTERY_MUTED_DEVICES,
@@ -404,7 +405,9 @@ class MaintainerReportMixin:
             *working,
         ]
 
-    def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
+    def _format_maxima_cell(
+        self, daily_maximum_gaps: list[Any], stored: list[float] | None = None
+    ) -> str:
         """Render the maxima list newest-first with the trim visible.
 
         Set-aside outliers are struck through (muted from the
@@ -415,6 +418,9 @@ class MaintainerReportMixin:
         # The series holds up to a year; this cell shows the last two
         # weeks, and the indices below are into that window.
         daily_maximum_gaps = list(daily_maximum_gaps)[-DAILY_MAX_KEEP:]
+        # A day removed by hand reads REMOVED here and shows its stored
+        # figure, marked, from the history as stored (rule FRZ-25).
+        stored = list(stored if stored is not None else daily_maximum_gaps)[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return "-"
         operative, set_aside_indices = self._trimmed_maximum(
@@ -423,12 +429,16 @@ class MaintainerReportMixin:
         # Bold exactly one survivor equal to the operative rhythm.
         operative_index = None
         for index, gap in enumerate(daily_maximum_gaps):
-            if index not in set_aside_indices and gap == operative:
+            if is_counted(gap) and index not in set_aside_indices and gap == operative:
                 operative_index = index
                 break
         parts = []
         # Storage appends oldest-to-newest; display newest first.
         for index in reversed(range(len(daily_maximum_gaps))):
+            if not is_counted(daily_maximum_gaps[index]):
+                held = stored[index] if index < len(stored) else None
+                parts.append(f"{self._fmt_gap(held) if held is not None else '-'} (removed by hand)")
+                continue
             text = self._fmt_gap(daily_maximum_gaps[index])
             if index in set_aside_indices:
                 parts.append(f"~~{text}~~")
@@ -679,12 +689,14 @@ class MaintainerReportMixin:
             device_name = self._device_name(device_id)
             integration = self._watched.get(device_id, "?")
             device_label = f"{self._report_cell(device_name)} ({integration})"
-            daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
+            # Days removed by hand read REMOVED in place (rule FRZ-25).
+            daily_maximum_gaps = counted_gaps(record)
+            stored_gaps = record.get(DEV_DAILY_MAX) or []
             rows.append(
                 (
                     device_label,
                     self._device_status(device_id),
-                    self._format_maxima_cell(daily_maximum_gaps),
+                    self._format_maxima_cell(daily_maximum_gaps, stored_gaps),
                     self._rhythm_cells(record, device_id),
                     "seen"
                     if device_id in self._last_seen_entity

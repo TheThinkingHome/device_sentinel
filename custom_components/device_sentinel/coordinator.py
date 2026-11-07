@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.3 (2026-11-04)
+# File: coordinator.py, Version: 0.28.4 (2026-11-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -132,6 +132,7 @@ from .battery_forecasts import BatteryForecastMixin
 from .battery_replacement import BatteryReplacementMixin
 from .history_file import fold_line
 from .store import _version_tuple as _store_version_tuple
+from .removed_days import counted_gaps, prune_removed
 from .const import (
     CONF_EXCLUDED_INTEGRATIONS,
     ACTIVE_REPORT_SECONDS,
@@ -5491,8 +5492,10 @@ class DeviceSentinelCoordinator(
                 # days: the Log-Normal Percentile starts again and the
                 # Trimmed Maximum carries the device (rule FRZ-05).
                 found = self._freeze_rhythm(record)
+                # Days removed by hand read REMOVED and break a run of
+                # slower days, as they are not counted (rule FRZ-25).
                 if found is not None and slowed_down(
-                    record[DEV_DAILY_MAX], lognormal_days(record), found.get("fit")
+                    counted_gaps(record), lognormal_days(record), found.get("fit")
                 ):
                     restart_lognormal(record, LOGNORMAL_RESTART_SLOWER)
                     LOGGER.debug(
@@ -5541,6 +5544,9 @@ class DeviceSentinelCoordinator(
                     series = bucket.get(field)
                     if isinstance(series, list) and len(series) > keep:
                         del series[:-keep]
+            # A day removed by hand leaves the list when it leaves the
+            # history (rule FRZ-25).
+            prune_removed(record)
         # The day's storm tally, one row per domain (rule UP-17),
         # written before the save that carries it. Dated by the day
         # that just ended: the roll runs at local midnight, when today

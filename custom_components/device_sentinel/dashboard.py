@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.1 (2026-11-03)
+# File: dashboard.py, Version: 0.28.4 (2026-11-07)
 
 """What the dashboard reads from the coordinator.
 
@@ -44,6 +44,7 @@ from .report_battery import (
     battery_trend,
 )
 from . import stacks
+from .removed_days import counted_gaps, gap_dates, is_counted, removed_dates
 from .const import (
     AUTO_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_MUTED_INTEGRATIONS,
@@ -908,9 +909,23 @@ class DeviceViewMixin:
     """The Devices tab and each device's page."""
 
     def _device_rhythm(self, record: dict[str, Any]) -> tuple[float | None, list[int]]:
-        gaps = (record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]
+        # Days removed by hand read REMOVED in place, so the hatched day is
+        # the one the rule really sets aside (rule FRZ-25).
+        gaps = counted_gaps(record)[-DAILY_MAX_KEEP:]
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
+
+    @staticmethod
+    def _gap_days(record: dict[str, Any]) -> dict[str, list[Any]]:
+        """The 14-day chart's days, and which of them were removed by
+        hand, as positions in its bars (rule FRZ-25)."""
+        daily = record.get(DEV_DAILY_MAX) or []
+        dates = gap_dates(record, len(daily))[-DAILY_MAX_KEEP:]
+        removed = removed_dates(record)
+        return {
+            "gap_days": [d.isoformat() for d in dates],
+            "gaps_removed": [i for i, d in enumerate(dates) if d in removed],
+        }
 
     def _rhythm_in_use(self, record: dict[str, Any]) -> float | None:
         """The rhythm of the rule the wait is built from.
@@ -952,6 +967,7 @@ class DeviceViewMixin:
         out: dict[str, Any] = {
             "trimmed": None, "trimmed_days": None, "lognormal": None,
             "lognormal_days": None, "lognormal_gaps": [], "lognormal_set_aside": [],
+            "lognormal_dates": [], "lognormal_removed": [],
             "in_use": None, "counting_again": None,
         }
         # The Log-Normal Percentile counting again after a reset:
@@ -994,6 +1010,13 @@ class DeviceViewMixin:
             out["lognormal_set_aside"] = sorted(
                 i - start for i in fit.get("set_aside", []) if isinstance(i, int) and i >= start
             )
+            # Each bar's day, and the days removed by hand, so the page
+            # can mark them and send the day back when one is pressed
+            # (rule FRZ-25).
+            dates = gap_dates(record, len(daily))[start:]
+            removed = removed_dates(record)
+            out["lognormal_dates"] = [d.isoformat() for d in dates]
+            out["lognormal_removed"] = [i for i, d in enumerate(dates) if d in removed]
         return out
 
     def _rhythm_on_days(self, record: dict[str, Any]) -> dict[str, list[Any]]:
@@ -1048,9 +1071,10 @@ class DeviceViewMixin:
         # running matters more than browsing. A year of history costs
         # about 71 ms per request; with no page open it costs nothing,
         # and no history sits in memory.
-        source = record.get(DEV_DAILY_MAX)
+        # Days removed by hand read REMOVED in place, so every day's waits
+        # are drawn as the rules read them now (rule FRZ-25).
         since = record.get(DEV_LOGNORMAL_DAYS)
-        daily = list(source or [])
+        daily = list(counted_gaps(record))
         out: dict[str, list[Any]] = {
             "windows": [], "trimmed": [], "lognormal": [], "rule": [],
             "deciding": [], "aside": [],
@@ -1083,7 +1107,7 @@ class DeviceViewMixin:
             window = prefix[-DAILY_MAX_KEEP:]
             offset = len(prefix) - len(window)
             _rhythm, aside = self._trimmed_maximum(window)
-            survivors = [i for i in range(len(window)) if i not in aside]
+            survivors = [i for i in range(len(window)) if i not in aside and is_counted(window[i])]
             deciding = max(survivors, key=lambda i: window[i]) if survivors else None
             out["deciding"].append(None if deciding is None else deciding + offset)
             out["aside"].append(sorted(i + offset for i in aside))
@@ -1091,19 +1115,25 @@ class DeviceViewMixin:
 
     def _rhythm_scale(self, record: dict[str, Any]) -> float | None:
         """The tallest figure worth drawing a rhythm chart against."""
+        # Days removed by hand read REMOVED and, like the days each rule
+        # sets aside, do not set the scale (rule FRZ-25).
+        counted = counted_gaps(record)
         daily = [
             value
-            for value in (record.get(DEV_DAILY_MAX) or [])
-            if isinstance(value, (int, float))
+            for value in counted
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
         if not daily:
             return None
         # The days the two rules read, less the days each sets aside,
         # so one very long old day does not set the scale of every
         # chart after it.
-        _rhythm, aside = self._trimmed_maximum(daily[-DAILY_MAX_KEEP:])
-        recent = daily[-DAILY_MAX_KEEP:]
-        kept = [value for index, value in enumerate(recent) if index not in aside]
+        recent = counted[-DAILY_MAX_KEEP:]
+        _rhythm, aside = self._trimmed_maximum(recent)
+        kept = [
+            value for index, value in enumerate(recent)
+            if index not in aside and isinstance(value, (int, float)) and not isinstance(value, bool)
+        ]
         rules = self._both_rules(record)
         gaps = rules.get("lognormal_gaps") or []
         set_aside = set(rules.get("lognormal_set_aside") or [])
@@ -1523,6 +1553,10 @@ class DeviceViewMixin:
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
                 "set_aside": set_aside,
+                # Each bar's day and the bars removed by hand, so the
+                # page can mark them and send the day back when one is
+                # pressed (rule FRZ-25).
+                **self._gap_days(record),
                 # Both rules side by side: each one's figure and days,
                 # which one is in use, and the Log-Normal Percentile's
                 # own days with those it set aside, for its chart beneath

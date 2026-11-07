@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.28.1 (2026-11-03)
+# File: normalise.py, Version: 0.28.4 (2026-11-07)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -53,6 +53,7 @@ from .const import (
     FORECAST_OUTCOMES,
     DEV_LOGNORMAL_DAYS,
     DEV_LOGNORMAL_REASON,
+    DEV_REMOVED_DAYS,
     RETIRED_DEVICE_FIELDS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
@@ -241,6 +242,9 @@ TEXT = "string"
 # occurred (rule STOR-05).
 REAL_NUMBER = "number, not None"
 TEXT_LIST = "list of strings"
+# Days removed by hand from a gap history (rule FRZ-25): None, or a list
+# of distinct ISO dates.
+DAY_LIST = "None or a list of days"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
 # The device's saved outage start and the state it read (rule UNAV-04).
@@ -267,6 +271,7 @@ EXPECTED: dict[str, str] = {
     DEV_DAILY_MAX: GAP_SERIES,
     DEV_LOGNORMAL_DAYS: NONNEGATIVE,
     DEV_LOGNORMAL_REASON: STRING,
+    DEV_REMOVED_DAYS: DAY_LIST,
     DEV_DAILY_DATES: NULLABLE_MAPPING,
     DEV_TODAY_MAX: GAP,
     DEV_FIRST_OBSERVED: STRING,
@@ -713,6 +718,17 @@ def _fault(kind: str, value: Any) -> str | None:
         bad = [x for x in value if not isinstance(x, str)]
         if bad:
             return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        return None
+    if kind == DAY_LIST:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [x for x in value if not _is_day(x)]
+        if bad:
+            return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        if len(set(value)) != len(value):
+            return "a day listed twice"
         return None
     if kind == MAPPING:
         return None if isinstance(value, dict) else _describe(value)

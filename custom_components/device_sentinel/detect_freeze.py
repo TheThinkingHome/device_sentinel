@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.28.1 (2026-11-03)
+# File: detect_freeze.py, Version: 0.28.4 (2026-11-07)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -30,6 +30,7 @@ coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 import math
+from datetime import date
 from typing import Any
 from homeassistant.const import (
     STATE_UNKNOWN,
@@ -43,12 +44,14 @@ from .records import BAD_STATES, restart_lognormal
 from .outage_detail import parse_detail
 from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
+from .removed_days import REMOVED, counted_gaps, set_removed
 from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
     TODO_KIND_UNAVAILABLE,
     CONF_UNAVAILABLE_MUTED_LABELS,
     EVENT_RESTING,
     DEV_LOGNORMAL_DAYS,
+    DEV_REMOVED_DAYS,
     LOGNORMAL_RESTART_BY_HAND,
     RULE_LOGNORMAL,
     RULE_TRIMMED,
@@ -143,23 +146,30 @@ class FreezeMixin:
         if not daily_maximum_gaps:
             return None, set()
         if not all(
-            isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
+            gap is REMOVED
+            or (isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap))
             for gap in daily_maximum_gaps
         ):
             # Anything but a number gives no rhythm, as an empty history does,
             # rather than a failure.
             return None, set()
-        if len(daily_maximum_gaps) < TRIM_MIN_SAMPLES:
-            return max(daily_maximum_gaps), set()
+        # A day removed by hand reads REMOVED: it keeps its place among
+        # the 14 and is not counted, so with one removed the trim reads 13
+        # and keeps 12 (rule FRZ-25).
+        counted = [index for index, gap in enumerate(daily_maximum_gaps) if gap is not REMOVED]
+        if not counted:
+            return None, set()
+        if len(counted) < TRIM_MIN_SAMPLES:
+            return max(daily_maximum_gaps[index] for index in counted), set()
         by_value_descending = sorted(
-            range(len(daily_maximum_gaps)),
+            counted,
             key=lambda index: daily_maximum_gaps[index],
             reverse=True,
         )
         set_aside_indices = set(by_value_descending[:TRIM_TOP_K])
         survivors = [
-            gap
-            for index, gap in enumerate(daily_maximum_gaps)
+            daily_maximum_gaps[index]
+            for index in counted
             if index not in set_aside_indices
         ]
         return max(survivors), set_aside_indices
@@ -421,11 +431,15 @@ class FreezeMixin:
         if not isinstance(daily, list):
             return self._compute_freeze_rhythm(record)
         since = record.get(DEV_LOGNORMAL_DAYS)
+        removed = record.get(DEV_REMOVED_DAYS)
         stamp = (
             len(daily),
             daily[-1] if daily else None,
             since if isinstance(since, (int, float, type(None))) else repr(since),
             self._freeze_deltas(),
+            # A day removed or counted again changes the wait at once
+            # (rule FRZ-25).
+            tuple(removed) if isinstance(removed, list) else repr(removed),
         )
         # One entry per device record, which lives as long as the device, so a
         # replaced day list overwrites the device's entry rather than leaving
@@ -468,11 +482,14 @@ class FreezeMixin:
         it read, bad days included, as its name gives them: "14-Day Trimmed
         Maximum", "37-Day Log-Normal Percentile" (rule FRZ-04).
         """
-        daily = record.get(DEV_DAILY_MAX) or []
-        if len(daily) < FREEZE_ARMING_DAYS:
+        # Days removed by hand read REMOVED in place, and the days needed
+        # before a device is judged are counted days (rule FRZ-25).
+        daily = counted_gaps(record)
+        if sum(1 for gap in daily if gap is not REMOVED) < FREEZE_ARMING_DAYS:
             return None
         if not all(
-            isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
+            gap is REMOVED
+            or (isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap))
             for gap in daily
         ):
             # A history holding anything but a number cannot be judged, so the
@@ -592,6 +609,36 @@ class FreezeMixin:
             RULE_TRIMMED,
         )
         return True
+
+    def set_day_removed(self, device_id: str, day: str, removed: bool) -> dict[str, Any]:
+        """Remove one day of a device's gap history from both freeze
+        rules, or count it again, from the device page's chart.
+
+        The day keeps its figure and its place; the wait changes at once,
+        as the rules read the days again. KeyError for a device with no
+        record, ValueError for a day the history does not hold
+        (rule FRZ-25).
+        """
+        record = self.data[DATA_DEVICES].get(device_id)
+        if record is None or self.is_held(device_id):  # type: ignore[attr-defined]
+            # A removed device's held record has no page (rule WATCH-07).
+            raise KeyError(device_id)
+        try:
+            when = date.fromisoformat(day)
+        except (TypeError, ValueError) as err:
+            raise ValueError("That day is not one of this device's learned days.") from err
+        if set_removed(record, when, removed):
+            self._mark_cold_dirty()
+            self._mark_changed()
+            # Kept in the log: a person changed what a device has learned,
+            # and this line says who did what to which day (rule GEN-10).
+            LOGGER.info(
+                "%s: the day %s %s by hand",
+                self._device_name(device_id),
+                when.isoformat(),
+                "removed from its learned rhythm" if removed else "counted again in its learned rhythm",
+            )
+        return {"removed": removed}
 
     @staticmethod
     def rule_label(found: dict[str, Any] | None) -> str | None:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.1 (2026-11-03)
+# File: diagnostics.py, Version: 0.28.4 (2026-11-07)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -43,6 +43,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from . import DeviceSentinelConfigEntry, history_file
+from .removed_days import counted_gaps
 from .const import (
     DATA_SIGNAL_STRESS,
     DATA_ADDRESS_CHANGES,
@@ -408,9 +409,8 @@ async def async_get_config_entry_diagnostics(
         device = device_registry.async_get(device_id)
         # The judgment window, so the indices returned line up with
         # what a reader sees rather than with the whole series.
-        daily_maximum_gaps = (record.get("daily_max") or [])[
-            -DAILY_MAX_KEEP:
-        ]
+        # Days removed by hand read REMOVED in place (rule FRZ-25).
+        daily_maximum_gaps = counted_gaps(record)[-DAILY_MAX_KEEP:]
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
