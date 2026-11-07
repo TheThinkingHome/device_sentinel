@@ -1,13 +1,13 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 7 November 2026, on Device Sentinel 0.28.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
 ### FRZ-01 Learning Is Per Device
 
 **Each device learns its own rhythm, all the time, with no learning mode to switch on or off.**
-- **Arming floor:** a device is judged for freeze only once it has reached its arming floor of 7 learned days.
+- **Arming floor:** a device is judged for freeze only once it has reached its arming floor of 7 learned days. A day removed by hand is not a learned day here ([FRZ-25](#frz-25-a-day-removed-by-hand)).
 - **Before that:** it is watched for unavailable and never called frozen, because it has no window to miss.
 - **After a reinstall:** a reinstall that wipes storage leaves each device unarmed until it has learned again.
 
@@ -27,6 +27,7 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 **The 14-Day Trimmed Maximum reads the newest 14 days' longest gaps, sets the longest one aside as a possible fluke, and takes the longest of the rest.**
 - **What it gives:** one bad day moves nothing, while a long gap that comes back counts.
 - **Always 14 days:** it reads 14 days whatever the How Much History to Keep setting keeps, so two houses with different settings judge alike. The one exception is the cap on a single gap ([FRZ-13](#frz-13-limits-on-a-learned-gap)).
+- **A day removed by hand:** it keeps its place among the 14 and is not counted, and no older day takes its place. The longest of the days still counted is set aside, so with one day removed the rule keeps 12 ([FRZ-25](#frz-25-a-day-removed-by-hand)).
 
 *Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_freeze_rules.py`](../tests/test_freeze_rules.py).
 
@@ -36,6 +37,7 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **How it works:** it works on the logarithm of each day's longest gap. It sets aside any day more than 2.5 spreads above or below the average, again until none is left. Then it takes the average of the rest plus 1.2816 spreads: the gap the device stays under on nine days out of ten.
 - **Smallest spread:** the spread never reads below 0.15, so a device whose longest gap is nearly the same each day is not read as perfectly regular.
 - **Its name:** each rule is named with the days it read, such as "37-Day Log-Normal Percentile".
+- **A day removed by hand:** it keeps its place among the days read and is not counted. The 28 days the rule needs before it is used are counted days ([FRZ-25](#frz-25-a-day-removed-by-hand)).
 
 *Proof:* [`test_freeze_rules.py`](../tests/test_freeze_rules.py).
 
@@ -213,13 +215,14 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **The rhythm chart:** it draws both waits as dashed lines. A line above it follows the day under the pointer, with that day's rule in use, its wait, the other rule's wait and the day that set the trimmed wait. The chart rings that day and crosses the day it set aside. Away from the chart, both marks rest on today.
 - **Other places:** the History chart keeps its title. The status bar and the Devices tab show the rhythm of the rule in use.
 - **Not stored:** the chart's history is worked out on each request and kept nowhere, since everyday running matters more than browsing.
+- **A day removed by hand:** both charts draw it at its height in its own colour (orange), and neither sets their scale by it. Each day's waits on the rhythm chart are drawn as the rules read the days now ([FRZ-25](#frz-25-a-day-removed-by-hand)).
 - **In Simple:** the rhythm chart, its figures and the rhythm statistics show only for a device frozen or never reported (see [DASH](Rulebook__14_DASH_Dashboard.md)).
 
 *Proof:* [`tools/panel_checks/check_rhythm_rules.js`](../tools/panel_checks/check_rhythm_rules.js), `check_rhythm_words.js`, `check_dated_histories.js`, [`test_dashboard_history.py`](../tests/test_dashboard_history.py).
 
 ### FRZ-23 The Wait Behind the Scenes
 
-**Each device's wait is kept in memory and worked out again only when its inputs change: its day list, the count since a restart of the Log-Normal Percentile, or the Freeze and Unavailable Detection settings.**
+**Each device's wait is kept in memory and worked out again only when its inputs change: its day list, the count since a restart of the Log-Normal Percentile, its days removed by hand, or the Freeze and Unavailable Detection settings.**
 - **Device Telemetry:** it names the rule in use for each device and carries a daily count line: how many devices used each rule, and how many frozen listings the Log-Normal Percentile made that the Trimmed Maximum would not have.
 
 *Proof:* [`test_freeze_rules.py`](../tests/test_freeze_rules.py), [`test_reports.py`](../tests/test_reports.py).
@@ -229,3 +232,17 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 **A freeze rule is judged on the habit-based week, where each device reports at its own recorded habit. It is never judged on the original chaos week, whose random hourly reporting makes each fast device look silent.**
 
 *Proof:* none found.
+
+### FRZ-25 A Day Removed by Hand
+
+**A person can remove one finished day from a device's learned rhythm by pressing its bar on either freeze chart of the device page, and count it again by pressing it again.**
+- **What it is for:** a day whose gap was long for a reason that will not come back, such as a power cut or an integration that stopped updating, which Device Sentinel could not see for itself.
+- **Kept, not erased:** the day keeps its figure, its date and its place in the history. Neither rule counts it: the Trimmed Maximum keeps its 14 days and leaves the day out ([FRZ-03](#frz-03-the-14-day-trimmed-maximum)), and the Log-Normal Percentile leaves it out of its days ([FRZ-04](#frz-04-the-42-day-log-normal-percentile)). The 7 days before a device is judged and the 28 before the Log-Normal Percentile is used count only counted days.
+- **The days set aside:** each rule sets aside from the days still counted, so a removed day is never also hatched or grey. Removing the hatched day makes the next-longest day the one set aside.
+- **At once:** removing a day or counting it again changes the wait at once ([FRZ-23](#frz-23-the-wait-behind-the-scenes)), so a quiet device can be listed frozen sooner, or leave the list.
+- **Asked first:** a removal asks first, with a warning to do it only when the cause is known and will not come back, since removing a day that was the device's real habit can list it frozen too soon. Counting a day again asks too, more briefly (see [DASH](Rulebook__14_DASH_Dashboard.md)).
+- **Who and where:** Advanced only, for a person who may act on the dashboard. Today's day, still being measured, has no bar to press.
+- **Kept with the history:** the removed days are kept on the device's record, leave it when their day leaves the history, and are cleared with the gap history at a statistics epoch. Each removal and each day counted again is written to the log, and the removed days appear in the diagnostics download and in Device Telemetry, marked.
+- **On an older version:** a version before this rule leaves the list alone and counts every day.
+
+*Proof:* [`test_removed_days.py`](../tests/test_removed_days.py), [`tools/panel_checks/check_removed_days.js`](../tools/panel_checks/check_removed_days.js).

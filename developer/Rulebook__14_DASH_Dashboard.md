@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 7 November 2026, on Device Sentinel 0.28.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -100,9 +100,10 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-10 Confirmations and Refusals
 
 **An act that can be undone on the page asks for no confirmation; Mute everything asks once. When a write is refused, Home Assistant's reason shows under its row, and the row keeps its old value.**
+- **A day removed by hand:** pressing a bar on a freeze chart asks first, "Remove (day) from this device's rhythm?", with the warning, "Remove this day" and "Keep it"; pressing a removed bar asks "Count (day) again?", with "Count it again" and "Cancel". Both change the device's wait at once ([FRZ-25](Rulebook__05_FRZ_Freeze.md#frz-25-a-day-removed-by-hand)).
 - **No area:** choosing "No area" for a device that has one asks first, "Remove (device) from (area) in Home Assistant?", with "Remove from area" and "Keep its area", because taking a device out of its area changes Home Assistant's own dashboards, voice and area automations at once. Choosing another area does not ask.
 
-*Proof:* [`tools/panel_checks/check_device_actions.js`](../tools/panel_checks/check_device_actions.js).
+*Proof:* [`tools/panel_checks/check_device_actions.js`](../tools/panel_checks/check_device_actions.js), [`tools/panel_checks/check_removed_days.js`](../tools/panel_checks/check_removed_days.js).
 
 ### DASH-11 A Change Shows on the Other Tabs
 
