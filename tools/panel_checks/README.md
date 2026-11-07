@@ -38,6 +38,7 @@ written rather than what it proves).
 | A device's page | `check_hub_pages.js` | 35 | a hub's page and the pages of the devices it controls, and the Classification tick |
 | A device's page | `check_device_type.js` | 31 | the Type row, an answer saying it came from the page, and the Devices tab's Type column and filter |
 | A device's page | `check_same_hardware.js` | 16 | the Same hardware row and the Type row's clear label |
+| A device's page | `check_removed_days.js` | 21 | a day removed by hand: any bar pressable in Advanced for a person who may act, the removal's warning and the question to count it again, nothing sent before the answer, the removed day in its own colour at its height and never hatched or grey, the keyboard, a refusal under the charts, and nothing to press in Simple or for a viewer |
 | A device's page | `check_rhythm_rules.js` | 15 | both freeze rules on the rhythm chart, the rule in use, a swatch on every legend, and Use the 14-Day Trimmed Maximum only while the Log-Normal Percentile is in use |
 | A device's page | `check_rhythm_words.js` | 19 | "learning" for a window not yet learned, a device judged by its connection, gaps rather than silences, "1 day", the LEARNED column in plain words, and the line where the 42-day chart stood while it counts again, naming why when it is known |
 | A device's page | `check_real_device.js` | 6 | a page built by the server from a real mains plug's history |
