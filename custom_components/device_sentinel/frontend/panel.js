@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.2 (2026-11-04)
+// File: panel.js, Version: 0.28.4 (2026-11-07)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -643,6 +643,12 @@ const STYLE = `
   .gaps > div.aside { background: repeating-linear-gradient(45deg, var(--divider-color), var(--divider-color) 3px, transparent 3px, transparent 6px); }
   /* The device page's groups and rule charts. */
   .gaps > div.grey { background: var(--divider-color); }
+  /* A day removed by hand: its own colour, kept at its height, never
+     counted (rule FRZ-25). */
+  .gaps > div.removed { background: var(--warning-color, #ff9800); opacity: 0.75; }
+  .gaps > div.pressable { cursor: pointer; }
+  .gaps > div.pressable:hover, .gaps > div.pressable:focus-visible { outline: 2px solid var(--primary-text-color); outline-offset: 1px; }
+  .dayask { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--divider-color); border-radius: 8px; line-height: 1.5; }
   .rulechart { position: relative; height: 110px; }
   .rulechart > .ruleline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid #E24B4A; border-radius: 0; flex: none; background: none; }
   .ruleline > span { position: absolute; right: 0; top: -18px; font-size: 11px; color: #E24B4A; }
@@ -4018,36 +4024,88 @@ class DeviceSentinelPanel extends HTMLElement {
     // In a block of its own: page.rhythm's "trimmed" and
     // "lognormal" are the History chart's series, not these figures.
     const rhythmBox = (page.rhythm && page.rhythm.rules) || {};
-    const ruleChart = (title, inUse, note, gaps, aside, asideClass, rawLine, from) => {
+    // A finished day can be removed from both rules by hand, and counted
+    // again, by pressing its bar: Advanced only, for a person who may act,
+    // and only after the warning beneath the chart (rule FRZ-25).
+    const pressDays = Boolean(acts) && !simple;
+    const dayLabel = (day) => new Date(`${day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+    const dayAsk = (chart) => {
+      const ask = this._dayAsk;
+      if (!ask || ask.device !== who.device_id || ask.chart !== chart) return null;
+      const send = () => {
+        this._dayAsk = null;
+        this._deviceAct({ type: "device_sentinel/device_day", device_id: who.device_id, day: ask.day, removed: ask.remove }, "day");
+      };
+      const cancel = () => { this._dayAsk = null; this._paintDevicePage(); };
+      return ask.remove
+        ? el("div", { class: "dayask", role: "alertdialog" },
+          el("strong", {}, `Remove ${dayLabel(ask.day)} from this device's rhythm?`),
+          el("p", { class: "small", style: "margin:4px 0 8px" },
+            "Do this only if you know what you are doing. The bar stays, in orange, but neither rule counts it, and the wait changes at once. "
+            + "Remove a day only when you know why its gap was long and that the cause will not come back, such as a power cut or an integration that stopped updating. "
+            + "Removing a day that was the device's real habit can make it be reported frozen too soon. Press the bar again to count it again."),
+          el("div", { class: "actrow" },
+            el("button", { class: "chip", type: "button", onclick: send }, "Remove this day"),
+            el("button", { class: "chip", type: "button", onclick: cancel }, "Keep it")))
+        : el("div", { class: "dayask", role: "alertdialog" },
+          el("strong", {}, `Count ${dayLabel(ask.day)} again?`),
+          el("p", { class: "small", style: "margin:4px 0 8px" }, "Both rules count it again, and the wait changes at once."),
+          el("div", { class: "actrow" },
+            el("button", { class: "chip", type: "button", onclick: send }, "Count it again"),
+            el("button", { class: "chip", type: "button", onclick: cancel }, "Cancel")));
+    };
+    const ruleChart = (title, inUse, note, gaps, aside, asideClass, rawLine, from, days, removed, chart) => {
       // Only a real number draws the line; anything else draws none,
       // so a wrong value can never blank the bars.
       const line = typeof rawLine === "number" && Number.isFinite(rawLine) ? rawLine : null;
       gaps = (gaps || []).map((g) => (typeof g === "number" && Number.isFinite(g) ? g : 0));
       if (!gaps.length) return null;
-      const top = Math.max(...gaps.filter((g, i) => !aside.includes(i)), line || 0, 1) * 1.15;
-      const bars = el("div", { class: "gaps rulechart", role: "img",
+      days = Array.isArray(days) && days.length === gaps.length ? days : null;
+      removed = Array.isArray(removed) ? removed : [];
+      // A removed day is drawn in its own colour and, like a set-aside
+      // day, does not set the chart's scale (rule FRZ-25).
+      const top = Math.max(...gaps.filter((g, i) => !aside.includes(i) && !removed.includes(i)), line || 0, 1) * 1.15;
+      const pressable = pressDays && days !== null;
+      const press = (i) => {
+        this._dayAsk = { device: who.device_id, chart, day: days[i], remove: !removed.includes(i) };
+        this._paintDevicePage();
+      };
+      const bars = el("div", { class: "gaps rulechart", role: pressable ? "group" : "img",
         "aria-label": `${title}: longest gap each day${line ? `, line at ${span(line)}` : ""}` },
-        ...gaps.map((g, i) => el("div", {
-          class: aside.includes(i) ? asideClass : "",
-          style: `height:${Math.max(2, Math.min(100, (g / top) * 100)).toFixed(1)}%`,
-          title: `${span(g)}${aside.includes(i) ? ", set aside" : ""}`,
-        })),
+        ...gaps.map((g, i) => {
+          const gone = removed.includes(i);
+          const what = gone ? ", removed by hand, not counted" : aside.includes(i) ? ", set aside" : "";
+          return el("div", {
+            class: [gone ? "removed" : aside.includes(i) ? asideClass : "", pressable ? "pressable" : ""].filter(Boolean).join(" "),
+            style: `height:${Math.max(2, Math.min(100, (g / top) * 100)).toFixed(1)}%`,
+            title: `${days ? `${dayLabel(days[i])}: ` : ""}${span(g)}${what}${pressable ? (gone ? ". Press to count it again" : ". Press to remove this day") : ""}`,
+            ...(pressable ? { role: "button", tabindex: "0",
+              "aria-label": `${dayLabel(days[i])}, ${span(g)}${what}`,
+              onclick: () => press(i),
+              onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); press(i); } } } : {}),
+          });
+        }),
         line ? el("div", { class: "ruleline", style: `bottom:${Math.min(100, (line / top) * 100).toFixed(1)}%` },
           el("span", {}, span(line))) : null);
+      const removedNote = removed.length ? " Orange days were removed by hand and are not counted." : "";
+      const pressNote = pressable ? " Press a bar to remove its day from the count." : "";
       return el("div", { class: "rulebox" },
         el("div", { class: "ruletitle" }, title, inUse ? el("span", { class: "inuse" }, "in use") : null),
-        el("p", { class: "small", style: "margin:0 0 6px;line-height:1.5" }, note),
+        el("p", { class: "small", style: "margin:0 0 6px;line-height:1.5" }, note + removedNote + pressNote),
         bars,
-        el("div", { class: "statusline small" }, el("span", {}, from), el("span", {}, "yesterday")));
+        el("div", { class: "statusline small" }, el("span", {}, from), el("span", {}, "yesterday")),
+        dayAsk(chart));
     };
     const trimmedDays = rhythmBox.trimmed_days || (page.rhythm.gaps || []).length;
     const charts = [
       ruleChart(`${trimmedDays}-Day Trimmed Maximum`, rhythmBox.in_use === "trimmed",
         "Each bar is one day's longest gap. The hatched day is set aside as a possible fluke; the red line is the longest of the rest.",
-        page.rhythm.gaps || [], page.rhythm.set_aside || [], "aside", rhythmBox.trimmed, `${(page.rhythm.gaps || []).length} days ago`),
+        page.rhythm.gaps || [], page.rhythm.set_aside || [], "aside", rhythmBox.trimmed, `${(page.rhythm.gaps || []).length} days ago`,
+        page.rhythm.gap_days, page.rhythm.gaps_removed, "trimmed"),
       rhythmBox.lognormal_days ? ruleChart(`${rhythmBox.lognormal_days}-Day Log-Normal Percentile`, rhythmBox.in_use === "lognormal",
         "Each bar is one day's longest gap. Grey days sit too far from the device's usual to count; the red line is the gap it stays under on nine days out of ten.",
-        rhythmBox.lognormal_gaps || [], rhythmBox.lognormal_set_aside || [], "grey", rhythmBox.lognormal, `${rhythmBox.lognormal_days} days ago`) : null,
+        rhythmBox.lognormal_gaps || [], rhythmBox.lognormal_set_aside || [], "grey", rhythmBox.lognormal, `${rhythmBox.lognormal_days} days ago`,
+        rhythmBox.lognormal_dates, rhythmBox.lognormal_removed, "lognormal") : null,
     ].filter(Boolean);
     // Where the 42-day chart stood while it counts again (rule FRZ-22).
     const again = !rhythmBox.lognormal_days && rhythmBox.counting_again;
@@ -4072,7 +4130,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // rhythm from (rule STACK-07).
       ...(status.connection ? [el("p", { style: "margin:0;line-height:1.5" }, "Judged by its connection: no rhythm to learn.")]
         : judged ? [el("p", { style: "margin:0;line-height:1.5" }, this._judgedByWords(judged, "."))]
-        : charts.length ? charts : [el("p", { style: "margin:0;line-height:1.5" }, "Not enough days yet to learn its rhythm.")]),
+        : charts.length ? [...charts, this._actNote("day")] : [el("p", { style: "margin:0;line-height:1.5" }, "Not enough days yet to learn its rhythm.")]),
       charts.length > 1 && !again && !judged ? el("p", { class: "small", style: "margin:8px 0 0;line-height:1.6" },
         `Device Sentinel uses whichever of the two is shorter. The 14-day rule adjusts to a change within days, and the 42-day rule within weeks. A change to the device or the mesh around it, such as a firmware update, a new battery, a re-pair or a new router nearby, can leave the 42-day rule out of date.${
           // The button is not offered in Simple, so nor is the advice
