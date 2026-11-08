@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.28.4 (2026-11-07)
+# File: report_maintainer.py, Version: 0.28.5 (2026-11-08)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -80,6 +80,9 @@ from .const import (
     REPORT_STACK_PROBE,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
+    DATA_DEVICES,
+    DEV_CONTROLLER_STATUS,
+    DEV_RESTARTS,
     SIGNAL_DAYS_KEEP,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
@@ -580,6 +583,44 @@ class MaintainerReportMixin:
             out += ["### Signal", "", *signal_lines, ""]
         return out
 
+    def _status_reading_lines(self) -> list[str]:
+        """Each controller status and Tasmota restart recorded, newest first.
+
+        Recorded and shown, never judged (rules STACK-15, DEV-17): a
+        section of its own rather than two more columns on every row,
+        since only a few devices have either. Empty when none has.
+        """
+        found: list[tuple[str, str, list[Any]]] = []
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if not isinstance(record, dict):
+                continue
+            for field, words in (
+                (DEV_CONTROLLER_STATUS, "Controller status"),
+                (DEV_RESTARTS, "Restart"),
+            ):
+                pairs = record.get(field)
+                if isinstance(pairs, list) and pairs:
+                    found.append((self._device_name(device_id), words, pairs))
+        if not found:
+            return []
+        lines = [
+            "",
+            "## Controller Status and Restarts",
+            "",
+            "| DEVICE | READING | NEWEST FIRST |",
+            "|---|---|---|",
+        ]
+        for name, words, pairs in sorted(found, key=lambda row: (row[0].lower(), row[1])):
+            cells = [
+                f"{pair[0]} {self._format_report_time(dt_util.as_local(dt_util.utc_from_timestamp(pair[1])))}"
+                for pair in reversed(pairs)
+                if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[1], (int, float))
+            ]
+            lines.append(
+                f"| {self._report_cell(name)} | {words} | {self._report_cell('; '.join(cells))} |"
+            )
+        return lines
+
     def _write_telemetry(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -752,6 +793,7 @@ class MaintainerReportMixin:
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
+        lines += self._status_reading_lines()
         path = os.path.join(report_directory, REPORT_TELEMETRY)
         self._write_file(path, "\n".join(lines) + "\n")
         LOGGER.debug("Telemetry report written to %s", path)

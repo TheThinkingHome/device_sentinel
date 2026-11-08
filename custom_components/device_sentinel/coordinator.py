@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.4 (2026-11-07)
+# File: coordinator.py, Version: 0.28.5 (2026-11-08)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -340,6 +340,17 @@ from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
 from .stacks import is_node_status, node_dead, node_heard, node_up
+from .stacks import controller_status as stack_controller_status
+from .stacks import is_controller_status
+from .status_readings import (
+    CONTROLLER_READING,
+    RESTART_REASON,
+    RESTART_TIME,
+    record_controller_status,
+    record_restart,
+    restart_moment,
+    restart_sensor,
+)
 from .stacks import reader_for_domain
 from .stacks import last_heard as stack_last_heard
 from .store import StorageMixin, _watched_seconds
@@ -585,6 +596,10 @@ class DeviceSentinelCoordinator(
         # connectivity sensors (rules STACK-05, WATCH-04).
         self._node_status_entity: dict[str, str] = {}
         self._node_status_ids: set[str] = set()
+        # Readings recorded and shown, never judged: a Z-Wave
+        # controller's own Status (rule STACK-15) and a Tasmota device's
+        # restart sensors (rule DEV-17). Entity id -> (device id, which).
+        self._status_reading_entities: dict[str, tuple[str, str]] = {}
         # Devices whose stack last called their node dead, held while
         # the status cannot be read (a reload, a restart), so cached
         # values coming back first are not taken for the device
@@ -2588,6 +2603,7 @@ class DeviceSentinelCoordinator(
         foreign_ids: dict[str, dict[str, list[str]]] = {}
         last_seen_entity: dict[str, str] = {}
         node_status_entity: dict[str, str] = {}
+        status_reading_entities: dict[str, tuple[str, str]] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
         signal_devices: set[str] = set()
@@ -2634,6 +2650,11 @@ class DeviceSentinelCoordinator(
                 # dead-node check, never as the device speaking (rule
                 # STACK-05).
                 node_status_entity[ent.device_id] = ent.entity_id
+            if is_controller_status(watched.get(ent.device_id), ent):
+                status_reading_entities[ent.entity_id] = (ent.device_id, CONTROLLER_READING)
+            restart_kind = restart_sensor(ent)
+            if restart_kind is not None:
+                status_reading_entities[ent.entity_id] = (ent.device_id, restart_kind)
             # The device's own integration published this entity, as
             # opposed to an integration that enriches somebody else's
             # devices (rule WATCH-02). The registry records the author,
@@ -2848,6 +2869,11 @@ class DeviceSentinelCoordinator(
         } - owning_domains
         self._last_seen_entity = last_seen_entity
         self._node_status_entity = node_status_entity
+        self._status_reading_entities = status_reading_entities
+        # What each reads now, recorded where it differs from the last
+        # (rules STACK-15, DEV-17).
+        for reading_entity in status_reading_entities:
+            self._note_status_reading(reading_entity)
         # The stack's word on a node is never the device speaking:
         # Z-Wave's node status, and the Hue bridge's Zigbee connectivity
         # sensor, which the bridge writes when it loses a light (rule
@@ -3787,6 +3813,44 @@ class DeviceSentinelCoordinator(
             gone,
         )
 
+
+    def _note_status_reading(self, entity_id: str) -> None:
+        """Record a controller status or a Tasmota restart (rules STACK-15, DEV-17).
+
+        Read from the entity's state as it stands, so a call at the walk
+        and a call on a change agree. A Tasmota restart is its two
+        sensors read together: whichever changes, both are read.
+        """
+        found = self._status_reading_entities.get(entity_id)
+        if found is None:
+            return
+        device_id, which = found
+        record = self.data[DATA_DEVICES].get(device_id) if self.data else None
+        if not isinstance(record, dict):
+            return
+        state = self.hass.states.get(entity_id)
+        value = state.state if state is not None else None
+        if which == CONTROLLER_READING:
+            changed = record_controller_status(
+                record,
+                stack_controller_status(self._watched.get(device_id), value),
+                dt_util.utcnow().timestamp(),
+            )
+        else:
+            reason = restarted_at = None
+            for other, (other_device, other_which) in self._status_reading_entities.items():
+                if other_device != device_id:
+                    continue
+                other_state = self.hass.states.get(other)
+                other_value = other_state.state if other_state is not None else None
+                if other_which == RESTART_REASON:
+                    reason = other_value
+                elif other_which == RESTART_TIME:
+                    restarted_at = restart_moment(other_value)
+            changed = record_restart(record, reason, restarted_at)
+        if changed:
+            self._mark_cold_dirty()
+
     @callback
     def _on_state_changed(self, event: Event) -> None:
         """Handle a state change for a watched device's entity."""
@@ -3813,6 +3877,10 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        if entity_id in self._status_reading_entities:
+            # Recorded and shown, never judged; the event carries on as
+            # any other own entity's would (rules STACK-15, DEV-17).
+            self._note_status_reading(entity_id)
         if entity_id in self._node_status_ids:
             # The stack's word on the node (rule STACK-05): it can start
             # or end the device's outage, and it is never the device

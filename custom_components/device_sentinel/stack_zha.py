@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.27.10 (2026-10-27)
+# File: stack_zha.py, Version: 0.28.5 (2026-11-08)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -636,3 +636,74 @@ def last_heard(hass: HomeAssistant, device: dr.DeviceEntry) -> float | None:
         return None
     seen = float(seen)
     return seen if math.isfinite(seen) and seen > 0.0 else None
+
+
+# ZHA's own defaults for how long it waits before marking a silent
+# device unavailable: 6 hours for a battery device, 2 hours for a mains
+# one. Its settings can change both; these apply only when its settings
+# name neither (rule STACK-04).
+ZHA_DEFAULT_UNAVAILABLE_BATTERY = 6 * 3600
+ZHA_DEFAULT_UNAVAILABLE_MAINS = 2 * 3600
+
+
+def _proxy(hass: HomeAssistant, device: dr.DeviceEntry) -> Any:
+    """ZHA's own object for one device, found by its IEEE address."""
+    ieee = next(
+        str(identifier).lower()
+        for domain, identifier in device.identifiers
+        if domain == STACK_ZHA
+    )
+    proxies = hass.data[STACK_ZHA].gateway_proxy.device_proxies
+    return next(
+        proxy for key, proxy in proxies.items() if str(key).lower() == ieee
+    )
+
+
+def _timeouts(hass: HomeAssistant) -> tuple[int, int]:
+    """ZHA's two unavailable timeouts, in seconds: (battery, mains)."""
+    battery, mains = ZHA_DEFAULT_UNAVAILABLE_BATTERY, ZHA_DEFAULT_UNAVAILABLE_MAINS
+    for entry in hass.config_entries.async_entries(STACK_ZHA):
+        entry_options: Any = entry.options
+        custom: Any = entry_options.get("custom_configuration") if entry_options else None
+        options: Any = custom.get("zha_options") if isinstance(custom, dict) else None
+        if not isinstance(options, dict):
+            continue
+        value = options.get("consider_unavailable_battery")
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            battery = value
+        value = options.get("consider_unavailable_mains")
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            mains = value
+        break
+    return battery, mains
+
+
+def availability_view(hass: HomeAssistant, device: dr.DeviceEntry) -> dict[str, Any] | None:
+    """What ZHA says about reaching one device, or None (rule STACK-04).
+
+    ZHA keeps its own judgment of each device: whether it is available,
+    when its radio last heard it, and whether it runs on a battery, which
+    decides how long ZHA waits before marking it unavailable. None of it
+    is an entity, so it is read from ZHA's own objects in Home Assistant's
+    data, without importing ZHA (rule STACK-08). Anything not where it is
+    expected reads as no opinion, so a change inside ZHA hides the line
+    and changes nothing else. The timeout travels with the reading, as
+    Zigbee2MQTT's does, because "available" alone would tell a person a
+    dead battery device is fine for six hours.
+    """
+    try:
+        zha_device = _proxy(hass, device).device
+        available = zha_device.available
+        mains = zha_device.is_mains_powered
+    except Exception:  # noqa: BLE001 - another integration's internals
+        return None
+    if not isinstance(available, bool) or not isinstance(mains, bool):
+        return None
+    battery_wait, mains_wait = _timeouts(hass)
+    seen = last_heard(hass, device)
+    return {
+        "available": available,
+        "last_seen": seen,
+        "class": "mains" if mains else "battery",
+        "timeout_seconds": mains_wait if mains else battery_wait,
+    }

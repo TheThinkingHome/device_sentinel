@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.27.10 (2026-10-27)
+# File: stack_zwave.py, Version: 0.28.5 (2026-11-08)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -192,3 +192,32 @@ def node_heard(state: str) -> bool:
 def node_up(state: str) -> bool:
     """Whether the status reading says the node is not dead."""
     return state in NODE_STATUS_UP
+
+
+# The controller's own readings, as Z-Wave JS names them: the controller
+# answers, stops answering, or cannot send (rule STACK-15).
+CONTROLLER_STATUS_VALUES = ("ready", "unresponsive", "jammed")
+
+
+def is_controller_status(ent: object) -> bool:
+    """Recognize the controller's own Status sensor (rule STACK-15).
+
+    Home Assistant's Z-Wave integration makes one, on the controller's
+    device, with the unique id `<home id>.<node id>.controller_status`;
+    it reads ready, unresponsive or jammed. Found by that unique id,
+    whatever the person named the entity.
+    """
+    return (
+        getattr(ent, "platform", None) == STACK_ZWAVE
+        and str(getattr(ent, "entity_id", "")).startswith("sensor.")
+        and str(getattr(ent, "unique_id", "") or "").endswith(".controller_status")
+    )
+
+
+def controller_status(state: str | None) -> str | None:
+    """The controller's status as recorded, or None for no reading.
+
+    Unknown and unavailable are the sensor not answering, which is not a
+    status of the controller, so nothing is recorded for them.
+    """
+    return state if state in CONTROLLER_STATUS_VALUES else None

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.4 (2026-11-07)
+# File: dashboard.py, Version: 0.28.5 (2026-11-08)
 
 """What the dashboard reads from the coordinator.
 
@@ -119,6 +119,8 @@ from .const import (
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRMWARE_HISTORY,
+    DEV_CONTROLLER_STATUS,
+    DEV_RESTARTS,
     DEV_FIRST_OBSERVED,
     DEV_DOWN_FROM,
     DEV_FROZEN_CATEGORY,
@@ -189,6 +191,38 @@ from .outage_detail import pair_key
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
 
+
+
+def _good_pair(pair: Any) -> bool:
+    """A [reading, moment] pair as the record keeps them."""
+    return (
+        isinstance(pair, list)
+        and len(pair) == 2
+        and isinstance(pair[0], str)
+        and isinstance(pair[1], (int, float))
+        and not isinstance(pair[1], bool)
+    )
+
+
+def _latest_pair(pairs: Any) -> dict[str, Any] | None:
+    """The newest reading and when it began, or None (rule STACK-15)."""
+    if not isinstance(pairs, list):
+        return None
+    good = [pair for pair in pairs if _good_pair(pair)]
+    if not good:
+        return None
+    return {"value": good[-1][0], "since": dt_util.utc_from_timestamp(good[-1][1]).isoformat()}
+
+
+def _newest_pairs(pairs: Any) -> list[dict[str, Any]]:
+    """Every recorded reading, newest first (rule DEV-17)."""
+    if not isinstance(pairs, list):
+        return []
+    return [
+        {"value": pair[0], "at": dt_util.utc_from_timestamp(pair[1]).isoformat()}
+        for pair in reversed(pairs)
+        if _good_pair(pair)
+    ]
 
 class DashboardMixin:
     """The change marker and the header status."""
@@ -1464,6 +1498,11 @@ class DeviceViewMixin:
                 # reads, "off" when it is switched off, or None for a
                 # device without one (rule STACK-05).
                 "node_status": self._node_status_view(device_id),
+                # A Z-Wave controller's own Status, newest change, and a
+                # Tasmota device's restarts, newest first: recorded and
+                # shown, never judged (rules STACK-15, DEV-17).
+                "controller_status": _latest_pair(record.get(DEV_CONTROLLER_STATUS)),
+                "restarts": _newest_pairs(record.get(DEV_RESTARTS)),
                 # Battery Last Replaced: None on mains (rule BAT-07).
                 "battery_replaced": self.battery_replacement_view(device_id),  # type: ignore[attr-defined]
                 "watched": device_id in self._watched,

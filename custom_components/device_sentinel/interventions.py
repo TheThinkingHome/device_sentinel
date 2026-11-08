@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.1 (2026-11-03)
+# File: interventions.py, Version: 0.28.5 (2026-11-08)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -34,6 +34,7 @@ from homeassistant.loader import async_get_loaded_integration
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from .stacks import (
+    availability_view,
     make_join_observer,
     make_reader,
     reader_for_domain,
@@ -147,6 +148,44 @@ def _spell_minutes(minutes: int) -> str:
     shown = int(days) if float(days).is_integer() else round(days, 1)
     return f"{shown} days"
 
+
+def _spell_ago(seconds: float) -> str:
+    """Return how long ago something happened, as a person would say it."""
+    minutes = int(max(0.0, seconds) // 60)
+    if minutes < 1:
+        return "less than a minute ago"
+    if minutes == 1:
+        return "1 minute ago"
+    return f"{_spell_minutes(minutes)} ago"
+
+
+def zha_phrase(view: dict[str, Any] | None, now: float) -> str | None:
+    """Return the sentence a person reads beside a verdict on a ZHA device.
+
+    ZHA's own judgment, with its timeout, as Zigbee2MQTT's is given: ZHA
+    calls a battery device available for six hours of silence by default,
+    so "available" alone would tell a person a dead sensor is fine (rule
+    STACK-04). None when ZHA cannot be read.
+    """
+    if not isinstance(view, dict) or not isinstance(view.get("available"), bool):
+        return None
+    if not view["available"]:
+        return "ZHA confirms it is unavailable."
+    seen = view.get("last_seen")
+    heard = (
+        f" and last heard from it {_spell_ago(now - seen)}"
+        if isinstance(seen, (int, float)) and not isinstance(seen, bool)
+        else ""
+    )
+    sentence = f"ZHA reads it as available{heard}."
+    timeout = view.get("timeout_seconds")
+    if isinstance(timeout, int) and not isinstance(timeout, bool) and timeout > 0:
+        kind = "a battery device" if view.get("class") == "battery" else "a mains device"
+        sentence += (
+            f" ZHA waits {_spell_minutes(timeout // 60)} of silence from "
+            f"{kind} before it marks it unavailable."
+        )
+    return sentence
 
 
 def _median(values: list[float]) -> float:
@@ -523,7 +562,12 @@ class InterventionMixin:
             return FLAP_CHECK_WORDS
         seen = self.reachability(device_id)
         if seen is None:
-            return None
+            # ZHA keeps its own judgment of each device, read from its
+            # own objects; any other stack has none (rule STACK-04).
+            return zha_phrase(
+                availability_view(self.hass, self._watched.get(device_id), device_id),
+                dt_util.utcnow().timestamp(),
+            )
         if seen.get("state") == "offline":
             return "Zigbee2MQTT confirms it is offline."
         minutes = seen.get("timeout_minutes")

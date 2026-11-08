@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.27.10 (2026-10-27)
+# File: stacks.py, Version: 0.28.5 (2026-11-08)
 
 """The one place a coordinator stack is registered.
 
@@ -194,6 +194,62 @@ def is_node_status(domain: str | None, ent: Any) -> bool:
         check = getattr(module, "is_node_status", None)
         return bool(check(ent)) if check is not None else False
     return False
+
+
+def is_controller_status(domain: str | None, ent: Any) -> bool:
+    """Whether this entity is a controller's own status sensor (rule STACK-15).
+
+    A stack whose controller reports its own status, as Z-Wave JS does,
+    answers through its module's `is_controller_status`; every other
+    stack has none.
+    """
+    if not domain:
+        return False
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        check = getattr(module, "is_controller_status", None)
+        return bool(check(ent)) if check is not None else False
+    return False
+
+
+def controller_status(domain: str | None, state: str | None) -> str | None:
+    """The controller status worth recording, or None (rule STACK-15)."""
+    if not domain:
+        return None
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        read = getattr(module, "controller_status", None)
+        return read(state) if read is not None else None
+    return None
+
+
+def availability_view(
+    hass: HomeAssistant, domain: str | None, device_id: str
+) -> dict[str, Any] | None:
+    """What the device's own stack says about reaching it, or None (rule STACK-04).
+
+    A stack that keeps its own judgment of each device, as ZHA does,
+    answers through its module's `availability_view`; every other stack
+    has none to give, and a reading that cannot be made is no opinion.
+    """
+    if not domain:
+        return None
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return None
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        read = getattr(module, "availability_view", None)
+        if read is None:
+            return None
+        try:
+            return read(hass, device)
+        except Exception:  # noqa: BLE001 - another integration's internals
+            return None
+    return None
 
 
 def available_speaks(domain: str | None) -> bool:

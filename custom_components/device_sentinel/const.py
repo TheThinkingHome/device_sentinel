@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.4 (2026-11-07)
+# File: const.py, Version: 0.28.5 (2026-11-08)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1373,6 +1373,24 @@ DEV_FLAP_LONGEST = "flap_longest"
 # always stays, and an older one goes once the version that replaced it
 # was first seen before the window opened.
 DEV_FIRMWARE_HISTORY = "firmware_history"
+# A Z-Wave controller's own status, as Z-Wave JS reports it on the
+# controller's Status sensor (ready, unresponsive or jammed): each change
+# as a [status, when] pair, oldest first, the newest
+# CONTROLLER_STATUS_KEPT kept. Recorded and shown, never judged: naming
+# the controller as an outage's cause waits for real readings (rule
+# STACK-15).
+DEV_CONTROLLER_STATUS = "controller_status"
+CONTROLLER_STATUS_KEPT = 20
+# Each restart a Tasmota device reported, as a [reason, restarted at]
+# pair from its Restart Reason and Last Restart Time sensors, oldest
+# first, the newest RESTARTS_KEPT kept. It explains a gap; it never
+# decides one (rule DEV-17).
+DEV_RESTARTS = "restarts"
+RESTARTS_KEPT = 10
+# Tasmota works out its restart time from its uptime each time it
+# reports, so one restart can read a second or two apart; a time this
+# close to the last one recorded is the same restart.
+RESTART_SAME_SECONDS = 120.0
 # Each battery forecast, made at the midnight fold for a battery judged
 # falling or accelerating, and scored when the battery reaches the level
 # it ran to (rule BAT-15, battery_forecasts.py): rows of [day, level,
@@ -1657,6 +1675,8 @@ EPOCH_KEPT = (
     DEV_FLAP_BACK,
     DEV_FLAP_LONGEST,
     DEV_FIRMWARE_HISTORY,
+    DEV_CONTROLLER_STATUS,
+    DEV_RESTARTS,
     DEV_BATTERY_FORECASTS,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
