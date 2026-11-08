@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.4 (2026-11-07)
+// File: panel.js, Version: 0.28.5 (2026-11-08)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -47,6 +47,9 @@ const NOT_KNOWN_TYPE = NOT_SET;
 // knows no type for: nothing to set (rule DEV-12).
 const NOT_WATCHED = "Not Watched";
 // How a battery's readings move, in words a reader can use (rule BAT-02).
+// A Z-Wave controller's Status, in Home Assistant's own words (rule
+// STACK-15).
+const CONTROLLER_STATUS_WORDS = { ready: "Ready", unresponsive: "Unresponsive", jammed: "Jammed" };
 const BATTERY_STEP_WORDS = { Smooth: "small steps", Coarse: "steps of 5% or more", "Not enough data": "not known yet" };
 // Whether a gap taught the device's rhythm, and if not, why (rule FRZ-12).
 const LEARNED_WORDS = {
@@ -3924,6 +3927,16 @@ class DeviceSentinelPanel extends HTMLElement {
     // the Short drop-outs row (rules DASH-04, SIG-16).
     const showSignal = !simple || signalTrouble || Boolean(who.short_drops && who.dropping_out);
     const nodeTrouble = who.node_status === "dead" || who.node_status === "off";
+    // The newest restart, then the earlier ones folded away (rule DEV-17).
+    const restartCell = (restarts) => {
+      const line = (r) => `${r.value}, ${moment(r.at)}`;
+      const earlier = restarts.slice(1);
+      return earlier.length
+        ? el("div", {}, line(restarts[0]),
+          el("details", { class: "small" }, el("summary", {}, `${earlier.length} earlier`),
+            ...earlier.map((r) => el("div", { class: "muted" }, line(r)))))
+        : line(restarts[0]);
+    };
     const exclusion = (acts && acts.excluded) || {};
     const identity = [
       // No Rename in Simple (rule DASH-04).
@@ -3991,6 +4004,13 @@ class DeviceSentinelPanel extends HTMLElement {
         // Device Sentinel a Z-Wave device has become unavailable. Simple:
         // only when the node is dead or its sensor is off (rule DASH-04).
         ...(who.node_status && (!simple || nodeTrouble) ? [["Z-Wave status", this._nodeStatusCell(who, acts)]] : []),
+        // A Z-Wave controller's own Status, with when it began (rule
+        // STACK-15). Simple: only when it is not Ready (rule DASH-04).
+        ...(who.controller_status && (!simple || who.controller_status.value !== "ready")
+          ? [["Controller status", `${CONTROLLER_STATUS_WORDS[who.controller_status.value] || who.controller_status.value}, since ${moment(who.controller_status.since)}`]] : []),
+        // A Tasmota device's last restart and why, with the earlier ones
+        // folded under it, in Advanced only (rules DEV-17, DASH-04).
+        ...(who.restarts && who.restarts.length && !simple ? [["Last restart", restartCell(who.restarts)]] : []),
         ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
         ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       ]),
@@ -4041,9 +4061,7 @@ class DeviceSentinelPanel extends HTMLElement {
         ? el("div", { class: "dayask", role: "alertdialog" },
           el("strong", {}, `Remove ${dayLabel(ask.day)} from this device's rhythm?`),
           el("p", { class: "small", style: "margin:4px 0 8px" },
-            "Do this only if you know what you are doing. The bar stays, in orange, but neither rule counts it, and the wait changes at once. "
-            + "Remove a day only when you know why its gap was long and that the cause will not come back, such as a power cut or an integration that stopped updating. "
-            + "Removing a day that was the device's real habit can make it be reported frozen too soon. Press the bar again to count it again."),
+            "Do this only if you know what you are doing. Remove this day only when you know why the device was quiet longer than normal, and that the cause will not come back."),
           el("div", { class: "actrow" },
             el("button", { class: "chip", type: "button", onclick: send }, "Remove this day"),
             el("button", { class: "chip", type: "button", onclick: cancel }, "Keep it")))
