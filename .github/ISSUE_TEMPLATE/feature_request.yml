@@ -23,6 +23,5 @@ body:
   - type: markdown
     attributes:
       value: |
-        Note: Device Sentinel is pre-release and built in strict steps. Ideas that fit the
-        design land in the queue; the design document rules. Detection accuracy comes first,
-        everything else after.
+        Ideas are weighed against one question: does it help find devices that have stopped
+        working, without adding false alarms? Detection accuracy comes first, everything else after.

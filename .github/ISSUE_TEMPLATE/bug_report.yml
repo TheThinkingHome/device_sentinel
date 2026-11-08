@@ -28,6 +28,7 @@ body:
         Settings, Devices and Services, Device Sentinel, three-dot menu, Download diagnostics.
         Drag the JSON file here. It carries the learned state, tunables, and classification,
         with your notification targets redacted automatically.
+        Check your files before attaching them: they name your devices.
     validations:
       required: true
   - type: textarea
@@ -42,6 +43,6 @@ body:
     attributes:
       label: Versions
       description: Device Sentinel version and Home Assistant version.
-      placeholder: Device Sentinel 0.3.8, Home Assistant 2026.7.1
+      placeholder: Device Sentinel 0.28.4, Home Assistant 2026.11.1
     validations:
       required: true
