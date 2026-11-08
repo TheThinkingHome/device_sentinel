@@ -2,8 +2,8 @@
 
 ## Supported Versions
 
-Device Sentinel is pre-release. Only the latest release receives fixes of any
-kind, including security fixes. If you are running an older version, update
+Only the latest release of Device Sentinel receives fixes of any kind,
+including security fixes. If you are running an older version, update
 first; the issue may already be gone.
 
 | Version        | Supported          |

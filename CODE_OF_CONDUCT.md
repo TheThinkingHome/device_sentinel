@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Device Sentinel is built by a small group of people, in their spare time, for people who want to know when a device in their house stops working. This page says how we treat each other in its issues, discussions, pull requests and wiki, and anywhere someone speaks for the project.
+Device Sentinel is built by one person and a few testers, in their spare time, for people who want to know when a device in their house stops working. This page says how we treat each other in its issues, discussions, pull requests and wiki, and anywhere someone speaks for the project.
 
 ## What We Ask
 
@@ -19,6 +19,6 @@ Device Sentinel is built by a small group of people, in their spare time, for pe
 
 ## Reporting, and What Happens
 
-If something here makes you uncomfortable, contact the maintainer privately at CONTACT_TO_BE_CHOSEN. Reports are read by the maintainer only and kept private.
+If something here makes you uncomfortable, open the three-dot menu on the comment and choose "Report content", then "Report to repository admins". The report reaches the maintainer privately.
 
 The maintainer may edit, hide or delete comments, lock a thread, or block an account that breaks these rules. Most of the time a short reminder is enough.
