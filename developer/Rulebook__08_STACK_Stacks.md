@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 4 November 2026, on Device Sentinel 0.28.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -41,8 +41,9 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **On the device page:** in Advanced, the Last seen sensor row names it: "ZHA's own", "when ZHA last heard it, used to tell it's alive". Simple shows that row only when the sensor is switched off.
 - **Other stacks:** Zigbee2MQTT and Z-Wave JS devices have their own Last Seen entities. Once switched on, those also date contact and start a new device's clock.
 - **Coordinator:** ZHA's coordinator is watched as an upstream through its config entry (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
+- **ZHA's own view, since 0.28.5:** beside a verdict, as Zigbee2MQTT's is (under [STACK-03](#stack-03-zigbee2mqtt)), Device Sentinel tells what ZHA itself holds for the device: whether it is available, when its radio last heard it, and how long ZHA waits before marking it unavailable. The wait is ZHA's setting for the device's power, 6 hours for a battery device and 2 hours for a mains one unless ZHA's settings change them. "ZHA reads it as available and last heard from it 3 minutes ago. ZHA waits 6 hours of silence from a battery device before it marks it unavailable." It confirms or doubts a verdict and never decides one. Read from ZHA's own objects (under [STACK-08](#stack-08-reading-an-integrations-private-state)); anything not where it is expected is no opinion, and the sentence is left out.
 
-*Proof:* [`test_zha_last_seen.py`](../tests/test_zha_last_seen.py), [`test_zha_reader.py`](../tests/test_zha_reader.py).
+*Proof:* [`test_zha_last_seen.py`](../tests/test_zha_last_seen.py), [`test_zha_reader.py`](../tests/test_zha_reader.py), [`test_zha_availability_view.py`](../tests/test_zha_availability_view.py).
 
 ### STACK-05 Z-Wave
 
@@ -157,3 +158,13 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Next:** a rule for polled integrations and Alarm.com's Malfunction sensor waits on these recordings.
 
 *Proof:* [`test_problem_sensors_and_polling.py`](../tests/test_problem_sensors_and_polling.py).
+
+### STACK-15 A Z-Wave Controller's Own Status
+
+**Since 0.28.5, Device Sentinel records each change of a Z-Wave controller's Status (ready, unresponsive or jammed) with when it began, and shows it. It never judges from it.**
+- **Found:** by the sensor's unique id, ending `.controller_status`, whatever the entity is named.
+- **Recorded:** each change, on the controller's record; the newest 20 are kept. Unknown and unavailable are the sensor not answering and are not recorded. A start reads the sensor as it stands, and a reading that repeats the last adds nothing.
+- **Shown:** on the controller's device page, in the Reporting group, as "Controller status: Ready, since Nov 8, 9:00 AM". Simple shows it only when it is not Ready. Device Telemetry lists every change, newest first.
+- **Next:** naming the controller as the cause of an outage waits for a real Unresponsive or Jammed in a house's readings.
+
+*Proof:* [`test_zwave_controller_status.py`](../tests/test_zwave_controller_status.py), `check_status_readings.js`.
