@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_removed_days.js, Version: 0.28.4 (2026-11-07)
+// File: tools/panel_checks/check_removed_days.js, Version: 0.28.5 (2026-11-08)
 // Panel checks: a day removed by hand on the device page's freeze charts
 // (rule FRZ-25). In Advanced, for a person who may act, each bar can be
 // pressed; a removal asks first with its warning, and counting a day again
@@ -121,7 +121,7 @@ const button = (root, text) => [...root.querySelectorAll("button")].find((b) => 
   await settle();
   let ask = trimmedChart(root).querySelector(".dayask");
   check("asks first, with the warning", ask && /Remove .* from this device's rhythm\?/.test(ask.textContent)
-    && /Do this only if you know what you are doing\./.test(ask.textContent) && /reported frozen too soon/.test(ask.textContent), ask ? ask.textContent : null);
+    && /Do this only if you know what you are doing\./.test(ask.textContent) && /Remove this day only when you know why the device was quiet longer than normal, and that the cause will not come back\./.test(ask.textContent), ask ? ask.textContent : null);
   check("nothing is sent before the answer", sent.length === 0, sent);
   button(root, "Keep it").click();
   await settle();

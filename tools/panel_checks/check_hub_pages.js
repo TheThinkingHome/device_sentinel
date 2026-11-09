@@ -1,4 +1,4 @@
-// File: check_hub_pages.js, Version: 0.27.16 (2026-10-31)
+// File: check_hub_pages.js, Version: 0.28.6 (2026-11-08)
 // Panel checks: a device judged by its hub (rule STACK-10). A hub's
 // page, the pages of the devices it controls, and the Classification
 // tick.
@@ -159,6 +159,38 @@ const hubPage = (tweak) => (m) => {
   check("Nor an empty Reporting heading", ![...r.root.querySelectorAll("tr.kvgroup")].some((tr) => tr.textContent === "Reporting"),
     [...r.root.querySelectorAll("tr.kvgroup")].map((tr) => tr.textContent));
   check("Nothing says held under", !/held under/i.test(text));
+
+  // Muted for battery alone, a hub that is down is still listed: its word
+  // keeps its colour and says no "muted" (rule SIG-17).
+  r = await open({ answers: { device: hubPage((p) => {
+    p.hub_self = { up: false, since: ago(12), behind: BEHIND, outages: [{ start: ago(12), end: null }] };
+    p.identity.muted = "battery (integration)";
+    p.status = { ...p.status, category: "unavailable", muted_shown: false };
+  }) } });
+  text = r.root.textContent;
+  check("A downed hub muted for battery alone reads Down, unmuted", text.includes("Down") && !text.includes("Down, muted"), text.slice(0, 300));
+  // Its hub down is the hub's row on the list: a battery mute leaves it
+  // live, the unavailable mute greys it (rule SIG-17).
+  r = await open({ answers: { device: hubPage((p) => {
+    p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB, up: false };
+    p.identity.muted = "battery (integration)";
+    p.status = { ...p.status, category: "reporting", muted_shown: false };
+  }) } });
+  text = r.root.textContent;
+  check("A battery-muted device whose hub is down reads it live", text.includes("Its hub is down") && !text.includes("Its hub is down, muted"), text.slice(0, 300));
+  r = await open({ answers: { device: hubPage((p) => {
+    p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB, up: false };
+    p.identity.muted = "unavailable (integration)";
+    p.status = { ...p.status, category: "reporting", muted_shown: true };
+  }) } });
+  text = r.root.textContent;
+  check("An unavailable-muted device whose hub is down says so, muted", text.includes("Its hub is down, muted"), text.slice(0, 300));
+  r = await open({ answers: { device: hubPage((p) => {
+    p.hub_self = { up: true, since: ago(30), behind: BEHIND.map((d) => ({ ...d, standing: "Watched" })), outages: [] };
+    p.status = { ...p.status, category: "short_drop_outs", flap: "3 in the last 12 hours", muted_shown: false };
+  }) } });
+  text = r.root.textContent;
+  check("A hub with short drop-outs reads them", text.includes("Short drop-outs, 3 in the last 12 hours"), text.slice(0, 300));
 
   r = await open({ answers: { device: hubPage((p) => {
     p.hub_self = { up: true, since: ago(30), behind: BEHIND.map((d) => ({ ...d, standing: "Watched" })), outages: [] };

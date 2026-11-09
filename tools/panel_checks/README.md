@@ -1,3 +1,4 @@
+<!-- File: tools/panel_checks/README.md, Version: 0.28.6 (2026-11-08) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -21,6 +22,7 @@ written rather than what it proves).
 | Every tab | `check_acknowledged_rows.js` | 13 | an acknowledged row fades to 75% but its tick and "Acknowledged", with the hover, on the Problem List, the Daily Brief tab and the Recommendations cards; the Maintenance Mode button's words |
 | Every tab | `check_no_stray_words.js` | 64 | no "null" or "undefined" drawn on any tab, in Simple or Advanced |
 | Integrations | `check_integrations_tab.js` | 56 | the Integrations tab's columns and buttons in both views, its chips and recommendations, and Simple's Devices columns |
+| Networks | `check_networks.js` | 41 | the Networks tab after Integrations in Simple and Advanced, its columns in each, a network's page with its counts, sensors and settings in Simple, and its coordinator, 30 days of outages, signal health and pairing in Advanced, Turn it on from the page, a count opening the Devices tab on those devices, and the other tabs drawing when the Networks answer fails |
 | Daily Brief | `check_repeat_offenders.js` | 11 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker, under Also on the Broker and Outages, Last 14 Days |
 | Every tab | `check_simple_dashboard.js` | 57 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its device page with Not Set to set an unanswered Type or Power, a set value in grey, no Labels row and a label's mute pointing to Advanced, no Rename, no Trimmed Maximum button, no turn-on buttons and no Firmware row, its battery chart with the time left, and no Mute by label anywhere; Device ID kept in Simple while the Model ID and address rows are Advanced's, and no note at the foot of the page |
 | Recommendations | `check_recommendations.js` | 54 | the opening line and its count, which agrees with the tab and the button and reads Nothing to recommend right now at zero, the Slow Reporting Devices card, the switched-off cards' Turn on chips, Battery Voltage Switched Off among them, each saying it was pressed on the tab, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick, and the area, name and model type set in each card's rows |
@@ -35,10 +37,11 @@ written rather than what it proves).
 | A device's page | `check_names_and_mutes.js` | 17 | names, the Last seen fallback and inherited mutes, on the page and the Problem List |
 | A device's page | `check_power_row.js` | 38 | the Powered by row: its words and icons, the shield naming the device an answer was set on, the pencil, an answer saying it came from the page, and the report to Battery Notes; Battery last replaced beside it |
 | A device's page | `check_node_status.js` | 12 | the Z-Wave status row: the node's status, red when dead, any other reading as not known yet, a switched-off sensor with its button, which says it was pressed on the page, and no row for other stacks |
-| A device's page | `check_hub_pages.js` | 35 | a hub's page and the pages of the devices it controls, and the Classification tick |
+| A device's page | `check_hub_pages.js` | 39 | a hub's page and the pages of the devices it controls, and the Classification tick |
 | A device's page | `check_device_type.js` | 31 | the Type row, an answer saying it came from the page, and the Devices tab's Type column and filter |
 | A device's page | `check_same_hardware.js` | 16 | the Same hardware row and the Type row's clear label |
 | A device's page | `check_removed_days.js` | 21 | a day removed by hand: any bar pressable in Advanced for a person who may act, the removal's warning and the question to count it again, nothing sent before the answer, the removed day in its own colour at its height and never hatched or grey, the keyboard, a refusal under the charts, and nothing to press in Simple or for a viewer |
+| A device's page | `check_status_readings.js` | 9 | a Z-Wave controller's status with when it began, shown in Simple only when it is not Ready; a Tasmota device's last restart and reason with the earlier ones folded under it, in Advanced only |
 | A device's page | `check_rhythm_rules.js` | 15 | both freeze rules on the rhythm chart, the rule in use, a swatch on every legend, and Use the 14-Day Trimmed Maximum only while the Log-Normal Percentile is in use |
 | A device's page | `check_rhythm_words.js` | 19 | "learning" for a window not yet learned, a device judged by its connection, gaps rather than silences, "1 day", the LEARNED column in plain words, and the line where the 42-day chart stood while it counts again, naming why when it is known |
 | A device's page | `check_real_device.js` | 6 | a page built by the server from a real mains plug's history |
@@ -54,12 +57,12 @@ written rather than what it proves).
 | Battery | `check_battery_weeks.js` | 46 | five weekly averages, a model's pace as the slowest to the fastest of its other cells, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
-| Signal | `check_short_drop_outs.js` | 13 | a device with short drop-outs, on its page and on Signal Trends, and its Short drop-outs row |
+| Signal | `check_short_drop_outs.js` | 15 | a device with short drop-outs, on its page and on Signal Trends, and its Short drop-outs row |
 | A device's page | `check_wifi_address.js` | 11 | a Wi-Fi device's IP Address and Access Point, and devices sharing one address on the Recommendations tab |
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1054 checks in 47 files, as of 4 November 2026 (0.28.2).
+1131 checks in 50 files, as of 8 November 2026 (0.28.6).
 
 ## Running Them
 

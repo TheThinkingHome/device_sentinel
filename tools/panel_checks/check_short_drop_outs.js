@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_short_drop_outs.js, Version: 0.28.2 (2026-11-04)
+// File: tools/panel_checks/check_short_drop_outs.js, Version: 0.28.6 (2026-11-08)
 // Panel checks: a device with short drop-outs, on its page and on Signal
 // Trends (rules SIG-16, SIG-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_short_drop_outs.js [path/to/panel.js]
@@ -82,6 +82,24 @@ const DEVICE = payloads._ids.bravo;
     });
     const said = text(root);
     check("reads Short drop-outs with the count", said.includes("Short drop-outs, 3 in the last 12 hours"), said.slice(0, 200));
+  }
+  {
+    // Muted for freeze alone, the device is still listed with short
+    // drop-outs: the word keeps its colour and says no "muted" (rule SIG-17).
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      device: (d) => ({ ...d, identity: { ...d.identity, muted: "freeze (integration)" },
+        status: { ...d.status, category: "short_drop_outs", flap: "3 in the last 12 hours", muted_shown: false } }),
+    });
+    const said = text(root);
+    check("a mute that does not cover it leaves it unmuted", said.includes("Short drop-outs, 3 in the last 12 hours")
+      && !said.includes("12 hours, muted"), said.slice(0, 200));
+  }
+  {
+    const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
+      device: (d) => ({ ...d, identity: { ...d.identity, muted: "freeze (device)" },
+        status: { ...d.status, category: "frozen", flap: "", muted_shown: true } }),
+    });
+    check("a mute that covers it says muted", text(root).includes("Frozen, muted"), text(root).slice(0, 200));
   }
   console.log("The Short drop-outs row (rule SIG-16)");
   const drops = { count: 3, longest: 1260, last: "2026-11-01T19:41:00+00:00", hours: 12 };
