@@ -3,11 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_manifest_dependencies.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_manifest_dependencies.py, Version: 0.28.7 (2026-11-09)
 
 """The manifest depends on frontend, http, panel_custom and websocket_api,
-loads after esphome, lutron_caseta, mqtt and zha, and names nothing else
-(rules STACK-03, STACK-08, DASH-01).
+loads after esphome, lutron_caseta, mqtt, recorder and zha, and names
+nothing else (rules STACK-03, STACK-08, DASH-01, DASH-18).
 
 Extended Diagnostics may read another integration's private state, and
 nothing goes in the manifest for it, so a reader of the manifest never
@@ -27,7 +27,11 @@ ROOT = Path(__file__).parent.parent / "custom_components" / "device_sentinel"
 # The only other integrations the code may import: the entity platforms
 # Device Sentinel provides and the core services it uses, which
 # hassfest accepts.
-ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs", "sensor", "todo", "websocket_api"}
+ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs", "sensor", "todo", "websocket_api",
+           # Home Assistant's own statistics, read for a Z-Wave
+           # controller's radio noise, and named in after_dependencies
+           # (rule DASH-18).
+           "recorder"}
 
 
 def test_the_manifest_declares_nothing_new():
@@ -42,9 +46,12 @@ def test_the_manifest_declares_nothing_new():
     # (rule STACK-04).
     # lutron_caseta: its hub's session, read to judge the hub up or down
     # (rule STACK-09).
+    # recorder: Home Assistant's long-term statistics, read for a Z-Wave
+    # controller's typical radio noise; Device Sentinel starts without
+    # it (rule DASH-18).
     # frontend and panel_custom: the dashboard is registered through
     # panel_custom, so both are set up first (rule DASH-01).
-    assert manifest.get("after_dependencies") == ["esphome", "lutron_caseta", "mqtt", "zha"]
+    assert manifest.get("after_dependencies") == ["esphome", "lutron_caseta", "mqtt", "recorder", "zha"]
     assert manifest.get("dependencies") == ["frontend", "http", "panel_custom", "websocket_api"]
     assert "requirements" not in manifest
 
