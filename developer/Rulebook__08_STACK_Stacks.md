@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -82,7 +82,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 
 **Detection reads an integration's private state only where a rule names the integration and the one field.**
 - **Failure is safe:** each read is wrapped, so a missing field, a changed shape or any failure leaves the device on the ordinary rules and logs one line. A Home Assistant update that moves the field costs the exception, never a start, a verdict or a save.
-- **Manifest and imports:** such an integration is named in the manifest's after_dependencies, never its dependencies. Nothing is imported from an integration read this way.
+- **Manifest and imports:** such an integration is named in the manifest's after_dependencies, never its dependencies. Nothing is imported from an integration read this way. Home Assistant's recorder is named there too, since 0.28.7, and its public statistics functions are imported for a Z-Wave controller's typical radio noise ([DASH-18](Rulebook__14_DASH_Dashboard.md#dash-18-a-networks-outage-patterns-and-radio-noise)).
 - **Listed:** the wiki lists each exception and its field.
 - **Who is read:** three integrations: ESPHome (deep sleep and connection), ZHA (when it last heard a device) and Lutron Caséta (the hub's session). Matter, Thread and Z-Wave JS are weighed against their probe data as it arrives.
 - **Extended Diagnostics:** it may also read private state, since it records and never judges.

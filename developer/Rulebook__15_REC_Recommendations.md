@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -55,6 +55,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 - **Where:** from its card, or in Advanced from the device's page. A battery voltage sensor is switched on from its card only.
 - **The cards:** Last Seen Sensor Switched Off, Battery Sensor Switched Off, Z-Wave Status Switched Off, Signal Sensor Switched Off and Battery Voltage Switched Off.
 - **The chips:** each card has a chip per device that names the sensor and what it reports: "Turn on its Last Seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor" and "Turn on its battery voltage sensor".
+- **Firmware update checks:** since 0.28.7 a device's own firmware update entity is switched on the same way, from its network's page only, never a beta channel's ([DASH-17](Rulebook__14_DASH_Dashboard.md#dash-17-the-networks-tab)).
 - **Which entities count:** only a device's own entities, never one another integration added, such as Battery Notes'. A device is listed only when none of its own entities of that kind is on.
 - **Battery Voltage Switched Off:** lists only a device with a battery reading, whose power is not set to mains, USB or PoE, and whose voltage nothing else already reports.
 - **Its wording:** "These devices have battery voltage entities which can be used for more accurate battery reporting and forecasting." With one device listed it reads "This device has a battery voltage entity which can be used for more accurate battery reporting and forecasting."

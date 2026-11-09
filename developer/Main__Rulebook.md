@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6.*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7.*
 
 **What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today. Under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings give the reason in plain words, then cite the rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))".
 
@@ -32,7 +32,7 @@
 | LIST | Problem List | 13 | [`Rulebook__11_LIST_Problem_List.md`](Rulebook__11_LIST_Problem_List.md) |
 | NOTE | Notifications | 12 | [`Rulebook__12_NOTE_Notifications.md`](Rulebook__12_NOTE_Notifications.md) |
 | BRIEF | Daily Brief | 16 | [`Rulebook__13_BRIEF_Daily_Brief.md`](Rulebook__13_BRIEF_Daily_Brief.md) |
-| DASH | Dashboard | 17 | [`Rulebook__14_DASH_Dashboard.md`](Rulebook__14_DASH_Dashboard.md) |
+| DASH | Dashboard | 18 | [`Rulebook__14_DASH_Dashboard.md`](Rulebook__14_DASH_Dashboard.md) |
 | REC | Recommendations | 11 | [`Rulebook__15_REC_Recommendations.md`](Rulebook__15_REC_Recommendations.md) |
 | REP | Repairs | 8 | [`Rulebook__16_REP_Repairs.md`](Rulebook__16_REP_Repairs.md) |
 | CFG | Settings | 10 | [`Rulebook__17_CFG_Settings.md`](Rulebook__17_CFG_Settings.md) |
