@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.5 (2026-11-08)
+// File: panel.js, Version: 0.28.6 (2026-11-08)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -29,6 +29,7 @@ const TABS = [
   "Signal Trends",
   "Classification",
   "Integrations",
+  "Networks",
   "Devices",
   "Recommendations",
 ];
@@ -111,7 +112,7 @@ const modelPaceWords = (pace) => {
   const said = levelNumber(pace.pace_low) === "0" && range !== high ? `up to ${high}` : range;
   return `Others of this model lose ${said} ${said === "1" || said === "up to 1" ? "point" : "points"} a week.`;
 };
-const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
+const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Networks", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
   ["watched", "Watched"],
@@ -165,6 +166,31 @@ const DEVICE_FILTERS = [
   ["problem", "With a problem"],
   ["muted", "Muted"],
 ];
+// A network page's problem groups, in its tiles' order, and their words
+// (rule DASH-17). The first four always show; the others when counted.
+const NETWORK_GROUPS = [
+  ["frozen", "Frozen"],
+  ["unavailable", "Unavailable"],
+  ["battery", "Battery"],
+  ["signal", "Signal railed"],
+  ["never_reported", "Never reported"],
+  ["drops", "Short drop-outs"],
+];
+// How each group reads in a row's brackets, "(1 frozen, 2 with short drop-outs)",
+// and in the Devices tab's "Showing" line.
+const NETWORK_GROUP_BRACKET = { frozen: "frozen", unavailable: "unavailable", battery: "battery",
+  signal: "signal railed", never_reported: "never reported", drops: "with short drop-outs" };
+const NETWORK_GROUP_SHOWING = { frozen: "that are frozen", unavailable: "that are unavailable",
+  battery: "with a battery problem", signal: "with a railed signal", never_reported: "that never reported",
+  drops: "with short drop-outs" };
+const NETWORK_COLOURS = {
+  ok: "var(--success-color, #43a047)",
+  pairing: "var(--warning-color, #ffa600)",
+  warn: "var(--warning-color, #ffa600)",
+  down: "var(--error-color, #db4437)",
+};
+// Where a network's own settings live in Home Assistant.
+const NETWORK_INTEGRATION = { z2m: "mqtt", zha: "zha", zwave_js: "zwave_js", matter: "matter", mqtt: "mqtt" };
 // The Area filter's choice for a device with no area (rule DASH-12).
 const NO_AREA = "\u0000no area";
 const RANGES = [["all", "All"], [360, "360 Days"], [180, "180 Days"], [90, "90 Days"], [30, "30 Days"], [14, "14 Days"]];
@@ -353,7 +379,7 @@ const PRINTER_PATH = "M18,3H6V7H18M19,12A1,1 0 0,1 18,11A1,1 0 0,1 19,10A1,1 0 0
 function readOrigin(from) {
   if (!from) return null;
   if (TAB_BY_SLUG[from]) return { tab: TAB_BY_SLUG[from] };
-  const page = /^\/(device|integration)\/([^/?]+)(?:\?(.*))?$/.exec(from);
+  const page = /^\/(device|integration|network)\/([^/?]+)(?:\?(.*))?$/.exec(from);
   if (!page) return null;
   return {
     kind: page[1], id: decodeURIComponent(page[2]), path: from,
@@ -714,6 +740,20 @@ const STYLE = `
   .pagehead h2 { margin: 0; font-size: 22px; font-weight: 500; }
   .links { display: flex; gap: 16px; flex-wrap: wrap; }
   h3.section { margin: 8px 0 0; font-size: 16px; font-weight: 500; }
+  /* The Networks tab and a network's page (rule DASH-17). */
+  .netstate { display: inline-flex; align-items: center; gap: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+  .tile { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px;
+    border-radius: 8px; border: 1px solid var(--divider-color); background: transparent; color: var(--primary-text-color);
+    font: inherit; cursor: pointer; text-align: left; }
+  .tile strong { font-size: 18px; font-weight: 500; }
+  .tile.some strong { color: var(--warning-color, #ffa600); }
+  .kv { display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 6px 16px; }
+  .kv > .k { color: var(--secondary-text-color); }
+  .notice { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--warning-color, #ffa600);
+    line-height: 1.5; }
+  .notice strong { color: var(--warning-color, #ffa600); }
+  .offlist { margin: 4px 0 0; padding-left: 18px; line-height: 1.8; }
 `;
 
 class DeviceSentinelPanel extends HTMLElement {
@@ -753,6 +793,10 @@ class DeviceSentinelPanel extends HTMLElement {
     this._deviceView = "watched";
     this._deviceArea = "";
     this._deviceLabel = "";
+    // One network and one problem group, set from a network's counts
+    // (rule DASH-17).
+    this._deviceNetwork = "";
+    this._deviceGroup = "";
     // The graphs' range carries from one device page to the next.
     this._range = "all";
     this._hover = null;
@@ -800,9 +844,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const path = (route && route.path) || "";
     const integration = /^\/integration\/([^/]+)/.exec(path);
     const device = /^\/device\/([^/]+)/.exec(path);
+    // A network's page (rule DASH-17).
+    const network = /^\/network\/([^/]+)/.exec(path);
     const next = integration
       ? { kind: "integration", domain: decodeURIComponent(integration[1]) }
-      : device ? { kind: "device", id: decodeURIComponent(device[1]) } : null;
+      : device ? { kind: "device", id: decodeURIComponent(device[1]) }
+        : network ? { kind: "network", id: decodeURIComponent(network[1]) } : null;
     // A device or integration page carries, in its address, the page
     // it was opened from: a tab, or another page with an origin of its
     // own. Its back link leads to that page, and its highlighted tab is
@@ -812,7 +859,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // Daily Brief.
     const from = next ? new URLSearchParams(window.location.search).get("from") || "" : "";
     const tab = next
-      ? rootTab(from) || (next.kind === "device" ? "Devices" : "Integrations")
+      ? rootTab(from) || ({ device: "Devices", network: "Networks" }[next.kind] || "Integrations")
       : TAB_BY_SLUG[path.replace(/^\/+|\/+$/g, "")] || "Daily Brief";
     const changed = JSON.stringify(next) !== JSON.stringify(this._view)
       || tab !== this._tab || from !== this._from;
@@ -837,7 +884,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // a tab's slug, or this page's own address with its own origin.
   _here() {
     if (!this._view) return TAB_SLUG[this._tab];
-    const id = this._view.kind === "device" ? this._view.id : this._view.domain;
+    const id = this._view.kind === "integration" ? this._view.domain : this._view.id;
     const own = this._from ? `?from=${encodeURIComponent(this._from)}` : "";
     return `/${this._view.kind}/${encodeURIComponent(id)}${own}`;
   }
@@ -850,13 +897,32 @@ class DeviceSentinelPanel extends HTMLElement {
     return `${this._base}/integration/${encodeURIComponent(domain)}?from=${encodeURIComponent(this._here())}`;
   }
 
+  _networkPath(key) {
+    return `${this._base}/network/${encodeURIComponent(key)}?from=${encodeURIComponent(this._here())}`;
+  }
+
+  // The Devices tab, filtered to one network and, if given, one problem
+  // group, opened from a network's counts (rule DASH-17).
+  _devicesOnNetwork(key, group, problems = false) {
+    this._deviceView = "watched";
+    this._deviceFilter = problems ? "problem" : "all";
+    this._deviceType = "";
+    this._deviceArea = "";
+    this._deviceLabel = "";
+    this._deviceSearch = "";
+    this._deviceNetwork = key || "";
+    this._deviceGroup = group || "";
+    this._navigate(this._tabPath("Devices"));
+  }
+
   // The link at the top of a device or integration page: the page it
   // was opened from, by name, or its tab when it came from a tab or
   // from nowhere the address can name.
   _backLink() {
     const origin = this._origin;
     if (origin && origin.kind) {
-      const name = origin.kind === "integration" ? this._integrationName(origin.id) : this._deviceName(origin.id);
+      const name = origin.kind === "integration" ? this._integrationName(origin.id)
+        : origin.kind === "network" ? this._networkName(origin.id) : this._deviceName(origin.id);
       return this._link(`\u2039 ${name}`, `${this._base}${origin.path}`);
     }
     return this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab));
@@ -866,6 +932,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const rows = (this._snapshot && this._snapshot.integrations && this._snapshot.integrations.rows) || [];
     const row = rows.find((r) => r.domain === domain);
     return row ? row.name : domain;
+  }
+
+  _networkName(key) {
+    const rows = (this._snapshot && this._snapshot.networks && this._snapshot.networks.rows) || [];
+    const row = rows.find((r) => r.key === key);
+    return row ? row.name : "Network";
   }
 
   _deviceName(id) {
@@ -878,6 +950,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const view = this._view;
     if (!view) return null;
     try {
+      if (view.kind === "network") return await this._call({ type: "device_sentinel/network", key: view.id });
       return view.kind === "device"
         ? await this._call({ type: "device_sentinel/device", device_id: view.id })
         : await this._call({ type: "device_sentinel/integration", domain: view.domain });
@@ -886,7 +959,8 @@ class DeviceSentinelPanel extends HTMLElement {
       return {
         error: view.kind === "device"
           ? "Device Sentinel has no record of that device."
-          : "No device belongs to that integration.",
+          : view.kind === "network" ? "This house has no such network."
+            : "No device belongs to that integration.",
       };
     }
   }
@@ -1099,7 +1173,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // rest of the page is: nothing is written as markup.
     const view = this._view && this._view.kind === "device" && this._page && this._page.identity
       ? this._page.identity.name
-      : this._view && this._view.kind === "integration" && this._page && this._page.name
+      : this._view && (this._view.kind === "integration" || this._view.kind === "network") && this._page && this._page.name
         ? this._page.name
         : this._tab;
     const frame = document.createElement("iframe");
@@ -1150,18 +1224,21 @@ class DeviceSentinelPanel extends HTMLElement {
     this._refreshButton.disabled = true;
     this._areaChoices = null;
     try {
-      const [status, classification, problems, recommendations, integrations, devices, brief, battery, signal] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
         this._call({ type: "device_sentinel/recommendations" }),
         this._call({ type: "device_sentinel/integrations" }),
+        // The Networks tab alone goes without if its answer fails, so
+        // every other tab still draws (rule DASH-17).
+        this._call({ type: "device_sentinel/networks" }).catch(() => ({ rows: [], failed: true })),
         this._call({ type: "device_sentinel/devices" }),
         this._call({ type: "device_sentinel/brief", ...(this._briefDay ? { day: this._briefDay } : {}) }),
         this._call({ type: "device_sentinel/battery_trends" }),
         this._call({ type: "device_sentinel/signal_trends" }),
       ]);
-      this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, battery, signal, at: new Date() };
+      this._snapshot = { status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal, at: new Date() };
       // An open "Change date" is dropped once its device waits on no
       // detection, answered here or anywhere else.
       if (this._batteryDayOpen) {
@@ -1345,7 +1422,9 @@ class DeviceSentinelPanel extends HTMLElement {
       return;
     }
     if (this._view && this._view.kind === "integration") this._paintIntegrationPage();
+    else if (this._view && this._view.kind === "network") this._paintNetworkPage();
     else if (this._view && this._view.kind === "device") this._paintDevicePage();
+    else if (this._tab === "Networks") this._paintNetworks();
     else if (this._tab === "Devices") this._paintDevices();
     else if (this._tab === "Daily Brief") this._paintBrief();
     else if (this._tab === "Battery Trends") this._paintBatteryTrends();
@@ -2049,6 +2128,220 @@ class DeviceSentinelPanel extends HTMLElement {
         ridersTable] : []));
   }
 
+  // A network's state: its dot and its words, and since when.
+  _networkState(status) {
+    const since = status.since ? ` since ${moment(status.since)}` : "";
+    return el("span", { class: "netstate" },
+      el("span", { class: "dot", style: NETWORK_COLOURS[status.state] ? `background:${NETWORK_COLOURS[status.state]}` : "" }),
+      `${status.words}${since}`);
+  }
+
+  _outageLine(o, days) {
+    if (!o) return el("span", { class: "muted" }, `None in ${days || 30} days`);
+    const how = o.open ? "still down" : o.duration === null || o.duration === undefined ? "length not recorded" : span(o.duration);
+    const devices = o.devices ? `, ${o.devices} ${o.devices === 1 ? "device" : "devices"}` : "";
+    return `${moment(o.went_down)}, ${how}${devices}`;
+  }
+
+  _problemWords(counts) {
+    return NETWORK_GROUPS.filter(([key]) => counts && counts[key])
+      .map(([key]) => `${counts[key]} ${NETWORK_GROUP_BRACKET[key]}`).join(", ");
+  }
+
+  // The Networks tab (rule DASH-17): each network the house has, its
+  // state, its devices, those with a problem and its last outage. Simple
+  // leaves out the last outage.
+  _paintNetworks() {
+    const rows = (this._snapshot.networks && this._snapshot.networks.rows) || [];
+    const simple = this._isSimple();
+    const intro = el("p", { style: "margin:0;line-height:1.5" },
+      "The networks your devices report through, and how each is doing. Press a network to see "
+      + (simple ? "its devices and anything to turn on." : "its outages, its devices and its settings."));
+    if (this._snapshot.networks && this._snapshot.networks.failed) {
+      this._pane.replaceChildren(intro, el("p", { class: "error", style: "margin:0" },
+        "Device Sentinel could not load the networks. Press Refresh to try again."));
+      return;
+    }
+    if (!rows.length) {
+      this._pane.replaceChildren(intro, el("p", { class: "muted", style: "margin:0" },
+        "No network found yet. A network appears here once a device reports through it."));
+      return;
+    }
+    const heads = ["NETWORK", "STATUS", "DEVICES", "WITH A PROBLEM", ...(simple ? [] : ["LAST OUTAGE"])];
+    const table = el("table", { "data-shares": "networks" },
+      el("thead", {}, el("tr", {}, ...heads.map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...rows.map((row) => {
+        const words = this._problemWords(row.counts);
+        return el("tr", {},
+          el("td", {}, this._link(row.name, this._networkPath(row.key))),
+          el("td", {}, this._networkState(row.status)),
+          el("td", {}, `${row.watched} ${row.key === "mqtt" ? "through it" : "watched"}`),
+          el("td", {}, row.with_problem
+            ? [el("button", { class: "linkbtn", type: "button", onclick: () => this._devicesOnNetwork(row.key, "", true) },
+                String(row.with_problem)), words ? el("span", { class: "muted" }, ` (${words})`) : null]
+            : el("span", { class: "muted" }, "None")),
+          simple ? null : el("td", {}, this._outageLine(row.last_outage, row.window_days)));
+      })));
+    const foot = el("p", { class: "muted", style: "margin:0;line-height:1.5" },
+      "A network appears only where your house has it. Devices that reach Home Assistant through the MQTT broker, "
+      + "such as Tasmota, are counted under the broker as well.");
+    this._pane.replaceChildren(intro, el("div", { class: "scroll" }, table), foot);
+  }
+
+  // A network's page (rule DASH-17). Simple shows its state, its devices
+  // and anything to turn on; Advanced adds its hardware, its outages,
+  // signal health, pairing and, for Wi-Fi, its access points and
+  // shared addresses.
+  _paintNetworkPage() {
+    const page = this._page;
+    const back = el("p", { style: "margin:0" }, this._backLink());
+    if (!page) {
+      this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
+      return;
+    }
+    if (page.error) {
+      this._pane.replaceChildren(back, el("p", {}, page.error));
+      return;
+    }
+    const simple = this._isSimple();
+    const domain = NETWORK_INTEGRATION[page.key];
+    const hub = page.key.startsWith("hub:") ? page.key.slice(4) : null;
+    const open = domain ? this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(domain)}`)
+      : hub ? this._link("Open the hub", this._devicePath(hub)) : null;
+    const head = el("div", { class: "pagehead" },
+      el("div", {}, el("h2", {}, page.name), el("div", {}, this._networkState(page.status))),
+      open ? el("div", { class: "links" }, open) : null);
+    const sections = [back, head];
+
+    // Its devices: a count per problem group, each opening the Devices
+    // tab on those devices.
+    const tiles = NETWORK_GROUPS.filter(([key], i) => i < 4 || (page.counts && page.counts[key]))
+      .map(([key, words]) => {
+        const n = (page.counts && page.counts[key]) || 0;
+        return el("button", { class: `tile${n ? " some" : ""}`, type: "button",
+          "aria-label": `${words}: ${n}. Show them on the Devices tab.`,
+          onclick: () => this._devicesOnNetwork(page.key, key) }, el("span", {}, words), el("strong", {}, String(n)));
+      });
+    sections.push(el("h3", { class: "section" }, "Its Devices"));
+    if (page.watched) {
+      sections.push(el("p", { style: "margin:0;line-height:1.5" },
+        `${page.watched} ${page.key === "mqtt" ? "reach Home Assistant through it" : "watched"}`
+        + `${page.with_problem ? `, ${page.with_problem} with a problem` : ""}. Press a number to see those devices. `,
+        el("button", { class: "linkbtn", type: "button", onclick: () => this._devicesOnNetwork(page.key, "") },
+          `See all ${page.watched}`)),
+      el("div", { class: "tiles" }, ...tiles));
+    } else {
+      // Nothing to press: no watched device reports through it.
+      sections.push(el("p", { class: "muted", style: "margin:0" }, "No watched device reports through it."));
+    }
+
+    // Status sensors and settings: what is on, and each device with one
+    // switched off, to turn on one at a time (rule REC-05). Never a
+    // setting of the network's own, which only directions point to
+    // (rule STACK-13).
+    const sensorParts = [];
+    for (const notice of page.notices || []) {
+      if (notice.on) {
+        sensorParts.push(el("p", { style: "margin:0" }, notice.words));
+        continue;
+      }
+      sensorParts.push(el("div", { class: "notice" },
+        notice.title ? el("strong", {}, notice.title) : null, " ", notice.words));
+    }
+    if ((page.sensors || []).length) {
+      const kv = el("div", { class: "kv" });
+      for (const row of page.sensors) {
+        kv.append(el("span", { class: "k" }, row.label),
+          el("span", {}, row.off.length ? `${row.on} of ${row.have} on` : `All ${row.have} on`));
+      }
+      sensorParts.push(kv);
+      for (const row of page.sensors) {
+        if (!row.off.length) continue;
+        sensorParts.push(el("p", { style: "margin:8px 0 0" }, `${row.label} switched off:`),
+          el("ul", { class: "offlist" }, ...row.off.map((d) => el("li", {},
+            this._link(d.name, this._devicePath(d.device_id)),
+            d.by === "user" ? el("span", { class: "muted" }, " (switched off by a person)") : null, " ",
+            el("button", { class: "chip", type: "button", onclick: async (ev) => {
+              ev.target.disabled = true;
+              try {
+                await this._call({ type: "device_sentinel/device_turn_on", device_id: d.device_id, kind: row.kind, source: "network_page" });
+              } catch (err) {
+                ev.target.replaceWith(el("span", { class: "actnote refused" }, err.message || "Home Assistant refused the change."));
+                return;
+              }
+              await this._refresh();
+            } }, "Turn it on")))));
+      }
+    }
+    if (sensorParts.length) sections.push(el("h3", { class: "section" }, "Status Sensors and Settings"), ...sensorParts);
+
+    if (!simple) {
+      if ((page.hardware || []).length) {
+        const kv = el("div", { class: "kv" });
+        for (const row of page.hardware) {
+          kv.append(el("span", { class: "k" }, row.label),
+            el("span", {}, row.device_id ? this._link(row.value, this._devicePath(row.device_id)) : row.value));
+        }
+        sections.push(el("h3", { class: "section" }, hub ? "The Hub" : page.key === "zwave_js" ? "The Controller" : "The Coordinator"), kv);
+      }
+      const outages = page.outages || [];
+      sections.push(el("h3", { class: "section" }, `Outages in the Last ${page.window_days} Days`),
+        outages.length
+          ? el("div", { class: "scroll" }, el("table", {},
+            el("thead", {}, el("tr", {}, ...["WENT DOWN", "HOW LONG", "DEVICES DOWN", "WHAT WENT DOWN"].map((h) => el("th", {}, h)))),
+            el("tbody", {}, ...outages.map((o) => el("tr", {},
+              el("td", {}, moment(o.went_down)),
+              el("td", {}, o.open ? "still down" : o.duration === null || o.duration === undefined ? "not recorded" : span(o.duration)),
+              el("td", {}, o.devices === null || o.devices === undefined ? "" : String(o.devices)),
+              el("td", {}, o.what))))))
+          : el("p", { class: "muted", style: "margin:0" }, `None in the last ${page.window_days} days.`));
+      const sig = page.signal || {};
+      const sigKv = el("div", { class: "kv" },
+        el("span", { class: "k" }, "Devices with a bad-signal day"), el("span", {}, String(sig.weak_week || 0)),
+        el("span", { class: "k" }, "Short drop-outs"),
+        el("span", {}, sig.drops ? `${sig.drops}, on ${sig.drop_devices} ${sig.drop_devices === 1 ? "device" : "devices"}` : "0"),
+        el("span", { class: "k" }, "Signal railed"), el("span", {}, String(sig.railed || 0)));
+      sections.push(el("h3", { class: "section" }, "Signal Health This Week"), sigKv);
+      if (page.pairing) {
+        const p = page.pairing;
+        const last = p.last
+          ? `${moment(p.last.opened)}, ${p.last.open ? "still open"
+            : p.last.duration === null || p.last.duration === undefined ? "length not recorded" : span(p.last.duration)}`
+          : `None in ${page.window_days} days`;
+        // Only Zigbee2MQTT says when pairing opens; the others give the
+        // devices added alone.
+        const windowRows = p.windows === null || p.windows === undefined ? [] : [
+          el("span", { class: "k" }, "Last pairing window"), el("span", {}, last),
+          el("span", { class: "k" }, `Windows in ${page.window_days} days`), el("span", {}, String(p.windows))];
+        sections.push(el("h3", { class: "section" }, "Pairing"), el("div", { class: "kv" }, ...windowRows,
+          el("span", { class: "k" }, `Devices added in ${page.window_days} days`), el("span", {}, String(p.new_devices))));
+      }
+      if (page.wifi) {
+        const w = page.wifi;
+        const kv = el("div", { class: "kv" },
+          el("span", { class: "k" }, "Watched by name"),
+          el("span", {}, w.watched_networks.length ? w.watched_networks.join(", ") : "None chosen in Settings"));
+        sections.push(el("h3", { class: "section" }, "Wi-Fi Networks and Access Points"), kv);
+        if (w.access_points.length) {
+          sections.push(el("div", { class: "scroll" }, el("table", {},
+            el("thead", {}, el("tr", {}, el("th", {}, "ACCESS POINT"), el("th", {}, "DEVICES JOINED"))),
+            el("tbody", {}, ...w.access_points.map((ap) => el("tr", {}, el("td", {}, ap.name), el("td", {}, String(ap.devices))))))));
+        }
+        sections.push(el("h3", { class: "section" }, "Shared Addresses"),
+          w.shared.length
+            ? el("ul", { class: "offlist" }, ...w.shared.map((row) => el("li", {}, `${row.address}: `,
+              ...row.devices.flatMap((d, i) => [i ? ", " : "", this._link(d.name, this._devicePath(d.device_id))]))))
+            : el("p", { class: "muted", style: "margin:0" }, "No address is held by two devices at once."));
+      }
+    }
+    // Previous and Next on a device opened from here step through the
+    // devices this page names, in its order.
+    const named = [...(page.sensors || []).flatMap((row) => row.off.map((d) => d.device_id)),
+      ...(page.hardware || []).map((row) => row.device_id).filter(Boolean)];
+    this._lists = { ...(this._lists || {}), [this._here()]: [...new Set(named)] };
+    this._pane.replaceChildren(...sections);
+  }
+
   async _briefGo(day) {
     // Stepping to another day asks for that day only; the rest of the
     // snapshot stays as it was.
@@ -2305,6 +2598,24 @@ class DeviceSentinelPanel extends HTMLElement {
       ...counted.map(([type, n]) => el("option", { value: type, ...(chosen === type ? { selected: "" } : {}) }, `${type} ${n}`)),
       ...(unknown ? [el("option", { value: NOT_KNOWN_TYPE, ...(chosen === NOT_KNOWN_TYPE ? { selected: "" } : {}) },
         `${NOT_KNOWN_TYPE} ${unknown}`)] : []));
+  }
+
+  // "Showing" for a network and problem group chosen from a network's
+  // page, with the way back to every device (rule DASH-17).
+  _networkShowing() {
+    if (!this._deviceNetwork && !this._deviceGroup) return null;
+    const on = this._deviceNetwork ? ` on ${this._networkName(this._deviceNetwork)}` : "";
+    const which = this._deviceGroup ? ` ${NETWORK_GROUP_SHOWING[this._deviceGroup] || ""}`
+      : this._deviceFilter === "problem" ? " with a problem" : "";
+    return el("p", { class: "typeshowing", style: "margin:0" }, `Showing the devices${on}${which} only. `,
+      el("button", { class: "linkbtn", type: "button", onclick: () => {
+        // Every device again, the problem filter a network's count set
+        // included.
+        this._deviceNetwork = "";
+        this._deviceGroup = "";
+        this._deviceFilter = "all";
+        this._paintDevices();
+      } }, "Show all"));
   }
 
   _typeShowing(chosen, pick) {
@@ -2750,7 +3061,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._pane.replaceChildren(summary,
       el("h3", { class: "section" }, "Devices With Short Drop-Outs"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        "A device that went unavailable and came back on its own within its freeze window twice in 12 hours. It stays listed until 12 hours pass with none. Check its signal and the router it connects through."),
+        "A device that went unavailable and came back on its own, each time within its Short Drop-Out Limit, twice in 12 hours. It stays listed until 12 hours pass with none. Check its signal and the router it connects through."),
       dropping,
       el("h3", { class: "section" }, "Days Several Devices Had a Bad Day"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
@@ -2829,6 +3140,9 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._deviceType) {
       rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
     }
+    // A network's counts open this tab on its devices (rule DASH-17).
+    if (this._deviceNetwork) rows = rows.filter((row) => (row.networks || []).includes(this._deviceNetwork));
+    if (this._deviceGroup) rows = rows.filter((row) => (row.groups || []).includes(this._deviceGroup));
     const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
     const pickArea = (area) => { this._deviceArea = area; this._paintDevices(); };
     // A sort on a column Simple leaves out does not order Simple's rows.
@@ -2894,7 +3208,8 @@ class DeviceSentinelPanel extends HTMLElement {
         `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
     this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
       excludedAll.length ? el("p", { style: "margin:0" }, switchView("excluded")) : null,
-      this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
+      this._typeShowing(this._deviceType, pickType), this._networkShowing(),
+      el("div", { class: "scroll" }, table)].filter((part) => part));
     this._keepSearchFocus();
   }
 
@@ -3753,8 +4068,12 @@ class DeviceSentinelPanel extends HTMLElement {
     let [word, colour] = STATUS_WORDS[status.category] || [status.category, "var(--disabled-text-color, #888)"];
     if (status.flap) word = `${word}, ${status.flap}`;
     // Muted: the verdict is true and nobody asked to hear it, so the
-    // word stays and the alarm color goes (rule MUTE-07).
-    if (page.identity && page.identity.muted && status.category !== "set_aside") {
+    // word stays and the alarm color goes (rules MUTE-07, SIG-17).
+    // Only when a mute covers the word shown: a device muted for freeze
+    // alone is still listed with short drop-outs (rule SIG-17). A reply
+    // without the field greys any muted device, as before.
+    const mutedShown = status.muted_shown === undefined ? Boolean(page.identity && page.identity.muted) : status.muted_shown;
+    if (mutedShown && status.category !== "set_aside") {
       word = `${word}, muted`;
       colour = "var(--disabled-text-color, #888)";
     }
@@ -3783,14 +4102,14 @@ class DeviceSentinelPanel extends HTMLElement {
     // A verdict of its own, or a mute, is shown as on any page: the hub's
     // words take the place of the plain "reporting" only.
     const ownVerdict = ["frozen", "unavailable", "unknown", "never_reported", "short_drop_outs"].includes(status.category);
-    if (hub && !ownVerdict && !(who && who.muted)) {
-      word = hub.up === false ? "Its hub is down" : "Judged by its hub";
-      colour = hub.up === false ? "var(--error-color, #db4437)" : "var(--success-color, #43a047)";
-    }
-    if (hubSelf) {
-      word = hubSelf.up ? "Up" : "Down";
-      colour = hubSelf.up ? "var(--success-color, #43a047)" : "var(--error-color, #db4437)";
-      if (who && who.muted) {
+    // The hub's words, greyed and said muted when a mute covers what the
+    // page shows, as on any page (rules STACK-10, SIG-17).
+    // A hub with short drop-outs reads them, as the Problem List lists it.
+    if ((hub && !ownVerdict) || (hubSelf && status.category !== "short_drop_outs")) {
+      const up = hubSelf ? hubSelf.up : hub.up !== false;
+      word = hubSelf ? (up ? "Up" : "Down") : (up ? "Judged by its hub" : "Its hub is down");
+      colour = up ? "var(--success-color, #43a047)" : "var(--error-color, #db4437)";
+      if (mutedShown) {
         word = `${word}, muted`;
         colour = "var(--disabled-text-color, #888)";
       }
@@ -4007,7 +4326,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // A Z-Wave controller's own Status, with when it began (rule
         // STACK-15). Simple: only when it is not Ready (rule DASH-04).
         ...(who.controller_status && (!simple || who.controller_status.value !== "ready")
-          ? [["Controller status", `${CONTROLLER_STATUS_WORDS[who.controller_status.value] || who.controller_status.value}, since ${moment(who.controller_status.since)}`]] : []),
+          ? [["Controller status", `${CONTROLLER_STATUS_WORDS[who.controller_status.value] || who.controller_status.value}, ${who.controller_status.first ? "first read" : "since"} ${moment(who.controller_status.since)}`]] : []),
         // A Tasmota device's last restart and why, with the earlier ones
         // folded under it, in Advanced only (rules DEV-17, DASH-04).
         ...(who.restarts && who.restarts.length && !simple ? [["Last restart", restartCell(who.restarts)]] : []),
