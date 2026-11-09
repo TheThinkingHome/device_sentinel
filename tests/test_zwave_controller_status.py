@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_zwave_controller_status.py, Version: 0.28.5 (2026-11-08)
+# File: test_zwave_controller_status.py, Version: 0.28.6 (2026-11-08)
 
 """A Z-Wave controller's own Status, recorded and shown (rule STACK-15).
 
@@ -110,8 +110,10 @@ async def test_the_controller_page_shows_each_change(hass: HomeAssistant, freeze
     coord = await setup_coordinator(hass)
     await hass.async_block_till_done()
     record = coord.data[DATA_DEVICES][device.id]
-    # Read at the walk, whatever was there before Device Sentinel started.
+    # Read at the walk, whatever was there before Device Sentinel started:
+    # dated when first read, and said so, since when it began is not known.
     assert [pair[0] for pair in record[DEV_CONTROLLER_STATUS]] == ["ready"]
+    assert coord.dashboard_device(device.id)["identity"]["controller_status"]["first"] is True
 
     freezer.tick(300)
     hass.states.async_set(status, "jammed")
@@ -123,6 +125,8 @@ async def test_the_controller_page_shows_each_change(hass: HomeAssistant, freeze
 
     page = coord.dashboard_device(device.id)
     assert page["identity"]["controller_status"]["value"] == "jammed"
+    # A change seen happening is dated when it began.
+    assert page["identity"]["controller_status"]["first"] is False
     assert page["identity"]["controller_status"]["since"].startswith("20")
     # Recorded and shown, never judged.
     assert record[DEV_FROZEN_CATEGORY] is None

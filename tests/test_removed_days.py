@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_removed_days.py, Version: 0.28.4 (2026-11-07)
+# File: test_removed_days.py, Version: 0.28.6 (2026-11-08)
 
 """A day removed by hand from a device's learned rhythm (rule FRZ-25).
 
@@ -305,3 +305,26 @@ def test_marking_the_same_state_twice_changes_nothing(removed):
     first = set_removed(record, day, removed)
     assert first is True
     assert set_removed(record, day, removed) is False
+
+
+async def test_a_removed_day_does_not_set_the_rhythm_chart_s_scale(hass: HomeAssistant):
+    """A 28-hour power-cut day removed by hand, while the Log-Normal
+    Percentile is in use, no longer squashes every bar flat (rule FRZ-25)."""
+    coord = await setup_coordinator(hass)
+    record = _record(_steady(40))
+    record[DEV_DAILY_MAX][-20] = 28 * HOUR
+    _remove(record, 20)
+    assert coord._both_rules(record)["lognormal_gaps"], "the Log-Normal days are read"
+    assert coord._rhythm_scale(record) < 10 * HOUR
+
+
+async def test_the_countdown_to_the_log_normal_rule_leaves_removed_days_out(hass: HomeAssistant):
+    """Three days removed since the count began: six to go, not three, and
+    still shown once 28 days have passed with fewer counted (rule FRZ-25)."""
+    coord = await setup_coordinator(hass)
+    record = _record(_steady(40))
+    record[DEV_LOGNORMAL_DAYS] = 25
+    _remove(record, 30, 31, 32)
+    assert coord._both_rules(record)["counting_again"]["to_go"] == 6
+    record[DEV_LOGNORMAL_DAYS] = 29
+    assert coord._both_rules(record)["counting_again"]["to_go"] == 2

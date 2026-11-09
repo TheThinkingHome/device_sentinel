@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_bridge_down_wait.py, Version: 0.28.0 (2026-11-03)
+# File: tests/test_bridge_down_wait.py, Version: 0.28.6 (2026-11-08)
 
 """An upstream that goes down in the seconds before a restart is the
 restart (rule UP-03).
@@ -168,3 +168,44 @@ async def test_a_hub_down_seconds_before_a_stop_leaves_no_trace(hass: HomeAssist
     assert _item(h.coord, h.g_hub.id) is None
     assert h.coord.hub_down_since(h.g_hub.id) is None
     assert [f for f in faults if f["device_id"] == h.g_hub.id] == []
+
+
+async def test_a_pending_down_the_reader_stops_saying_holds_nothing(hass: HomeAssistant, freezer):
+    """A bridge seen down once, then unknown, then gone: the wait ends
+    with it, so its devices are not held with no end and no outage
+    (rule UP-03)."""
+    from custom_components.device_sentinel.const import BRIDGE_UNKNOWN
+
+    coord, _rider, _eid = await _rig(hass)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+    freezer.tick(3)
+    coord._sample_bridges()
+    assert STACK_Z2M in coord._bridge_down_pending
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_UNKNOWN)
+    freezer.tick(60)
+    coord._sample_bridges()
+    assert coord._bridge_down_pending == {}
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+    freezer.tick(3)
+    coord._sample_bridges()
+    del coord._bridge_readers[STACK_Z2M]
+    freezer.tick(60)
+    coord._sample_bridges()
+    assert coord._bridge_down_pending == {}
+
+
+async def test_a_broker_outage_ends_a_pending_bridge_down(hass: HomeAssistant, freezer):
+    """The broker is the cause: a bridge down waiting to be believed is
+    judged afresh once the broker is back, so one fault is not told
+    twice (rule UP-03)."""
+    from custom_components.device_sentinel.const import BROKER_DOWN
+
+    coord, _rider, _eid = await _rig(hass)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+    freezer.tick(3)
+    coord._sample_bridges()
+    assert STACK_Z2M in coord._bridge_down_pending
+    coord._sample_broker = lambda now: BROKER_DOWN
+    freezer.tick(30)
+    coord._sample_bridges()
+    assert coord._bridge_down_pending == {}

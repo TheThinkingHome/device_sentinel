@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_tasmota_restarts.py, Version: 0.28.5 (2026-11-08)
+# File: test_tasmota_restarts.py, Version: 0.28.6 (2026-11-08)
 
 """Why and when a Tasmota device last restarted (rule DEV-17).
 
@@ -80,8 +80,21 @@ def test_one_restart_read_twice_is_recorded_once():
 
 def test_a_reason_arriving_after_its_time_corrects_that_restart():
     record: dict = {DEV_RESTARTS: [["Power On", NOW]]}
-    assert record_restart(record, "Hardware Watchdog", NOW + 1)
+    # Moments after the restart, as Tasmota sends both on connecting.
+    assert record_restart(record, "Hardware Watchdog", NOW + 1, now=NOW + 30)
     assert record[DEV_RESTARTS] == [["Hardware Watchdog", NOW + 1]]
+
+
+def test_a_new_reason_before_its_time_leaves_the_last_restart_alone():
+    """The time sensor still holds the last restart's time when the new
+    reason arrives: the last restart keeps its own reason, and the new one
+    is recorded when its time comes."""
+    record: dict = {DEV_RESTARTS: [["Power On", NOW]]}
+    later = NOW + 3 * 86400
+    assert not record_restart(record, "Software/System restart", NOW, now=later)
+    assert record[DEV_RESTARTS] == [["Power On", NOW]]
+    assert record_restart(record, "Software/System restart", later - 20, now=later)
+    assert record[DEV_RESTARTS] == [["Power On", NOW], ["Software/System restart", later - 20]]
 
 
 def test_a_time_drifting_a_little_at_each_reading_stays_one_restart():

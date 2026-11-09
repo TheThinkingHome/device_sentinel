@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_short_drop_outs.py, Version: 0.28.2 (2026-11-04)
+# File: tests/test_short_drop_outs.py, Version: 0.28.6 (2026-11-08)
 
 """A device with short drop-outs is one problem, a signal problem
 (rule SIG-17).
@@ -394,3 +394,142 @@ async def test_lowering_the_limit_below_its_drops_removes_the_device(hass: HomeA
     await _minutes(hass, coord, freezer, 2)
     assert not coord.is_flapping(device.id)
     assert _item(coord, device.id) is None
+
+
+async def test_a_frozen_device_reads_frozen_not_short_drop_outs(hass: HomeAssistant, freezer):
+    """Frozen is the worse news, and the Problem List says it too; no
+    count stands beside a verdict that is not short drop-outs (rule
+    SIG-17)."""
+    from custom_components.device_sentinel.const import DEV_FROZEN_CATEGORY, TODO_KIND_FROZEN
+
+    coord, device, entity_id, _phone = await _shed(hass, freezer)
+    for _ in range(3):
+        await _drop(hass, coord, freezer, entity_id)
+    coord._rebuild_registry_view()
+    coord.data[DATA_DEVICES][device.id][DEV_FROZEN_CATEGORY] = TODO_KIND_FROZEN
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["category"] == TODO_KIND_FROZEN
+    assert page["status"]["flap"] == ""
+
+
+async def test_the_brief_tells_repeated_listings_without_a_length(hass: HomeAssistant, freezer):
+    from custom_components.device_sentinel.const import INC_DURATION, INC_KIND
+
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    opened = {INC_KIND: KIND, "device_id": device.id, "name": NAME}
+    members = [(opened, {INC_DURATION: 7200.0}), (dict(opened), None)]
+    sentence = coord._compose_flapping(members)
+    assert sentence.endswith("had short drop-outs twice, and still has them.")
+    assert "in total" not in sentence
+
+
+async def test_a_signal_muted_device_s_real_outage_is_not_held(hass: HomeAssistant, freezer, monkeypatch):
+    """Muted for signal, the device is off the list, so a drop is not held
+    as one that may still prove short: it goes unavailable after its own
+    wait, as any device does (rule SIG-17)."""
+    from custom_components.device_sentinel.const import DEV_DOWN_FROM
+
+    coord, device, entity_id, _phone = await _shed(hass, freezer)
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id)
+    assert coord.is_flapping(device.id)
+    coord.data[DATA_DEVICES][device.id][DEV_DOWN_FROM] = None
+    now = dt_util.utcnow().timestamp()
+    # Listed, a fresh drop waits.
+    assert coord.short_drop_waiting(device.id, now - 60, now)
+    monkeypatch.setattr(type(coord), "_signal_muted", lambda self, device_id: True)
+    assert not coord.short_drop_waiting(device.id, now - 60, now)
+
+
+async def test_the_page_counts_drops_as_the_list_does(hass: HomeAssistant, freezer):
+    """A drop that went 12 hours 10 minutes ago and came back 20 minutes
+    later is in the last 12 hours by its return, for the page's Signal row
+    as for the status line and the list (rule SIG-17)."""
+    from custom_components.device_sentinel.const import (
+        DATA_SHORT_DROPS,
+        DROP_DEVICE_ID,
+        DROP_LENGTH,
+        DROP_WENT,
+        DROP_WINDOW,
+    )
+
+    coord, device, _entity_id, _phone = await _shed(hass, freezer)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SHORT_DROPS] = [
+        {DROP_DEVICE_ID: device.id, DROP_WENT: now - (12 * 3600 + 600), DROP_LENGTH: 1200.0, DROP_WINDOW: 1800.0},
+        {DROP_DEVICE_ID: device.id, DROP_WENT: now - 3600, DROP_LENGTH: 240.0, DROP_WINDOW: 1800.0},
+    ]
+    assert coord.short_drops_of(device.id, now)["count"] == 2
+    assert coord.short_drop_count_words(device.id) == "2 in the last 12 hours"
+
+
+async def test_a_hidden_verdict_leaves_the_page_reading_short_drop_outs(hass: HomeAssistant, freezer):
+    """Muted for unavailable, a device whose drop outlasts its limit is
+    still listed with short drop-outs, so its page reads so, never
+    "Reporting" (rules SIG-17, MUTE-06)."""
+    from custom_components.device_sentinel.const import (
+        DEV_DOWN_FROM,
+        DEV_FROZEN_CATEGORY,
+        TODO_KIND_UNAVAILABLE,
+    )
+
+    coord, device, entity_id, _phone = await _shed(hass, freezer, (CONF_UNAVAILABLE_MUTED_DEVICES,))
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id)
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_FROZEN_CATEGORY] = TODO_KIND_UNAVAILABLE
+    record[DEV_DOWN_FROM] = dt_util.utcnow().timestamp() - 3 * 3600
+    coord._rebuild_registry_view()
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["category"] == KIND
+    assert page["status"]["flap"] == "2 in the last 12 hours"
+
+
+async def test_a_hidden_frozen_verdict_leaves_the_page_reading_short_drop_outs(hass: HomeAssistant, freezer):
+    from custom_components.device_sentinel.const import (
+        CONF_FREEZE_MUTED_DEVICES,
+        DEV_FROZEN_CATEGORY,
+        TODO_KIND_FROZEN,
+    )
+
+    coord, device, entity_id, _phone = await _shed(hass, freezer, (CONF_FREEZE_MUTED_DEVICES,))
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id)
+    coord.data[DATA_DEVICES][device.id][DEV_FROZEN_CATEGORY] = TODO_KIND_FROZEN
+    coord._rebuild_registry_view()
+    assert coord.dashboard_device(device.id)["status"]["category"] == KIND
+
+
+async def test_a_mute_that_does_not_cover_short_drop_outs_does_not_grey_them(hass: HomeAssistant, freezer):
+    """Muted for freeze alone, the device is listed and pushed with short
+    drop-outs, so its page reads them unmuted; muted for signal, it would
+    be off the list (rules MUTE-07, SIG-17)."""
+    from custom_components.device_sentinel.const import CONF_FREEZE_MUTED_DEVICES
+
+    coord, device, entity_id, _phone = await _shed(hass, freezer, (CONF_FREEZE_MUTED_DEVICES,))
+    for _ in range(2):
+        await _drop(hass, coord, freezer, entity_id)
+    coord._rebuild_registry_view()
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["category"] == KIND
+    assert page["identity"]["muted"]
+    assert page["status"]["muted_shown"] is False
+    assert coord._mute_covers(device.id, "frozen") is True
+
+
+def test_a_word_that_is_no_problem_is_greyed_by_any_mute():
+    """Never reported with no verdict yet is no problem on the list, so a
+    battery mute greys it, as it greys reporting (rule SIG-17)."""
+    from types import SimpleNamespace
+
+    from custom_components.device_sentinel.dashboard import DeviceViewMixin
+
+    fake = SimpleNamespace(
+        _muted_devices={}, mute_text=lambda device_id: "battery (device)",
+        _freeze_muted=lambda device_id: False, _unavailable_muted=lambda device_id: False,
+        _signal_muted=lambda device_id: False,
+    )
+    covers = DeviceViewMixin._mute_covers
+    assert covers(fake, "d", "never_reported", problem=False) is True
+    assert covers(fake, "d", "never_reported", problem=True) is False
+    assert covers(fake, "d", "reporting") is True
