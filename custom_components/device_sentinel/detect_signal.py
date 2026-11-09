@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.27.10 (2026-10-27)
+# File: detect_signal.py, Version: 0.28.6 (2026-11-08)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -35,6 +35,8 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import re
+
 from datetime import timedelta
 
 import math
@@ -55,6 +57,7 @@ from .daily_dates import (
     swap_families,
 )
 from .const import (
+    DATA_DEVICES,
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_LABELS,
@@ -96,6 +99,7 @@ from .const import (
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     LOGGER,
+    STACK_ZWAVE,
     RAIL_CONFIRM_DAYS,
     SIGNAL_ALT_FIELDS,
     SIGNAL_NAME_TERMS,
@@ -191,6 +195,23 @@ def _new_alt_block(scale: str) -> dict[str, Any]:
         else:
             block[field] = None
     return block
+
+
+# Z-Wave JS's own marks of a controller's channel noise: its translation
+# keys "signal_noise" and "avg_signal_noise", "statistics_background_rssi"
+# in the unique id it builds ("3938855457.1.statistics_background_rssi.
+# channel_0.current", read from a live 800 series stick), and a name that
+# begins "Signal noise" or "Avg. signal noise". Matched on those two fields separately and at
+# their start, never on words a person put in a device's name, so an
+# ESPHome sensor named "Noise Floor Monitor WiFi Signal" stays a signal,
+# and so does a signal-to-noise ratio (rule SIG-02).
+_NOISE_ID = re.compile(r"(^|[._-])statistics_background_rssi([._-]|$)")
+_NOISE_NAME = re.compile(r"^(avg\.? )?signal noise(?! ratio)\b")
+
+
+def _is_noise(unique_id: str, name: str) -> bool:
+    """Whether an entity is a controller's radio-noise reading."""
+    return _NOISE_ID.search(unique_id) is not None or _NOISE_NAME.match(name) is not None
 
 
 def signal_bucket(record: dict[str, Any], scale: str) -> dict[str, Any]:
@@ -742,15 +763,25 @@ class SignalMixin:
         list refuses whole, so nothing that reaches here is another
         device's radio (rule SIG-02).
         """
-        if str(ent.original_device_class) == "signal_strength" or str(
-            getattr(ent, "device_class", None)
-        ) == "signal_strength":
-            return True
         hay = " ".join(
             str(x)
             for x in (ent.entity_id, ent.unique_id, ent.original_name)
             if x
         ).lower()
+        # The radio noise a Z-Wave controller hears on each channel
+        # carries the signal_strength class and a dBm unit, but it is the
+        # room's noise, not a link: judged as one, a controller earns
+        # bad-signal days from a quiet house (rule SIG-02).
+        # Read from the unique id and the integration's own name, never
+        # the entity id, which carries the name a person gave the device.
+        if getattr(ent, "translation_key", None) in ("signal_noise", "avg_signal_noise") or _is_noise(
+            str(ent.unique_id or "").lower(), str(ent.original_name or "").lower().strip()
+        ):
+            return False
+        if str(ent.original_device_class) == "signal_strength" or str(
+            getattr(ent, "device_class", None)
+        ) == "signal_strength":
+            return True
         if not any(term in hay for term in SIGNAL_NAME_TERMS):
             return False
         # Matched by name only, so the unit decides (rule SIG-02). A
@@ -759,6 +790,42 @@ class SignalMixin:
         # only dB and dBm for the signal_strength class, so nothing
         # carrying that class reaches this line.
         return not _is_percentage(ent)
+
+    def _forget_controller_noise(self, signal_devices: set[str]) -> None:
+        """Forget the signal a Z-Wave controller learned from its noise.
+
+        A controller's channel noise is not a signal (rule SIG-02), and a
+        controller has no link of its own, so once its noise is left out
+        it has no signal at all. The days it learned from the noise are
+        dropped rather than left to age out showing bad-signal days.
+        Asked at each registry walk; once the history is gone it costs
+        nothing.
+        """
+        from homeassistant.helpers import device_registry as dr
+
+        from .device_type import _zwave_node
+        from .records import forget_signal_history
+
+        records = self.data.get(DATA_DEVICES) or {}
+        registry = dr.async_get(self.hass)
+        for device_id, domain in self._watched.items():
+            if domain != STACK_ZWAVE or device_id in signal_devices:
+                continue
+            record = records.get(device_id)
+            if not isinstance(record, dict) or (
+                not record.get(DEV_SIGNAL_DAILY_P50) and record.get(DEV_SIGNAL_VALUE) is None
+            ):
+                continue
+            device = registry.async_get(device_id)
+            if device is None or _zwave_node(device) != "1":
+                continue
+            forget_signal_history(record)
+            self._dirty = True
+            self._mark_cold_dirty()
+            LOGGER.debug(
+                "Forgot the signal %s learned from its channel noise",
+                self._device_name(device_id),
+            )
 
     def _todo_signal_since(self, device_id: str) -> float | None:
         """Return when a device's signal fault was added to the list.

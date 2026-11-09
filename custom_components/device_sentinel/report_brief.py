@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.1 (2026-11-03)
+# File: report_brief.py, Version: 0.28.6 (2026-11-08)
 
 """The daily brief: the one report written for a person.
 
@@ -2059,6 +2059,14 @@ class BriefMixin:
         """Return one sentence for a device that went and came back
         more than once: how often, and how long it was gone in all."""
         name = self._told_name(members[0][0])
+        recovered = sum(1 for _o, r in members if r is not None)
+        count = "twice" if len(members) == 2 else f"{len(members)} times"
+        if members[0][0].get(INC_KIND) == TODO_KIND_FLAPPING:
+            # A listing's length is time on the list, not time offline,
+            # so none is given (rule SIG-17).
+            if recovered == len(members):
+                return f"{name} had short drop-outs {count}, and each time they stopped."
+            return f"{name} had short drop-outs {count}, and still has them."
         went, state = self._flap_verbs(members[0][0])
         total = sum(
             (resolved.get(INC_DURATION) or 0.0)

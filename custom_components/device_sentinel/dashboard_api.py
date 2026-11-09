@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.4 (2026-11-07)
+# File: dashboard_api.py, Version: 0.28.6 (2026-11-08)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -105,6 +105,9 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_recommendations)
     websocket_api.async_register_command(hass, ws_integrations)
     websocket_api.async_register_command(hass, ws_integration)
+    # The Networks tab and each network's page (rule DASH-17).
+    websocket_api.async_register_command(hass, ws_networks)
+    websocket_api.async_register_command(hass, ws_network)
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
@@ -411,6 +414,46 @@ def ws_integration(
     page = coordinator.dashboard_integration(msg["domain"])
     if page is None:
         connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
+        return
+    connection.send_result(msg["id"], page)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "device_sentinel/networks"})
+@callback
+def ws_networks(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the Networks tab: one row per network the house has."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    connection.send_result(msg["id"], {"rows": coordinator.dashboard_networks()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "device_sentinel/network", vol.Required("key"): str}
+)
+@callback
+def ws_network(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return one network's page."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    # A network's key is a few words or a hub's device id; anything
+    # longer names no network.
+    page = coordinator.dashboard_network(msg["key"]) if len(msg["key"]) <= 80 else None
+    if page is None:
+        connection.send_error(msg["id"], "not_found", "This house has no such network")
         return
     connection.send_result(msg["id"], page)
 

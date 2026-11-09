@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.5 (2026-11-08)
+# File: interventions.py, Version: 0.28.6 (2026-11-08)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -2257,15 +2257,26 @@ class InterventionMixin:
             self._sample_addresses(now)  # type: ignore[attr-defined]
         except Exception as err:  # noqa: BLE001 - never break the tick
             LOGGER.debug("Device Sentinel could not read the addresses: %s", err)
+        # A wait for a down that no reader now confirms ends: a pending
+        # down holds its stack's devices, and one the reader stopped
+        # saying, or a reader that went away, must not hold them for
+        # good. A broker outage ends it too: the broker is the cause, and
+        # the bridge is judged afresh once it is back (rule UP-03).
+        for stack in list(self._bridge_down_pending):
+            if stack not in self._bridge_readers:
+                self._bridge_down_pending.pop(stack, None)
         broker = self._sample_broker(now)
         if broker == BROKER_DOWN:
+            self._bridge_down_pending.clear()
             return
         for stack, reader in self._bridge_readers.items():
             sample = self._read_bridge(stack, reader)
             if sample is None:
+                self._bridge_down_pending.pop(stack, None)
                 continue
             state, pairing = sample
             if state == BRIDGE_UNKNOWN:
+                self._bridge_down_pending.pop(stack, None)
                 continue
             # A reader that cannot say whether it loaded is taken as
             # established.
@@ -2273,6 +2284,7 @@ class InterventionMixin:
                 stack, _reader_loaded(reader), state == BRIDGE_DOWN, now
             )
             if loading:
+                self._bridge_down_pending.pop(stack, None)
                 continue
             # A bridge newly down waits before it is believed: one that
             # goes down in the seconds before Home Assistant stops is the

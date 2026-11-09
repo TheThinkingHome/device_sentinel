@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.28.2 (2026-11-04)
+# File: flapping.py, Version: 0.28.6 (2026-11-08)
 
 """A device with short drop-outs (rule SIG-17).
 
@@ -139,6 +139,11 @@ class FlapMixin:
         inside the wait of a device with short drop-outs: its drop has
         not yet outlasted its limit (rules SIG-16, SIG-17)."""
         if not self.is_flapping(device_id):
+            return False
+        # Only while it is listed: a device muted for signal, or for
+        # everything, is off the list, and its drop is not held (rule
+        # SIG-17).
+        if device_id in getattr(self, "_muted_devices", {}) or self._signal_muted(device_id):  # type: ignore[attr-defined]
             return False
         record = self.data[DATA_DEVICES].get(device_id)
         if not isinstance(record, dict):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.5 (2026-11-08)
+# File: dashboard.py, Version: 0.28.6 (2026-11-08)
 
 """What the dashboard reads from the coordinator.
 
@@ -170,6 +170,8 @@ from .const import (
     SYS_KIND,
     SYS_SCOPE,
     SYS_WHEN,
+    SYS_WIFI_DOWN,
+    SYS_WIFI_UP,
     SYS_WORST,
     TODO_DEVICE_ID,
     TODO_SORT_NAME,
@@ -187,6 +189,7 @@ from .const import (
     RELEASE_NOTES_URL,
 )
 from .escalation import fold, withdrawals_once
+from .networks import problem_groups
 from .outage_detail import pair_key
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
@@ -211,7 +214,14 @@ def _latest_pair(pairs: Any) -> dict[str, Any] | None:
     good = [pair for pair in pairs if _good_pair(pair)]
     if not good:
         return None
-    return {"value": good[-1][0], "since": dt_util.utc_from_timestamp(good[-1][1]).isoformat()}
+    # The first reading is dated when Device Sentinel first read it, at
+    # an install or an upgrade, not when it began, so the page says "first
+    # read" for it.
+    return {
+        "value": good[-1][0],
+        "since": dt_util.utc_from_timestamp(good[-1][1]).isoformat(),
+        "first": len(good) == 1,
+    }
 
 
 def _newest_pairs(pairs: Any) -> list[dict[str, Any]]:
@@ -391,6 +401,9 @@ _OPENERS = {
     SYS_BRIDGE_DOWN: SYS_BRIDGE_UP,
     SYS_BROKER_DOWN: SYS_BROKER_UP,
     SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
+    # Wi-Fi belongs to no integration; its outages show on the Networks
+    # tab only (rule DASH-17).
+    SYS_WIFI_DOWN: SYS_WIFI_UP,
 }
 _CLOSERS = {closer: opener for opener, closer in _OPENERS.items()}
 OUTAGE_WINDOW_DAYS = 14
@@ -413,6 +426,8 @@ class IntegrationViewMixin:
             return BRIDGE_SENSOR_NAMES.get(scope, f"{scope} Bridge")
         if kind in (SYS_BROKER_DOWN, SYS_BROKER_UP):
             return BROKER_SENSOR_NAME
+        if kind in (SYS_WIFI_DOWN, SYS_WIFI_UP):
+            return WIFI_BAND_NAME
         # One device's own entry: named by the device, whose connection
         # it is, rather than as the whole integration.
         device = self.outage_device_name(detail)
@@ -427,45 +442,62 @@ class IntegrationViewMixin:
         return carries the length and how many devices the outage took;
         an outage with no return yet is open. Newest first (rule UP-11).
         """
+        by_owner: dict[str, list[dict[str, Any]]] = {}
+        for kind, scope, outage in self.paired_outages(OUTAGE_WINDOW_DAYS):
+            owner = self._outage_owner(kind, scope)
+            if owner is not None:
+                by_owner.setdefault(owner, []).append(outage)
+        return by_owner
+
+    def paired_outages(self, days: int) -> list[tuple[str, Any, dict[str, Any]]]:
+        """Every outage that began in the last `days` days, newest first,
+        each with the kind of its down and its scope.
+
+        Bridges, the broker, integrations and Wi-Fi. Each down is paired
+        with its own return by kind, scope and entry (rule UP-11).
+        """
         now = dt_util.utcnow().timestamp()
-        since = now - OUTAGE_WINDOW_DAYS * 86400.0
+        since = now - days * 86400.0
         rows = sorted(
             (row for row in self.data.get(DATA_SYSTEM_EVENTS) or [] if isinstance(row, dict)),
             key=lambda row: row.get(SYS_WHEN) or 0,
         )
         open_rows: dict[tuple[str, Any, Any], dict[str, Any]] = {}
-        found: list[tuple[str, dict[str, Any]]] = []
+        found: list[tuple[str, Any, dict[str, Any]]] = []
         for row in rows:
             kind, scope, when = row.get(SYS_KIND), row.get(SYS_SCOPE), row.get(SYS_WHEN)
-            if not isinstance(when, (int, float)):
+            if not isinstance(when, (int, float)) or isinstance(when, bool):
+                continue
+            if not isinstance(kind, str) or not (kind in _OPENERS or kind in _CLOSERS):
                 continue
             # Paired by entry too, so two entries of one integration
             # are two outages.
             entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
             if kind in _OPENERS:
                 open_rows[(kind, scope, entry)] = row
-            elif kind in _CLOSERS:
-                opened = open_rows.pop((_CLOSERS[kind], scope, entry), None)
-                duration = row.get(SYS_DURATION)
-                went_down = (
-                    opened[SYS_WHEN] if opened is not None
-                    else when - duration if isinstance(duration, (int, float))
-                    else when
-                )
-                owner = self._outage_owner(kind, scope)
-                if owner is None or went_down < since:
-                    continue
-                found.append((owner, {
-                    "went_down": dt_util.utc_from_timestamp(went_down).isoformat(),
-                    "what": self._outage_label(kind, scope, row.get(SYS_DETAIL)),
-                    "duration": duration if isinstance(duration, (int, float)) else None,
-                    "devices": row.get(SYS_DEVICES),
-                    "worst": row.get(SYS_WORST),
-                    "open": False,
-                }))
+                continue
+            opener = _CLOSERS[kind]
+            opened = open_rows.pop((opener, scope, entry), None)
+            duration = row.get(SYS_DURATION)
+            if isinstance(duration, bool):
+                duration = None
+            went_down = (
+                opened[SYS_WHEN] if opened is not None
+                else when - duration if isinstance(duration, (int, float))
+                else when
+            )
+            if went_down < since:
+                continue
+            found.append((opener, scope, {
+                "went_down": dt_util.utc_from_timestamp(went_down).isoformat(),
+                "what": self._outage_label(kind, scope, row.get(SYS_DETAIL)),
+                "duration": duration if isinstance(duration, (int, float)) else None,
+                "devices": row.get(SYS_DEVICES),
+                "worst": row.get(SYS_WORST),
+                "open": False,
+            }))
         for (kind, scope, entry), row in open_rows.items():
-            owner = self._outage_owner(kind, scope)
-            if owner is None or row[SYS_WHEN] < since:
+            if row[SYS_WHEN] < since:
                 continue
             # An older integration outage names no entry and never meets
             # its return, so it would read "still down" while its devices
@@ -473,15 +505,22 @@ class IntegrationViewMixin:
             # its outages (rule UP-05).
             if kind == SYS_INTEGRATION_DOWN and entry is None:
                 continue
-            found.append((owner, {
+            # A Wi-Fi outage is open only while one stands: a down left
+            # without its return by a restart is not still down.
+            if kind == SYS_WIFI_DOWN and self.wifi_down_at is None:  # type: ignore[attr-defined]
+                continue
+            found.append((kind, scope, {
                 "went_down": dt_util.utc_from_timestamp(row[SYS_WHEN]).isoformat(),
                 "what": self._outage_label(kind, scope, row.get(SYS_DETAIL)),
-                "duration": None, "devices": None, "worst": None, "open": True,
+                "duration": None,
+                # Wi-Fi's down carries the devices it watches; the
+                # others say how many went only with their return.
+                "devices": row.get(SYS_DEVICES) if kind == SYS_WIFI_DOWN else None,
+                "worst": None,
+                "open": True,
             }))
-        by_owner: dict[str, list[dict[str, Any]]] = {}
-        for owner, outage in sorted(found, key=lambda pair: pair[1]["went_down"], reverse=True):
-            by_owner.setdefault(owner, []).append(outage)
-        return by_owner
+        found.sort(key=lambda item: item[2]["went_down"], reverse=True)
+        return found
 
     def _is_helper(self, domain: str) -> bool:
         """Return whether Home Assistant marks this integration a helper.
@@ -601,6 +640,9 @@ class IntegrationViewMixin:
             found[item[TODO_DEVICE_ID]] = {
                 "problem": self._problem_text(item),
                 "acknowledged": item.get(TODO_STATUS) == "completed",
+                # Its problem groups, for the Devices tab's Problem
+                # filter (rule DASH-17).
+                "groups": problem_groups(item.get(TODO_KINDS)),
             }
         return found
 
@@ -1008,10 +1050,16 @@ class DeviceViewMixin:
         # where its chart stood, the page says since when and how many
         # days are left, rather than leaving the space empty.
         since_reset = record.get(DEV_LOGNORMAL_DAYS)
+        # The days counted since, less any removed by hand, since the
+        # rule needs its days counted (rule FRZ-25).
+        counted_since = None
+        if isinstance(since_reset, (int, float)) and not isinstance(since_reset, bool) and since_reset >= 0:
+            tail = counted_gaps(record)[-int(since_reset):] if since_reset else []
+            counted_since = int(since_reset) - sum(1 for value in tail if not is_counted(value))
         if (
-            isinstance(since_reset, (int, float))
-            and not isinstance(since_reset, bool)
-            and 0 <= since_reset < CLIP_START_DAYS
+            counted_since is not None
+            and isinstance(since_reset, (int, float))
+            and counted_since < CLIP_START_DAYS
             and len(daily) > since_reset
         ):
             since_reset = int(since_reset)
@@ -1026,7 +1074,7 @@ class DeviceViewMixin:
             reason = record.get(DEV_LOGNORMAL_REASON)
             out["counting_again"] = {
                 "since": restarted.isoformat(),
-                "to_go": CLIP_START_DAYS - since_reset,
+                "to_go": CLIP_START_DAYS - counted_since,
                 "reason": reason if reason in LOGNORMAL_RESTART_REASONS else None,
             }
         if not found:
@@ -1171,12 +1219,47 @@ class DeviceViewMixin:
         rules = self._both_rules(record)
         gaps = rules.get("lognormal_gaps") or []
         set_aside = set(rules.get("lognormal_set_aside") or [])
+        # The Log-Normal days as the rules read them, so a day removed
+        # by hand, stored as it was, does not set the scale either.
+        read = counted[len(counted) - len(gaps):] if len(gaps) <= len(counted) else gaps
         kept += [
             value for index, value in enumerate(gaps)
-            if index not in set_aside and isinstance(value, (int, float))
+            if index not in set_aside
+            and isinstance(value, (int, float)) and not isinstance(value, bool)
+            and isinstance(read[index], (int, float)) and not isinstance(read[index], bool)
         ]
         window = self._freeze_window(record)
         return max([*kept, window] if window is not None else kept or [0.0])
+
+    def _hub_down_for(self, device_id: str) -> bool:
+        """Whether the hub that judges this device is down (rule STACK-10)."""
+        # Only a hub Device Sentinel watches puts "Its hub is down" on the
+        # page; any other leaves the page an ordinary one.
+        hub = self.hub_of(device_id)  # type: ignore[attr-defined]
+        return (
+            hub is not None
+            and hub in self._watched
+            and self.hub_down_since(hub) is not None  # type: ignore[attr-defined]
+        )
+
+    def _mute_covers(self, device_id: str, category: str, problem: bool = True) -> bool:
+        """Whether a mute covers the status the device page shows: Mute
+        everything any of them; the freeze mute frozen and never
+        reported; the unavailable mute unavailable and unknown; the
+        signal mute short drop-outs. A word that is no problem, such as
+        reporting or a never reported with no verdict yet, is greyed by
+        any mute, as before."""
+        if device_id in self._muted_devices:
+            return True
+        if not problem:
+            return bool(self.mute_text(device_id))
+        if category in (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED):
+            return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
+        if category in (TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN):
+            return bool(self._unavailable_muted(device_id))  # type: ignore[attr-defined]
+        if category == TODO_KIND_FLAPPING:
+            return bool(self._signal_muted(device_id))  # type: ignore[attr-defined]
+        return bool(self.mute_text(device_id))
 
     def _page_status(self, device_id: str, record: dict[str, Any]) -> str:
         """The stored verdict the Problem List reads, or what else is
@@ -1186,33 +1269,41 @@ class DeviceViewMixin:
         nobody watches has no verdict to give, and one that has never
         reported has not reported.
         """
+        verdict = record.get(DEV_FROZEN_CATEGORY)
+        # A verdict held behind a down upstream is kept while the device
+        # is not judged, but one its mutes cover is not shown.
+        shown = (
+            verdict
+            if verdict and device_id not in self._muted_devices and self._muted_away(  # type: ignore[attr-defined]
+                verdict,
+                self._freeze_muted(device_id),  # type: ignore[attr-defined]
+                self._unavailable_muted(device_id),  # type: ignore[attr-defined]
+            )
+            else None
+        )
         # A device with short drop-outs reads so, the same word the list
-        # gives it, unless it is unavailable past its wait, when it
-        # reads unavailable as the list says (rule SIG-17). A device
-        # muted for signal, or for everything, is off the list and reads
-        # no short drop-outs either (rule MUTE-10).
+        # gives it, unless the verdict shown is the worse news: frozen,
+        # never reported, or unavailable past its wait, as the list says
+        # too (rule SIG-17). A verdict its mutes hide is not shown, so the
+        # device reads short drop-outs, as it is listed (rule MUTE-06). A
+        # device muted for signal, or for everything, is off the list and
+        # reads no short drop-outs either (rule MUTE-10).
         if (
             device_id in self._watched
             and device_id not in self._muted_devices
             and not self._signal_muted(device_id)  # type: ignore[attr-defined]
             and self.is_flapping(device_id)
+            and shown not in (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED)
             and not (
-                record.get(DEV_FROZEN_CATEGORY) == TODO_KIND_UNAVAILABLE
+                shown == TODO_KIND_UNAVAILABLE
                 and not self.short_drop_waiting(  # type: ignore[attr-defined]
                     device_id, record.get(DEV_DOWN_FROM), dt_util.utcnow().timestamp()
                 )
             )
         ):
             return TODO_KIND_FLAPPING
-        verdict = record.get(DEV_FROZEN_CATEGORY)
-        # A verdict held behind a down upstream is kept while the device
-        # is not judged, but one its mutes cover is not shown.
-        if verdict and device_id not in self._muted_devices and self._muted_away(  # type: ignore[attr-defined]
-            verdict,
-            self._freeze_muted(device_id),  # type: ignore[attr-defined]
-            self._unavailable_muted(device_id),  # type: ignore[attr-defined]
-        ):
-            return verdict
+        if shown:
+            return shown
         if device_id not in self._watched:
             return STATUS_SET_ASIDE
         if self._connection_only(device_id) or self.judged_by_hub(device_id):  # type: ignore[attr-defined]
@@ -1301,6 +1392,10 @@ class DeviceViewMixin:
                 "battery": _battery_percent(record.get(DEV_BATTERY_VALUE)),
                 # For the tab's Area and Label filters (rule DASH-12).
                 **self._area_and_labels(device_id),
+                # For the tab's Network and Problem filters, which a
+                # network page's counts open (rule DASH-17).
+                "networks": self.device_networks(device_id),  # type: ignore[attr-defined]
+                "groups": problem["groups"] if problem else [],
             })
         rows.sort(key=lambda row: row["name"].lower())
         return rows
@@ -1540,13 +1635,31 @@ class DeviceViewMixin:
             },
             "readings": readings,
             "status": {
-                "category": self._page_status(device_id, record),
+                "category": (category := self._page_status(device_id, record)),
+                # Whether a mute covers the word shown, so the page greys
+                # it and says "muted" only then: a device muted for freeze
+                # alone is still listed with short drop-outs, and reads
+                # them in the warning colour (rules MUTE-07, SIG-17).
+                # A device whose hub is down, with no verdict of its own,
+                # reads "Its hub is down", the hub's row on the list: the
+                # unavailable mute covers it, as it covers the hub.
+                "muted_shown": (
+                    self._mute_covers(device_id, TODO_KIND_UNAVAILABLE)
+                    if self._hub_down_for(device_id)
+                    and category != TODO_KIND_FLAPPING
+                    and record.get(DEV_FROZEN_CATEGORY) != category
+                    else self._mute_covers(
+                        device_id, category,
+                        problem=category == TODO_KIND_FLAPPING or record.get(DEV_FROZEN_CATEGORY) == category,
+                    )
+                ),
                 # How many, beside the word: "3 in the last 12 hours".
                 # Not for a device muted for signal or for everything
                 # (rules MUTE-10, SIG-17).
                 "flap": (
                     self.short_drop_count_words(device_id)  # type: ignore[attr-defined]
-                    if self.is_flapping(device_id)
+                    if category == TODO_KIND_FLAPPING
+                    and self.is_flapping(device_id)
                     and device_id not in self._muted_devices
                     and not self._signal_muted(device_id)  # type: ignore[attr-defined]
                     else ""

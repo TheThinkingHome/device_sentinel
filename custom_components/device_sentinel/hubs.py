@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.27.15 (2026-10-30)
+# File: hubs.py, Version: 0.28.6 (2026-11-08)
 
 """Judged by its hub (rules STACK-09, STACK-10).
 
@@ -480,15 +480,17 @@ class HubMixin:
             "outages": self.hub_outages(device_id),
         }
 
-    def hub_outages(self, hub_id: str) -> list[dict[str, Any]]:
-        """The hub's own outages in the last 14 days, newest first.
+    def hub_outages(self, hub_id: str, days: int = 14) -> list[dict[str, Any]]:
+        """The hub's own outages in the last `days` days, newest first:
+        14, the days its incidents are kept, on its device page and the
+        Networks tab (rule DASH-17).
 
         Read from the hub's own unavailable incidents, which the
         problem list already writes when it goes down and comes back:
         nothing new is stored.
         """
         now = dt_util.utcnow().timestamp()
-        since = now - 14 * 86400
+        since = now - days * 86400
         opened: list[float] = []
         rows: list[dict[str, Any]] = []
         for row in (self.data or {}).get(DATA_INCIDENTS) or []:  # type: ignore[attr-defined]

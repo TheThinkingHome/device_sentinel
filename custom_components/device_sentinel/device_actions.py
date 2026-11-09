@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.15 (2026-10-30)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.6 (2026-11-08)
 
 """Acting from the device page (rule DASH-09).
 
@@ -84,6 +84,8 @@ MUTE_SOURCES_SAID: dict[str, str] = {
     "devices_tab": "from the Devices tab",
     "battery_trends": "from the Battery Trends tab",
     "classification": "from the Classification tab",
+    # A network's Status Sensors and Settings (rule DASH-17).
+    "network_page": "from the Networks tab",
 }
 
 MUTE_KINDS: dict[str, tuple[str, str, str]] = {

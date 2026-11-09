@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.27.17 (2026-11-01)
+# File: stack_z2m.py, Version: 0.28.6 (2026-11-08)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -245,6 +245,28 @@ class Z2MBridgeReader:
         # network coordinator reads tcp://host:port, which
         # names the device a coordinator's own integration shows.
         self._serial_port: str | None = None
+        # The coordinator's hardware and the network it runs, from the
+        # same bridge/info, for the Networks tab's network page. Shown,
+        # never judged (rule DASH-17).
+        self._coordinator_type: str | None = None
+        self._coordinator_firmware: str | None = None
+        self._channel: int | None = None
+        self._z2m_version: str | None = None
+
+    @property
+    def hardware(self) -> dict[str, Any]:
+        """The coordinator and network as bridge/info last gave them.
+
+        Each field None until Zigbee2MQTT has said it. Read only: a
+        person changes these in Zigbee2MQTT (rule STACK-13).
+        """
+        return {
+            "type": self._coordinator_type,
+            "firmware": self._coordinator_firmware,
+            "channel": self._channel,
+            "version": self._z2m_version,
+            "port": self._serial_port,
+        }
 
     @property
     def serial_port(self) -> str | None:
@@ -575,6 +597,7 @@ class Z2MBridgeReader:
         self._info_heard = True
         end = data.get("permit_join_end")
         self._permit_join_end = str(end) if end is not None else None
+        self._read_hardware(data)
         # The availability settings, read rather than assumed. Absent
         # or malformed leaves the previous reading alone, so one bad
         # payload cannot silently turn reachability off.
@@ -604,6 +627,31 @@ class Z2MBridgeReader:
                 # published. Enabled is known; the timeouts are not,
                 # and a caller reads None as "cannot say how long".
                 self._availability_enabled = availability
+
+    def _read_hardware(self, data: dict[str, Any]) -> None:
+        """The coordinator's type and firmware, the channel and the
+        Zigbee2MQTT version. A field missing or of the wrong shape
+        leaves what was read before (rule DASH-17)."""
+        version = data.get("version")
+        if isinstance(version, str) and version.strip():
+            self._z2m_version = version.strip()[:40]
+        coordinator = data.get("coordinator")
+        if isinstance(coordinator, dict):
+            kind = coordinator.get("type")
+            if isinstance(kind, str) and kind.strip():
+                self._coordinator_type = kind.strip()[:40]
+            meta = coordinator.get("meta")
+            if isinstance(meta, dict):
+                revision = meta.get("revision")
+                if isinstance(revision, (str, int)) and not isinstance(revision, bool):
+                    text = str(revision).strip()
+                    if text:
+                        self._coordinator_firmware = text[:60]
+        network = data.get("network")
+        if isinstance(network, dict):
+            channel = network.get("channel")
+            if isinstance(channel, int) and not isinstance(channel, bool) and 11 <= channel <= 26:
+                self._channel = channel
 
     @callback
     def _on_event(self, msg: mqtt.ReceiveMessage) -> None:

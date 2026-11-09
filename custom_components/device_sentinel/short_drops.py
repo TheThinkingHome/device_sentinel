@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: short_drops.py, Version: 0.28.2 (2026-11-04)
+# File: short_drops.py, Version: 0.28.6 (2026-11-08)
 
 """Each drop a device makes, recorded (rule SIG-16).
 
@@ -306,9 +306,9 @@ class ShortDropMixin:
         self._mark_cold_dirty()  # type: ignore[attr-defined]
 
     def short_drops_of(self, device_id: str, now: float | None = None) -> dict[str, Any] | None:
-        """The device page's Short drop-outs row: how many short drops in
-        the last 12 hours, the longest and when the last one went, or
-        None with none (rules SIG-16, DASH-08)."""
+        """The device page's Short drop-outs row: how many short drops
+        came back in the last 12 hours, the longest and when the last one
+        went, or None with none (rules SIG-16, DASH-08)."""
         now = dt_util.utcnow().timestamp() if now is None else now
         since = now - SHORT_DROP_HOURS * 3600.0
         rows = [
@@ -317,7 +317,11 @@ class ShortDropMixin:
             if isinstance(row, dict)
             and row.get(DROP_DEVICE_ID) == device_id
             and isinstance(row.get(DROP_WENT), (int, float))
-            and row[DROP_WENT] >= since
+            and isinstance(row.get(DROP_LENGTH), (int, float))
+            # By when each came back, as the status line, the list and
+            # the push count them, so the page gives one count (rule
+            # SIG-17).
+            and row[DROP_WENT] + row[DROP_LENGTH] >= since
             and is_short(row, self._short_drop_cap())
         ]
         if not rows:

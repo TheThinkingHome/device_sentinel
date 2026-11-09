@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: status_readings.py, Version: 0.28.5 (2026-11-08)
+# File: status_readings.py, Version: 0.28.6 (2026-11-08)
 
 """Readings a device gives about itself, recorded and shown, never judged.
 
@@ -29,6 +29,7 @@ from .const import (
     CONTROLLER_STATUS_KEPT,
     DEV_CONTROLLER_STATUS,
     DEV_RESTARTS,
+    RESTART_FRESH_SECONDS,
     RESTART_SAME_SECONDS,
     RESTARTS_KEPT,
 )
@@ -99,7 +100,9 @@ def restart_moment(state: str | None) -> float | None:
     return moment if MOMENT_LOWEST <= moment <= MOMENT_HIGHEST else None
 
 
-def record_restart(record: dict[str, Any], reason: str | None, restarted_at: float | None) -> bool:
+def record_restart(
+    record: dict[str, Any], reason: str | None, restarted_at: float | None, now: float | None = None
+) -> bool:
     """Record a Tasmota restart not already recorded (rule DEV-17).
 
     Tasmota sends both readings once, each time the device connects.
@@ -119,6 +122,13 @@ def record_restart(record: dict[str, Any], reason: str | None, restarted_at: flo
             # adds up to a restart that did not happen; a reason that
             # arrived after its time, or was corrected, replaces the last.
             if last_reason == reason and restarted_at == last_at:
+                return False
+            # A new reason against a restart long past is the reason of a
+            # new restart arriving before its time does: the time sensor
+            # still holds the last restart's. It waits for the new time,
+            # rather than rewriting why the last restart happened.
+            moment = dt_util.utcnow().timestamp() if now is None else now
+            if last_reason != reason and moment - float(last_at) > RESTART_FRESH_SECONDS:
                 return False
             pairs[-1] = [reason, float(restarted_at)]
             return True

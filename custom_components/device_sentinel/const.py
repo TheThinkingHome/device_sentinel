@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.5 (2026-11-08)
+# File: const.py, Version: 0.28.6 (2026-11-08)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1391,6 +1391,11 @@ RESTARTS_KEPT = 10
 # reports, so one restart can read a second or two apart; a time this
 # close to the last one recorded is the same restart.
 RESTART_SAME_SECONDS = 120.0
+# How long after a restart its reason may still correct the reason
+# recorded with it. A Tasmota device sends both readings within moments of
+# connecting; a new reason paired with a time older than this is a new
+# restart whose own time has not arrived yet (rule DEV-17).
+RESTART_FRESH_SECONDS = 600.0
 # Each battery forecast, made at the midnight fold for a battery judged
 # falling or accelerating, and scored when the battery reaches the level
 # it ran to (rule BAT-15, battery_forecasts.py): rows of [day, level,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi_addresses.py, Version: 0.28.0 (2026-11-03)
+# File: wifi_addresses.py, Version: 0.28.6 (2026-11-08)
 
 """Each Wi-Fi device's network address and access point (rule UP-19).
 
@@ -172,6 +172,25 @@ class WifiAddressMixin:
         with the devices holding it (rule UP-19)."""
         return dict(self._shared_addresses)  # type: ignore[attr-defined]
 
+    def ap_name(self, ap: Any) -> str | None:
+        """An access point's name, where a router integration registers
+        it as a device with its MAC, as UniFi does; the address itself
+        otherwise (rule UP-19)."""
+        if not isinstance(ap, str) or not ap:
+            return None
+        mac = normalize_mac(ap)
+        if mac is None:
+            return ap
+        from homeassistant.helpers import device_registry as dr
+
+        registry = dr.async_get(self.hass)  # type: ignore[attr-defined]
+        for entry in self.hass.config_entries.async_entries():  # type: ignore[attr-defined]
+            for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+                for kind, value in getattr(device, "connections", None) or ():
+                    if kind == dr.CONNECTION_NETWORK_MAC and normalize_mac(value) == mac:
+                        return str(device.name_by_user or device.name or ap)
+        return ap
+
     def address_of(self, device_id: str) -> dict[str, Any] | None:
         """The device page's address and access point, each with when it
         last changed, or None for a device no tracker reports (rule UP-19)."""
@@ -197,7 +216,7 @@ class WifiAddressMixin:
         return {
             "ip": row.get(ADDR_IP),
             "ip_since": since(ADDR_IP),
-            "ap": row.get(ADDR_AP),
+            "ap": self.ap_name(row.get(ADDR_AP)),
             "ap_since": since(ADDR_AP),
             "shared": any(device_id in ids for ids in self._shared_addresses.values()),  # type: ignore[attr-defined]
         }

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.5 (2026-11-08)
+# File: coordinator.py, Version: 0.28.6 (2026-11-08)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -322,6 +322,7 @@ from .dashboard import (
     TrendsViewMixin,
 )
 from .journal import JournalMixin
+from .networks import NetworksMixin
 from .short_drops import ShortDropMixin, forget_restart_drops
 from .wifi_addresses import WifiAddressMixin
 from .messenger import MessengerMixin
@@ -424,6 +425,7 @@ class DeviceSentinelCoordinator(
     WatchStudyMixin,
     DashboardMixin,
     IntegrationViewMixin,
+    NetworksMixin,
     DeviceViewMixin,
     BriefViewMixin,
     TrendsViewMixin,
@@ -901,6 +903,8 @@ class DeviceSentinelCoordinator(
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.
         self._radio_owned: set[str] = set()
+        # The radio stack each radio-owned device is on (rule DASH-17).
+        self._radio_stack: dict[str, str] = {}
         self._wifi_down_at: float | None = None
         # When the outage was first dated, before any device that
         # noticed earlier moved it back (rule UP-15).
@@ -2475,6 +2479,7 @@ class DeviceSentinelCoordinator(
 
         watched: dict[str, str] = {}
         radio_owned: set[str] = set()
+        radio_stack: dict[str, str] = {}
         device_names: dict[str, str] = {}
         device_labels: dict[str, frozenset[str]] = {}
         # Name, domain and reason, because a disabled device and a
@@ -2546,8 +2551,11 @@ class DeviceSentinelCoordinator(
             # Asked on the same walk, and deliberately not read from
             # `stack_keys`, which ZHA, Z-Wave and Matter leave empty
             # because their identifiers are unverified.
-            if self._ask_registry(radio_owner, domain, device, name) is not None:
+            radio = self._ask_registry(radio_owner, domain, device, name)
+            if radio is not None:
                 radio_owned.add(device.id)
+                # Which one, for the Networks tab (rule DASH-17).
+                radio_stack[device.id] = radio
             device_names[device.id] = name
             device_labels[device.id] = frozenset(device.labels or ())
             # Device-level muting reasons, named broadest first
@@ -2589,6 +2597,7 @@ class DeviceSentinelCoordinator(
             muted_devices.pop(copy_id, None)
             stack_keys.pop(copy_id, None)
             radio_owned.discard(copy_id)
+            radio_stack.pop(copy_id, None)
         self._copy_of = copy_of
 
         entity_map: dict[str, tuple[str, str | None]] = {}
@@ -2822,6 +2831,7 @@ class DeviceSentinelCoordinator(
         self._stacks = stacks
         self._stack_keys = stack_keys
         self._radio_owned = radio_owned
+        self._radio_stack = radio_stack
         self._entry_of_device = entry_of
         # Each device a hub controls, from the same walk (rule STACK-09).
         self._rebuild_hubs(all_devices)
@@ -2890,6 +2900,7 @@ class DeviceSentinelCoordinator(
         }
         self._signal_entities = signal_entities
         self._signal_devices = signal_devices
+        self._forget_controller_noise(signal_devices)
         self._battery_entity = battery_entity
         # Kept so the diagnostics can say which reading each device
         # is using and whether it is the device's own, so a series that
