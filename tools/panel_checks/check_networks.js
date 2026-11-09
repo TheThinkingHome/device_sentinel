@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_networks.js, Version: 0.28.6 (2026-11-08)
+// File: tools/panel_checks/check_networks.js, Version: 0.28.7 (2026-11-09)
 // Panel checks: the Networks tab and a network's page (rule DASH-17).
 // Simple shows the tab, each network's state, its devices and anything to
 // turn on; Advanced adds the last outage, the coordinator, the outages,
@@ -42,6 +42,16 @@ const PAGE = {
   signal: { weak_week: 1, drops: 5, drop_devices: 2, railed: 0 },
   pairing: { windows: 1, last: { opened: "2026-10-29T15:05:00+00:00", duration: 240, open: false }, new_devices: 1 },
   wifi: null,
+  devices: [
+    { device_id: "dev-door", name: "Door Laundry", maker: "Aqara", model: "MCCGQ11LM", firmware: "3.0", role: "End device", power: "Battery", problem: "battery" },
+    { device_id: "dev-lamp", name: "Lamp Hall", maker: "Philips", model: "LCT015", firmware: "1.50.2", role: "Router", power: "Mains", problem: null },
+  ],
+  makeup: { roles: [{ name: "End device", devices: 1 }, { name: "Router", devices: 1 }],
+    power: [{ name: "Battery", devices: 1 }, { name: "Mains", devices: 1 }],
+    makers: [{ name: "Aqara", devices: 1 }, { name: "Philips", devices: 1 }], other_makers: 0 },
+  up: { back_since: "2026-11-03T13:14:00+00:00", since: null, outages: 1, expected: 0 },
+  patterns: [], cards: [], offenders: { repeat: [], drops: [] }, wifi_changes: null,
+  firmware: { updates: [], changed: [], mixed: [] }, noise: null, own_page: false,
 };
 const DEVICES = { rows: [
   { device_id: "dev-door", name: "Door Laundry", integration: "mqtt", integration_name: "MQTT", muted: "", status: "reporting",
@@ -186,9 +196,13 @@ const noStrays = (root) => !/\b(null|undefined|NaN)\b|\[object/.test(text(root))
   check("reads length not recorded", text(root).includes("length not recorded"), text(root));
 
   console.log("Previous and Next from a network page");
-  let panelNow;
-  ({ root, panel: panelNow } = await open("/network/z2m?from=networks"));
-  check("step through the devices the page names", JSON.stringify((panelNow._lists || {})["/network/z2m?from=networks"]) === JSON.stringify(["dev-door"]),
+  let panelNow, win;
+  ({ root, panel: panelNow, window: win } = await open("/network/z2m?from=networks"));
+  const doorLink = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === "Door Laundry");
+  doorLink.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle();
+  check("step through the devices the page names, its device list first",
+    JSON.stringify((panelNow._lists || {})["/network/z2m?from=networks"]) === JSON.stringify(["dev-door", "dev-lamp"]),
     panelNow._lists);
 
   console.log("A network the house lacks");

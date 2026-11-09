@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.28.7 (2026-11-09)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -252,6 +252,108 @@ const rowCell = (root, label) => {
   const nv = root.querySelector(".prevnext");
   const nexts = nv ? [...nv.querySelectorAll("a")] : [];
   check("From a card, Next walks that card's list", nexts.length === 1 && nexts[0].getAttribute("title") === ROWS[3].name, nv ? nv.innerHTML : null);
+
+  console.log("\nPrevious and Next from an integration's page");
+  const INTEG = { ...JSON.parse(JSON.stringify(payloads.integration)), domain: "alarmdotcom", name: "Alarm.com",
+    devices: [ROWS[3], ROWS[1]].map((r) => ({ device_id: r.device_id, name: r.name, watched: true, muted: "", set_aside: "", problem: "", acknowledged: false })) };
+  ({ window, root } = await open({ path: `${PREFIX}/integration/alarmdotcom`, answers: { integration: () => JSON.parse(JSON.stringify(INTEG)) } }));
+  const integLink = [...root.querySelectorAll("a")].find((a) => a.textContent === ROWS[3].name);
+  integLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(); await settle();
+  let iv = root.querySelector(".prevnext");
+  let ilinks = iv ? [...iv.querySelectorAll("a")] : [];
+  check("From an integration's page, Next is that page's next device",
+    ilinks.length === 1 && ilinks[0].textContent === "Next \u203a" && ilinks[0].getAttribute("title") === ROWS[1].name, iv ? iv.innerHTML : null);
+  ilinks[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(); await settle();
+  iv = root.querySelector(".prevnext");
+  ilinks = iv ? [...iv.querySelectorAll("a")] : [];
+  check("At that page's last device, Next stops instead of leaving the integration",
+    ilinks.length === 1 && ilinks[0].textContent === "\u2039 Previous" && ilinks[0].getAttribute("title") === ROWS[3].name, iv ? iv.innerHTML : null);
+  ({ root } = await open({ path: `${PREFIX}/device/${ROWS[1].device_id}?from=${encodeURIComponent("/integration/alarmdotcom")}` }));
+  iv = root.querySelector(".prevnext");
+  check("Reloaded with that page's list gone, it steps nowhere", iv && iv.querySelectorAll("a").length === 0, iv ? iv.innerHTML : null);
+
+  console.log("\nPrevious and Next from every page that lists devices (rule DASH-07)");
+  for (const [slug, base] of [["daily-brief", "/device-sentinel"], ["battery-trends", null], ["signal-trends", null], ["classification", null]]) {
+    const at = base || `${PREFIX}/${slug}`;
+    // A whole house's tabs, so each lists several devices.
+    const fleet = JSON.parse(fs.readFileSync(__dirname + "/payloads_fleet.json", "utf8"));
+    const fromFleet = Object.fromEntries(["brief", "battery_trends", "signal_trends", "classification", "devices", "problem_list", "status"]
+      .filter((k) => k in fleet).map((k) => [k, () => JSON.parse(JSON.stringify(fleet[k]))]));
+    // The brief's day with three devices' acts on it.
+    fromFleet.brief = () => ({ ...JSON.parse(JSON.stringify(fleet.brief)), events: fleet.devices.rows.slice(0, 3).map((r, i) => ({
+      when: `2026-09-25T2${i}:00:00+00:00`, who: r.name, device_id: r.device_id, what: "battery muted, from its device page" })) });
+    ({ window, root, panel } = await open({ path: at, states: STATES, answers: fromFleet }));
+    const pane = root.querySelector(".pane");
+    const devLinks = pane ? [...pane.querySelectorAll("a[href]")].filter((a) => a.getAttribute("href").startsWith(`${PREFIX}/device/`)) : [];
+    if (devLinks.length < 1) { check(`${slug}: lists a device to test`, false, devLinks.length); continue; }
+    // The list the first link was pressed in: its table, list or card,
+    // else the whole page (rule DASH-07).
+    const section = devLinks[0].closest("tbody, ul, ol, .kv, article") || pane;
+    const inSection = devLinks.filter((a) => section.contains(a));
+    const shown = [...new Set(inSection.map((a) => decodeURIComponent(a.getAttribute("href").slice(`${PREFIX}/device/`.length).split("?")[0])))];
+    devLinks[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle(); await settle();
+    const key = new URLSearchParams(window.location.search).get("from");
+    check(`${slug}: Next walks the devices that page showed, in its order`,
+      JSON.stringify((panel._lists || {})[key]) === JSON.stringify(shown), [(panel._lists || {})[key], shown]);
+    const nv = root.querySelector(".prevnext");
+    const nextLink = nv ? [...nv.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
+    const want = shown[shown.indexOf(decodeURIComponent(window.location.pathname.slice(`${PREFIX}/device/`.length))) + 1];
+    check(`${slug}: Next names the page's next device`, !want || (nextLink && nextLink.getAttribute("href").includes(encodeURIComponent(want))),
+      [nextLink && nextLink.getAttribute("href"), want]);
+  }
+
+  console.log("\nThe Daily Brief: Next stays in the table it was pressed in");
+  {
+    const fleet = JSON.parse(fs.readFileSync(__dirname + "/payloads_fleet.json", "utf8"));
+    const rows3 = fleet.devices.rows.slice(0, 4);
+    const brief = { ...JSON.parse(JSON.stringify(fleet.brief)),
+      now: rows3.slice(0, 2).map((r, i) => ({ uid: `u${i}`, device_id: r.device_id, name: r.name, problem: "Frozen", since: null, seconds: 0, acknowledged: false })),
+      events: rows3.slice(2, 4).map((r, i) => ({ when: `2026-09-25T2${i}:00:00+00:00`, who: r.name, device_id: r.device_id, what: "battery muted" })) };
+    ({ window, root, panel } = await open({ path: "/device-sentinel", answers: { brief: () => brief, devices: () => JSON.parse(JSON.stringify(fleet.devices)) } }));
+    const evLink = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === rows3[2].name);
+    if (evLink) evLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle(); await settle();
+    const key = new URLSearchParams(window.location.search).get("from");
+    check("opened from the events table, its list is that table's", JSON.stringify((panel._lists || {})[key]) === JSON.stringify([rows3[2].device_id, rows3[3].device_id]),
+      [(panel._lists || {})[key], Boolean(evLink)]);
+  }
+
+  console.log("\nThe Devices tab's excluded view keeps its own list");
+  {
+    const DEV = JSON.parse(JSON.stringify(payloads.devices));
+    DEV.excluded = [{ device_id: "ex-1", name: "Excluded One", integration: "test", integration_name: "Test", area: null, how: "device", page: true },
+      { device_id: "ex-2", name: "Excluded Two", integration: "test", integration_name: "Test", area: null, how: "device", page: true }];
+    ({ window, root, panel } = await open({ path: `${PREFIX}/devices`, answers: { devices: () => JSON.parse(JSON.stringify(DEV)) } }));
+    panel._deviceView = "excluded";
+    panel._paintDevices();
+    const exLink = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === "Excluded One");
+    check("the excluded view lists them", Boolean(exLink), root.querySelector(".pane") && root.querySelector(".pane").textContent.slice(0, 200));
+    if (exLink) {
+      exLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      await settle(); await settle();
+      const xv = root.querySelector(".prevnext");
+      const xNext = xv ? [...xv.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
+      check("Next steps to the next excluded device", xNext && xNext.getAttribute("href").includes("ex-2"), xv ? xv.innerHTML : null);
+    }
+  }
+
+  console.log("\nA set-aside device on the page is stepped to, not over");
+  const CLASS = JSON.parse(JSON.stringify(payloads.classification));
+  CLASS.rows = [
+    { ...CLASS.rows[0], device_id: ROWS[0].device_id, name: ROWS[0].name, watched: true },
+    { ...CLASS.rows[0], device_id: "aside-1", name: "Aside Lamp", watched: false, set_aside: "no entities" },
+    { ...CLASS.rows[0], device_id: ROWS[1].device_id, name: ROWS[1].name, watched: true },
+  ];
+  ({ window, root, panel } = await open({ path: `${PREFIX}/classification`, answers: { classification: () => JSON.parse(JSON.stringify(CLASS)) } }));
+  const firstRow = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === ROWS[0].name);
+  firstRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(); await settle();
+  const sv = root.querySelector(".prevnext");
+  const sNext = sv ? [...sv.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
+  check("Next goes to the set-aside device the page showed next", sNext && sNext.getAttribute("href").includes("aside-1"), sv ? sv.innerHTML : null);
 
   console.log("\nBefore Latest (0.24.9)");
   let r2 = await open({ path: `${PREFIX}/devices` });

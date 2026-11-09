@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.28.6 (2026-11-08) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.28.7 (2026-11-09) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -23,6 +23,7 @@ written rather than what it proves).
 | Every tab | `check_no_stray_words.js` | 64 | no "null" or "undefined" drawn on any tab, in Simple or Advanced |
 | Integrations | `check_integrations_tab.js` | 56 | the Integrations tab's columns and buttons in both views, its chips and recommendations, and Simple's Devices columns |
 | Networks | `check_networks.js` | 41 | the Networks tab after Integrations in Simple and Advanced, its columns in each, a network's page with its counts, sensors and settings in Simple, and its coordinator, 30 days of outages, signal health and pairing in Advanced, Turn it on from the page, a count opening the Devices tab on those devices, and the other tabs drawing when the Networks answer fails |
+| A network's page, more | `check_network_page_extras.js` | 47 | the Open buttons for a network's own page and its app, the Availability notice's button, its devices, makeup, offenders, firmware, Wi-Fi changes and radio noise, outage patterns with their one sentence used twice, Yes it is expected and Stop expecting this, the logbook button, the same cards on the Recommendations tab, the expected outages on the Integrations tab, and a refused button saying why |
 | Daily Brief | `check_repeat_offenders.js` | 11 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker, under Also on the Broker and Outages, Last 14 Days |
 | Every tab | `check_simple_dashboard.js` | 57 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its device page with Not Set to set an unanswered Type or Power, a set value in grey, no Labels row and a label's mute pointing to Advanced, no Rename, no Trimmed Maximum button, no turn-on buttons and no Firmware row, its battery chart with the time left, and no Mute by label anywhere; Device ID kept in Simple while the Model ID and address rows are Advanced's, and no note at the foot of the page |
 | Recommendations | `check_recommendations.js` | 54 | the opening line and its count, which agrees with the tab and the button and reads Nothing to recommend right now at zero, the Slow Reporting Devices card, the switched-off cards' Turn on chips, Battery Voltage Switched Off among them, each saying it was pressed on the tab, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick, and the area, name and model type set in each card's rows |
@@ -32,7 +33,7 @@ written rather than what it proves).
 | Problem List | `check_problem_list.js` | 2 | a never-reported device's SINCE reads "discovered" with the time, as the Daily Brief says it |
 | Integrations | `check_no_hardware_integrations.js` | 8 | an integration with no hardware of its own on the Integrations tab, and a summary led by the All chip's total |
 | Integrations | `check_no_hardware_pages.js` | 18 | its page, and a helper's, naming the devices it adds entities to |
-| A device's page | `check_device_page_layout.js` | 42 | the page's order and its four groups (Power, Signal, Reporting, Actions), the Firmware row with its history or one line for one version, live values, sensor links, both rule charts, headings in Title Case, Previous and Next, and the device cards, which say where each answer was given |
+| A device's page | `check_device_page_layout.js` | 57 | the page's order and its four groups (Power, Signal, Reporting, Actions), the Firmware row with its history or one line for one version, live values, sensor links, both rule charts, headings in Title Case, Previous and Next from every page that lists devices (staying in the table or list pressed, stepping to set-aside and excluded devices, grey after a reload), and the device cards, which say where each answer was given |
 | A device's page | `check_device_actions.js` | 55 | rename, area with No area asking first, labels with the one that mutes drawn lit by its id (a comma in its name included), Last Seen and the sensors turned on from the page, saying so, mute buttons showing only the device's own mutes, a refused write, and excluding one device |
 | A device's page | `check_names_and_mutes.js` | 17 | names, the Last seen fallback and inherited mutes, on the page and the Problem List |
 | A device's page | `check_power_row.js` | 38 | the Powered by row: its words and icons, the shield naming the device an answer was set on, the pencil, an answer saying it came from the page, and the report to Battery Notes; Battery last replaced beside it |
@@ -62,7 +63,7 @@ written rather than what it proves).
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1131 checks in 50 files, as of 8 November 2026 (0.28.6).
+1193 checks in 51 files, as of 9 November 2026 (0.28.7).
 
 ## Running Them
 
