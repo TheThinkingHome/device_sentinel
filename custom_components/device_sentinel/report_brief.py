@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.6 (2026-11-08)
+# File: report_brief.py, Version: 0.28.7 (2026-11-09)
 
 """The daily brief: the one report written for a person.
 
@@ -478,6 +478,11 @@ class BriefMixin:
         return f"{count} of {total} {noun} went down"
 
     def _system_event_sentence(self, row: dict[str, Any]) -> str:
+        """One thing that happened to the house, as a sentence, saying
+        so when it was an outage the person expects (rule DASH-18)."""
+        return self._expected_words(self._system_event_sentence_plain(row), row)
+
+    def _system_event_sentence_plain(self, row: dict[str, Any]) -> str:
         """One thing that happened to the house, as a sentence.
 
         Deliberately plain. These sit above the device lines and
@@ -817,6 +822,11 @@ class BriefMixin:
         return str(device_id) if device_id else None
 
     def _system_event_phrase(self, row: dict[str, Any]) -> str:
+        """The same event as a table cell, marked when expected (rule DASH-18)."""
+        said = self._system_event_phrase_plain(row)
+        return f"{said}, as expected" if self.system_row_expected(row) else said  # type: ignore[attr-defined]
+
+    def _system_event_phrase_plain(self, row: dict[str, Any]) -> str:
         """The same event as a table cell rather than a sentence."""
         if row.get(SYS_KIND) == SYS_DEVICE_PAGE:
             # Its detail is already the cell: "battery muted, from its
@@ -1508,17 +1518,29 @@ class BriefMixin:
             ):
                 scopes.append(scope)
         for scope in scopes:
-            worst = self._longest(rows, SYS_BRIDGE_UP, scope)
+            worst = self._longest_told(rows, SYS_BRIDGE_UP, scope)
             if worst is not None:
-                said.append(
+                said.append(self._expected_words(
                     self._outage_span_sentence(
                         f"The {self._integration_title(str(scope))} bridge", worst
-                    )
-                )
-        worst = self._longest(rows, SYS_BROKER_UP)
+                    ), worst,
+                ))
+        worst = self._longest_told(rows, SYS_BROKER_UP)
         if worst is not None:
-            said.append(self._outage_span_sentence("The MQTT broker", worst))
+            said.append(self._expected_words(self._outage_span_sentence("The MQTT broker", worst), worst))
         return said
+
+    def _longest_told(self, rows: list[dict[str, Any]], kind: str, scope: str | None = None) -> dict[str, Any] | None:
+        """The longest outage worth telling, one the person does not
+        expect first: an expected one is told only when nothing else is,
+        so it never stands in for a real outage (rule DASH-18)."""
+        unexpected = [row for row in rows if not self.system_row_expected(row)]  # type: ignore[attr-defined]
+        return self._longest(unexpected, kind, scope) or self._longest(rows, kind, scope)
+
+    def _expected_words(self, said: str, row: dict[str, Any]) -> str:
+        """A sentence about an outage the person expects, saying so
+        (rule DASH-18)."""
+        return f"{said} It was expected." if self.system_row_expected(row) else said  # type: ignore[attr-defined]
 
     def _outage_span_sentence(self, subject: str, row: dict[str, Any]) -> str:
         """Say how long an upstream was down, from when until when.

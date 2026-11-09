@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: networks.py, Version: 0.28.6 (2026-11-08)
+# File: networks.py, Version: 0.28.7 (2026-11-09)
 
 """The Networks tab and each network's page (rule DASH-17).
 
@@ -43,14 +43,8 @@ from .const import (
     BROKER_RUNNING,
     BROKER_SCOPE,
     DATA_DEVICES,
-    DATA_SHORT_DROP_DAYS,
-    DATA_SHORT_DROPS,
     DATA_SYSTEM_EVENTS,
     DEV_CONTROLLER_STATUS,
-    DROP_DAY,
-    DROP_DAY_SHORT,
-    DROP_DEVICE_ID,
-    DROP_WENT,
     STACK_DISPLAY_NAMES,
     STACK_MATTER,
     STACK_Z2M,
@@ -83,7 +77,6 @@ from .const import (
 from .const import ADDR_AP, DEV_SIGNAL_DAILY_P5, LOGGER
 from .daily_dates import FAMILY_SIGNAL, dates_for
 from .device_fields import device_field
-from .short_drops import drop_day, is_short
 
 # How far back a network page looks: outages, pairing and new devices.
 NETWORK_WINDOW_DAYS = 30
@@ -115,18 +108,20 @@ PROBLEM_GROUPS = ("frozen", "unavailable", "never_reported", "battery", "signal"
 # The sensors each network's devices are expected to have, in the order
 # the page lists them. Each is a kind the device page can switch on.
 SENSOR_KINDS = {
-    STACK_Z2M: ("last_seen", "signal", "battery"),
-    STACK_ZHA: ("signal", "battery"),
-    STACK_ZWAVE: ("node_status", "signal", "battery"),
-    STACK_MATTER: ("battery",),
-    WIFI_KEY: ("signal",),
-    BROKER_SCOPE: ("signal",),
+    STACK_Z2M: ("last_seen", "signal", "battery", "firmware"),
+    STACK_ZHA: ("signal", "battery", "firmware"),
+    STACK_ZWAVE: ("node_status", "signal", "battery", "firmware"),
+    STACK_MATTER: ("battery", "firmware"),
+    WIFI_KEY: ("signal", "firmware"),
+    BROKER_SCOPE: ("signal", "firmware"),
 }
 SENSOR_LABELS = {
     "last_seen": "Last Seen sensors",
     "node_status": "Z-Wave status sensors",
     "signal": "Signal sensors",
     "battery": "Battery sensors",
+    # Home Assistant's firmware update entities (rule DASH-18).
+    "firmware": "Firmware update checks",
 }
 # Zigbee2MQTT's own word for its signal sensor.
 Z2M_SIGNAL_LABEL = "Link quality sensors"
@@ -447,6 +442,10 @@ class NetworksMixin:
                     "duration": outage["duration"],
                     "devices": outage["devices"],
                     "open": outage["open"],
+                    # A broker outage on Zigbee2MQTT's page is the
+                    # broker's own: only the broker's expected times
+                    # cover it (rule DASH-18).
+                    **({"source": BROKER_SCOPE} if key == STACK_Z2M and scope == BROKER_SCOPE else {}),
                 })
         return rows
 
@@ -460,7 +459,12 @@ class NetworksMixin:
         for key in self.network_keys(members):
             devices = members.get(key, [])
             with_problem, counts = self._count_groups(devices, problems)
-            outages = self.network_outages(key)
+            outages = [dict(o) for o in self.network_outages(key)]
+            # An outage the person expects is listed, never counted
+            # (rule DASH-18).
+            for outage in outages:
+                outage["expected"] = self.outage_is_expected(key, outage)  # type: ignore[attr-defined]
+            counted = [o for o in outages if not o["expected"]]
             rows.append({
                 "key": key,
                 "name": self.network_name(key),
@@ -469,8 +473,11 @@ class NetworksMixin:
                 "watched": len(devices),
                 "with_problem": with_problem,
                 "counts": counts,
-                "last_outage": outages[0] if outages else None,
-                "outages": len(outages),
+                # The newest outage the person does not expect, else the
+                # newest expected one, marked so (rule DASH-18).
+                "last_outage": counted[0] if counted else (outages[0] if outages else None),
+                "outages": len(counted),
+                "expected": len(outages) - len(counted),
                 "window_days": self.network_window(key),
             })
         return rows
@@ -485,16 +492,18 @@ class NetworksMixin:
         members = members_by.get(key, [])
         problems = self._problem_groups_by_device()
         with_problem, counts = self._count_groups(members, problems)
+        status = self.network_status(key)
+        extras = self.network_extras(key, members, status)  # type: ignore[attr-defined]
         return {
             "key": key,
             "name": self.network_name(key),
             "kind": "hub" if key.startswith(HUB_PREFIX) else key,
-            "status": self.network_status(key),
+            "status": status,
             "watched": len(members),
             "with_problem": with_problem,
             "counts": counts,
             "hardware": self._network_hardware(key),
-            "outages": self.network_outages(key),
+            **extras,
             "notices": self._network_notices(key),
             "sensors": self._network_sensors(key, members),
             "signal": self._network_signal(key, members),
@@ -691,37 +700,16 @@ class NetworksMixin:
                         break
             except Exception as err:  # noqa: BLE001 - one record never breaks a page
                 LOGGER.debug("Signal days for %s not read: %s", device_id, err)
-        now = dt_util.utcnow().timestamp()
-        line = now - NETWORK_WEEK_DAYS * 86400.0
-        first_day = (dt_util.now().date() - timedelta(days=NETWORK_WEEK_DAYS - 1)).isoformat()
-        cap = self._short_drop_cap()  # type: ignore[attr-defined]
-        # Muted devices left out, as from the bad-signal days above.
+        # Muted devices left out, as from the bad-signal days above; the
+        # count is the one the page's repeat offenders list by device.
         wanted = {
             device_id for device_id in wanted
             if device_id not in self._muted_devices  # type: ignore[attr-defined]
             and not self._signal_muted(device_id)  # type: ignore[attr-defined]
         }
-        drops = 0
-        dropping: set[str] = set()
-        for row in self.data.get(DATA_SHORT_DROPS) or []:  # type: ignore[attr-defined]
-            if not isinstance(row, dict) or row.get(DROP_DEVICE_ID) not in wanted:
-                continue
-            went = row.get(DROP_WENT)
-            if isinstance(went, bool) or not isinstance(went, (int, float)) or went < line:
-                continue
-            if is_short(row, cap):
-                drops += 1
-                dropping.add(row[DROP_DEVICE_ID])
-        for row in self.data.get(DATA_SHORT_DROP_DAYS) or []:  # type: ignore[attr-defined]
-            if not isinstance(row, dict) or row.get(DROP_DEVICE_ID) not in wanted:
-                continue
-            day = row.get(DROP_DAY)
-            count = row.get(DROP_DAY_SHORT)
-            if not isinstance(day, str) or day < first_day or day > drop_day(now):
-                continue
-            if isinstance(count, int) and not isinstance(count, bool) and count > 0:
-                drops += count
-                dropping.add(row[DROP_DEVICE_ID])
+        counts = self.short_drops_by_device(sorted(wanted), NETWORK_WEEK_DAYS)  # type: ignore[attr-defined]
+        drops = sum(counts.values())
+        dropping = set(counts)
         problems = self._problem_groups_by_device()
         railed = sum(1 for device_id in members if "signal" in (problems.get(device_id) or {}).get("groups", []))
         return {"weak_week": weak, "drops": drops, "drop_devices": len(dropping), "railed": railed}

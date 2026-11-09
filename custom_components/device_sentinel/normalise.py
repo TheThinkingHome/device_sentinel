@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.28.5 (2026-11-08)
+# File: normalise.py, Version: 0.28.7 (2026-11-09)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -147,6 +147,11 @@ from .const import (
     DATA_SHORT_DROP_DAYS,
     DATA_SHORT_DROPS,
     DATA_ADDRESS_CHANGES,
+    DATA_EXPECTED_OUTAGES,
+    EXP_LENGTH,
+    EXP_MINUTE,
+    EXP_NETWORK,
+    EXP_SET_AT,
     PROBE_AGREES,
     PROBE_DETAIL,
     PROBE_SENTINEL,
@@ -974,6 +979,12 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_SHORT_DROPS: (DROP_SHAPE, frozenset()),
     DATA_SHORT_DROP_DAYS: (DROP_DAY_SHAPE, frozenset()),
     DATA_ADDRESS_CHANGES: (ADDRESS_SHAPE, frozenset()),
+    # The outages a person expects (rule DASH-18); a row whose usual
+    # length was never recorded holds None.
+    DATA_EXPECTED_OUTAGES: (
+        {EXP_NETWORK: TEXT, EXP_MINUTE: INTEGER, EXP_LENGTH: SPAN, EXP_SET_AT: REAL_MOMENT},
+        frozenset(),
+    ),
     # The shadow readers' two keys: absent from every older line,
     # which is not damage.
     DATA_STACK_PROBE: (PROBE_SHAPE, frozenset({PROBE_SENTINEL, PROBE_AGREES})),

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.6 (2026-11-08)
+# File: coordinator.py, Version: 0.28.7 (2026-11-09)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -322,6 +322,7 @@ from .dashboard import (
     TrendsViewMixin,
 )
 from .journal import JournalMixin
+from .network_extras import NetworkExtrasMixin
 from .networks import NetworksMixin
 from .short_drops import ShortDropMixin, forget_restart_drops
 from .wifi_addresses import WifiAddressMixin
@@ -426,6 +427,7 @@ class DeviceSentinelCoordinator(
     DashboardMixin,
     IntegrationViewMixin,
     NetworksMixin,
+    NetworkExtrasMixin,
     DeviceViewMixin,
     BriefViewMixin,
     TrendsViewMixin,
@@ -5547,6 +5549,12 @@ class DeviceSentinelCoordinator(
         # with everything else that ages out at the fold (rule STACK-11).
         self.study_fold()
         self.probe_fold(now)
+        # An expected outage not seen for 14 days is forgotten here, so
+        # it never waits for a page to be opened (rule DASH-18).
+        try:
+            self.forget_expected(now)
+        except Exception as err:  # noqa: BLE001 - the fold goes on
+            LOGGER.debug("Expected outages not checked at the fold: %s", err)
         pushed = 0
         for device_id, record in self.data[DATA_DEVICES].items():
             if record[DEV_TODAY_MAX] is not None:

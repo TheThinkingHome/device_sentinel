@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.6 (2026-11-08)
+# File: dashboard_api.py, Version: 0.28.7 (2026-11-09)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -40,6 +40,8 @@ from .report_brief import RECOMMENDATIONS_CLOSING
 from .const import (
     DATA_PANEL_FILE,
     DOMAIN,
+    LOGGER,
+    STACK_ZWAVE,
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_SORT_NAME,
@@ -108,6 +110,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     # The Networks tab and each network's page (rule DASH-17).
     websocket_api.async_register_command(hass, ws_networks)
     websocket_api.async_register_command(hass, ws_network)
+    websocket_api.async_register_command(hass, ws_network_expected)
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
@@ -363,9 +366,25 @@ async def ws_recommendations(
         _not_loaded(connection, msg["id"])
         return
     await coordinator.async_check_unused_adapter()
+    # Each network's outage patterns and, for Z-Wave, its radio noise,
+    # the cards its own page shows (rule DASH-18).
+    networks = coordinator.network_recommendations()
+    if STACK_ZWAVE in coordinator.network_keys():
+        try:
+            noise = await coordinator.async_network_noise()
+        except Exception as err:  # noqa: BLE001 - the tab still shows without it
+            LOGGER.debug("Radio noise not read: %s", err)
+            noise = None
+        if noise and noise["cards"]:
+            row = next((r for r in networks if r["key"] == STACK_ZWAVE), None)
+            if row is None:
+                row = {"key": STACK_ZWAVE, "name": coordinator.network_name(STACK_ZWAVE), "cards": []}
+                networks.append(row)
+            row["cards"].extend(noise["cards"])
     connection.send_result(
         msg["id"],
         {
+            "networks": networks,
             # Each written line with its key, whether Simple shows it,
             # and whether it is acknowledged (rules REC-09, REC-07).
             "lines": coordinator.recommendation_lines(),
@@ -393,7 +412,10 @@ def ws_integrations(
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    connection.send_result(msg["id"], {"rows": coordinator.dashboard_integrations()})
+    # The outages the person expects, listed with the mutes so each can
+    # be taken back (rule DASH-18).
+    connection.send_result(msg["id"], {"rows": coordinator.dashboard_integrations(),
+                                       "expected": coordinator.expected_list()})
 
 
 @websocket_api.require_admin
@@ -438,8 +460,8 @@ def ws_networks(
 @websocket_api.websocket_command(
     {vol.Required("type"): "device_sentinel/network", vol.Required("key"): str}
 )
-@callback
-def ws_network(
+@websocket_api.async_response
+async def ws_network(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
@@ -455,7 +477,43 @@ def ws_network(
     if page is None:
         connection.send_error(msg["id"], "not_found", "This house has no such network")
         return
+    if msg["key"] == STACK_ZWAVE:
+        # The controller's radio noise, read from Home Assistant's
+        # statistics away from the event loop (rule DASH-18).
+        try:
+            page["noise"] = await coordinator.async_network_noise()
+        except Exception as err:  # noqa: BLE001 - the page still shows without it
+            LOGGER.debug("Radio noise not read: %s", err)
     connection.send_result(msg["id"], page)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/network_expected",
+        vol.Required("key"): vol.All(str, vol.Length(max=80)),
+        vol.Required("minute"): vol.All(int, vol.Range(min=0, max=1439)),
+        vol.Required("on"): bool,
+    }
+)
+@callback
+def ws_network_expected(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Mark a network's outages at one time of day as expected, or stop
+    expecting them (rule DASH-18). Admin only."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    try:
+        coordinator.set_outage_expected(msg["key"], msg["minute"], msg["on"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+    connection.send_result(msg["id"], {})
 
 
 @websocket_api.require_admin
@@ -802,7 +860,7 @@ def ws_recommendation_ack(
     {
         vol.Required("type"): "device_sentinel/device_turn_on",
         vol.Required("device_id"): str,
-        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal", "voltage"]),
+        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal", "voltage", "firmware"]),
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )

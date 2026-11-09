@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.6 (2026-11-08)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.7 (2026-11-09)
 
 """Acting from the device page (rule DASH-09).
 
@@ -29,6 +29,7 @@ from __future__ import annotations
 import unicodedata
 
 from collections.abc import Callable
+import re
 from typing import Any
 
 from homeassistant.helpers import area_registry as ar
@@ -68,6 +69,7 @@ TURN_ON_WORDS = {
     "battery": "Battery sensor",
     "signal": "Signal sensor",
     "voltage": "Battery voltage sensor",
+    "firmware": "Firmware update check",
 }
 
 # Each mute kind's three settings lists, in the order every mute is
@@ -106,6 +108,18 @@ class NameInUse(Exception):
         super().__init__(name)
         self.name = name
         self.area = area
+
+
+def _is_update(ent: Any) -> bool:
+    """A firmware update entity: Home Assistant's update domain, never a
+    beta channel's, such as a first-generation Shelly's second one."""
+    entity_id = getattr(ent, "entity_id", "")
+    if not isinstance(entity_id, str) or not entity_id.startswith("update."):
+        return False
+    # A beta channel by Home Assistant's own marks, never by a name a
+    # person gave: "beta" as a word of the unique id or translation key.
+    marks = (str(getattr(ent, "unique_id", "") or ""), str(getattr(ent, "translation_key", "") or ""))
+    return not any(re.search(r"(^|[._\-])beta($|[._\-])", mark.lower()) for mark in marks)
 
 
 def _is_voltage(ent: Any) -> bool:
@@ -266,6 +280,8 @@ class DeviceActionsMixin:
             "battery": self._is_battery_percentage,  # type: ignore[attr-defined]
             "signal": self._is_signal,  # type: ignore[attr-defined]
             "voltage": _is_voltage,
+            # Home Assistant's firmware update entity (rule REC-05).
+            "firmware": _is_update,
         }[kind]
         return [
             ent

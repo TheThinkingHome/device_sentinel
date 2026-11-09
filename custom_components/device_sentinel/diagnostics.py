@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.4 (2026-11-07)
+# File: diagnostics.py, Version: 0.28.7 (2026-11-09)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -47,6 +47,7 @@ from .removed_days import counted_gaps
 from .const import (
     DATA_SIGNAL_STRESS,
     DATA_ADDRESS_CHANGES,
+    DATA_EXPECTED_OUTAGES,
     DATA_SHORT_DROP_DAYS,
     DATA_SHORT_DROPS,
     BROKER_SCOPE,
@@ -742,6 +743,8 @@ async def async_get_config_entry_diagnostics(
         # and any address two devices hold at once (rule UP-19); the
         # addresses themselves are replaced below.
         "address_changes": coordinator.data.get(DATA_ADDRESS_CHANGES, []),
+        # The outages the person expects (rule DASH-18).
+        "expected_outages": coordinator.data.get(DATA_EXPECTED_OUTAGES, []),
         "shared_addresses": coordinator.shared_addresses(),
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal. The split keeps the

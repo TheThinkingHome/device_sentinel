@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.6 (2026-11-08)
+# File: const.py, Version: 0.28.7 (2026-11-09)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2985,6 +2985,40 @@ DROP_DAY_TOTAL = "total"
 DROP_DAY_LONGEST = "longest"
 DROP_DAY_SIGNAL_WENT_N = "signal_went_n"
 DROP_DAY_SIGNAL_BACK_N = "signal_back_n"
+
+# Outages a person marked as expected, such as a nightly backup's
+# (rule DASH-18): one row per network and time of day, with the usual
+# length the pattern had when marked and when it was marked.
+DATA_EXPECTED_OUTAGES = "expected_outages"
+EXP_NETWORK = "network"
+EXP_MINUTE = "minute"
+EXP_LENGTH = "length"
+EXP_SET_AT = "set_at"
+# An outage is the expected one when it begins within this many minutes
+# of the expected time of day, runs no longer than this many times its
+# usual length, and the expected time has seen an outage within this
+# many days; past that the row is forgotten (rule DASH-18).
+EXPECTED_MINUTES = 15
+EXPECTED_LENGTH_TIMES = 2.0
+EXPECTED_FORGET_DAYS = 14
+# A pattern is outages on this many days at one time of day, making up
+# at least one in PATTERN_SHARE of the network's outages in the window;
+# a network with more than PATTERN_MAX_OUTAGES outages has none.
+PATTERN_MIN_TIMES = 3
+PATTERN_SHARE = 3
+PATTERN_MAX_OUTAGES = 120
+# How long an expected outage that ran long stays on the page.
+PATTERN_LONGER_DAYS = 7
+# The most rows a network page lists of each kind of repeat trouble.
+OFFENDER_ROWS = 10
+# A Z-Wave controller's radio noise (rule DASH-18): a channel that has
+# read at least NOISE_ABOVE_DB above its typical day for the last
+# NOISE_RECENT_DAYS days, once NOISE_MIN_DAYS days are on record, is
+# raised. Z-Wave JS turns a reading the radio could not make into
+# unknown, so no floor value is judged.
+NOISE_ABOVE_DB = 10.0
+NOISE_RECENT_DAYS = 3
+NOISE_MIN_DAYS = 14
 
 # Each Wi-Fi device's address and access point as its router's tracker
 # gives them, one row per change, kept to the History setting
