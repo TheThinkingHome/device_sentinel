@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 7 November 2026, on Device Sentinel 0.28.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -237,7 +237,7 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 
 **A person can remove one finished day from a device's learned rhythm by pressing its bar on either freeze chart of the device page, and count it again by pressing it again.**
 - **What it is for:** a day whose gap was long for a reason that will not come back, such as a power cut or an integration that stopped updating, which Device Sentinel could not see for itself.
-- **Kept, not erased:** the day keeps its figure, its date and its place in the history. Neither rule counts it: the Trimmed Maximum keeps its 14 days and leaves the day out ([FRZ-03](#frz-03-the-14-day-trimmed-maximum)), and the Log-Normal Percentile leaves it out of its days ([FRZ-04](#frz-04-the-42-day-log-normal-percentile)). The 7 days before a device is judged and the 28 before the Log-Normal Percentile is used count only counted days.
+- **Kept, not erased:** the day keeps its figure, its date and its place in the history. Neither rule counts it: the Trimmed Maximum keeps its 14 days and leaves the day out ([FRZ-03](#frz-03-the-14-day-trimmed-maximum)), and the Log-Normal Percentile leaves it out of its days ([FRZ-04](#frz-04-the-42-day-log-normal-percentile)). The 7 days before a device is judged and the 28 before the Log-Normal Percentile is used count only counted days, and so does the device page's count of the days to go before it is used again after a reset. Neither the rule's figure nor the day's own stored figure sets either chart's scale.
 - **The days set aside:** each rule sets aside from the days still counted, so a removed day is never also hatched or grey. Removing the hatched day makes the next-longest day the one set aside.
 - **At once:** removing a day or counting it again changes the wait at once ([FRZ-23](#frz-23-the-wait-behind-the-scenes)), so a quiet device can be listed frozen sooner, or leave the list.
 - **Asked first:** a removal asks first, with a warning to do it only when the cause is known and will not come back, since removing a day that was the device's real habit can list it frozen too soon. Counting a day again asks too, more briefly (see [DASH](Rulebook__14_DASH_Dashboard.md)).

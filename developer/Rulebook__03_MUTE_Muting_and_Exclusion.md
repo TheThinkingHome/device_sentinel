@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 A person makes two choices about what Device Sentinel reports. Excluding stops the watching; muting stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md). Battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md), and the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -80,7 +80,7 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 
 ### MUTE-07 A Mute Is Silent and Immediate
 
-**Muting takes a device off the Problem List at once for what the mute covers, with no notification.** A freeze mute leaves an unavailable device listed ([MUTE-06](#mute-06-the-freeze-mute-and-the-unavailable-mute)).
+**Muting takes a device off the Problem List at once for what the mute covers, with no notification.** A freeze mute leaves an unavailable device listed ([MUTE-06](#mute-06-the-freeze-mute-and-the-unavailable-mute)). On the device page, the status keeps its word and loses its alarm colour, with "muted", only when a mute covers what the page shows ([SIG-17](Rulebook__10_SIG_Signal.md#sig-17-short-drop-outs)).
 - **Not a recovery:** a mute is a person's act. An item that leaves the list because a mute of any kind, or its device's Mute everything, covers it leaves with no phone push, no recovery on the bus, and no "recovered" in the brief or the record.
 - **In the brief:** the brief records where the mute was pressed, on the device's line: "from its device page", "from the Recommendations tab" or "from the Problem List". That line stays unless the device is muted for everything, which leaves all its rows out of the brief (see [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md)).
 

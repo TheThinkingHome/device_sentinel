@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -164,7 +164,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 **Since 0.28.5, Device Sentinel records each change of a Z-Wave controller's Status (ready, unresponsive or jammed) with when it began, and shows it. It never judges from it.**
 - **Found:** by the sensor's unique id, ending `.controller_status`, whatever the entity is named.
 - **Recorded:** each change, on the controller's record; the newest 20 are kept. Unknown and unavailable are the sensor not answering and are not recorded. A start reads the sensor as it stands, and a reading that repeats the last adds nothing.
-- **Shown:** on the controller's device page, in the Reporting group, as "Controller status: Ready, since Nov 8, 9:00 AM". Simple shows it only when it is not Ready. Device Telemetry lists every change, newest first.
+- **Shown:** on the controller's device page, in the Reporting group, as "Controller status: Ready, since Nov 8, 9:00 AM". The first reading, taken at an install or an upgrade, reads "first read Nov 8, 4:35 PM", since when it began is not known; the Networks tab gives it no "since" either. Simple shows it only when it is not Ready. Device Telemetry lists every change, newest first.
 - **Next:** naming the controller as the cause of an outage waits for a real Unresponsive or Jammed in a house's readings.
 
 *Proof:* [`test_zwave_controller_status.py`](../tests/test_zwave_controller_status.py), `check_status_readings.js`.

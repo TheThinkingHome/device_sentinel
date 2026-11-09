@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -157,7 +157,7 @@ This section covers what a device is called, what kind of device it is, what pow
 
 **Since 0.28.5, Device Sentinel records why and when each Tasmota device restarted, from its Restart Reason and Last Restart Time sensors, and shows it. It explains a gap and never decides one.**
 - **Found:** by the sensors' unique ids, ending `_status_restart_reason` and `_last_restart_time`, whatever the entities are named.
-- **Recorded:** Tasmota sends both once, each time the device connects. Each restart is a reason with its time; the newest 10 are kept. A time within two minutes of the last one recorded is the same restart, since Tasmota works out the time from its uptime, and the recorded time follows the newest reading, so small drifts never add up to a restart that did not happen; a reason that arrives after its time corrects that restart. A time before 2020, from a device whose clock was never set, is no reading.
+- **Recorded:** Tasmota sends both once, each time the device connects. Each restart is a reason with its time; the newest 10 are kept. A time within two minutes of the last one recorded is the same restart, since Tasmota works out the time from its uptime, and the recorded time follows the newest reading, so small drifts never add up to a restart that did not happen; a reason that arrives after its time corrects that restart, within 10 minutes of it. A new reason paired with the last restart's time, which the time sensor still holds until the new time arrives, is the next restart's, and waits for its time rather than rewriting why the last restart happened. A time before 2020, from a device whose clock was never set, is no reading.
 - **Shown:** in Advanced, in the device page's Reporting group, "Last restart: Exception, Nov 8, 4:00 AM", with the earlier restarts folded under it. Simple does not show it. Device Telemetry lists every restart, newest first.
 
 *Proof:* [`test_tasmota_restarts.py`](../tests/test_tasmota_restarts.py), `check_status_readings.js`.
