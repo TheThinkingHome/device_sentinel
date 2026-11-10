@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_exclusion_card.js, Version: 0.27.11 (2026-10-28)
+// File: tools/panel_checks/check_exclusion_card.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: the Recommendations tab card that recommends excluding an
 // integration, one card each (rules MUTE-02, REC-03), and Send to Battery Notes offered
 // after a battery type is saved from the Power Not Set card (rule DEV-09).
@@ -155,7 +155,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     check("Send to Battery Notes is offered once the device has left the card", !!link
       && link.getAttribute("href").startsWith("https://github.com/andrew-codechimp/HA-Battery-Notes"), link && link.outerHTML);
     check("It names the device it is about", page.root.textContent.includes("Porch Button saved."));
-    [...page.root.querySelectorAll(".tab")].find((b) => b.textContent === "Problem List").click();
+    [...page.root.querySelectorAll(".tab")].find((b) => b.textContent === "Daily Brief").click();
     await settle(); await settle();
     [...page.root.querySelectorAll(".tab")].find((b) => b.textContent.startsWith("Recommendations")).click();
     await settle(); await settle();

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_stale_tab.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_stale_tab.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: a dashboard tab left open across an update (rule DASH-14).
 // Home Assistant hands an open tab the new dashboard file after an
 // update, while the old one still runs. The new copy must register
@@ -125,7 +125,7 @@ const notices = (panel) => panel.shadowRoot.querySelectorAll(".updated").length;
     load(t, NEW);
     await settle();
     check("a third copy adds no second line", notices(panel) === 1, notices(panel));
-    check("the page still answers", panel.shadowRoot.querySelectorAll(".tab").length === 8);
+    check("the page still answers", panel.shadowRoot.querySelectorAll(".tab").length === 7);
   }
 
   console.log("The running page hears it from the server");

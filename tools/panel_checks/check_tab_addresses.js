@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_tab_addresses.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_tab_addresses.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: every tab has its own address.
 // Run with: LC_ALL=en_US.UTF-8 node check_tab_addresses.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
@@ -72,7 +72,6 @@ const backLink = (root) => {
 
 const ADDRESSES = [
   ["Daily Brief", PREFIX],
-  ["Problem List", `${PREFIX}/problem-list`],
   ["Battery Trends", `${PREFIX}/battery-trends`],
   ["Signal Trends", `${PREFIX}/signal-trends`],
   ["Integrations", `${PREFIX}/integrations`],
@@ -130,6 +129,12 @@ const ADDRESSES = [
   check("it opens the Devices tab at Devices' address", selected(root) === "Devices" && where(window) === `${PREFIX}/devices`, [selected(root), where(window)]);
   ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=classification`));
   check("a device page saved from Classification leads back to Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
+
+  console.log("The Problem List's old address (rule DASH-02)");
+  ({ window, root } = await open(`${PREFIX}/problem-list`));
+  check("it opens the Daily Brief at its address", selected(root) === "Daily Brief" && where(window) === PREFIX, [selected(root), where(window)]);
+  ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=problem-list`));
+  check("a device page saved from the Problem List leads back to the Daily Brief", backLink(root) && backLink(root).text === "\u2039 Daily Brief", backLink(root));
 
   console.log("A device page reloaded, or opened from a link");
   ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=battery-trends`));

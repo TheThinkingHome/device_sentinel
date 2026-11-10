@@ -1,5 +1,5 @@
-// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.27.14 (2026-10-29)
-// Panel checks: an acknowledged row (rule REC-07). On the Problem List,
+// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.28.9 (2026-11-10)
+// Panel checks: an acknowledged row (rule REC-07). On the Daily Brief's Problem List,
 // the Daily Brief tab and the Recommendations cards the row fades to
 // 75%, all but its tick and the word beside it, so the tick still reads
 // as something to press; a ticked box says it can be taken back. Also
@@ -54,7 +54,7 @@ const PROBLEM = (uid, name, acknowledged) => ({ uid, device_id: uid, name, integ
 
 (async () => {
   console.log("\nThe look");
-  const { root } = await open("/problem-list");
+  const { root } = await open("");
   const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("\n");
   check("an acknowledged row's cells fade to 75%, all but the tick's",
     /tr\.acked td:not\(\.ackcell\):not\(\.ackhold\) \{ opacity: 0\.75; \}/.test(css), css.match(/[^\n]*acked[^\n]*/g));
@@ -63,21 +63,23 @@ const PROBLEM = (uid, name, acknowledged) => ({ uid, device_id: uid, name, integ
   check("nothing fades a whole row, tick and all", !/(^|[\s,])tr\.acked \{/.test(css) && !/\.rec\.acked, tr\.acked/.test(css)
     && !/tr\.acked td \{/.test(css), css.match(/[^\n]*acked[^\n]*/g));
 
-  console.log("\nThe Problem List");
-  const list = await open("/problem-list", { problem_list: () => ({ rows: [PROBLEM("u1", "Frozen Door", true), PROBLEM("u2", "Frozen Window", false)] }) });
-  const rows = [...list.root.querySelectorAll(".pane tbody tr")];
+  console.log("\nThe Daily Brief's Problem List, today");
+  const list = await open("", { problem_list: () => ({ rows: [PROBLEM("u1", "Frozen Door", true), PROBLEM("u2", "Frozen Window", false)] }) });
+  const rows = [...list.root.querySelectorAll(".pane tbody")][0] ? [...[...list.root.querySelectorAll(".pane tbody")][0].querySelectorAll("tr")] : [];
   check("the acknowledged row is marked acked, the other not",
     rows[0].classList.contains("acked") && !rows[1].classList.contains("acked"), rows.map((r) => r.className));
   check("its tick sits in the cell that does not fade", rows[0].children[0].classList.contains("ackcell"));
   check("a ticked box says it can be taken back; an open one says nothing",
     rows[0].querySelector("label.ackbox").getAttribute("title") === HOVER && !rows[1].querySelector("label.ackbox").hasAttribute("title"));
 
-  console.log("\nThe Daily Brief tab");
-  const brief = await open("", { brief: (reply) => ({ ...reply, is_today: true,
+  console.log("\nThe Daily Brief, a past day");
+  const brief = await open("", { brief: (reply) => ({ ...reply, is_today: false,
     now: [{ uid: "u1", device_id: "u1", name: "Frozen Door", problem: "frozen", since: new Date().toISOString(), seconds: 3600, acknowledged: true }] }) });
   const now = brief.root.querySelector(".pane tbody tr.acked");
-  check("an acknowledged row keeps its tick in the cell that does not fade, with the hover",
-    Boolean(now) && now.children[0].classList.contains("ackcell") && now.querySelector("label.ackbox").getAttribute("title") === HOVER);
+  // A past day is to read: its acknowledged row fades, with nothing to
+  // press (rule DASH-02).
+  check("an acknowledged row of a past day fades, with no tick to press",
+    Boolean(now) && !now.querySelector("input"));
 
   console.log("\nThe Recommendations cards");
   const card = { kind: "slow", title: "Slow Reporting Devices", body: "These devices go quiet.",
@@ -91,17 +93,17 @@ const PROBLEM = (uid, name, acknowledged) => ({ uid, device_id: uid, name, integ
   check("an open row's tick has no hover", !recRows[1].lastChild.querySelector("label.ack").hasAttribute("title"));
 
   console.log("\nMaintenance Mode says what pressing it does");
-  const off = await open("/problem-list");
+  const off = await open("");
   const pill = (r) => [...r.querySelectorAll("button.pill")].find((b) => /Maintenance/.test(b.textContent));
   check("off: Start Maintenance Mode", pill(off.root) && pill(off.root).textContent === "Start Maintenance Mode", pill(off.root) && pill(off.root).textContent);
-  const on = await open("/problem-list", { status: (reply) => ({ ...reply,
+  const on = await open("", { status: (reply) => ({ ...reply,
     maintenance: { open: true, until: new Date(Date.now() + 14.5 * 60e3).toISOString(), default_minutes: 10 } }) });
   check("open: End Maintenance Mode, with the minutes left",
     pill(on.root) && pill(on.root).textContent === "End Maintenance Mode (15 min left)", pill(on.root) && pill(on.root).textContent);
   on.panel.remove();
   // A window that ran out while the page was open reads as off, so the
   // button never offers to end what has ended.
-  const ended = await open("/problem-list", { status: (reply) => ({ ...reply,
+  const ended = await open("", { status: (reply) => ({ ...reply,
     maintenance: { open: true, until: new Date(Date.now() - 60e3).toISOString(), default_minutes: 10 } }) });
   check("a window already past its end: Start Maintenance Mode", pill(ended.root) && pill(ended.root).textContent === "Start Maintenance Mode",
     pill(ended.root) && pill(ended.root).textContent);

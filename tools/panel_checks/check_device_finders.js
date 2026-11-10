@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.28.9 (2026-11-10)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
 // dashboard (rules DASH-12, MUTE-03). The Devices tab's name
@@ -177,14 +177,19 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   check("A device whose history has gone opens Home Assistant's own page", link(row("Old Lamp")) === "/config/devices/device/ex-own-gone", link(row("Old Lamp")));
   const standingOf = (tr) => tr.children[4];
   check("STANDING says how it was excluded and what became of its history",
-    standingOf(row("Old Plug")).textContent.startsWith("Excluded, history kept until midnight.")
-    && standingOf(row("Old Lamp")).textContent.startsWith("Excluded, history deleted.")
-    && standingOf(row("Phone Randy")).textContent.startsWith("Excluded with its integration."),
+    standingOf(row("Old Plug")).textContent === "Excluded by you, history kept until midnight."
+    && standingOf(row("Old Lamp")).textContent === "Excluded by you, history deleted."
+    && standingOf(row("Phone Randy")).textContent === "Excluded by its integration.",
     [...bodyRows(root)].map((tr) => standingOf(tr).textContent));
-  check("One excluded with its integration is taken back on the integration's page",
-    standingOf(row("Phone Randy")).querySelector("a") && standingOf(row("Phone Randy")).querySelector("a").getAttribute("href").split("?")[0] === `${PREFIX}/integration/mobile_app`
-    && !standingOf(row("Phone Randy")).querySelector("button"), standingOf(row("Phone Randy")).innerHTML);
-  check("The key under the table says what an exclusion does", root.querySelector(".pane").lastElementChild.textContent.includes("deletes its history at the midnight"));
+  check("The word integration opens that integration's page",
+    standingOf(row("Phone Randy")).querySelector("a") && standingOf(row("Phone Randy")).querySelector("a").textContent === "integration"
+    && standingOf(row("Phone Randy")).querySelector("a").getAttribute("href").split("?")[0] === `${PREFIX}/integration/mobile_app`,
+    standingOf(row("Phone Randy")).innerHTML);
+  check("The Excluded chip is information only: no button in any row (rule DASH-12)",
+    bodyRows(root).every((tr) => !standingOf(tr).querySelector("button")));
+  check("The key under the table says what an exclusion does, and the ways back",
+    root.querySelector(".pane").lastElementChild.textContent.includes("deletes its history at the midnight")
+    && root.querySelector(".pane").lastElementChild.textContent.includes("Exclusions and Muting"));
   await type(root, "lamp");
   check("The search narrows the excluded devices too", JSON.stringify(names(root)) === JSON.stringify(["Old Lamp"]), names(root));
   await type(root, "");
@@ -197,14 +202,6 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   await settle();
   check("Pressing it narrows the excluded devices to that area", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
   await choose(root, "Show one area", "");
-  const before = calls.length;
-  standingOf(row("Old Plug")).querySelector("button").click();
-  await settle();
-  await settle();
-  const sent = calls.slice(before).find((c) => c.type === "device_sentinel/device_exclude");
-  check("Cancel the exclusion takes the device back, saying it was pressed on the Devices tab",
-    sent && sent.device_id === "ex-own-kept" && sent.on === false && sent.source === "devices_tab", sent);
-  check("and the tab is fetched again", calls.slice(before).some((c) => c.type === "device_sentinel/devices"));
   chipNamed("Watched").click();
   await settle();
   check("Watched leads back to the watched devices", bodyRows(root).length === 103, bodyRows(root).length);
@@ -212,29 +209,54 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   ({ root } = await open(`${PREFIX}/devices`, { devices: { rows: reply.rows, excluded: [] } }));
   check("With nothing excluded, the chip reads 0", chipNamed("Excluded") && chipNamed("Excluded").textContent === "Excluded 0");
 
-  console.log("\nAn integration's page excludes it or takes it back");
-  const watchedPage = { ...fleet.integration, excluded: false };
-  ({ root, calls } = await open(`${PREFIX}/integration/${fleet.integration.domain}`, { integration: watchedPage }));
-  const chip = (start) => [...root.querySelectorAll(".pane button.chip")].find((b) => b.textContent.startsWith(start));
-  check("A watched integration's page offers Exclude this integration", Boolean(chip("Exclude this integration")) && !chip("Cancel the exclusion"));
+  console.log("\nAn integration's page has the Integrations tab's five buttons (rule MUTE-03)");
+  const domain = fleet.integration.domain;
+  const tabRows = (excluded, mutes) => {
+    const reply = JSON.parse(JSON.stringify(fleet.integrations));
+    reply.rows = reply.rows.map((r) => (r.domain === domain ? { ...r, excluded, mutes: { everything: false, freeze: false, battery: false, signal: false, ...mutes } } : r));
+    return reply;
+  };
+  // The page reads its own exclusion and mutes; the tab's list may be
+  // older, so it says the opposite here.
+  const watchedPage = { ...fleet.integration, excluded: false, mutes: { everything: false, freeze: false, battery: true, signal: false } };
+  ({ root, calls } = await open(`${PREFIX}/integration/${domain}`, { integration: watchedPage, integrations: tabRows(true, {}) }));
+  const chip = (start) => [...root.querySelectorAll(".pane button.chip")].find((b) => b.textContent.replace("\u2713 ", "").startsWith(start));
+  const labels = [...root.querySelectorAll(".pane .intbuttons button.chip")].map((b) => b.textContent);
+  check("Exclude, Mute everything, Mute freeze, Mute battery and Mute signal, as on the tab",
+    JSON.stringify(labels) === JSON.stringify(["Exclude", "Mute everything", "Mute freeze", "\u2713 Mute battery", "Mute signal"]), labels);
+  check("A mute that is on is lit", chip("Mute battery").classList.contains("on") && chip("Mute battery").getAttribute("aria-pressed") === "true");
   let mark = calls.length;
-  chip("Exclude this integration").click();
+  chip("Mute battery").click();
   await settle();
-  let act = calls.slice(mark).find((c) => c.type === "device_sentinel/integration_exclude");
-  check("It sends the exclusion for that integration", act && act.domain === fleet.integration.domain && act.on === true, act);
-  const excludedPage = { ...fleet.integration, standing: "excluded", excluded: true };
-  ({ root, calls } = await open(`${PREFIX}/integration/${fleet.integration.domain}`, { integration: excludedPage }));
-  check("An excluded integration's page offers Cancel the exclusion", Boolean(chip("Cancel the exclusion")) && !chip("Exclude this integration"));
+  let act = calls.slice(mark).find((c) => c.type === "device_sentinel/integration_mute");
+  check("Pressing a lit mute lifts it, saying it was pressed on the integration's page",
+    act && act.domain === domain && act.kind === "battery" && act.on === false && act.source === "integration_page", act);
   mark = calls.length;
-  chip("Cancel the exclusion").click();
+  chip("Mute signal").click();
+  await settle();
+  act = calls.slice(mark).find((c) => c.type === "device_sentinel/integration_mute");
+  check("Pressing one that is off sets it", act && act.kind === "signal" && act.on === true, act);
+  mark = calls.length;
+  chip("Exclude").click();
   await settle();
   act = calls.slice(mark).find((c) => c.type === "device_sentinel/integration_exclude");
-  check("It sends the exclusion's cancelling", act && act.on === false, act);
-  ({ root } = await open(`${PREFIX}/integration/${fleet.integration.domain}`, {
-    integration: watchedPage,
+  check("Exclude sends the exclusion, saying it was pressed on the integration's page",
+    act && act.domain === domain && act.on === true && act.source === "integration_page", act);
+  const excludedPage = { ...fleet.integration, standing: "excluded", excluded: true, mutes: {} };
+  ({ root, calls } = await open(`${PREFIX}/integration/${domain}`, { integration: excludedPage, integrations: tabRows(false, {}) }));
+  check("An excluded integration's page shows Excluded lit", chip("Excluded") && chip("Excluded").classList.contains("on"));
+  check("with its mutes at rest", ["Mute everything", "Mute freeze", "Mute battery", "Mute signal"].every((w) => chip(w).getAttribute("aria-disabled") === "true"));
+  check("and how to keep its history", root.querySelector(".pane").textContent.includes("Press Excluded again before then to keep it."));
+  mark = calls.length;
+  chip("Excluded").click();
+  await settle();
+  act = calls.slice(mark).find((c) => c.type === "device_sentinel/integration_exclude");
+  check("Pressing Excluded takes the exclusion back", act && act.on === false && act.source === "integration_page", act);
+  ({ root } = await open(`${PREFIX}/integration/${domain}`, {
+    integration: watchedPage, integrations: tabRows(false, {}),
     integration_exclude: () => { throw Object.assign(new Error("Home Assistant refused it."), { code: "refused" }); },
   }));
-  chip("Exclude this integration").click();
+  chip("Exclude").click();
   await settle();
   await settle();
   const note = root.querySelector(".pane .actnote.refused");

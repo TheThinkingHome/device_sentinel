@@ -1,5 +1,8 @@
-// File: tools/panel_checks/check_problem_list.js, Version: 0.27.10 (2026-10-27)
-// Panel checks: the Problem List tab's SINCE column. A device that has
+// File: tools/panel_checks/check_problem_list.js, Version: 0.28.9 (2026-11-10)
+// Panel checks: the Problem List, a section of the Daily Brief tab
+// (rule DASH-02). Today it is the list to act on, with its filters,
+// sorts, ticks and mutes; a past day's is the problems that stood that
+// night, to read; the old address opens the Daily Brief. Its SINCE column. A device that has
 // never reported has no moment it stopped: its time is when it was
 // discovered, and the tab says so, as the Daily Brief does ("discovered
 // 3:47 PM", rule LIST-10). Every other problem
@@ -63,7 +66,7 @@ async function open(path, answers = {}) {
     { uid: "u2", device_id: "f1", name: "Frozen Sensor", integration: "test", integration_name: "Test",
       problem: "frozen", since: at(30), acknowledged: false, mutes: [], power: null, never_reported: false },
   ];
-  const { root } = await open(`${PREFIX}/problem-list`, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }) });
+  const { root } = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }) });
   const pane = root.querySelector(".pane");
   const heads = [...pane.querySelectorAll("thead th")].map((th) => th.textContent.trim());
   const sinceAt = heads.indexOf("SINCE");
@@ -74,6 +77,97 @@ async function open(path, answers = {}) {
   check("A never-reported device reads discovered, with the time", /^discovered \S.*\d{1,2}:\d\d/.test(since("Never Sensor") || ""), since("Never Sensor"));
   check("Any other problem keeps its bare time", !!since("Frozen Sensor") && !since("Frozen Sensor").startsWith("discovered")
     && /\d{1,2}:\d\d/.test(since("Frozen Sensor")), since("Frozen Sensor"));
+
+  console.log("\nThe Problem List inside the Daily Brief (rule DASH-02)");
+  const sections = (r) => [...r.querySelectorAll(".pane h3.section")].map((h) => h.textContent);
+  check("one tab: Daily Brief, with no Problem List tab", [...root.querySelectorAll(".tab")].some((t) => t.textContent === "Daily Brief")
+    && ![...root.querySelectorAll(".tab")].some((t) => t.textContent === "Problem List"));
+  check("its sections read Problem List, Repeat Offenders, What Happened",
+    JSON.stringify(sections(root)) === JSON.stringify(["Problem List", "Repeat Offenders", "What Happened"]), sections(root));
+  check("today's list has its filters, its ticks and a mute beside each problem",
+    [...pane.querySelectorAll(".chip")].some((c) => c.textContent.startsWith("Open "))
+    && pane.querySelectorAll('tbody input[type="checkbox"]').length >= 2, pane.textContent.slice(0, 200));
+  const muteRows = [{ ...rows[1], mutes: ["freeze"] }];
+  const muted = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(muteRows)) }) });
+  check("Mute freeze sits beside a frozen device", [...muted.root.querySelectorAll(".pane button.chip")].some((b) => b.textContent === "Mute freeze"));
+  const past = await open(PREFIX, {
+    problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }),
+    brief: () => ({ ...JSON.parse(JSON.stringify(payloads.brief)), is_today: false, day: "2026-09-20", back: null, forward: "2026-09-21",
+      now: [{ uid: "u2", device_id: "f1", name: "Old Frozen", problem: "frozen", since: at(3000), seconds: 3600, acknowledged: false }] }),
+  });
+  const pastPane = past.root.querySelector(".pane");
+  check("a past day lists the problems that stood that night", pastPane.textContent.includes("Old Frozen") && !pastPane.textContent.includes("Frozen Sensor"));
+  check("to read: no ticks, no mutes, no filters", !pastPane.querySelector('input[type="checkbox"]')
+    && ![...pastPane.querySelectorAll("button.chip")].some((b) => /^Mute |^Open |^All /.test(b.textContent)));
+  const old = await open(`${PREFIX}/problem-list`);
+  check("the Problem List's old address opens the Daily Brief at its own", old.window.location.pathname === PREFIX
+    && old.root.querySelector('.tab[aria-selected="true"]').textContent === "Daily Brief", old.window.location.pathname);
+
+  console.log("\nBack to today from another tab (rule DASH-02)");
+  {
+    const asked = [];
+    const back = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }),
+      brief: (m) => { asked.push(m.day || "today"); const b = JSON.parse(JSON.stringify(payloads.brief));
+        return m.day ? { ...b, is_today: false, day: m.day, back: null, forward: null, now: [] } : { ...b, is_today: true }; } });
+    await back.panel._briefGo("2026-09-20");
+    await settle();
+    const tabNamed = (name) => [...back.root.querySelectorAll(".tab")].find((t) => t.textContent.startsWith(name));
+    tabNamed("Devices").click();
+    await settle();
+    tabNamed("Daily Brief").click();
+    await settle(); await settle();
+    check("coming back opens today, with the list to act on",
+      back.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2 && asked[asked.length - 1] === "today", asked);
+  }
+
+  console.log("\nA past day kept through a device page, and today's list kept when the brief fails");
+  {
+    const asked = [];
+    const kept = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }),
+      brief: (m) => { asked.push(m.day || "today"); const b = JSON.parse(JSON.stringify(payloads.brief));
+        return m.day ? { ...b, is_today: false, day: m.day, back: null, forward: null,
+          now: [{ uid: "u9", device_id: payloads.devices.rows[0].device_id, name: "Old Frozen", problem: "frozen", since: at(3000), seconds: 3600, acknowledged: false }] } : { ...b, is_today: true }; } });
+    await kept.panel._briefGo("2026-09-20");
+    await settle();
+    [...kept.root.querySelectorAll(".pane a")].find((a) => a.textContent === "Old Frozen")
+      .dispatchEvent(new kept.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle(); await settle();
+    const backLink = kept.root.querySelector(".pane > p:first-child a");
+    backLink.dispatchEvent(new kept.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle(); await settle();
+    const stayed = kept.root.querySelector(".pane").textContent.includes("Old Frozen");
+    check("back from a device opened on a past day returns to that day", kept.root.querySelector(".pane").textContent.includes("Old Frozen")
+      && asked[asked.length - 1] === "2026-09-20", asked);
+    // The Daily Brief tab pressed while a past day shows.
+    [...kept.root.querySelectorAll(".tab")].find((t) => t.textContent === "Daily Brief").click();
+    await settle(); await settle();
+    check("the Daily Brief tab pressed on a past day opens today", stayed && asked[asked.length - 1] === "today"
+      && kept.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2, asked);
+    let failingCalls = 0;
+    const failing = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }),
+      brief: () => { failingCalls += 1; if (failingCalls > 1) throw new Error("down"); return JSON.parse(JSON.stringify(payloads.brief)); } });
+    await failing.panel._briefGo(null);
+    await settle();
+    const text = failing.root.querySelector(".pane").textContent;
+    check("today's brief failing still shows the Problem List, with words that fit", text.includes("Today's brief could not be read")
+      && failing.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2, text.slice(0, 160));
+  }
+
+  console.log("\nA late reply is not drawn over another tab");
+  {
+    let release;
+    const slow = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }),
+      brief: (m) => (m.day ? new Promise((resolve) => { release = () => resolve({ ...JSON.parse(JSON.stringify(payloads.brief)), is_today: false, day: m.day }); })
+        : JSON.parse(JSON.stringify(payloads.brief))) });
+    const going = slow.panel._briefGo("2026-09-20");
+    [...slow.root.querySelectorAll(".tab")].find((t) => t.textContent.startsWith("Devices")).click();
+    await settle();
+    release();
+    await going;
+    await settle();
+    check("Devices stays drawn", !slow.root.querySelector(".pane h3.section") || ![...slow.root.querySelectorAll(".pane h3.section")].some((h) => h.textContent === "What Happened"),
+      [...slow.root.querySelectorAll(".pane h3.section")].map((h) => h.textContent));
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

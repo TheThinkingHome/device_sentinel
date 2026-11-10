@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_not_set.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_not_set.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: "Not Set" (rules DASH-04, DEV-10, DASH-12). A type, an
 // area or a battery nobody has set reads "Not Set" on every tab and on
 // the device page, a link that opens the way to set it in place, saved
@@ -109,8 +109,8 @@ const click = async (node) => { node.click(); await settle(); };
   const exTypes = tableRows(root).map((tr) => tr.children[exHeads.indexOf("TYPE")].textContent);
   check("TYPE reads Not Watched", exTypes.every((t) => t === "Not Watched"), exTypes);
   const exKey = root.querySelector(".pane").lastElementChild.textContent;
-  check("the key under it is the one line on an excluded device's history",
-    exKey === "Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded.", exKey);
+  check("the key under it says what an exclusion does and the ways back",
+    exKey.startsWith("Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded. To take one back,"), exKey);
 
   console.log("\nBattery Trends: TYPE from the Battery Trends tab");
   const battery = (reply) => {

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_links.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_device_links.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: a device's name opens a page that is there (rule DASH-12).
 // A device Device Sentinel watches, or once watched and keeps a record
 // for, opens its page here; any other device still in Home Assistant
@@ -117,13 +117,16 @@ const EXPECTED = { [WATCHED.device_id]: "here", "aside-never": "ha", "aside-kept
   };
   let { root } = await open("/daily-brief", { brief });
   check("each name in Last 24 Hours opens a page that is there", JSON.stringify(kinds(root)) === JSON.stringify(EXPECTED), kinds(root));
+  // A past day's problems: today's are the Problem List, which lists
+  // only devices still in Home Assistant.
   const briefNow = () => {
     const b = clone(payloads.brief);
+    b.is_today = false;
     b.now = NAMES.map(([id, name], i) => ({ uid: `u${i}`, device_id: id, name, problem: "Unavailable", since: "2026-09-25T20:00:00+00:00", seconds: 60, acknowledged: false }));
     return b;
   };
   ({ root } = await open("/daily-brief", { brief: briefNow }));
-  check("and each name in Right Now", JSON.stringify(kinds(root)) === JSON.stringify(EXPECTED), kinds(root));
+  check("and each name in a past day's Problem List", JSON.stringify(kinds(root)) === JSON.stringify(EXPECTED), kinds(root));
   const briefRepeat = () => {
     const b = clone(payloads.brief);
     b.repeat = { available: true, paragraph: "", words: "",

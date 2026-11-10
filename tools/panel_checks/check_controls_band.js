@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_controls_band.js, Version: 0.28.0 (2026-11-03)
+// File: tools/panel_checks/check_controls_band.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: the controls in a band of their own above the tabs, and
 // tabs that read as tabs (rule DASH-02).
 // Run with: LC_ALL=en_US.UTF-8 node check_controls_band.js [path/to/panel.js]
@@ -66,11 +66,12 @@ const rule = (root, selector) => {
 };
 
 (async () => {
-  console.log("The page opened on the Problem List's own address");
+  console.log("The page opened on the Problem List's old address");
   const page = await open(`${PREFIX}/problem-list`);
   const root = page.root;
   const active = root.querySelector('.tab[aria-selected="true"]');
-  check("the Problem List tab is the one selected", active && active.textContent === "Problem List", active && active.textContent);
+  // The Problem List is a section of the Daily Brief (rule DASH-02).
+  check("the Daily Brief tab is the one selected", active && active.textContent === "Daily Brief", active && active.textContent);
 
   console.log("The controls sit in a band of their own");
   const head = root.querySelector(".body > .head");

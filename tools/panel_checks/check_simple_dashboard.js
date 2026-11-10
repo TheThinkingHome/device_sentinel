@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.28.9 (2026-11-10)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -117,12 +117,12 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
 (async () => {
   console.log("The setting opens the dashboard");
   let { root, panel, window } = await open({ __mode: "simple", __path: "" });
-  check("Simple: Signal Trends is off the tab row, Integrations and Networks on it, and there is no Classification",
-    !tabs(root).includes("Signal Trends") && !tabs(root).includes("Classification")
-    && tabs(root).includes("Integrations") && tabs(root).includes("Networks") && tabs(root).length === 7, tabs(root));
+  check("Simple: Signal Trends is off the tab row, Integrations and Networks on it, and no Classification or Problem List tab",
+    !tabs(root).includes("Signal Trends") && !tabs(root).includes("Classification") && !tabs(root).includes("Problem List")
+    && tabs(root).includes("Integrations") && tabs(root).includes("Networks") && tabs(root).length === 6, tabs(root));
   check("the switch shows Simple pressed", modeButton(root, "Simple").getAttribute("aria-pressed") === "true");
   await click(modeButton(root, "Advanced"));
-  check("the switch moves the page to Advanced", tabs(root).length === 8, tabs(root));
+  check("the switch moves the page to Advanced", tabs(root).length === 7, tabs(root));
   check("and shows Advanced pressed", modeButton(root, "Advanced").getAttribute("aria-pressed") === "true");
   // A tab hidden for five minutes: Home Assistant takes the dashboard
   // out of the page and puts the same one back when it is shown (rule DASH-03).
@@ -130,17 +130,17 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   window.document.body.append(panel);
   await panel._refresh();
   await settle();
-  check("a hidden tab shown again keeps the switch", tabs(root).length === 8
+  check("a hidden tab shown again keeps the switch", tabs(root).length === 7
     && modeButton(root, "Advanced").getAttribute("aria-pressed") === "true", tabs(root));
   check("nothing is kept in the browser", window.localStorage.length === 0 && window.sessionStorage.length === 0);
   // Leaving for another page of Home Assistant: the dashboard opened
   // again is a new one, which starts from the setting.
   ({ root } = await open({ __mode: "simple", __path: "" }));
-  check("leaving the dashboard returns it to the setting", tabs(root).length === 7, tabs(root));
+  check("leaving the dashboard returns it to the setting", tabs(root).length === 6, tabs(root));
   ({ root } = await open({ __mode: "simple", __path: "/signal-trends" }));
   check("a hidden tab still opens from a link, and shows while open", tabs(root).includes("Signal Trends"), tabs(root));
   ({ root } = await open({ __mode: "advanced", __path: "" }));
-  check("Advanced: all eight tabs", tabs(root).length === 8, tabs(root));
+  check("Advanced: all seven tabs", tabs(root).length === 7, tabs(root));
 
   console.log("Simple's device page");
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.status.category = "reporting"; }));
@@ -295,9 +295,11 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   ({ root } = await open({ __mode: "simple", __path: "/integration/test", integration: () => JSON.parse(JSON.stringify(payloads.integration)) }));
   // Simple excludes whole integrations, on the Integrations tab and on
   // each integration's page (rule MUTE-03).
-  check("Exclude this integration, in Simple too", !!anyButton(root, "Exclude this integration"), text(root).slice(0, 80));
+  // The Integrations tab's five buttons, in Simple too (rules MUTE-03, DASH-04).
+  const five = ["Exclude", "Mute everything", "Mute freeze", "Mute battery", "Mute signal"];
+  check("Exclude and the four mutes, in Simple too", five.every((w) => !!anyButton(root, w)), text(root).slice(0, 120));
   ({ root } = await open({ __mode: "advanced", __path: "/integration/test", integration: () => JSON.parse(JSON.stringify(payloads.integration)) }));
-  check("and in Advanced", !!anyButton(root, "Exclude this integration"));
+  check("and in Advanced", five.every((w) => !!anyButton(root, w)));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

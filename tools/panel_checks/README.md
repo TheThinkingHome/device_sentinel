@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.28.8 (2026-11-09) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.28.9 (2026-11-10) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -11,7 +11,7 @@ written rather than what it proves).
 
 | Where | File | Checks | What it proves |
 |---|---|---|---|
-| Every tab | `check_tab_addresses.js` | 31 | each tab's own address, Classification's old address opening the Devices tab, and the dashboard opening on the Daily Brief |
+| Every tab | `check_tab_addresses.js` | 31 | each tab's own address, Classification's old address opening the Devices tab, the Problem List's opening the Daily Brief, and the dashboard opening on the Daily Brief |
 | Every tab | `check_back_links.js` | 19 | back links to the exact page a view was opened from, and Print beside the gear |
 | Every tab | `check_controls_band.js` | 20 | the controls in a band above the tabs, and tabs that read as tabs |
 | Every tab | `check_tables_hold_columns.js` | 14 | every table pinned, so filters and sorts leave the columns still |
@@ -19,7 +19,7 @@ written rather than what it proves).
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
 | Every tab | `check_type_filters.js` | 35 | types on Battery Trends, Devices and Recommendations, a type in a row as a link that narrows the tab and Not Set to set one, a type set from a card saying so, and no "null" on a quiet day |
 | Every tab | `check_not_set.js` | 17 | "Not Set" for a type, an area or a battery: a link that sets it in place on the Devices tab, Battery Trends and the device page, saved with where it was pressed, and "Not Watched" on the Devices tab's Excluded and Set aside chips for a device not watched, offered under its own words in the Type filter |
-| Every tab | `check_acknowledged_rows.js` | 13 | an acknowledged row fades to 75% but its tick and "Acknowledged", with the hover, on the Problem List, the Daily Brief tab and the Recommendations cards; the Maintenance Mode button's words |
+| Every tab | `check_acknowledged_rows.js` | 13 | an acknowledged row fades to 75% but its tick and "Acknowledged", with the hover, on the Daily Brief's Problem List, a past day's problems with nothing to press, and the Recommendations cards; the Maintenance Mode button's words |
 | Every tab | `check_no_stray_words.js` | 56 | no "null" or "undefined" drawn on any tab, in Simple or Advanced |
 | Integrations | `check_integrations_tab.js` | 58 | the Integrations tab's columns and buttons in both views, its chips and recommendations, and the Devices tab's columns in Simple and Advanced |
 | Networks | `check_networks.js` | 41 | the Networks tab after Integrations in Simple and Advanced, its columns in each, a network's page with its counts, sensors and settings in Simple, and its coordinator, 30 days of outages, signal health and pairing in Advanced, Turn it on from the page, a count opening the Devices tab on those devices, and the other tabs drawing when the Networks answer fails |
@@ -31,7 +31,7 @@ written rather than what it proves).
 | Devices | `check_classification_sources.js` | 19 | the gear, the date beside "As of", the Devices tab's Watched, Excluded and Set aside chips with each one's STANDING, Classification's old address opening Set aside, and Simple without Set aside |
 | Devices | `check_integration_names.js` | 4 | the INTEGRATION column shows and sorts by the integration's name, its link keeping the id |
 | Every tab | `check_device_links.js` | 6 | a device's name opens a page that is there: its page here when Device Sentinel has one, Home Assistant's own device page for any other device still in Home Assistant, plain words for one removed from it, in the Daily Brief's tables, MQTT's Also on the Broker and a network page's hardware |
-| Problem List | `check_problem_list.js` | 2 | a never-reported device's SINCE reads "discovered" with the time, as the Daily Brief says it |
+| Daily Brief | `check_problem_list.js` | 14 | the Problem List at the head of the Daily Brief: one tab, its sections Problem List, Repeat Offenders and What Happened, today's list with its filters, ticks and mutes, a past day's to read only and kept through a device page, today again from another tab or the tab pressed, a late answer never drawn over another tab, today's list kept when the rest fails, the old address, and a never-reported device's SINCE reading "discovered" with the time |
 | Integrations | `check_no_hardware_integrations.js` | 8 | an integration with no hardware of its own on the Integrations tab, and a summary led by the All chip's total |
 | Integrations | `check_no_hardware_pages.js` | 18 | its page, and a helper's, naming the devices it adds entities to |
 | A device's page | `check_device_page_layout.js` | 58 | the page's order and its four groups (Power, Signal, Reporting, Actions), the Firmware row with its history or one line for one version, live values, sensor links, both rule charts, headings in Title Case, Previous and Next from every page that lists devices (staying in the table or list pressed, stepping to set-aside and excluded devices with a page here and passing by those without, grey after a reload), and the device cards, which say where each answer was given |
@@ -54,7 +54,7 @@ written rather than what it proves).
 | A device's page | `check_dated_histories.js` | 4 | a skipped day breaks a chart's line |
 | A device's page | `check_status_bar.js` | 16 | the status bar: green within the rhythm, yellow past it, red when frozen, gray for unavailable with "Unavailable since" (with the date when it went on an earlier day) and the bar stopped when the device went, and no NaN from a time that cannot be read; and Its Rhythm's line under the wait rule, the button at its own width, chart titles at 16px and room between the charts |
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
-| Devices | `check_device_finders.js` | 46 | the Devices tab's search, Area and Label filters, an area in a row as a link that narrows the list, its Excluded and Set aside chips with Cancel the exclusion, each chip's own choices, the known type of an excluded device, the page a name opens, and an integration's page excluding it or taking it back |
+| Devices | `check_device_finders.js` | 50 | the Devices tab's search, Area and Label filters, an area in a row as a link that narrows the list, its Excluded chip, information only, and Set aside chip, each chip's own choices, the known type of an excluded device, the page a name opens, and an integration's page with the Integrations tab's five buttons, lit when on and undone by a second press |
 | Battery | `check_battery_steps.js` | 9 | how a battery reports, "Battery reports in" on its page in Advanced, and on Battery Trends |
 | Battery | `check_battery_weeks.js` | 46 | five weekly averages, a model's pace as the slowest to the fastest of its other cells, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
