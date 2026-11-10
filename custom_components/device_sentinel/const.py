@@ -3281,6 +3281,7 @@ def _wiki_link(page: str | None = None) -> str:
 
 WIKI_LINK_HOME = _wiki_link()
 WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications-and-Daily-Brief")
+WIKI_LINK_BRIEF_EMAIL = _wiki_link("Sending-the-Daily-Brief-by-Email")
 WIKI_LINK_ADVANCED = _wiki_link("Advanced")
 WIKI_LINK_WIFI = _wiki_link("WiFi")
 WIKI_LINK_EXTENDED = _wiki_link("Extended-Diagnostics")

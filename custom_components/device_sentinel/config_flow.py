@@ -181,6 +181,7 @@ from .const import (
     WIKI_LINK_EXCLUSIONS,
     WIKI_LINK_FREEZE,
     WIKI_LINK_HOME,
+    WIKI_LINK_BRIEF_EMAIL,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_SIGNAL,
 )
@@ -1962,7 +1963,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="notifications",
             errors=errors,
-            description_placeholders={"wiki_link": WIKI_LINK_NOTIFICATIONS},
+            # Links reach the strings as placeholders: Home Assistant
+            # refuses a URL written into a translation.
+            description_placeholders={
+                "wiki_link": WIKI_LINK_NOTIFICATIONS,
+                "email_link": WIKI_LINK_BRIEF_EMAIL,
+            },
             data_schema=vol.Schema(
                 {
                     vol.Required("instant"): section(instant_section, {}),
