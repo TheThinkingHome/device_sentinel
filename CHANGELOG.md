@@ -2,6 +2,12 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
+## [0.28.7](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.7), November 9, 2026
+
+A new Networks tab shows each network your devices report through, Zigbee2MQTT, ZHA, Z-Wave, Matter, Wi-Fi, the MQTT broker and hubs, and each network's own page lists its devices, outages, firmware and the sensors to turn on. A network that goes down at the same time night after night is told in one sentence, and you can mark it as expected. A device that drops out for a few minutes and comes back is counted as a short drop-out instead of being reported unavailable, under a limit you can set. Wi-Fi devices show their address and access point, and two devices holding one address are flagged. Previous and Next on a device's page stay in the list you came from.
+
+Co-authored with Tim Plas (@tplas).
+
 ## [0.27.17](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.17), November 1, 2026
 
 Bug fixes and a finished dashboard. Simple shows only what is necessary to act on, and Advanced adds the trends, charts and setup. Each device's page groups its details under Power, Signal, Reporting and Actions, and its status bar turns yellow when the device is late and gray when it is unavailable. There are fewer false alarms: down times are truer, re-pairing one device restarts only that device, and a Matter button nobody has pressed is no longer reported frozen. Battery Trends gives each falling battery's time left as a range, and the Daily Brief tells separate failures separately and names each integration as Home Assistant does.
