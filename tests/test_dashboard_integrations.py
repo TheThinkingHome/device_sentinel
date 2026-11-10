@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_integrations.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_integrations.py, Version: 0.28.8 (2026-11-09)
 
 """The Integrations tab and each integration's page (rule DASH-16).
 
@@ -24,6 +24,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_INTEGRATIONS,
+    DATA_DEVICES,
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     SYS_BRIDGE_DOWN,
@@ -120,6 +121,24 @@ async def test_an_integrations_page(hass: HomeAssistant, hass_ws_client):
     coord = hass.config_entries.async_entries("device_sentinel")[0].runtime_data
     global_mutes = {row["device_id"]: row["muted_global"] for row in coord.classification_rows()}
     assert all(device["muted_global"] == global_mutes[device["device_id"]] for device in page["devices"])
+
+
+async def test_a_set_aside_device_says_whether_it_has_a_page(hass: HomeAssistant, hass_ws_client):
+    """A device set aside that Device Sentinel never watched has no page
+    of its own here, so the integration's page opens Home Assistant's
+    for it; one it once watched keeps its page (rule DASH-12)."""
+    coord, _, _ = await _house(hass)
+    ping = hass.config_entries.async_entries("ping")[0]
+    old = _device(hass, ping, "router", "Old Router")
+    coord._rebuild_registry_view()
+    coord.data[DATA_DEVICES][old.id] = {}
+    client = await hass_ws_client(hass)
+    reply = await _call(client, type="device_sentinel/integration", domain="ping")
+    assert reply["success"], reply
+    pages = {device["name"]: device["page"] for device in reply["result"]["devices"]}
+    assert pages == {"James Laptop": False, "Old Router": True}
+    reply = await _call(client, type="device_sentinel/integration", domain="mqtt")
+    assert all(device["page"] for device in reply["result"]["devices"])
 
 
 async def test_an_outage_still_open_is_listed_as_such(hass: HomeAssistant, hass_ws_client):

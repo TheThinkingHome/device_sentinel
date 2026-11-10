@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_network_page_extras.py, Version: 0.28.7 (2026-11-09)
+# File: tests/test_network_page_extras.py, Version: 0.28.8 (2026-11-09)
 
 """More on a network's page (rules DASH-17, DASH-18).
 
@@ -281,6 +281,34 @@ async def test_noise_that_came_down_is_not_raised(hass: HomeAssistant, monkeypat
     noise = await coordinator.async_network_noise()
     assert noise["channels"][0]["raised"] is False and noise["channels"][0]["now"] is None
     assert noise["cards"] == []
+
+
+@pytest.mark.usefixtures("_afternoon")
+async def test_a_channel_with_no_current_reading_is_left_out(hass: HomeAssistant, monkeypatch):
+    """An 800 series stick's Long Range channel has an average sensor and
+    no current one; a row of blanks for it says nothing (rule DASH-18)."""
+    controller, entry = _device(hass, "zwave_js", "3967834211-1", "Controller")
+    now0 = _noise(hass, entry, controller, 0, "current")
+    avg3 = _noise(hass, entry, controller, 3, "average")
+    hass.states.async_set(now0.entity_id, "-95")
+    hass.states.async_set(avg3.entity_id, "-100")
+    coordinator = await setup_coordinator(hass)
+
+    async def daily(ids):
+        assert ids == [now0.entity_id]
+        return {}
+
+    monkeypatch.setattr(coordinator, "_noise_daily", daily)
+    noise = await coordinator.async_network_noise()
+    assert [c["channel"] for c in noise["channels"]] == [0]
+
+
+@pytest.mark.usefixtures("_afternoon")
+async def test_only_average_sensors_is_no_noise(hass: HomeAssistant):
+    controller, entry = _device(hass, "zwave_js", "3967834211-1", "Controller")
+    _noise(hass, entry, controller, 3, "average")
+    coordinator = await setup_coordinator(hass)
+    assert await coordinator.async_network_noise() is None
 
 
 async def test_no_noise_sensors_no_noise(hass: HomeAssistant):

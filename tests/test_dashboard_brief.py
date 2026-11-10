@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_dashboard_brief.py, Version: 0.28.8 (2026-11-09)
 
 """The Daily Brief tab, and stepping back through the days
 (rules BRIEF-07, BRIEF-10).
@@ -22,6 +22,7 @@ from datetime import date, timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
@@ -271,3 +272,20 @@ async def test_the_file_keeps_its_table(hass: HomeAssistant):
     assert "| DEVICE | WHAT HAPPENED | TIMES | WHEN | TYPICAL | WITH |" in (
         coordinator._last_brief_text
     )
+
+
+async def test_a_device_removed_since_is_still_named_but_has_no_page(hass: HomeAssistant, hass_ws_client):
+    """A past day names a device removed from Home Assistant since, by
+    its id, while Device Sentinel has no page for it and the tab's lists
+    no longer hold it; so the tab shows its name as plain words (rule
+    DASH-12)."""
+    coord, _, plug = await _house(hass)
+    dr.async_get(hass).async_remove_device(plug.id)
+    await hass.async_block_till_done()
+    client = await hass_ws_client(hass)
+    day = (dt_util.now().date() - timedelta(days=3)).isoformat()
+    page = (await _call(client, type="device_sentinel/brief", day=day))["result"]
+    assert plug.id in {event["device_id"] for event in page["events"]}
+    assert (await _call(client, type="device_sentinel/device", device_id=plug.id))["success"] is False
+    rows = (await _call(client, type="device_sentinel/classification"))["result"]["rows"]
+    assert plug.id not in {row["device_id"] for row in rows}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_classification_sources.py, Version: 0.28.8 (2026-11-09)
 
 """Classification says why: the source of every mute and exclusion
 (rules MUTE-10, DASH-16).
@@ -20,7 +20,7 @@ each assertion is made on both.
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, label_registry as lr
+from homeassistant.helpers import area_registry as ar, device_registry as dr, label_registry as lr
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_MUTED_DEVICES,
@@ -30,6 +30,7 @@ from custom_components.device_sentinel.const import (
     CONF_MUTED_INTEGRATIONS,
     CONF_MUTED_LABELS,
     CONF_SIGNAL_MUTED_LABELS,
+    DATA_DEVICES,
     SET_ASIDE_MEANINGS,
 )
 
@@ -261,3 +262,33 @@ async def test_a_muted_label_on_one_entity_mutes_nothing(hass: HomeAssistant):
     hass.states.async_set(eid, "21.5")
     await hass.async_block_till_done()
     assert coord.data["devices"][device.id]["last_activity"] is not None
+
+
+async def test_a_set_aside_device_carries_its_area_labels_and_page(hass: HomeAssistant, hass_ws_client):
+    """The Devices tab's Set aside chip filters by area and label, and
+    opens Device Sentinel's own page only for a device it once watched,
+    which is the one it keeps a record for (rule DASH-12). The tab's
+    reply carries them; the report's rows need none of it."""
+    tv, _ = register_device(hass, "h", name="Hotel TV")
+    old, _ = register_device(hass, "i", name="India Plug")
+    hall = ar.async_get(hass).async_create("Hall")
+    dr.async_get(hass).async_update_device(tv.id, area_id=hall.id)
+    _label(hass, tv, "Spare")
+    coord = await setup_coordinator(hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]})
+    coord.data[DATA_DEVICES][old.id] = {}
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "device_sentinel/classification"})
+    reply = await client.receive_json()
+    rows = {row["name"]: row for row in reply["result"]["rows"]}
+    tv_row, old_row = rows["Hotel TV"], rows["India Plug"]
+    assert (tv_row["area"], tv_row["labels"], tv_row["page"]) == ("Hall", ["Spare"], False)
+    assert (old_row["area"], old_row["page"]) == (None, True)
+    assert "page" not in _row(coord, "Hotel TV")
+
+
+async def test_the_report_is_unchanged_by_the_tab_fields(hass: HomeAssistant):
+    """classification.md keeps its six columns (rule DASH-12)."""
+    register_device(hass, "j", name="Juliet TV")
+    coord = await setup_coordinator(hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]})
+    await _write(hass, coord)
+    assert _md_row(hass, "Juliet TV").count("|") == 7

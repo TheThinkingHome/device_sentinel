@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_api.py, Version: 0.28.8 (2026-11-09)
 
 """The dashboard's data layer: status, actions and the change marker
 (rules DASH-09, DASH-11).
@@ -238,7 +238,10 @@ async def test_classification_is_the_files_rows(hass: HomeAssistant, hass_ws_cli
     reply = await _call(client, type="device_sentinel/classification")
     assert reply["success"], reply
     result = reply["result"]
-    assert result["rows"] == coord.classification_rows()
+    # The tab adds a device not watched's area, labels and page, for the
+    # Set aside chip (rule DASH-12); the rest is the file's row.
+    tab_only = ("area", "labels", "page")
+    assert [{k: v for k, v in row.items() if k not in tab_only} for row in result["rows"]] == coord.classification_rows()
     names = [row["name"] for row in result["rows"]]
     assert names == sorted(names, key=str.lower)
     watched = [row for row in result["rows"] if row["watched"]]
@@ -276,6 +279,8 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
         "set_aside": "excluded (integration: TP-Link Router)", "copies": 1,
         # What it is (rule DEV-10); a device gone from the registry has none.
         "type": None,
+        # For the Devices tab's Set aside chip (rule DASH-12).
+        "area": None, "labels": [], "page": False,
     }
 
 
