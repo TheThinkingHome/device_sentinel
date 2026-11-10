@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.7 (2026-11-09)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.8 (2026-11-09)
 
 """Acting from the device page (rule DASH-09).
 
@@ -164,7 +164,7 @@ class DeviceActionsMixin:
 
         The source is the one the reports name (`_mute_source`, the
         ladder every mute uses), so the page cannot disagree with
-        Classification. "here" is whether the device is on the kind's own
+        the Devices tab. "here" is whether the device is on the kind's own
         list, whatever else also mutes it, since that is what its button
         lifts; one from a label, an integration or a hub is lifted where
         it was set (rule MUTE-09). "labels" holds the ids of the labels

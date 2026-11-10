@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.7 (2026-11-09)
+# File: dashboard_api.py, Version: 0.28.8 (2026-11-09)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -38,6 +38,7 @@ from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
 from .report_brief import RECOMMENDATIONS_CLOSING
 from .const import (
+    DATA_DEVICES,
     DATA_PANEL_FILE,
     DOMAIN,
     LOGGER,
@@ -238,7 +239,7 @@ def ws_classification(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return the Classification tab: every device's standing, and totals.
+    """Return every device's standing, and totals, for the Devices tab.
 
     The rows come from the same builder as classification.md, so the
     tab and the file can never disagree.
@@ -248,6 +249,15 @@ def ws_classification(
         _not_loaded(connection, msg["id"])
         return
     rows = coordinator.classification_rows()
+    # For the Devices tab's Set aside chip: each device's area and labels,
+    # read live from the registries here on the event loop, and whether
+    # Device Sentinel has a page for it, which only a device it once
+    # watched has (rule DASH-12). classification.md has no use for them.
+    records = coordinator.data.get(DATA_DEVICES) or {}
+    for row in rows:
+        if not row["watched"]:
+            row.update(coordinator._area_and_labels(row["device_id"]))
+            row["page"] = row["device_id"] in records and not coordinator.is_held(row["device_id"])
     connection.send_result(
         msg["id"],
         {

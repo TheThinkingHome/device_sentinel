@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.28.7 (2026-11-09)
+# File: network_extras.py, Version: 0.28.8 (2026-11-09)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -783,7 +783,7 @@ class NetworkExtrasMixin:
         own average, and Device Sentinel's 30-day typical from Home
         Assistant's long-term statistics. A channel that has stayed well
         above its typical for three days makes a recommendation (rule DASH-18). None when the controller
-        has no noise sensors."""
+        has no noise sensor with a current reading."""
         channels = self._noise_entities()
         if not channels:
             return None
@@ -796,6 +796,10 @@ class NetworkExtrasMixin:
         cards = []
         for channel in sorted(channels, key=int):
             ids = channels[channel]
+            # A channel with no current reading is one the stick does not
+            # use, such as an 800 series stick's Long Range channel.
+            if "current" not in ids:
+                continue
             now_value = self._reading(ids.get("current"))
             average = self._reading(ids.get("average"))
             days = daily.get(ids.get("current", ""), [])
@@ -813,6 +817,9 @@ class NetworkExtrasMixin:
                     f"{typical:.0f} dBm for {NOISE_RECENT_DAYS} days. Something near the controller may be "
                     "interfering: a USB 3 port or cable, a Wi-Fi router, or a power supply. Try a USB "
                     "extension cable that moves the stick away from them.")})
+        # Only channels with no current reading: nothing to show.
+        if not rows:
+            return None
         return {"channels": rows, "cards": cards}
 
     async def _noise_daily(self, entity_ids: list[str]) -> dict[str, list[float]]:

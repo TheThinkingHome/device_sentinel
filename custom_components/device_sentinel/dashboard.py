@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.6 (2026-11-08)
+# File: dashboard.py, Version: 0.28.8 (2026-11-09)
 
 """What the dashboard reads from the coordinator.
 
@@ -839,6 +839,7 @@ class IntegrationViewMixin:
         if not devices:
             return None
         problems = self._problems_by_device()
+        records = self.data.get(DATA_DEVICES) or {}
         listed = []
         for row in devices:
             problem = problems.get(row["device_id"])
@@ -846,6 +847,10 @@ class IntegrationViewMixin:
                 "device_id": row["device_id"],
                 "name": row["name"],
                 "watched": row["watched"],
+                # Whether Device Sentinel has a page for it: a watched
+                # device, or one it once watched and keeps a record for
+                # (rule DASH-12).
+                "page": row["watched"] or (row["device_id"] in records and not self.is_held(row["device_id"])),  # type: ignore[attr-defined]
                 "muted": row["muted"],
                 # The global mute alone, which the Integrations tab
                 # counts (rule DASH-16).

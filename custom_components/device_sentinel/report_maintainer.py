@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.28.5 (2026-11-08)
+# File: report_maintainer.py, Version: 0.28.8 (2026-11-09)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -859,7 +859,7 @@ class MaintainerReportMixin:
     def _family_mute_texts(self, device_id: str) -> list[str]:
         """Freeze, battery, signal and unavailable mutes, each with its source.
 
-        Shown on Classification so a device muted for battery alone
+        Shown on the Devices tab so a device muted for battery alone
         does not read as if nothing were muted. In the order freeze,
         battery, signal, unavailable (rule MUTE-10).
         """
@@ -888,8 +888,8 @@ class MaintainerReportMixin:
     def mute_text(self, device_id: str) -> str:
         """Every mute on a device, global first, each with its source.
 
-        The one wording behind Classification, classification.md, a
-        device's page, the Devices tab and an integration's device
+        The one wording behind classification.md, a device's page,
+        the Devices tab and an integration's device
         list, so a device reads the same wherever it is named. Empty
         when nothing is muted (rule MUTE-10).
         """
@@ -903,7 +903,8 @@ class MaintainerReportMixin:
         """Return one row per device, watched and set aside together.
 
         The one builder behind classification.md and the dashboard's
-        Classification tab, so the two can never disagree. A watched
+        Devices tab (its STANDING and Set aside chip), so the two can
+        never disagree. A watched
         device's MUTED cell holds every mute that applies to it, the
         global one first and then freeze, battery, signal and unavailable, each
         naming its source; a set-aside device carries why it was set

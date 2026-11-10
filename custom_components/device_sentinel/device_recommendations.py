@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.0 (2026-11-03)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.8 (2026-11-09)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -339,8 +339,8 @@ class DeviceRecommendationsMixin:
                 "title": "Type Not Set",
                 "body": (
                     f"{_count(len(untyped), 'device has', 'devices have')} no type. Set each "
-                    "one here, and it joins the others of its kind on the Devices, Battery "
-                    "Trends and Classification tabs."
+                    "one here, and it joins the others of its kind on the Devices and "
+                    "Battery Trends tabs."
                 ),
                 "devices": rows(untyped),
             })

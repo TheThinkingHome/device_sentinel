@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.7 (2026-11-09)
+# File: const.py, Version: 0.28.8 (2026-11-09)
 
 """Constants for the Device Sentinel integration."""
 
@@ -684,7 +684,7 @@ STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
 # What each reason means, in the order the classification ladder tries
 # them: a person's exclusion first, since a decision outranks a fact
 # about the device, then the facts, with no entities last. The key under
-# the Classification tab and in classification.md, so the two say the
+# the Devices tab's Set aside chip and in classification.md, so the two say the
 # same thing and a person can see which reasons exist (rule WATCH-03).
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
     (
