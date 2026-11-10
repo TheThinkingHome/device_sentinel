@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: outage_detail.py, Version: 0.27.10 (2026-10-27)
+# File: outage_detail.py, Version: 0.28.10 (2026-11-10)
 
 """Which config entry an integration outage was, and which device.
 
@@ -13,8 +13,9 @@ whole integration down, cannot tell two such devices apart, and closes
 one's outage when the other comes back (rule UP-10).
 
 The entry, the one watched device it carries when it carries one, and
-whether it failed to start or went down after running, travel in the
-event's `detail`, a string by the storage shape:
+whether it failed to start, went down after running or stopped
+updating while loaded, travel in the event's `detail`, a string by the
+storage shape:
 
     entry:01ABC... device:9f3e... failed
 
@@ -33,6 +34,10 @@ REMOVED = "removed"
 # An entry still in Home Assistant whose devices Device Sentinel stopped
 # watching while it was down, excluded or set aside.
 UNWATCHED = "unwatched"
+# An entry still loaded that has stopped updating: an integration that
+# writes all its devices at once has gone quiet past its usual gap
+# (rule UP-17).
+STALLED = "stalled"
 
 
 def make_detail(entry_id: str, device_id: str | None, how: str) -> str:
@@ -50,7 +55,7 @@ def parse_detail(detail: Any) -> tuple[str | None, str | None, str | None]:
             entry_id = part[6:] or None
         elif part.startswith("device:"):
             device_id = None if part[7:] in ("", "-") else part[7:]
-        elif part in (FAILED, DOWN, REMOVED, UNWATCHED):
+        elif part in (FAILED, DOWN, REMOVED, UNWATCHED, STALLED):
             how = part
     return entry_id, device_id, how
 

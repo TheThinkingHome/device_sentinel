@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.27.14 (2026-10-29)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.28.10 (2026-11-10)
 
 """What powers each device (rule DEV-06).
 
@@ -116,16 +116,62 @@ def _fold(value: Any) -> str:
     return str(value or "").casefold()
 
 
+# Words an integration fills in when it does not know the maker or the
+# model. Devices that share one are not the same hardware, so an answer
+# given on one must not cover the others (rule DEV-06). Compared without
+# case. Seen on a tester's house: four HomeKit accessories reporting
+# Default-Manufacturer and Default-Model.
+PLACEHOLDER_NAMES = frozenset({
+    "default-manufacturer", "default-model", "default manufacturer",
+    "default model", "unknown", "unknown manufacturer", "unknown model",
+    # Tasmota's own template name, shared by unrelated hardware.
+    "generic",
+})
+
+# A maker that names the chip, not the product. ESPHome reports a device
+# built on a bare board as made by Espressif, with the board as its model,
+# so a dryer sensor, a furnace monitor and a display share one "model".
+CHIP_MAKERS = ("espressif",)
+
+
+def is_placeholder(value: Any) -> bool:
+    """Whether a maker or model is a word that stands for none."""
+    return str(value or "").strip().casefold() in PLACEHOLDER_NAMES
+
+
+def stands_for_none(manufacturer: Any, model: Any) -> bool:
+    """Whether a maker and model say nothing about which product a device
+    is: either a placeholder, or a chip maker with its board as the model
+    (rule DEV-06)."""
+    maker = str(manufacturer or "").strip().casefold()
+    return (
+        is_placeholder(manufacturer) or is_placeholder(model)
+        or maker.startswith(CHIP_MAKERS)
+    )
+
+
 def model_key(manufacturer: Any, model: Any, model_id: Any) -> str | None:
     """What makes two devices the same model, for an owner's entry:
     manufacturer, model and model ID, exactly as Home Assistant reports
     them. The hardware version is left out, because one model reports a
     version on some devices and none on others. None for a device with
-    no manufacturer or no model (rule DEV-06).
+    no manufacturer or no model, or with one that stands for none, such
+    as "Default-Model", Tasmota's "Generic" or an ESPHome board made by
+    Espressif (rule DEV-06).
     """
-    if not manufacturer or not model:
+    if not manufacturer or not model or stands_for_none(manufacturer, model):
         return None
     return json.dumps([str(manufacturer), str(model), str(model_id or "")])
+
+
+def placeholder_key(key: Any) -> bool:
+    """Whether a stored model key names a maker or model that stands for
+    none. An answer stored under one belongs to the device that gave it,
+    and to no other (rule DEV-06)."""
+    if not is_model_key(key):
+        return False
+    maker, model, _model_id = json.loads(key)
+    return stands_for_none(maker, model)
 
 
 def is_model_key(key: Any) -> bool:
@@ -433,7 +479,10 @@ class PowerMixin:
         for key, raw in (models.items() if isinstance(models, dict) else ()):
             entry = _clean_entry(raw)
             setter = raw.get("device_id") if isinstance(raw, dict) else None
-            if is_model_key(key) and entry is not None and isinstance(setter, str):
+            if placeholder_key(key) and entry is not None and isinstance(setter, str):
+                # Kept by the device that gave it, unless it has its own.
+                self._power_entries.setdefault(setter, entry)
+            elif is_model_key(key) and entry is not None and isinstance(setter, str):
                 self._power_models[key] = {**entry, "device_id": setter}
             else:
                 dropped += 1

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.7 (2026-11-09)
+# File: coordinator.py, Version: 0.28.10 (2026-11-10)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -123,6 +123,7 @@ from .daily_dates import (
     FAMILY_SIGNAL_ALT,
 )
 from .device_actions import DeviceActionsMixin
+from .pollers import PollerMixin
 from .power_source import PowerMixin
 from .device_type import TypeMixin
 from .answers_store import AnswersMixin
@@ -312,6 +313,7 @@ from .hardware_copies import choose_copies, find_groups, rank_of
 from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
+from .study_tado import TadoStudyMixin
 from .study_watch import WatchStudyMixin
 from .wifi import WifiScanMixin
 from .dashboard import (
@@ -395,6 +397,7 @@ def _forget_hold_verdicts(record: dict[str, Any]) -> None:
 
 
 class DeviceSentinelCoordinator(
+    PollerMixin,
     HubMixin,
     DeviceActionsMixin,
     PowerMixin,
@@ -424,6 +427,7 @@ class DeviceSentinelCoordinator(
     WifiScanMixin,
     StudyMixin,
     WatchStudyMixin,
+    TadoStudyMixin,
     DashboardMixin,
     IntegrationViewMixin,
     NetworksMixin,
@@ -5645,6 +5649,9 @@ class DeviceSentinelCoordinator(
             dt_util.utcnow() - timedelta(minutes=1)
         ).date()
         self._fold_storm_days(ended.isoformat())
+        # The lasting poller verdict, from the devices' gaps and the
+        # tally just written, on every house (rule UP-17).
+        self._fold_pollers(ended.isoformat())
         # The house events and signal stress rows held to the history
         # length here, not on each write (rule STOR-14).
         self._trim_house_tables(now)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.27.14 (2026-10-29)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.28.10 (2026-11-10)
 
 """What each device is, in plain words (rule DEV-10).
 
@@ -35,7 +35,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import STACK_Z2M
 from .device_fields import device_field
-from .power_source import NOT_KNOWN, clean_other, is_model_key
+from .power_source import NOT_KNOWN, clean_other, is_model_key, placeholder_key
 from .stacks import is_plumbing
 
 # The dashboard's words for a type nobody has set (rule DEV-10).
@@ -433,7 +433,11 @@ class TypeMixin:
         for key, raw in (models.items() if isinstance(models, dict) else ()):
             entry = _clean_entry(raw)
             setter = raw.get("device_id") if isinstance(raw, dict) else None
-            if is_model_key(key) and entry is not None and isinstance(setter, str):
+            if placeholder_key(key) and entry is not None and isinstance(setter, str):
+                # Kept by the device that gave it, unless it has its own
+                # (rule DEV-06).
+                self._type_entries.setdefault(setter, entry)
+            elif is_model_key(key) and entry is not None and isinstance(setter, str):
                 self._type_models[key] = {**entry, "device_id": setter}
             else:
                 dropped += 1
@@ -595,12 +599,18 @@ class TypeMixin:
 
     # ------------------------------------------------------------- the pencil
 
-    def page_set_type(self, device_id: str, choice: str | None, other: str | None = None) -> None:
+    def page_set_type(
+        self, device_id: str, choice: str | None, other: str | None = None, whole_model: bool = False,
+    ) -> None:
         """Set the owner's type from the device page; None goes back to the entities' answer.
 
         Like the Power row's, the answer covers every device of the
         same model. Clearing a model answer clears it for all of them; a
         device's own answer is cleared alone (rule DEV-10).
+
+        From a model's row on Model With More Than One Type the answer
+        is for the whole model, so the answers its devices have of their
+        own are cleared with it, or the row would stay (rule REC-04).
         """
         self._device(device_id)  # type: ignore[attr-defined]
         key = self._power_key(device_id)  # type: ignore[attr-defined]
@@ -635,6 +645,13 @@ class TypeMixin:
         else:
             raise ValueError("Choose from the list.")
         entry = {"type": words, "set": dt_util.utcnow().isoformat()}
+        if key is not None and whole_model:
+            # Only once the answer is known to be good, so a refused one
+            # takes nothing with it.
+            for same in self._power_same_model(key):  # type: ignore[attr-defined]
+                self._type_entries.pop(same, None)
+            covers = self._model_covers(key, self._type_entries, device_id)  # type: ignore[attr-defined]
+            many = f", for all {covers} devices of this model" if covers > 1 else ""
         if key is not None:
             self._type_models[key] = {**entry, "device_id": device_id}
             self._type_entries.pop(device_id, None)

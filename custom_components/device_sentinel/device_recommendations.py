@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.8 (2026-11-09)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.10 (2026-11-10)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -99,6 +99,30 @@ def _short_day(iso: str) -> str:
     return f"{day.strftime('%b')} {day.day}"
 
 
+def _in_models(models: int) -> str:
+    """", in 24 models", where the devices share models."""
+    return f", in {_count(models, 'model', 'models')}" if models else ""
+
+
+def _parent_and_child(devices: Any, ids: list[str], kinds: dict[str, Any]) -> bool:
+    """Whether a model's types split only as a unit and the parts under
+    it: each device of one type has devices of the model under it, and
+    each of the other has its parent in the model, as a Lightwave unit
+    is a hub over its sockets. That split is true, not a conflict, so
+    the model is not on Model With More Than One Type (rule REC-04)."""
+    members = set(ids)
+    parents, children = set(), set()
+    for device_id in ids:
+        entry = devices.async_get(device_id)
+        parent = getattr(entry, "via_device_id", None) if entry is not None else None
+        if parent in members:
+            children.add(device_id)
+            parents.add(parent)
+    if not parents or parents & children or parents | children != members:
+        return False
+    return len({kinds[d] for d in parents}) == 1 and len({kinds[d] for d in children}) == 1
+
+
 class DeviceRecommendationsMixin:
     """The coordinator's device recommendations."""
 
@@ -140,6 +164,20 @@ class DeviceRecommendationsMixin:
             ]
             return sorted(listed, key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
 
+        def with_models(listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            """Each row with the model its answer covers: the key one
+            answer is stored under, and the maker and model to show. A
+            device with no model, or one that stands for none, has no
+            key and keeps its own row (rule DEV-06)."""
+            for row in listed:
+                row["model_key"] = self._power_key(row["device_id"])  # type: ignore[attr-defined]
+                maker, model, _model_id, _hw = self._power_device_fields(row["device_id"])  # type: ignore[attr-defined]
+                row["model"] = " ".join(part for part in (maker, model) if part) if row["model_key"] else ""
+            return listed
+
+        def models_in(listed: list[dict[str, Any]]) -> int:
+            return len({row["model_key"] for row in listed if row["model_key"]})
+
         cards: list[dict[str, Any]] = []
         # A detected battery replacement waits for a person, so it comes
         # first, because it is a question, and in Simple as well
@@ -173,15 +211,19 @@ class DeviceRecommendationsMixin:
             })
         power = [d for d in watched if self.power_of(d) is None]  # type: ignore[attr-defined]
         if power:
+            listed = with_models(rows(power))
             cards.append({
                 "kind": KIND_POWER,
                 "title": "Power Not Set",
+                # One row per model: one answer sets each device of that
+                # model (rules DEV-06, REC-04).
+                "grouped": True,
                 "body": (
                     f"{_count(len(power), 'device has', 'devices have')} no battery or power "
-                    "source set. Set each one here, and a low battery warning names "
-                    "the battery to buy."
+                    f"source set{_in_models(models_in(listed))}. One answer sets each device "
+                    "of that model, and a low battery warning names the battery to buy."
                 ),
-                "devices": rows(power),
+                "devices": listed,
                 "brief_words": lambda n: (
                     f"{_count(n, 'device has', 'devices have')} no battery or power "
                     "source set. Set them from the Recommendations tab, and a low battery "
@@ -334,15 +376,18 @@ class DeviceRecommendationsMixin:
         kinds = {d: self.type_words(d) for d in watched}  # type: ignore[attr-defined]
         untyped = [d for d in watched if not kinds[d]]
         if untyped:
+            listed = with_models(rows(untyped))
             cards.append({
                 "kind": KIND_TYPE,
                 "title": "Type Not Set",
+                "grouped": True,
                 "body": (
-                    f"{_count(len(untyped), 'device has', 'devices have')} no type. Set each "
-                    "one here, and it joins the others of its kind on the Devices and "
-                    "Battery Trends tabs."
+                    f"{_count(len(untyped), 'device has', 'devices have')} no "
+                    f"type{_in_models(models_in(listed))}. One answer sets each device of that "
+                    "model, and it joins the others of its kind on the Devices and Battery "
+                    "Trends tabs."
                 ),
-                "devices": rows(untyped),
+                "devices": listed,
             })
         # Models whose devices disagree: a device given its own type
         # apart from the rest of its model, by an owner or by its
@@ -352,21 +397,24 @@ class DeviceRecommendationsMixin:
             key = self._power_key(device_id)  # type: ignore[attr-defined]
             if key is not None and kinds[device_id]:
                 by_model.setdefault(key, []).append(device_id)
-        mixed = [ids for ids in by_model.values() if len({kinds[d] for d in ids}) > 1]
+        mixed = [
+            ids for ids in by_model.values()
+            if len({kinds[d] for d in ids}) > 1 and not _parent_and_child(devices, ids, kinds)
+        ]
         if mixed:
             listed_mixed = []
             for ids in mixed:
-                for row in rows(ids):
-                    maker, model, _model_id, _hw = self._power_device_fields(row["device_id"])  # type: ignore[attr-defined]
-                    row["model"] = " ".join(part for part in (maker, model) if part)
+                for row in with_models(rows(ids)):
                     row["type"] = kinds[row["device_id"]]
                     listed_mixed.append(row)
             cards.append({
                 "kind": KIND_MIXED_TYPES,
                 "title": "Model With More Than One Type",
+                "grouped": True,
                 "body": (
                     f"{_count(len(mixed), 'model has', 'models have')} devices of more than one "
-                    "type. Pick the type for the model here."
+                    "type. Pick the type for the model here, and one answer sets each device "
+                    "of that model."
                 ),
                 "devices": listed_mixed,
             })

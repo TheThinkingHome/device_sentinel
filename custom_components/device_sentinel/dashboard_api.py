@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.9 (2026-11-10)
+# File: dashboard_api.py, Version: 0.28.10 (2026-11-10)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -296,7 +296,8 @@ def ws_problem_list(
         summary = item[TODO_SUMMARY]
         problem = summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary
         kinds = item[TODO_KINDS]
-        since = min((v for v in kinds.values() if isinstance(v, (int, float))), default=None)
+        # Dated from the problem it names first (rule LIST-10).
+        since = coordinator.lead_since(item)
         rows.append({
             "uid": item[TODO_UID],
             "device_id": item[TODO_DEVICE_ID],
@@ -721,6 +722,7 @@ def ws_device_power(
         vol.Required("device_id"): str,
         vol.Optional("choice"): vol.Any(str, None),
         vol.Optional("other"): vol.Any(str, None),
+        vol.Optional("whole_model", default=False): bool,
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
@@ -734,7 +736,9 @@ def ws_device_type(
         hass, connection, msg,
         lambda c: c.page_from(
             msg["source"],
-            lambda: c.page_set_type(msg["device_id"], msg.get("choice"), msg.get("other")),
+            lambda: c.page_set_type(
+                msg["device_id"], msg.get("choice"), msg.get("other"), msg["whole_model"],
+            ),
         ),
     )
 

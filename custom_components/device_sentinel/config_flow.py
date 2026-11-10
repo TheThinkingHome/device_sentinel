@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.9 (2026-11-10)
+# File: config_flow.py, Version: 0.28.10 (2026-11-10)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -1808,6 +1808,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     flat.update(value)
                 else:
                     flat[key] = value
+            # An email address is not a notify action either: every alert
+            # to it would be lost. Checked on what was entered, before an
+            # address in both lists is dropped from Normal (rule NOTE-02).
+            typed_address = any(
+                "@" in str(target)
+                for key in (CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS)
+                for target in flat.get(key, [])
+            )
+            # What was entered, for the screen to show after a refusal.
+            entered = dict(flat)
             high = list(flat.get(CONF_HIGH_PRIORITY_TARGETS, []))
             flat[CONF_NORMAL_PRIORITY_TARGETS] = [
                 target
@@ -1815,6 +1825,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 if target not in high
             ]
             wanted = flat.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
+            if typed_address:
+                # Shown above the instant alerts' section, as the brief's
+                # is above its own.
+                errors["instant"] = "priority_target_is_address"
             if any("@" in str(target) for target in flat.get(CONF_BRIEF_TARGETS, [])):
                 # An email address is not a service: the brief would be
                 # handed to an action that does not exist and never sent
@@ -1829,12 +1843,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 # leave a person thinking the links are on while every
                 # report prints plain names (rule BRIEF-13).
                 errors["base"] = f"{wanted}_url_not_set"
-            else:
+            elif not errors:
                 return await self._save_and_return(flat)
         # After a refusal the screen shows what was entered, so nothing
         # but the refused value has to be chosen again.
         options = (
-            {**self.config_entry.options, **flat}
+            {**self.config_entry.options, **entered}
             if user_input is not None
             else self.config_entry.options
         )

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.7 (2026-11-09)
+# File: report_brief.py, Version: 0.28.10 (2026-11-10)
 
 """The daily brief: the one report written for a person.
 
@@ -138,7 +138,7 @@ from .const import (
     SYS_RECOMMENDATIONS_TAB,
     SYS_DEVICE_ID,
 )
-from .outage_detail import FAILED, REMOVED, UNWATCHED, parse_detail
+from .outage_detail import FAILED, REMOVED, STALLED, UNWATCHED, parse_detail
 
 
 def _plural(count: int) -> str:
@@ -526,6 +526,18 @@ class BriefMixin:
                 else f"{device} is back: its {title} connection came back at {when}."
             )
             return f"{said} {worst}" if worst else said
+        # A poller loaded but silent: what was seen, its devices not
+        # heard, never a cause (rule UP-17).
+        if kind == SYS_INTEGRATION_DOWN and parse_detail(detail)[2] == STALLED:
+            count = row.get(SYS_DEVICES)
+            size = f", {_plural(count)}" if isinstance(count, int) and not isinstance(count, bool) and count > 0 else ""
+            return f"{self._integration_title(str(scope))} stopped updating at {when}{size}."
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == STALLED:
+            return (
+                f"{self._integration_title(str(scope))} was updating again at {when}, after {held}."
+                if held
+                else f"{self._integration_title(str(scope))} was updating again at {when}."
+            )
         if kind == SYS_INTEGRATION_DOWN:
             return f"The {self._integration_title(str(scope))} integration went down at {when}."
         worst = self._worst_words(row, sentence=True)
@@ -559,16 +571,14 @@ class BriefMixin:
         # The broker names itself rather than its scope, because a
         # house has one and "the mqtt broker" reads as a stack name
         # to somebody who does not know the difference.
+        # A burst of updates is told as what was seen: an integration
+        # writing many devices at once. Device Sentinel cannot know
+        # whether it reloaded, reconnected or polled, so it says none of
+        # them, and the size comes from the burst's own end (rule UP-17).
         if kind == SYS_STORM_OPEN:
-            return f"The {self._integration_title(str(scope))} integration reloaded at {when}."
+            return f"{self._storm_words(row)} at {when}."
         if kind == SYS_STORM_CLOSED:
-            count = row.get(SYS_DEVICES)
-            if count:
-                return (
-                    f"It settled after {held or 'a moment'}, "
-                    f"{_plural(count)} affected."
-                )
-            return f"It settled after {held or 'a moment'}."
+            return ""
         if kind == SYS_WIFI_DOWN:
             count = row.get(SYS_DEVICES)
             if count:
@@ -821,6 +831,30 @@ class BriefMixin:
             device_id = str(row.get(SYS_DETAIL) or "").split(" ", 1)[0]
         return str(device_id) if device_id else None
 
+    def _storm_words(self, row: dict[str, Any]) -> str:
+        """One burst of updates, sized by its own end when it has one:
+        "Alarm.com updated 15 devices at once" (rule UP-17). The end is
+        looked for among the rows being told first, then in the log."""
+        scope = row.get(SYS_SCOPE)
+        when = row.get(SYS_WHEN)
+        size = None
+        if isinstance(when, (int, float)):
+            told = getattr(self, "_storm_rows_told", None) or []
+            for later in [*told, *(self.data.get(DATA_SYSTEM_EVENTS) or [])]:
+                if (
+                    isinstance(later, dict)
+                    and later.get(SYS_KIND) == SYS_STORM_CLOSED
+                    and later.get(SYS_SCOPE) == scope
+                    and isinstance(later.get(SYS_WHEN), (int, float))
+                    and later[SYS_WHEN] >= when
+                ):
+                    size = later.get(SYS_DEVICES)
+                    break
+        title = self._integration_title(str(scope))
+        if isinstance(size, int) and not isinstance(size, bool) and size > 0:
+            return f"{title} updated {_plural(size)} at once"
+        return f"{title} updated its devices all at once"
+
     def _system_event_phrase(self, row: dict[str, Any]) -> str:
         """The same event as a table cell, marked when expected (rule DASH-18)."""
         said = self._system_event_phrase_plain(row)
@@ -862,6 +896,14 @@ class BriefMixin:
             # The row's device column already reads "The system" (rule
             # BRIEF-07).
             return f"restarted, {held} unwatched" if held else "restarted"
+        if kind == SYS_INTEGRATION_DOWN and parse_detail(detail)[2] == STALLED:
+            return f"{self._integration_title(str(scope))} stopped updating"
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == STALLED:
+            return (
+                f"{self._integration_title(str(scope))} updating again after {held}"
+                if held
+                else f"{self._integration_title(str(scope))} updating again"
+            )
         if kind == SYS_INTEGRATION_DOWN:
             return f"{self._integration_title(str(scope))} integration went down"
         if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == REMOVED:
@@ -883,15 +925,9 @@ class BriefMixin:
                 else f"{self._integration_title(str(scope))} bridge came back"
             ) + tail
         if kind == SYS_STORM_OPEN:
-            return f"{self._integration_title(str(scope))} integration reloaded"
+            return self._storm_words(row)
         if kind == SYS_STORM_CLOSED:
-            count = row.get(SYS_DEVICES)
-            return (
-                f"{self._integration_title(str(scope))} integration settled after {held}, "
-                f"{_plural(count)}"
-                if held and count
-                else f"{self._integration_title(str(scope))} integration settled"
-            )
+            return ""
         if kind == SYS_WIFI_DOWN:
             return "WiFi network went down"
         if kind == SYS_WIFI_RECOVERING:
@@ -1167,14 +1203,17 @@ class BriefMixin:
             worst = max(days, key=lambda row: int(row.get(STORM_DAY_COUNT) or 0))
             every = self._plain_interval(worst.get(STORM_DAY_INTERVAL))
             cadence = f"every {every}" if every else "over and over"
+            # What is true, and no advice to exclude: Device Sentinel
+            # hears the integration's update, not each device, so it can
+            # tell when the whole integration stops and not when one of
+            # its devices fails. Excluding stays the person's choice
+            # (rules UP-18, MUTE-02).
+            title = self._integration_title(domain)
             said.append((f"noisy:{domain}",
-                f"One of the integrations being monitored by Device "
-                f"Sentinel is a polling integration and consuming "
-                f"resources: the {domain} integration is a poller and is "
-                f"publishing its fleet data {cadence}. Device Sentinel "
-                f"can learn nothing useful from a poller integration and "
-                f"it should be excluded from the Exclusions and Muting "
-                f"settings screen."
+                f"{title} updates all its devices at once, {cadence}. "
+                f"Device Sentinel hears {title}'s regular update, not each "
+                f"device. It tells you when the whole integration stops "
+                f"updating, but not when one of its devices fails."
             ))
         return said
 
@@ -1673,6 +1712,21 @@ class BriefMixin:
                 else:
                     pending[scope] -= 1
         said: list[str] = []
+        self._storm_rows_told: list[dict[str, Any]] | None = rows
+        try:
+            said = self._storm_sentences_told(rows, storms, orphans)
+        finally:
+            self._storm_rows_told = None
+        return said
+
+    def _storm_sentences_told(
+        self,
+        rows: list[dict[str, Any]],
+        storms: dict[str, list[dict[str, Any]]],
+        orphans: set[int],
+    ) -> list[str]:
+        """The storm sentences, each burst sized by its own end."""
+        said: list[str] = []
         grouped: set[str] = set()
         for row in rows:
             kind, scope = row[SYS_KIND], row[SYS_SCOPE]
@@ -1682,7 +1736,10 @@ class BriefMixin:
                 continue
             opens = storms.get(scope) or []
             if len(opens) < 2:
-                said.append(self._system_event_sentence(row))
+                # One sentence for one burst: its end gives the size and
+                # says nothing of its own (rule UP-17).
+                if kind == SYS_STORM_OPEN:
+                    said.append(self._system_event_sentence(row))
                 continue
             if scope in grouped:
                 continue
@@ -1714,7 +1771,7 @@ class BriefMixin:
         # the biggest burst seen: a five-device poller and a
         # fifty-device hub reconnect wear the same word otherwise
         # (rule BRIEF-03).
-        tail = f", the largest affecting {_plural(most)}" if most else ""
+        tail = f", as many as {most} at a time" if most else ""
         # A run inside one minute names its minute once (rule BRIEF-03),
         # because "between 5:11 PM and 5:11 PM" reads as a mistake.
         # Decided on the printed minutes, so a run from 5:11:50 to
@@ -1727,7 +1784,7 @@ class BriefMixin:
             else f"between {first} and {last}"
         )
         return (
-            f"The {self._integration_title(str(scope))} integration reloaded {len(opens)} times "
+            f"{self._integration_title(str(scope))} updated its devices all at once {len(opens)} times "
             f"{when}{tail}."
         )
 
@@ -2825,6 +2882,8 @@ class BriefMixin:
                  self._system_event_who(row),
                  self._report_cell(self._system_event_phrase(row)))
                 for row in sys_events
+                # A burst's end is told with its start (rule UP-17).
+                if row.get(SYS_KIND) != SYS_STORM_CLOSED
             ]
             merged.sort(key=lambda item: item[0], reverse=True)
             # Each name noted with its device, or none, in the order the

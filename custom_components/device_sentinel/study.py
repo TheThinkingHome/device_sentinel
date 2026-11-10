@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.28.3 (2026-11-04)
+# File: study.py, Version: 0.28.10 (2026-11-10)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -89,6 +89,7 @@ from .const import (
     PROBE_WAS,
     PROBE_WHEN,
     STUDIABLE,
+    TADO_KEY,
     WATCH_KEY,
     STUDY_SHAPE_CAP,
 )
@@ -530,6 +531,15 @@ class StudyMixin:
                 self._probe_failure(WATCH_KEY, err)
         else:
             self._watch_clear()  # type: ignore[attr-defined]
+        # Tado rides on the same minute and file, read from Home
+        # Assistant's own data (rule STACK-11).
+        if TADO_KEY in studied:
+            try:
+                self._tado_tick(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(TADO_KEY, err)
+        else:
+            self._tado_clear()  # type: ignore[attr-defined]
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
             self._probe_since.clear()
@@ -1073,6 +1083,11 @@ class StudyMixin:
                 self._watch_fold(now)  # type: ignore[attr-defined]
             except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
                 self._probe_failure(WATCH_KEY, err)
+        if TADO_KEY in studied:
+            try:
+                self._tado_fold(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(TADO_KEY, err)
         self._probe_flush()
 
     # -------------------------------------------- Hue and SmartThings
@@ -1168,7 +1183,18 @@ class StudyMixin:
                 {"problem_sensors_and_polling": self._watch_download()}
                 if WATCH_KEY in self.studied else {}
             ),
+            **(
+                {"tado": self._tado_download()}
+                if TADO_KEY in self.studied else {}
+            ),
         }
+
+    def _tado_download(self) -> dict[str, Any]:
+        """Tado for the download, or what stopped it (rule STACK-11)."""
+        try:
+            return self.tado_diagnostics()  # type: ignore[attr-defined, no-any-return]
+        except Exception as err:  # noqa: BLE001 - the download must still arrive
+            return {"unreadable": f"{type(err).__name__}: {err}"}
 
     def _watch_download(self) -> dict[str, Any]:
         """Problem sensors and polling for the download, or what stopped

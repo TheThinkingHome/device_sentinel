@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.27.10 (2026-10-27)
+# File: attribution.py, Version: 0.28.10 (2026-11-10)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -346,7 +346,7 @@ def attribute(
 # prose, the tables and any future notification cannot describe one
 # event three ways.
 _PHRASE = {
-    SYS_STORM_OPEN: "the {scope} integration reloading",
+    SYS_STORM_OPEN: "{scope} updating its devices all at once",
     SYS_PAIRING_OPEN: "a {scope} pairing window",
     SYS_DEVICE_HANDLED: "somebody handling the device",
     SYS_BRIDGE_DOWN: "the {scope} bridge going down and coming back",

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.6 (2026-11-08)
+# File: interventions.py, Version: 0.28.10 (2026-11-10)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -91,6 +91,9 @@ from .const import (
     BRIDGE_DOWN,
     BRIDGE_HANDBACK_SECONDS,
     DATA_DEVICES,
+    DEV_LAST_ACTIVITY,
+    WATCH_STOP_FACTOR,
+    WATCH_STOP_FLOOR,
     DEV_REMOVED_NAME,
     BROKER_LABEL,
     BRIDGE_SEEN_SINCE,
@@ -128,7 +131,7 @@ from .const import (
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
 )
-from .outage_detail import DOWN, FAILED, REMOVED, UNWATCHED, make_detail, pair_key, parse_detail
+from .outage_detail import DOWN, FAILED, REMOVED, STALLED, UNWATCHED, make_detail, pair_key, parse_detail
 
 
 def _spell_minutes(minutes: int) -> str:
@@ -1067,6 +1070,41 @@ class InterventionMixin:
             if loaded:
                 self._entry_seen_loaded.add(entry_id)
                 self._note_loaded(entry.domain, now)
+                # A poller loaded but silent past its usual gap has
+                # stopped updating: an outage of its own kind, told and
+                # pushed as any, and closed at the first device heard
+                # (rule UP-17).
+                stalled = self._poller_stalled(entry, now)
+                was_stalled = (
+                    parse_detail(self._integration_detail.get(entry_id))[2] == STALLED
+                    and entry_id in self._integration_told
+                )
+                if stalled is not None:
+                    if entry_id not in self._integration_told:
+                        self._entry_down_at[entry_id] = stalled
+                        self._integration_gone(
+                            entry, stalled, behind[entry_id], how=STALLED
+                        )
+                    continue
+                if was_stalled:
+                    # Held through the startup grace, when nothing is
+                    # heard yet; after it, only a device heard since it
+                    # began ends it. A restart's young run, or a verdict
+                    # dropped, is not the poller updating again.
+                    if self._in_startup_grace():
+                        continue
+                    since = self._entry_down_at.get(entry_id)
+                    if since is None:
+                        # No start to measure from: not told as a stop
+                        # any longer, rather than one that never ends.
+                        self._integration_told.discard(entry_id)
+                        self._integration_detail.pop(entry_id, None)
+                        continue
+                    if not self._poller_heard_since(entry_id, since):
+                        continue
+                    self._entry_down_at.pop(entry_id, None)
+                    self._integration_back(entry, since, now)
+                    continue
                 since = self._entry_down_at.pop(entry_id, None)
                 if since is not None and now - since >= (
                     INTEGRATION_DOWN_DWELL_SECONDS
@@ -1199,7 +1237,79 @@ class InterventionMixin:
         """True the first time an outage passes the dwell."""
         return entry_id not in self._integration_told
 
-    def _integration_gone(self, entry, since: float, behind: int) -> None:
+    def _poller_stalled(self, entry, now: float) -> float | None:
+        """When a loaded poller's devices were last heard, if it has been
+        silent past its threshold; None otherwise (rule UP-17).
+
+        Twice its usual longest gap, and never under ten minutes, the
+        measure the Problem Sensors and Polling study proved on a
+        tester's Alarm.com. Outside the startup grace only, since
+        nothing is heard while Home Assistant starts. An entry that is
+        its device's only one is that device, judged on its own.
+        """
+        if self._in_startup_grace():
+            return None
+        if not self.is_known_poller(entry.domain):  # type: ignore[attr-defined]
+            return None
+        if self._entry_only_device.get(entry.entry_id):
+            return None
+        gap = self.poller_gap(entry.domain)  # type: ignore[attr-defined]
+        if gap is None:
+            return None
+        threshold = max(WATCH_STOP_FLOOR, WATCH_STOP_FACTOR * gap)
+        records = self.data.get(DATA_DEVICES) or {}
+        heard = [
+            stamp
+            for device_id in self._watched
+            if self._entry_of_device.get(device_id) == entry.entry_id
+            for stamp in ((records.get(device_id) or {}).get(DEV_LAST_ACTIVITY),)
+            if isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+        ]
+        if not heard:
+            return None
+        newest = float(max(heard))
+        # The silence is counted from this run's start at the earliest:
+        # time Home Assistant was down is not the poller stopping, and its
+        # first poll after a restart may be one of its slow ones.
+        counted_from = max(newest, self._run_start())
+        return newest if now - counted_from > threshold else None
+
+    def _poller_heard_since(self, entry_id: str, since: float) -> bool:
+        """Whether a watched device of this entry has been heard after
+        `since`. An entry with no watched device left has nothing to
+        wait for, and reads as heard (rule UP-17).
+
+        Only after this run began, too: an unclean restart sets each
+        device's last report to the moment it loads, before the run
+        starts, and that is no report.
+        """
+        since = max(since, self._run_start())
+        records = self.data.get(DATA_DEVICES) or {}
+        stamps = [
+            (records.get(device_id) or {}).get(DEV_LAST_ACTIVITY)
+            for device_id in self._watched
+            if self._entry_of_device.get(device_id) == entry_id
+        ]
+        if not stamps:
+            return True
+        return any(
+            isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > since
+            for stamp in stamps
+        )
+
+    def integration_stalled(self, domain: str) -> bool:
+        """Whether an entry of this integration has stopped updating and
+        is told as such (rule UP-17)."""
+        for entry_id in self._integration_told:
+            if self._integration_domain.get(entry_id) != domain:
+                continue
+            if parse_detail(self._integration_detail.get(entry_id))[2] == STALLED:
+                return True
+        return False
+
+    def _integration_gone(
+        self, entry, since: float, behind: int, how: str | None = None
+    ) -> None:
         """Record and announce an integration that has gone."""
         self._integration_told.add(entry.entry_id)
         self._begin_upstream_peak(entry.domain)
@@ -1207,7 +1317,7 @@ class InterventionMixin:
         detail = make_detail(
             entry.entry_id,
             self._entry_only_device.get(entry.entry_id),
-            FAILED if entry.state in _FAILED_SETUP else DOWN,
+            how or (FAILED if entry.state in _FAILED_SETUP else DOWN),
         )
         self._integration_detail[entry.entry_id] = detail
         # Dated from when it went down rather than from when the dwell
@@ -1296,13 +1406,18 @@ class InterventionMixin:
             return
         domain = entry.domain
         self._upstream_from_start.discard(domain)
-        # The window closes on the wall clock, for the reason the
-        # Wi-Fi hand-back gives: the claim is asked without a clock,
-        # so a sample's own time would be compared against another.
-        self._integration_handback[entry.entry_id] = (
-            since, dt_util.utcnow().timestamp()
-        )
-        self._integration_recovering_at[domain] = now
+        # A poller that stopped updating returns in one update, all its
+        # devices at once, so it holds none of them back afterwards and
+        # has no recovering phase (rule UP-17).
+        stalled = parse_detail(self._integration_detail.get(entry.entry_id))[2] == STALLED
+        if not stalled:
+            # The window closes on the wall clock, for the reason the
+            # Wi-Fi hand-back gives: the claim is asked without a clock,
+            # so a sample's own time would be compared against another.
+            self._integration_handback[entry.entry_id] = (
+                since, dt_util.utcnow().timestamp()
+            )
+            self._integration_recovering_at[domain] = now
         # What went down is the most the outage had down at once: by
         # the time the entry reads loaded, its devices may already read
         # back, and the recovering row would wait for none (rule UP-08).
@@ -1343,6 +1458,10 @@ class InterventionMixin:
         seen = self._entry_outages().get(key)
         if isinstance(seen, dict):
             seen[_SEEN_BACK] = now
+            if stalled:
+                # So the over push says it was updating again, as the
+                # brief does, not that it came back (rule UP-17).
+                seen[_SEEN_ENDED] = STALLED
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
@@ -1891,7 +2010,7 @@ class InterventionMixin:
             back = _moment(seen.get(_SEEN_BACK))
             ends.append(back if back is not None and back >= since else now)
             ended_how = seen.get(_SEEN_ENDED)
-            hows.add(ended_how if ended_how in (REMOVED, UNWATCHED) else None)
+            hows.add(ended_how if ended_how in (REMOVED, UNWATCHED, STALLED) else None)
             devices += _count(seen.get(_SEEN_DEVICES)) or 0
             worst += _count(seen.get(_SEEN_WORST)) or 0
         if not starts:
@@ -1899,9 +2018,14 @@ class InterventionMixin:
             # names the integration from its latest return instead.
             return None
         detail = None
-        if None not in hows:
-            how = REMOVED if hows == {REMOVED} else UNWATCHED
-            detail = make_detail("", None, how)
+        if hows == {STALLED}:
+            detail = make_detail("", None, STALLED)
+        else:
+            # A stop beside another ending is told by the other endings.
+            others = hows - {STALLED}
+            if None not in others:
+                how = REMOVED if others == {REMOVED} else UNWATCHED
+                detail = make_detail("", None, how)
         end = max(ends)
         ended: dict[str, Any] = {
             SYS_KIND: SYS_INTEGRATION_UP,
@@ -2636,6 +2760,11 @@ class InterventionMixin:
         is the same reason the storage split reads whether clocks are
         present rather than trusting a version number.
         """
+        # The lasting verdict first: taken at midnight from five days of
+        # gaps or a week of storms, so neither a restart nor a slower
+        # night loses it (rule UP-17).
+        if self.is_known_poller(self._entry_domain(entry_id)):  # type: ignore[attr-defined]
+            return True
         cutoff = now - STORM_HISTORY_SECONDS
         # Only finished storms count. A row left open by a crash
         # cannot be updated by anything, so counting it would let a

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.9 (2026-11-10)
+# File: const.py, Version: 0.28.10 (2026-11-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1276,8 +1276,10 @@ PANEL_URL_PATH = "device-sentinel"
 # Where the Problem List is: the top of the Daily Brief tab, the
 # dashboard's own address (rule DASH-02). The persistent card links there
 # whenever it lists anything, because the card names a few devices and
-# counts the rest, and the list holds them all (rule NOTE-11).
-PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}"
+# counts the rest, and the list holds them all (rule NOTE-11). The marker
+# asks the dashboard for today once, so the link opens today's list even
+# when the tab is already showing an earlier day (rule DASH-02).
+PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}?open=today"
 # Which dashboard file Home Assistant serves this run, the hash in its
 # address. The dashboard reads it from the status reply and the change
 # marker, so a tab left open across an update can tell that the file it
@@ -2338,6 +2340,9 @@ STUDIABLE = {
     "smartthings": "SmartThings",
     "tuya": "Tuya",
     "lutron_caseta": "Lutron Caséta",
+    # A cloud poller, recorded from Home Assistant's own data and never
+    # from tado (rule STACK-11).
+    "tado": "Tado",
     # Not a stack: every problem sensor, and which integrations update
     # in lockstep, recorded on any house (rule STACK-14).
     "problem_polling": "Problem Sensors and Polling",
@@ -2346,6 +2351,8 @@ STUDIABLE = {
 # (rule STACK-14).
 STUDY_ALWAYS_OFFERED = {"problem_polling"}
 WATCH_KEY = "problem_polling"
+# The Tado recording's key (rule STACK-11).
+TADO_KEY = "tado"
 # Lockstep: an integration with at least this many devices measurable
 # over this many days, of which at least this share keep each day's
 # longest gap within this tolerance of the integration's median that
@@ -2359,6 +2366,26 @@ WATCH_LOCKSTEP_SHARE = 0.8
 # this many times its usual longest gap, and never less than the floor.
 WATCH_STOP_FACTOR = 2.0
 WATCH_STOP_FLOOR = 600.0
+
+# The poller verdict that lasts (rule UP-17). Taken at each midnight on
+# every house, whether or not the study is on: an integration whose
+# devices move together over WATCH_LOCKSTEP_DAYS, or whose storm tally
+# holds at least POLLER_STORMS_PER_DAY storms on POLLER_STORM_DAYS of the
+# last POLLER_LOOKBACK_DAYS days. Kept across a restart and dropped after
+# POLLER_KEEP_DAYS days in which neither holds. Brian's Alarm.com: in
+# step on 5 days, about 240 storms a day; a tester's Tado: about 200
+# storms a day, through its 30-minute nights.
+DATA_POLLERS = "pollers"
+POLLER_SINCE = "since"
+POLLER_SEEN = "seen"
+POLLER_BASIS = "basis"
+POLLER_GAP = "gap"
+POLLER_BASIS_LOCKSTEP = "lockstep"
+POLLER_BASIS_STORMS = "storms"
+POLLER_STORMS_PER_DAY = 48
+POLLER_STORM_DAYS = 2
+POLLER_LOOKBACK_DAYS = 7
+POLLER_KEEP_DAYS = 7
 # Ended stops kept for the download, and problem sensors listed in it.
 WATCH_STOPS_KEPT = 20
 WATCH_PROBLEM_CAP = 200

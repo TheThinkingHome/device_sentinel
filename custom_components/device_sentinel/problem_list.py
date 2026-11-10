@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.28.4 (2026-11-07)
+# File: problem_list.py, Version: 0.28.10 (2026-11-10)
 
 """The problem list: the single memory every channel renders.
 
@@ -518,6 +518,23 @@ class ProblemListMixin:
         )
         if name == WIFI_KEY:
             return self._wifi_item_text(devices, behind, when)
+        # A poller loaded but silent: its devices are not heard, and none
+        # is down, so it is told as stopping, by its own name (rule UP-17).
+        if self.integration_stalled(name):  # type: ignore[attr-defined]
+            title = self._integration_title(name)  # type: ignore[attr-defined]
+            noun = "device" if behind == 1 else "devices"
+            summary = f"{title} stopped updating: {behind} {noun} not heard from"
+            opening = (
+                f"{title} stopped updating at {when}."
+                if when
+                else f"{title} has stopped updating."
+            )
+            return summary, (
+                f"{opening} Device Sentinel hears {title}'s regular update, "
+                f"not each device, so its {behind} {noun} are counted here "
+                f"instead of listed. A device still silent after {title} "
+                f"updates again is listed on its own."
+            )
         if self.upstream_recovering_at(name) is not None:
             return self._bridge_recovering_text(name, display, behind)
         # The total named as the total, so it cannot be read as the

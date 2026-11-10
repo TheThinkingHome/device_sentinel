@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_watch.py, Version: 0.28.3 (2026-11-04)
+# File: study_watch.py, Version: 0.28.10 (2026-11-10)
 
 """Problem sensors and polled integrations, recorded and never judged
 (rule STACK-14).
@@ -44,7 +44,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DATA_DEVICES,
-    DEV_DAILY_MAX,
+    DATA_POLLERS,
     DEV_LAST_ACTIVITY,
     PROBE_AGREES,
     PROBE_DETAIL,
@@ -67,6 +67,7 @@ from .const import (
     WATCH_STOP_FACTOR,
     WATCH_STOP_FLOOR,
 )
+from .removed_days import counted_gaps
 from .study import PROBE_MUTED
 
 PROBLEM_CLASS = "problem"
@@ -91,9 +92,10 @@ def lockstep(records: dict[str, dict[str, Any]], watched: dict[str, str]) -> dic
     by_integration: dict[str, list[tuple[str, list[float]]]] = {}
     for device_id, integration in watched.items():
         record = records.get(device_id) or {}
+        # A day removed by hand is not counted (rule FRZ-25).
         maxima = [
-            value for value in (record.get(DEV_DAILY_MAX) or [])
-            if isinstance(value, (int, float)) and value == value and value >= 0
+            value for value in counted_gaps(record)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value == value and value >= 0
         ]
         if len(maxima) < WATCH_LOCKSTEP_DAYS:
             continue
@@ -123,6 +125,26 @@ def lockstep(records: dict[str, dict[str, Any]], watched: dict[str, str]) -> dic
             "gap": statistics.median(statistics.median(maxima) for _device, maxima in devices),
         }
     return found
+
+
+# Attributes every entity carries, which say nothing about a problem.
+_PLAIN_ATTRIBUTES = frozenset({
+    "friendly_name", "device_class", "icon", "entity_picture", "attribution",
+    "supported_features", "assumed_state", "restored",
+})
+_SAID_CAP = 300
+
+
+def _attributes_said(state: Any) -> str:
+    """A problem sensor's own attributes, short and in a stable order."""
+    attributes = getattr(state, "attributes", None) or {}
+    parts = [
+        f"{key}={attributes[key]}"
+        for key in sorted(attributes)
+        if key not in _PLAIN_ATTRIBUTES
+    ]
+    said = "; ".join(parts)
+    return said if len(said) <= _SAID_CAP else f"{said[:_SAID_CAP - 1]}…"
 
 
 class WatchStudyMixin:
@@ -172,10 +194,15 @@ class WatchStudyMixin:
             seen.add(entity_id)
             state = self.hass.states.get(entity_id)  # type: ignore[attr-defined]
             now_state = state.state if state is not None else "no state"
+            # What the sensor says beside its state, such as which
+            # Alarm.com trouble turned it on, so a change of reason is a
+            # change too (rule STACK-14).
+            said = _attributes_said(state)
             before = self._watch_last.get(entity_id)
-            self._watch_last[entity_id] = now_state
-            if before == now_state:
+            self._watch_last[entity_id] = f"{now_state}|{said}" if said else now_state
+            if before == self._watch_last[entity_id]:
                 continue
+            before = (before or "").split("|", 1)[0]
             self._watch_since[entity_id] = now
             self._probe_queue({  # type: ignore[attr-defined]
                 PROBE_WHEN: now,
@@ -186,7 +213,7 @@ class WatchStudyMixin:
                 PROBE_NOW: now_state,
                 PROBE_SENTINEL: self._watch_view(device_id, now),
                 PROBE_AGREES: "",
-                PROBE_DETAIL: entity_id,
+                PROBE_DETAIL: f"{entity_id} {said}" if said else entity_id,
             })
         for gone in [entity_id for entity_id in self._watch_last if entity_id not in seen]:
             self._watch_last.pop(gone, None)
@@ -321,6 +348,32 @@ class WatchStudyMixin:
             })
         self._watch_measure(now, write=True)
 
+    def _refresh_schedule(self, domain: str) -> dict[str, Any]:
+        """Whether an integration's update coordinator can be read from
+        its entries, and if so its interval and last result.
+
+        Read and never called: an integration that keeps its state some
+        other way, as the Alarm.com fork keeps a hub, says so and
+        nothing breaks (rule STACK-08)."""
+        found: list[dict[str, Any]] = []
+        for entry in self.hass.config_entries.async_entries(domain):  # type: ignore[attr-defined]
+            runtime = getattr(entry, "runtime_data", None)
+            holder = runtime if hasattr(runtime, "last_update_success") else getattr(runtime, "coordinator", None)
+            if holder is None or not hasattr(holder, "last_update_success"):
+                found.append({"coordinator": False, "holds": type(runtime).__name__ if runtime is not None else None})
+                continue
+            interval = getattr(holder, "update_interval", None)
+            try:
+                seconds = interval.total_seconds() if interval is not None else None
+            except AttributeError:
+                seconds = None
+            found.append({
+                "coordinator": True,
+                "interval_seconds": seconds,
+                "last_ok": bool(getattr(holder, "last_update_success", False)),
+            })
+        return {"entries": found}
+
     # ---------------------------------------------------- diagnostics
 
     def watch_diagnostics(self, now: float | None = None) -> dict[str, Any]:
@@ -337,9 +390,17 @@ class WatchStudyMixin:
                 "state": state.state if state is not None else None,
                 "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
                 "sentinel": self._watch_view(device_id, now),
+                "attributes": _attributes_said(state),
             })
         return {
             "problem_sensors": sensors[:WATCH_PROBLEM_CAP],
+            # Which pollers Home Assistant's own update schedule can be
+            # read for: whether each could later be judged by its own
+            # refresh rather than by timing (rule UP-17).
+            "refresh_readable": {
+                domain: self._refresh_schedule(domain)
+                for domain in sorted(set(self._watch_lockstep or {}) | set(self.data.get(DATA_POLLERS) or {}))  # type: ignore[attr-defined]
+            },
             "problem_sensors_total": len(sensors),
             "polling": dict(sorted((self._watch_lockstep or {}).items())),
             "stops_open": {

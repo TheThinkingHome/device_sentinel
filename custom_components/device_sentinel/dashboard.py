@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.9 (2026-11-10)
+# File: dashboard.py, Version: 0.28.10 (2026-11-10)
 
 """What the dashboard reads from the coordinator.
 
@@ -51,7 +51,6 @@ from .const import (
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     EXCLUDE_GROUP_COPIES,
-    EXCLUDE_GROUP_POLLER,
     EXCLUDE_GROUP_REASONS,
     EXCLUDE_GROUPS,
     EXCLUDE_MEDIA_MORE,
@@ -95,6 +94,7 @@ from .const import (
     INCIDENT_RESOLVED,
     REPEAT_WINDOW_DAYS,
     TODO_KINDS,
+    TODO_KIND_FAMILIES,
     TODO_KIND_FALLING_BATTERY,
     TODO_KIND_FROZEN,
     TODO_KIND_LOW_BATTERY,
@@ -109,6 +109,7 @@ from .const import (
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_RESTART,
+    SYS_STORM_CLOSED,
     SYS_UNCLEAN_RESTART,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
@@ -190,7 +191,7 @@ from .const import (
 )
 from .escalation import fold, withdrawals_once
 from .networks import problem_groups
-from .outage_detail import pair_key
+from .outage_detail import STALLED, pair_key, parse_detail
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
 
@@ -433,6 +434,9 @@ class IntegrationViewMixin:
         device = self.outage_device_name(detail)
         if device is not None:
             return f"{device} ({self._integration_title(str(scope))} connection)"
+        # A poller that stopped updating while loaded (rule UP-17).
+        if parse_detail(detail)[2] == STALLED:
+            return f"{self._integration_title(str(scope))} stopped updating"
         return f"{self._integration_title(str(scope))} integration"
 
     def integration_outages(self) -> dict[str, list[dict[str, Any]]]:
@@ -634,6 +638,29 @@ class IntegrationViewMixin:
             )
         return ", ".join(aged)
 
+    def lead_since(self, item: dict[str, Any]) -> float | None:
+        """When the problem a row names first began (rule LIST-10).
+
+        A row says its problems worst first, and its SINCE belongs to
+        the first: "unavailable, battery 0%" is dated from when the
+        device went, not from the older battery fault. Read through the
+        same matcher that ages each phrase, so the row and its phrases
+        cannot disagree. A summary no phrase matches falls back to the
+        oldest problem, as before.
+        """
+        name = item.get(TODO_SORT_NAME) or ""
+        summary = item.get(TODO_SUMMARY) or ""
+        text = summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary
+        kinds = item.get(TODO_KINDS) or {}
+        for part in text.split(", "):
+            since = self._problem_since(part, kinds)
+            if since is not None:
+                return float(since)
+        return min(
+            (v for v in kinds.values() if isinstance(v, (int, float)) and not isinstance(v, bool)),
+            default=None,
+        )
+
     def _problems_by_device(self) -> dict[str, dict[str, Any]]:
         found: dict[str, dict[str, Any]] = {}
         for item in self.todo_items:
@@ -661,8 +688,9 @@ class IntegrationViewMixin:
     def exclusion_reason(self, domain: str, noisy: set[str] | None = None) -> str | None:
         """Why Device Sentinel recommends excluding this integration, or
         None: one reason, from the one list the Recommendations tab
-        reads too (rule MUTE-02). A poller is named only when its storms
-        have been measured (rule UP-18)."""
+        reads too (rule MUTE-02). A poller is never recommended for
+        exclusion: it is watched as a whole, and its line on the
+        Recommendations tab says what that covers (rule UP-18)."""
         if domain in ROUTER_INTEGRATIONS:
             return EXCLUSION_OFFER_REASONS["router"]
         if domain in EXCLUSION_OFFER_REASONS:
@@ -678,10 +706,6 @@ class IntegrationViewMixin:
             return EXCLUSION_OFFER_REASONS["media"]
         if self._is_helper(domain):
             return EXCLUDE_GROUP_REASONS[EXCLUDE_GROUP_COPIES]
-        if noisy is None:
-            noisy = self._noisy_domains()
-        if domain in noisy:
-            return EXCLUDE_GROUP_REASONS[EXCLUDE_GROUP_POLLER]
         return None
 
     def recommended_exclusions(self) -> dict[str, str]:
@@ -897,6 +921,14 @@ class IntegrationViewMixin:
             # the page is opened, so its five buttons are lit as they are
             # (rule MUTE-03).
             "excluded": domain in self.excluded_integrations,
+            # Whether any of its devices still has the history the
+            # midnight after an exclusion deletes, so the page offers to
+            # keep it only while there is something to keep (rule MUTE-03).
+            "history_kept": domain in self.excluded_integrations and any(
+                device_id in (self.data.get(DATA_DEVICES) or {}) and not self.is_held(device_id)  # type: ignore[attr-defined]
+                for device_id, (_name, owner, reason) in self._set_aside.items()
+                if owner == domain and reason == SET_ASIDE_EXCLUDED
+            ),
             "mutes": {
                 kind: domain in set(self.entry.options.get(key, []) or [])
                 for kind, key in (
@@ -2020,11 +2052,44 @@ class BriefViewMixin:
                 opened[key] = row
             elif row.get(INC_EVENT) == INCIDENT_RESOLVED:
                 opened.pop(key, None)
+        # A problem the list still holds has held it without a break
+        # since that kind's own start, whatever the incident log says:
+        # the log reopens an unavailable device at a restart or a bridge
+        # outage, and keeps 14 days, so an older fault would read as
+        # starting on its last reopening or not at all. The list's start
+        # is the true one (rule DASH-02).
+        held: dict[tuple[Any, Any], float] = {}
+        for item in self.todo_items:
+            device_id = item.get(TODO_DEVICE_ID)
+            # A device's problems only: an outage's row is told by the
+            # day's events, not as a device.
+            if not isinstance(device_id, str) or device_id.startswith("upstream:"):
+                continue
+            for kind, start in (item.get(TODO_KINDS) or {}).items():
+                if kind not in TODO_KIND_FAMILIES:
+                    continue
+                if (
+                    isinstance(start, (int, float))
+                    and not isinstance(start, bool)
+                    and start <= moment
+                ):
+                    held[(item.get(TODO_DEVICE_ID), kind)] = float(start)
+                    if (item.get(TODO_DEVICE_ID), kind) not in opened:
+                        opened[(item.get(TODO_DEVICE_ID), kind)] = {
+                            INC_DEVICE_ID: item.get(TODO_DEVICE_ID),
+                            INC_KIND: kind,
+                            INC_EVENT: INCIDENT_OPENED,
+                            INC_WHEN: float(start),
+                            INC_NAME: item.get(TODO_SORT_NAME),
+                        }
         rows = []
         for (device_id, kind), row in opened.items():
             if self._brief_muted(device_id, kind):  # type: ignore[attr-defined]
                 # The kinds its mutes cover, as the written brief (rule BRIEF-08).
                 continue
+            began = self._began_at(row)  # type: ignore[attr-defined]
+            if (device_id, kind) in held:
+                began = min(began, held[(device_id, kind)])
             rows.append({
                 "device_id": device_id,
                 # The name it has today, as every surface (rule DEV-02);
@@ -2037,9 +2102,10 @@ class BriefViewMixin:
                 # The words the brief used when it opened: a past day
                 # has no record of the level it read that night.
                 "problem": self._brief_phrase(row),
-                # From when it went, as the events beside it.
-                "since": _iso(self._began_at(row)),  # type: ignore[attr-defined]
-                "seconds": moment - self._began_at(row),  # type: ignore[attr-defined]
+                # From when it went, as the events beside it, or from the
+                # list's own start where that is earlier.
+                "since": _iso(began),
+                "seconds": moment - began,
                 "acknowledged": False,
                 "uid": None,
             })
@@ -2057,8 +2123,7 @@ class BriefViewMixin:
             if not device_id or device_id in self._muted_devices:
                 continue
             name = item.get(TODO_SORT_NAME) or ""
-            kinds = item[TODO_KINDS]
-            since = min((v for v in kinds.values() if isinstance(v, (int, float))), default=None)
+            since = self.lead_since(item)
             rows.append({
                 "device_id": device_id,
                 "name": name,
@@ -2113,6 +2178,8 @@ class BriefViewMixin:
                 "what": self._system_event_phrase(row),
             }
             for row in system
+            # A burst's end is told with its start (rule UP-17).
+            if row.get(SYS_KIND) != SYS_STORM_CLOSED
         ]
         events.sort(key=lambda row: row["when"] or "", reverse=True)
         # Repeat offenders look back seven days from the day shown, so
