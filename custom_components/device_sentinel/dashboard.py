@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.8 (2026-11-09)
+# File: dashboard.py, Version: 0.28.9 (2026-11-10)
 
 """What the dashboard reads from the coordinator.
 
@@ -893,9 +893,19 @@ class IntegrationViewMixin:
             and domain not in self.exclusion_offers()
             and domain in self.excluded_integrations,
             "devices": listed,
-            # On the exclusion list, so the page offers to take it back;
-            # otherwise it offers to exclude it (rule MUTE-03).
+            # Its exclusion and its four mutes as they stand, read when
+            # the page is opened, so its five buttons are lit as they are
+            # (rule MUTE-03).
             "excluded": domain in self.excluded_integrations,
+            "mutes": {
+                kind: domain in set(self.entry.options.get(key, []) or [])
+                for kind, key in (
+                    ("everything", CONF_MUTED_INTEGRATIONS),
+                    ("freeze", CONF_FREEZE_MUTED_INTEGRATIONS),
+                    ("battery", CONF_BATTERY_MUTED_INTEGRATIONS),
+                    ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS),
+                )
+            },
             "behind_broker": behind_broker,
             "outages": self.integration_outages().get(domain, []),
             "bursts": self._bursts(domain),

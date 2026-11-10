@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.8 (2026-11-09)
+# File: dashboard_api.py, Version: 0.28.9 (2026-11-10)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -975,6 +975,7 @@ def ws_integration_exclude(
         vol.Required("domain"): str,
         vol.Required("kind"): vol.In(["everything", "freeze", "battery", "signal"]),
         vol.Required("on"): bool,
+        vol.Optional("source", default="integrations_tab"): vol.In(["integrations_tab", "integration_page"]),
     }
 )
 @callback
@@ -982,7 +983,7 @@ def ws_integration_mute(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Mute a whole integration for one kind, or lift it, from the
-    Integrations tab (rule MUTE-03)."""
+    Integrations tab or the integration's page (rule MUTE-03)."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
@@ -991,7 +992,7 @@ def ws_integration_mute(
         connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
         return
     try:
-        coordinator.page_set_integration_mute(msg["domain"], msg["kind"], msg["on"])
+        coordinator.page_set_integration_mute(msg["domain"], msg["kind"], msg["on"], msg["source"])
     except ValueError as err:
         connection.send_error(msg["id"], "refused", str(err))
         return

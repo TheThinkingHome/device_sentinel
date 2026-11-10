@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.3 (2026-11-04)
+# File: config_flow.py, Version: 0.28.9 (2026-11-10)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -1814,7 +1814,14 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 if target not in high
             ]
             wanted = flat.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
-            if wanted != REPORT_LINKS_NONE and not _house_url(
+            if any("@" in str(target) for target in flat.get(CONF_BRIEF_TARGETS, [])):
+                # An email address is not a service: the brief would be
+                # handed to an action that does not exist and never sent
+                # (rule BRIEF-11). Home Assistant cannot mark
+                # a field inside a section, so the error names the
+                # field and shows above the Daily Brief section.
+                errors["brief"] = "brief_target_is_address"
+            elif wanted != REPORT_LINKS_NONE and not _house_url(
                 self.hass, wanted
             ):
                 # Saving a choice Home Assistant cannot serve would
@@ -1823,7 +1830,13 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 errors["base"] = f"{wanted}_url_not_set"
             else:
                 return await self._save_and_return(flat)
-        options = self.config_entry.options
+        # After a refusal the screen shows what was entered, so nothing
+        # but the refused value has to be chosen again.
+        options = (
+            {**self.config_entry.options, **flat}
+            if user_input is not None
+            else self.config_entry.options
+        )
         discovered = _discover_notify_targets(self.hass)
 
         def target_selector() -> selector.SelectSelector:
@@ -1956,8 +1969,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     vol.Required("quiet"): section(
                         quiet_section, {"collapsed": True}
                     ),
+                    # Open when its own value was refused, so the value
+                    # to remove is in sight.
                     vol.Required("brief"): section(
-                        brief_section, {"collapsed": True}
+                        brief_section, {"collapsed": "brief" not in errors}
                     ),
                 }
             ),

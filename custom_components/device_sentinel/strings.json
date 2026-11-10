@@ -62,7 +62,7 @@
             },
             "data_description": {
               "daily_reminder_mode": "The brief file is written either way; this decides whether it is sent.",
-              "brief_document_targets": "Email or other services that can carry the whole document.",
+              "brief_document_targets": "The email or other services that will be used to send the Daily Brief. Choose them from the list. An email address typed here will not work: to send by email, set up Home Assistant's SMTP integration first, and its recipients will appear in the list. [Sending the Daily Brief by Email](https://github.com/TheThinkingHome/device_sentinel/wiki/Sending-the-Daily-Brief-by-Email)",
               "report_link_address": "Device names in the daily brief can become links to that device's page on the Device Sentinel dashboard. The brief is emailed and can be forwarded, so a link carries your house's address with it. Choose the address the links use, or None for no links. If the internal or external URLs are not set, they can be configured in Home Assistant's [Network Settings](/config/network)."
             }
           }
@@ -261,7 +261,8 @@
     },
     "error": {
       "internal_url_not_set": "Home Assistant has no internal URL, so nothing would be linked. Set one under Settings, System, Network, or choose None.",
-      "external_url_not_set": "Home Assistant has no external URL, so nothing would be linked. Set one under Settings, System, Network, or choose None."
+      "external_url_not_set": "Home Assistant has no external URL, so nothing would be linked. Set one under Settings, System, Network, or choose None.",
+      "brief_target_is_address": "Send the Full Brief To needs an email service, not an email address. Set up Home Assistant's SMTP integration, then choose its recipient from the list."
     }
   },
   "selector": {
@@ -281,20 +282,20 @@
   },
   "issues": {
     "notify_target_missing": {
-      "title": "A Device Sentinel Notification Target No Longer Exists",
+      "title": "A Device Sentinel Notification Target Does Not Exist",
       "fix_flow": {
         "step": {
           "init": {
-            "title": "Remove Notification Targets That No Longer Exist",
-            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again.",
+            "title": "Remove Notification Targets That Do Not Exist",
+            "description": "{count} notification {targets} in Device Sentinel's settings name a service Home Assistant does not have: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed, or an email address was typed where a service belongs. Choose a service from the list in Notifications and Daily Brief.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again.",
             "menu_options": {
               "confirm": "Remove Them",
               "ignore": "Ignore"
             }
           },
           "confirm": {
-            "title": "Remove Notification Targets That No Longer Exist",
-            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again."
+            "title": "Remove Notification Targets That Do Not Exist",
+            "description": "{count} notification {targets} in Device Sentinel's settings name a service Home Assistant does not have: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed, or an email address was typed where a service belongs. Choose a service from the list in Notifications and Daily Brief.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again."
           }
         }
       }

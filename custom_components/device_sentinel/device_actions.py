@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.8 (2026-11-09)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.9 (2026-11-10)
 
 """Acting from the device page (rule DASH-09).
 
@@ -576,9 +576,12 @@ class DeviceActionsMixin:
         )
         self._mark_changed()  # type: ignore[attr-defined]
 
-    def page_set_integration_mute(self, domain: str, kind: str, on: bool) -> None:
+    def page_set_integration_mute(
+        self, domain: str, kind: str, on: bool, source: str = "integrations_tab"
+    ) -> None:
         """Set or lift one kind's mute on a whole integration, from the
-        Integrations tab, in the list Settings writes (rule MUTE-03).
+        Integrations tab or the integration's page, in the list Settings
+        writes, and the brief names where it was pressed (rule MUTE-03).
         Nothing narrower is cleared, so a second press undoes it exactly;
         a Settings save settles the ladder (rule MUTE-04). Unavailable is
         never muted by integration (rule MUTE-06), and an excluded
@@ -598,7 +601,7 @@ class DeviceActionsMixin:
         self._page_option_keys.add(key)
         self.hass.config_entries.async_update_entry(self.entry, options={**self.entry.options, key: current})
         self._record_system_event(  # type: ignore[attr-defined]
-            SYS_INTEGRATIONS_TAB,
+            SYS_INTEGRATION_PAGE if source == "integration_page" else SYS_INTEGRATIONS_TAB,
             scope=domain,
             detail=f"muted for {kind}" if on else f"{kind} mute lifted",
         )

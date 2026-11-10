@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.8 (2026-11-09)
+# File: const.py, Version: 0.28.9 (2026-11-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1273,11 +1273,11 @@ REPORT_BRIEF_HTML = "daily_brief.html"
 # /device-sentinel/device/<id>. The brief's device names link there, to
 # the page that says why a device is listed (rule BRIEF-13).
 PANEL_URL_PATH = "device-sentinel"
-# The Problem List tab's own address, the panel's slug for the tab. The
-# persistent card links there whenever it lists anything, because the
-# card names a few devices and counts the rest, and the list holds them
-# all (rule NOTE-11).
-PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}/problem-list"
+# Where the Problem List is: the top of the Daily Brief tab, the
+# dashboard's own address (rule DASH-02). The persistent card links there
+# whenever it lists anything, because the card names a few devices and
+# counts the rest, and the list holds them all (rule NOTE-11).
+PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}"
 # Which dashboard file Home Assistant serves this run, the hash in its
 # address. The dashboard reads it from the status reply and the change
 # marker, so a tab left open across an update can tell that the file it
