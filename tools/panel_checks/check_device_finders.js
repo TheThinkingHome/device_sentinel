@@ -2,11 +2,11 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.28.8 (2026-11-09)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
 // dashboard (rules DASH-12, MUTE-03). The Devices tab's name
-// search, Area and Label filters; its Excluded list, read live, with
+// search, Area and Label filters; its Excluded chip, read live, with
 // Cancel the exclusion for a device excluded on its own, a link to the
 // integration for one excluded with it, and Home Assistant's own page
 // for one whose history has gone; and an integration's page excluding
@@ -160,29 +160,33 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
     bodyRows(root).length === kitchen && select(root, "Show one area").value === "Kitchen", bodyRows(root).length);
   await choose(root, "Show one area", "");
 
-  console.log("\nThe Excluded list");
-  const show = linkButton(root, "Show the 3 excluded devices");
-  check("A link offers the excluded devices, with their count", Boolean(show), [...root.querySelectorAll(".pane button.linkbtn")].map((b) => b.textContent));
-  show.click();
+  console.log("\nThe Excluded chip (0.28.8)");
+  const chipNamed = (start) => [...root.querySelectorAll(".pane .chips .chip")].find((b) => b.textContent.startsWith(start));
+  check("An Excluded chip counts the excluded devices", chipNamed("Excluded") && chipNamed("Excluded").textContent === "Excluded 3",
+    [...root.querySelectorAll(".pane .chips .chip")].map((b) => b.textContent));
+  check("They are filtered out until it is pressed", !names(root).includes("Old Plug"));
+  chipNamed("Excluded").click();
   await settle();
   const heads = [...root.querySelectorAll(".pane table thead th")].map((th) => th.textContent);
-  check("The Excluded list has its own columns",
-    JSON.stringify(heads) === JSON.stringify(["DEVICE", "INTEGRATION", "AREA", "EXCLUDED", "HISTORY", ""]), heads);
+  check("The same columns as the watched devices",
+    JSON.stringify(heads) === JSON.stringify(["DEVICE", "TYPE", "AREA", "INTEGRATION", "STANDING", "PROBLEM", "LAST REPORT", "WINDOW"]), heads);
   check("It lists the three excluded devices by name", JSON.stringify(names(root)) === JSON.stringify(["Old Plug", "Old Lamp", "Phone Randy"]), names(root));
   const row = (name) => bodyRows(root).find((tr) => tr.firstChild.textContent === name);
   const link = (tr) => tr.firstChild.querySelector("a").getAttribute("href");
   check("A device whose history is kept opens its Device Sentinel page", link(row("Old Plug")).split("?")[0] === `${PREFIX}/device/ex-own-kept`, link(row("Old Plug")));
   check("A device whose history has gone opens Home Assistant's own page", link(row("Old Lamp")) === "/config/devices/device/ex-own-gone", link(row("Old Lamp")));
-  check("Each says how it was excluded and what became of its history",
-    [...row("Old Plug").children].slice(3, 5).map((td) => td.textContent).join("|") === "By you|Kept until midnight"
-    && [...row("Phone Randy").children].slice(3, 5).map((td) => td.textContent).join("|") === "With its integration|Deleted",
-    [...row("Phone Randy").children].map((td) => td.textContent));
-  const last = (tr) => tr.lastChild;
+  const standingOf = (tr) => tr.children[4];
+  check("STANDING says how it was excluded and what became of its history",
+    standingOf(row("Old Plug")).textContent.startsWith("Excluded, history kept until midnight.")
+    && standingOf(row("Old Lamp")).textContent.startsWith("Excluded, history deleted.")
+    && standingOf(row("Phone Randy")).textContent.startsWith("Excluded with its integration."),
+    [...bodyRows(root)].map((tr) => standingOf(tr).textContent));
   check("One excluded with its integration is taken back on the integration's page",
-    last(row("Phone Randy")).querySelector("a") && last(row("Phone Randy")).querySelector("a").getAttribute("href").split("?")[0] === `${PREFIX}/integration/mobile_app`
-    && !last(row("Phone Randy")).querySelector("button"), last(row("Phone Randy")).innerHTML);
+    standingOf(row("Phone Randy")).querySelector("a") && standingOf(row("Phone Randy")).querySelector("a").getAttribute("href").split("?")[0] === `${PREFIX}/integration/mobile_app`
+    && !standingOf(row("Phone Randy")).querySelector("button"), standingOf(row("Phone Randy")).innerHTML);
+  check("The key under the table says what an exclusion does", root.querySelector(".pane").lastElementChild.textContent.includes("deletes its history at the midnight"));
   await type(root, "lamp");
-  check("The search narrows the Excluded list too", JSON.stringify(names(root)) === JSON.stringify(["Old Lamp"]), names(root));
+  check("The search narrows the excluded devices too", JSON.stringify(names(root)) === JSON.stringify(["Old Lamp"]), names(root));
   await type(root, "");
   await choose(root, "Show one area", "Garage");
   check("So does the Area filter", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
@@ -191,23 +195,22 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   check("An excluded device's area is a link too", Boolean(garageLink) && garageLink.textContent === "Garage");
   garageLink.click();
   await settle();
-  check("Pressing it narrows the Excluded list to that area", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
+  check("Pressing it narrows the excluded devices to that area", JSON.stringify(names(root)) === JSON.stringify(["Old Plug"]), names(root));
   await choose(root, "Show one area", "");
   const before = calls.length;
-  last(row("Old Plug")).querySelector("button").click();
+  standingOf(row("Old Plug")).querySelector("button").click();
   await settle();
   await settle();
   const sent = calls.slice(before).find((c) => c.type === "device_sentinel/device_exclude");
   check("Cancel the exclusion takes the device back, saying it was pressed on the Devices tab",
     sent && sent.device_id === "ex-own-kept" && sent.on === false && sent.source === "devices_tab", sent);
   check("and the tab is fetched again", calls.slice(before).some((c) => c.type === "device_sentinel/devices"));
-  const back = linkButton(root, "Back to the watched devices");
-  back.click();
+  chipNamed("Watched").click();
   await settle();
-  check("A link leads back to the watched devices", bodyRows(root).length === 103, bodyRows(root).length);
+  check("Watched leads back to the watched devices", bodyRows(root).length === 103, bodyRows(root).length);
 
   ({ root } = await open(`${PREFIX}/devices`, { devices: { rows: reply.rows, excluded: [] } }));
-  check("With nothing excluded, no link is offered", !linkButton(root, "Show the"));
+  check("With nothing excluded, the chip reads 0", chipNamed("Excluded") && chipNamed("Excluded").textContent === "Excluded 0");
 
   console.log("\nAn integration's page excludes it or takes it back");
   const watchedPage = { ...fleet.integration, excluded: false };
@@ -236,6 +239,73 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   await settle();
   const note = root.querySelector(".pane .actnote.refused");
   check("A refusal is shown on the page with Home Assistant's reason", note && note.textContent === "Home Assistant refused it.", note && note.textContent);
+
+  console.log("\nThe chips of devices not watched (rule DASH-12)");
+  {
+    // An excluded device the classification knows a type for, a set-aside
+    // device Device Sentinel once watched (it has a page), and one it
+    // never did, with an area and a label.
+    const classification = () => {
+      const c = JSON.parse(JSON.stringify(fleet.classification));
+      c.rows = c.rows.filter((r) => r.watched);
+      c.rows.push(
+        { device_id: "ex-own-kept", name: "Old Plug", integration: "test", integration_name: "Test", watched: false, muted: "", muted_global: "",
+          set_aside: "excluded (device)", copies: 1, type: "Plug", area: "Garage", labels: ["Spare"], page: true },
+        { device_id: "aside-kept", name: "Retired Sensor", integration: "test", integration_name: "Test", watched: false, muted: "", muted_global: "",
+          set_aside: "disabled", copies: 1, type: "Motion Sensor", area: "Hall", labels: ["Spare"], page: true },
+        { device_id: "aside-never", name: "Spotify", integration: "spotify", integration_name: "Spotify", watched: false, muted: "", muted_global: "",
+          set_aside: "service", copies: 1, type: null, area: null, labels: [], page: false });
+      return c;
+    };
+    const opened = await open(`${PREFIX}/devices`, { classification });
+    const r = opened.root;
+    const chip = (start) => [...r.querySelectorAll(".pane .chips .chip")].find((b) => b.textContent.startsWith(start));
+    const heads = () => [...r.querySelectorAll(".pane thead th")].map((th) => th.textContent);
+    const cellOf = (name, column) => {
+      const tr = bodyRows(r).find((t) => t.firstChild.textContent === name);
+      return tr ? tr.children[heads().indexOf(column)] : null;
+    };
+    chip("Excluded").click();
+    await settle();
+    check("an excluded device keeps the type Device Sentinel knows", cellOf("Old Plug", "TYPE").textContent === "Plug", cellOf("Old Plug", "TYPE").textContent);
+    check("one with no type known reads Not Watched", cellOf("Old Lamp", "TYPE").textContent === "Not Watched");
+    check("LAST REPORT and WINDOW do not sort where they are blank",
+      ![...r.querySelectorAll(".pane thead th button")].some((b) => ["LAST REPORT", "WINDOW"].includes(b.textContent)));
+    chip("Set aside").click();
+    await settle();
+    check("a set-aside device shows its area", cellOf("Retired Sensor", "AREA").textContent === "Hall", cellOf("Retired Sensor", "AREA").textContent);
+    const areaChoices = [...select(r, "Show one area").options].map((o) => o.textContent);
+    check("and the Area filter offers it", areaChoices.some((o) => o.startsWith("Hall")), areaChoices);
+    await choose(r, "Show one area", "Hall");
+    check("choosing it narrows Set aside", names(r).join() === "Retired Sensor", names(r));
+    await choose(r, "Show one area", "");
+    const link = (name) => bodyRows(r).find((t) => t.firstChild.textContent === name).firstChild.querySelector("a");
+    check("one Device Sentinel once watched opens its page here", /\/device-sentinel\/device\/aside-kept/.test(link("Retired Sensor").getAttribute("href")), link("Retired Sensor").getAttribute("href"));
+    check("one it never watched opens Home Assistant's own page", link("Spotify").getAttribute("href").startsWith("/config/devices/device/aside-never"), link("Spotify").getAttribute("href"));
+    const list = opened.panel._lists && Object.values(opened.panel._lists).find((l) => Array.isArray(l) && l.includes("aside-kept"));
+    check("Previous and Next step only through the ones with a page",
+      !!list && !list.includes("aside-never"), list);
+
+    // Each chip keeps its own choices.
+    await choose(r, "Show one area", "Hall");
+    chip("Watched").click();
+    await settle();
+    chip("Set aside").click();
+    await settle();
+    check("going back to a chip finds its Area choice as it was", select(r, "Show one area").value === "Hall" && names(r).join() === "Retired Sensor",
+      [select(r, "Show one area").value, names(r)]);
+    await choose(r, "Show one area", "");
+
+    // A network's filter belongs to the watched devices.
+    opened.panel._devicesOnNetwork("z2m");
+    await settle();
+    chip("Excluded").click();
+    await settle();
+    check("a network's filter leaves the Excluded chip whole", bodyRows(r).length === 3 && !r.querySelector(".pane").textContent.includes("Showing the devices on"), names(r));
+    chip("Watched").click();
+    await settle();
+    check("and still holds on Watched", r.querySelector(".pane").textContent.includes("Showing the devices on"));
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

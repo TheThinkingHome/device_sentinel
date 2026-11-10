@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_network_page_extras.js, Version: 0.28.7 (2026-11-09)
+// File: tools/panel_checks/check_network_page_extras.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: more on a network's page (rules DASH-17, DASH-18). The
 // Open buttons for the network's own page and its app, its devices and
 // makeup, outage patterns with their one sentence used twice, Yes it is
@@ -34,7 +34,7 @@ const PAGE = {
   key: "z2m", name: "Zigbee2MQTT", kind: "z2m", status: { state: "ok", words: "Running", since: null },
   watched: 2, with_problem: 0, counts: COUNTS, window_days: 30, hardware: [],
   outages: [OUTAGE(7, 120), OUTAGE(3, 240), OUTAGE(2, 240), OUTAGE(1, 240)],
-  patterns: [{ ...CARD, times: 3, usual: 240, outages: [1, 2, 3], expected: false, last_went: "2026-11-03T08:40:00+00:00" }],
+  patterns: [{ ...CARD, times: 3, usual: 240, outages: [3, 2, 1], expected: false, last_went: "2026-11-03T08:40:00+00:00" }],
   cards: [CARD],
   notices: [{ title: "Zigbee2MQTT's Availability is off.", words: "Turn it on in Zigbee2MQTT.", open: "Zigbee2MQTT" }],
   sensors: [{ kind: "firmware", label: "Firmware update checks", have: 2, on: 1, off: [{ device_id: "dev-lamp", name: "Lamp Hall", by: "integration" }] }],
@@ -153,6 +153,10 @@ const noStrays = (root) => !/\b(null|undefined|NaN)\b|\[object/.test(text(root))
   const outageTable = [...root.querySelectorAll(".pane table")].find((tb) => tb.textContent.includes("WENT DOWN"));
   const rows = outageTable ? [...outageTable.querySelectorAll("tbody tr")].map((tr) => tr.className) : [];
   check("the pattern's three outages under its sentence, the other after", JSON.stringify(rows.slice(0, 5)) === JSON.stringify(["patternrow", "inpattern", "inpattern", "inpattern", ""]), rows);
+  // The server lists a pattern's outages oldest first; the page shows
+  // them newest first, as the rest of the table (rule DASH-18).
+  const patternDays = outageTable ? [...outageTable.querySelectorAll("tbody tr.inpattern")].map((tr) => (tr.cells[0].textContent.match(/Nov \d+/) || [""])[0]) : [];
+  check("the pattern's outages read newest first", JSON.stringify(patternDays) === JSON.stringify(["Nov 3", "Nov 2", "Nov 1"]), patternDays);
   button(root, "Yes, it is expected").click();
   await settle();
   const sent = calls.find((c) => c.type === "device_sentinel/network_expected");

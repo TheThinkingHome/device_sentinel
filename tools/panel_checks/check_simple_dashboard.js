@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.28.6 (2026-11-08)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -117,12 +117,12 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
 (async () => {
   console.log("The setting opens the dashboard");
   let { root, panel, window } = await open({ __mode: "simple", __path: "" });
-  check("Simple: Signal Trends and Classification are off the tab row, Integrations and Networks on it",
+  check("Simple: Signal Trends is off the tab row, Integrations and Networks on it, and there is no Classification",
     !tabs(root).includes("Signal Trends") && !tabs(root).includes("Classification")
     && tabs(root).includes("Integrations") && tabs(root).includes("Networks") && tabs(root).length === 7, tabs(root));
   check("the switch shows Simple pressed", modeButton(root, "Simple").getAttribute("aria-pressed") === "true");
   await click(modeButton(root, "Advanced"));
-  check("the switch moves the page to Advanced", tabs(root).length === 9, tabs(root));
+  check("the switch moves the page to Advanced", tabs(root).length === 8, tabs(root));
   check("and shows Advanced pressed", modeButton(root, "Advanced").getAttribute("aria-pressed") === "true");
   // A tab hidden for five minutes: Home Assistant takes the dashboard
   // out of the page and puts the same one back when it is shown (rule DASH-03).
@@ -130,7 +130,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   window.document.body.append(panel);
   await panel._refresh();
   await settle();
-  check("a hidden tab shown again keeps the switch", tabs(root).length === 9
+  check("a hidden tab shown again keeps the switch", tabs(root).length === 8
     && modeButton(root, "Advanced").getAttribute("aria-pressed") === "true", tabs(root));
   check("nothing is kept in the browser", window.localStorage.length === 0 && window.sessionStorage.length === 0);
   // Leaving for another page of Home Assistant: the dashboard opened
@@ -140,7 +140,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   ({ root } = await open({ __mode: "simple", __path: "/signal-trends" }));
   check("a hidden tab still opens from a link, and shows while open", tabs(root).includes("Signal Trends"), tabs(root));
   ({ root } = await open({ __mode: "advanced", __path: "" }));
-  check("Advanced: all nine tabs", tabs(root).length === 9, tabs(root));
+  check("Advanced: all eight tabs", tabs(root).length === 8, tabs(root));
 
   console.log("Simple's device page");
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.status.category = "reporting"; }));

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_tab_addresses.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_tab_addresses.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: every tab has its own address.
 // Run with: LC_ALL=en_US.UTF-8 node check_tab_addresses.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
@@ -75,7 +75,6 @@ const ADDRESSES = [
   ["Problem List", `${PREFIX}/problem-list`],
   ["Battery Trends", `${PREFIX}/battery-trends`],
   ["Signal Trends", `${PREFIX}/signal-trends`],
-  ["Classification", `${PREFIX}/classification`],
   ["Integrations", `${PREFIX}/integrations`],
   ["Devices", `${PREFIX}/devices`],
   ["Recommendations", `${PREFIX}/recommendations`],
@@ -113,18 +112,24 @@ const ADDRESSES = [
   check("clicking Daily Brief returns to the bare address", where(window) === PREFIX, where(window));
 
   console.log("Back from a device page");
-  ({ window, root } = await open(`${PREFIX}/classification`));
+  ({ window, root } = await open(`${PREFIX}/devices`));
   const link = [...root.querySelectorAll(".pane tbody a")].find((a) => a.textContent === "Bravo Phone");
   link.click();
   await settle();
-  check("a device opened from Classification remembers where it came from",
-    where(window) === `${PREFIX}/device/${BRAVO}?from=classification`, where(window));
-  check("the page's own back link names Classification", backLink(root) && backLink(root).text === "\u2039 Classification", backLink(root));
-  check("and leads to Classification's address", backLink(root) && backLink(root).href === `${PREFIX}/classification`, backLink(root));
-  check("Classification stays the highlighted tab", selected(root) === "Classification", selected(root));
+  check("a device opened from Devices remembers where it came from",
+    where(window) === `${PREFIX}/device/${BRAVO}?from=devices`, where(window));
+  check("the page's own back link names Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
+  check("and leads to Devices' address", backLink(root) && backLink(root).href === `${PREFIX}/devices`, backLink(root));
+  check("Devices stays the highlighted tab", selected(root) === "Devices", selected(root));
   window.history.back();
   await settle();
-  check("the browser's back button returns to Classification", selected(root) === "Classification" && where(window) === `${PREFIX}/classification`, [selected(root), where(window)]);
+  check("the browser's back button returns to Devices", selected(root) === "Devices" && where(window) === `${PREFIX}/devices`, [selected(root), where(window)]);
+
+  console.log("Classification's old address (rule DASH-12)");
+  ({ window, root } = await open(`${PREFIX}/classification`));
+  check("it opens the Devices tab at Devices' address", selected(root) === "Devices" && where(window) === `${PREFIX}/devices`, [selected(root), where(window)]);
+  ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=classification`));
+  check("a device page saved from Classification leads back to Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
 
   console.log("A device page reloaded, or opened from a link");
   ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=battery-trends`));
@@ -134,13 +139,13 @@ const ADDRESSES = [
   check("and leads to the Devices address", backLink(root) && backLink(root).href === `${PREFIX}/devices`, backLink(root));
 
   console.log("Back from an integration page");
-  ({ window, root } = await open(`${PREFIX}/classification`));
-  const integration = [...root.querySelectorAll(".pane tbody a")].find((a) => a.textContent === "test");
+  ({ window, root } = await open(`${PREFIX}/devices`));
+  const integration = [...root.querySelectorAll(".pane tbody a")].find((a) => a.getAttribute("href").includes("/integration/test"));
   integration.click();
   await settle();
-  check("an integration opened from Classification remembers where it came from",
-    where(window) === `${PREFIX}/integration/test?from=classification`, where(window));
-  check("its back link names Classification", backLink(root) && backLink(root).text === "\u2039 Classification", backLink(root));
+  check("an integration opened from Devices remembers where it came from",
+    where(window) === `${PREFIX}/integration/test?from=devices`, where(window));
+  check("its back link names Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
   ({ window, root } = await open(`${PREFIX}/integration/test`));
   check("with no origin, its back link names Integrations", backLink(root) && backLink(root).text === "\u2039 Integrations", backLink(root));
 

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_back_links.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_back_links.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: each page leads back to the page it came from, and Print
 // sits beside the gear.
 // Run with: LC_ALL=en_US.UTF-8 node check_back_links.js [path/to/panel.js]
@@ -78,39 +78,39 @@ const clickName = async (root, name) => {
 };
 
 (async () => {
-  console.log("The chain: Classification, then an integration, then a device");
-  let { window, root } = await open(`${PREFIX}/classification`);
+  console.log("The chain: Devices, then an integration, then a device");
+  let { window, root } = await open(`${PREFIX}/devices`);
   await clickName(root, "test");
-  check("the integration page leads back to Classification",
-    JSON.stringify(backLink(root)) === JSON.stringify({ text: "\u2039 Classification", href: `${PREFIX}/classification` }), backLink(root));
+  check("the integration page leads back to Devices",
+    JSON.stringify(backLink(root)) === JSON.stringify({ text: "\u2039 Devices", href: `${PREFIX}/devices` }), backLink(root));
   await clickName(root, "Bravo Phone");
   check("the device page leads back to the integration page, named for it",
     backLink(root) && backLink(root).text === "\u2039 test", backLink(root));
   check("and its link goes to that exact page, origin and all",
-    backLink(root) && backLink(root).href === `${PREFIX}/integration/test?from=classification`, backLink(root));
-  check("Classification stays the highlighted tab", selected(root) === "Classification", selected(root));
+    backLink(root) && backLink(root).href === `${PREFIX}/integration/test?from=devices`, backLink(root));
+  check("Devices stays the highlighted tab", selected(root) === "Devices", selected(root));
   const deviceAddress = where(window);
   root.querySelector(".pane > p:first-child a").click();
   await settle();
-  check("following the link lands on the integration page", where(window) === `${PREFIX}/integration/test?from=classification`, where(window));
-  check("which still leads back to Classification", backLink(root) && backLink(root).text === "\u2039 Classification", backLink(root));
+  check("following the link lands on the integration page", where(window) === `${PREFIX}/integration/test?from=devices`, where(window));
+  check("which still leads back to Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
 
   console.log("The chain survives a reload");
   ({ window, root } = await open(deviceAddress));
   check("reloaded, the device page still leads back to the integration page",
-    backLink(root) && backLink(root).text === "\u2039 test" && backLink(root).href === `${PREFIX}/integration/test?from=classification`, backLink(root));
-  check("and Classification is still the highlighted tab", selected(root) === "Classification", selected(root));
+    backLink(root) && backLink(root).text === "\u2039 test" && backLink(root).href === `${PREFIX}/integration/test?from=devices`, backLink(root));
+  check("and Devices is still the highlighted tab", selected(root) === "Devices", selected(root));
 
   console.log("The browser agrees with the page");
-  ({ window, root } = await open(`${PREFIX}/classification`));
+  ({ window, root } = await open(`${PREFIX}/devices`));
   await clickName(root, "test");
   await clickName(root, "Bravo Phone");
   window.history.back();
   await settle();
-  check("back from the device returns to the integration page", where(window) === `${PREFIX}/integration/test?from=classification`, where(window));
+  check("back from the device returns to the integration page", where(window) === `${PREFIX}/integration/test?from=devices`, where(window));
   window.history.back();
   await settle();
-  check("and back again returns to Classification", where(window) === `${PREFIX}/classification` && selected(root) === "Classification", [where(window), selected(root)]);
+  check("and back again returns to Devices", where(window) === `${PREFIX}/devices` && selected(root) === "Devices", [where(window), selected(root)]);
 
   console.log("An integration opened from a device page");
   ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=devices`));

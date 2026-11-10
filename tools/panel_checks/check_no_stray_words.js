@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_no_stray_words.js, Version: 0.27.13 (2026-10-28)
+// File: tools/panel_checks/check_no_stray_words.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: no tab, in Simple or Advanced, draws a part left out as
 // the word "null", "undefined" or "NaN" (rule DASH-04).
 // Run with: LC_ALL=en_US.UTF-8 node check_no_stray_words.js [path/to/panel.js]
@@ -7,7 +7,7 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 
 const PANEL = process.argv[2] || require("path").join(__dirname, "..", "..", "custom_components", "device_sentinel", "frontend", "panel.js");
 const PREFIX = "/device-sentinel";
-const TABS = ["daily-brief", "problem-list", "battery-trends", "signal-trends", "classification", "integrations", "devices", "recommendations"];
+const TABS = ["daily-brief", "problem-list", "battery-trends", "signal-trends", "integrations", "devices", "recommendations"];
 
 let passed = 0;
 let failed = 0;

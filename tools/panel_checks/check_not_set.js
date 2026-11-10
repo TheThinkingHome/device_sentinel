@@ -1,9 +1,9 @@
-// File: tools/panel_checks/check_not_set.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_not_set.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: "Not Set" (rules DASH-04, DEV-10, DASH-12). A type, an
 // area or a battery nobody has set reads "Not Set" on every tab and on
 // the device page, a link that opens the way to set it in place, saved
-// with where it was pressed (rule BRIEF-07); the Excluded list keeps
-// its last column on one line.
+// with where it was pressed (rule BRIEF-07). A device not watched reads
+// Not Watched on the Devices tab's Excluded and Set aside chips.
 // Run with: LC_ALL=en_US.UTF-8 node check_not_set.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -91,7 +91,7 @@ const click = async (node) => { node.click(); await settle(); };
   check("Save moves that device, from the Devices tab", moved && moved.area_id === "porch" && moved.source === "devices_tab", moved);
   check("and the dashboard reads everything again", calls.filter((c) => c.type === "device_sentinel/devices").length >= 2);
 
-  console.log("\nThe Excluded list");
+  console.log("\nThe Devices tab's Excluded chip");
   const excluded = (reply) => {
     reply.excluded = [
       { device_id: "x1", name: "Old Plug", integration: "zha", integration_name: "Zigbee Home Automation", area: null, how: "device", page: true },
@@ -100,16 +100,17 @@ const click = async (node) => { node.click(); await settle(); };
     return reply;
   };
   ({ root, calls } = await open("/devices", { devices: excluded }));
-  await click([...root.querySelectorAll(".pane button.linkbtn")].find((b) => /^Show the 2 excluded/.test(b.textContent)));
-  const table = root.querySelector(".pane table");
-  check("it has its own widths", table && table.dataset.shares === "excluded" && table.classList.contains("pinned"));
-  const cols = table ? [...table.querySelectorAll("colgroup col")].map((c) => parseFloat(c.style.width)) : [];
-  check("the last column gets the room for its button or link", cols.length === 6 && cols[5] > cols[2], cols);
-  const last = tableRows(root).map((tr) => tr.children[5]);
-  check("and holds it on one line", last.every((td) => td.style.whiteSpace === "nowrap"), last.map((td) => td.getAttribute("style")));
-  const exAreas = tableRows(root).map((tr) => tr.children[2]);
+  await click([...root.querySelectorAll(".pane button.chip")].find((b) => /^Excluded 2$/.test(b.textContent)));
+  const exHeads = heads(root);
+  const exAreas = tableRows(root).map((tr) => tr.children[exHeads.indexOf("AREA")]);
   check("AREA reads Not Set, a link, or the area's name",
-    exAreas[0].textContent === "Not Set" && buttonsIn(exAreas[0]).join() === "Not Set" && exAreas[1].textContent === "Hall", exAreas.map((td) => td.textContent));
+    exAreas.length === 2 && exAreas[0].textContent === "Not Set" && buttonsIn(exAreas[0]).join() === "Not Set" && exAreas[1].textContent === "Hall",
+    exAreas.map((td) => td.textContent));
+  const exTypes = tableRows(root).map((tr) => tr.children[exHeads.indexOf("TYPE")].textContent);
+  check("TYPE reads Not Watched", exTypes.every((t) => t === "Not Watched"), exTypes);
+  const exKey = root.querySelector(".pane").lastElementChild.textContent;
+  check("the key under it is the one line on an excluded device's history",
+    exKey === "Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded.", exKey);
 
   console.log("\nBattery Trends: TYPE from the Battery Trends tab");
   const battery = (reply) => {
@@ -130,33 +131,32 @@ const click = async (node) => { node.click(); await settle(); };
   check("Save sets it for the model, from the Battery Trends tab",
     typed && typed.device_id === "b1" && typed.choice === "Tag" && typed.source === "battery_trends", typed);
 
-  console.log("\nClassification: a device not watched");
+  console.log("\nThe Devices tab: a device not watched");
+  ({ root } = await open("/devices", {}));
+  const watchedRows = tableRows(root);
+  const watchedTypeAt = heads(root).indexOf("TYPE");
+  check("a watched device with no type reads Not Set, a link",
+    watchedRows.length > 0 && watchedRows.every((tr) => buttonsIn(tr.children[watchedTypeAt]).join() === "Not Set"));
   const classification = (reply) => {
-    reply.rows.forEach((row, i) => { row.type = null; row.watched = i % 2 === 0; });
+    reply.rows.forEach((row, i) => { row.type = null; row.watched = i % 2 === 0; row.set_aside = row.watched ? "" : "no entities"; });
     reply.rows[1].type = "Router";
     return reply;
   };
+  // Classification's old address opens the Set aside chip (rule DASH-12).
   ({ root } = await open("/classification", { classification }));
   const typeAt = heads(root).indexOf("TYPE");
   const classRows = tableRows(root);
-  const watchedRow = classRows.find((tr, i) => i % 2 === 0);
   const unwatched = classRows.filter((tr) => tr.children[typeAt].textContent === "Not Watched");
-  check("a watched device with no type reads Not Set, a link", watchedRow && buttonsIn(watchedRow.children[typeAt]).join() === "Not Set");
   check("one not watched reads Not Watched, grey, with nothing to press",
     unwatched.length > 0 && unwatched.every((tr) => !tr.children[typeAt].querySelector("button") && tr.children[typeAt].querySelector("span.muted")),
     classRows.map((tr) => tr.children[typeAt].textContent));
   check("one not watched with a type known shows the type",
     classRows.some((tr) => tr.children[typeAt].textContent === "Router"), classRows.map((tr) => tr.children[typeAt].textContent));
-  // The Type filter counts each under the words its row shows: "Not
-  // Set" only the watched devices with no type, "Not Watched" the rest
-  // (rule DEV-12).
+  // The Type filter counts each under the words its row shows (rule DEV-12).
   const typeSelect = root.querySelector('select[aria-label="Show one type"]');
   const optionText = typeSelect ? [...typeSelect.options].map((o) => o.textContent) : [];
-  const notSetCount = classRows.filter((tr) => tr.children[typeAt].textContent === "Not Set").length;
-  check("the Type filter's Not Set counts only the rows that read Not Set",
-    optionText.includes(`Not Set ${notSetCount}`), [optionText, notSetCount]);
-  check("and offers Not Watched with the rows that read it",
-    optionText.includes(`Not Watched ${unwatched.length}`), optionText);
+  check("the Type filter offers Not Watched with the rows that read it, and no Not Set",
+    optionText.includes(`Not Watched ${unwatched.length}`) && !optionText.some((o) => o.startsWith("Not Set")), optionText);
   typeSelect.value = "Not Watched";
   typeSelect.dispatchEvent(new window.Event("change"));
   await settle();

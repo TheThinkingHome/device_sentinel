@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.28.7 (2026-11-09)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -275,7 +275,7 @@ const rowCell = (root, label) => {
   check("Reloaded with that page's list gone, it steps nowhere", iv && iv.querySelectorAll("a").length === 0, iv ? iv.innerHTML : null);
 
   console.log("\nPrevious and Next from every page that lists devices (rule DASH-07)");
-  for (const [slug, base] of [["daily-brief", "/device-sentinel"], ["battery-trends", null], ["signal-trends", null], ["classification", null]]) {
+  for (const [slug, base] of [["daily-brief", "/device-sentinel"], ["battery-trends", null], ["signal-trends", null]]) {
     const at = base || `${PREFIX}/${slug}`;
     // A whole house's tabs, so each lists several devices.
     const fleet = JSON.parse(fs.readFileSync(__dirname + "/payloads_fleet.json", "utf8"));
@@ -321,16 +321,16 @@ const rowCell = (root, label) => {
       [(panel._lists || {})[key], Boolean(evLink)]);
   }
 
-  console.log("\nThe Devices tab's excluded view keeps its own list");
+  console.log("\nThe Devices tab's Excluded chip keeps its own list");
   {
     const DEV = JSON.parse(JSON.stringify(payloads.devices));
     DEV.excluded = [{ device_id: "ex-1", name: "Excluded One", integration: "test", integration_name: "Test", area: null, how: "device", page: true },
       { device_id: "ex-2", name: "Excluded Two", integration: "test", integration_name: "Test", area: null, how: "device", page: true }];
     ({ window, root, panel } = await open({ path: `${PREFIX}/devices`, answers: { devices: () => JSON.parse(JSON.stringify(DEV)) } }));
-    panel._deviceView = "excluded";
-    panel._paintDevices();
+    [...root.querySelectorAll(".pane .chips .chip")].find((b) => b.textContent.startsWith("Excluded")).click();
+    await settle();
     const exLink = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === "Excluded One");
-    check("the excluded view lists them", Boolean(exLink), root.querySelector(".pane") && root.querySelector(".pane").textContent.slice(0, 200));
+    check("the Excluded chip lists them", Boolean(exLink), root.querySelector(".pane") && root.querySelector(".pane").textContent.slice(0, 200));
     if (exLink) {
       exLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
       await settle(); await settle();
@@ -340,20 +340,49 @@ const rowCell = (root, label) => {
     }
   }
 
-  console.log("\nA set-aside device on the page is stepped to, not over");
+  console.log("\nA set-aside device a page shows is stepped to, not over");
   const CLASS = JSON.parse(JSON.stringify(payloads.classification));
   CLASS.rows = [
     { ...CLASS.rows[0], device_id: ROWS[0].device_id, name: ROWS[0].name, watched: true },
-    { ...CLASS.rows[0], device_id: "aside-1", name: "Aside Lamp", watched: false, set_aside: "no entities" },
+    { ...CLASS.rows[0], device_id: "aside-1", name: "Aside Lamp", watched: false, set_aside: "no entities", page: true },
     { ...CLASS.rows[0], device_id: ROWS[1].device_id, name: ROWS[1].name, watched: true },
   ];
-  ({ window, root, panel } = await open({ path: `${PREFIX}/classification`, answers: { classification: () => JSON.parse(JSON.stringify(CLASS)) } }));
+  const INTEG2 = { ...JSON.parse(JSON.stringify(payloads.integration)), domain: "test", name: "Test",
+    devices: [ROWS[0], { device_id: "aside-1", name: "Aside Lamp" }, ROWS[1]].map((r) => ({ device_id: r.device_id, name: r.name, watched: true, muted: "", set_aside: "", problem: "", acknowledged: false })) };
+  ({ window, root, panel } = await open({ path: `${PREFIX}/integration/test`, answers: { classification: () => JSON.parse(JSON.stringify(CLASS)), integration: () => JSON.parse(JSON.stringify(INTEG2)) } }));
   const firstRow = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === ROWS[0].name);
   firstRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
   await settle(); await settle();
   const sv = root.querySelector(".prevnext");
   const sNext = sv ? [...sv.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
   check("Next goes to the set-aside device the page showed next", sNext && sNext.getAttribute("href").includes("aside-1"), sv ? sv.innerHTML : null);
+
+  console.log("\nAn integration's page: a set-aside device with no page here");
+  const INTEG3 = JSON.parse(JSON.stringify(INTEG2));
+  INTEG3.devices[1] = { ...INTEG3.devices[1], watched: false, set_aside: "service", page: false };
+  ({ window, root, panel } = await open({ path: `${PREFIX}/integration/test`, answers: { classification: () => JSON.parse(JSON.stringify(CLASS)), integration: () => JSON.parse(JSON.stringify(INTEG3)) } }));
+  const deadLink = [...root.querySelectorAll(".pane a")].find((a) => a.textContent === "Aside Lamp");
+  check("its name opens Home Assistant's own device page", deadLink && deadLink.getAttribute("href") === "/config/devices/device/aside-1", deadLink && deadLink.getAttribute("href"));
+  [...root.querySelectorAll(".pane a")].find((a) => a.textContent === ROWS[0].name)
+    .dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(); await settle();
+  const dv = root.querySelector(".prevnext");
+  const dNext = dv ? [...dv.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
+  check("and Next passes it by", dNext && dNext.getAttribute("href").includes(ROWS[1].device_id), dv ? dv.innerHTML : null);
+
+  console.log("\nThe Set aside chip keeps its own list (0.28.8)");
+  const CLASS2 = JSON.parse(JSON.stringify(CLASS));
+  // Each once watched, so each has a page here (rule DASH-12).
+  CLASS2.rows.push({ ...CLASS.rows[0], device_id: "aside-2", name: "Aside Plug", watched: false, set_aside: "service", page: true });
+  ({ window, root, panel } = await open({ path: `${PREFIX}/devices`, answers: { classification: () => JSON.parse(JSON.stringify(CLASS2)) } }));
+  [...root.querySelectorAll(".pane .chips .chip")].find((b) => b.textContent.startsWith("Set aside")).click();
+  await settle();
+  const asideLink = [...root.querySelectorAll(".pane tbody a")].find((a) => a.textContent === "Aside Lamp");
+  asideLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(); await settle();
+  const av = root.querySelector(".prevnext");
+  const aNext = av ? [...av.querySelectorAll("a")].find((a) => a.textContent.startsWith("Next")) : null;
+  check("Next steps to the next set-aside device", aNext && aNext.getAttribute("href").includes("aside-2"), av ? av.innerHTML : null);
 
   console.log("\nBefore Latest (0.24.9)");
   let r2 = await open({ path: `${PREFIX}/devices` });

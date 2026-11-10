@@ -1,5 +1,5 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.27.15 (2026-10-30)
-// Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and no "null" for a missing type (rule DEV-12).
+// File: tools/panel_checks/check_type_filters.js, Version: 0.28.8 (2026-11-09)
+// Panel checks: types on Battery Trends, Devices (set-aside devices too) and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -171,29 +171,20 @@ const BATTERY = {
     === "Leak Sensor|Motion Sensor|Motion Sensor|Presence Sensor|Not Set", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])));
   check("Every device name and type is text, never markup", !root.querySelector("tbody img"));
 
-  console.log("\nClassification by type (0.25.3)");
+  console.log("\nSet-aside devices by type, on the Devices tab (0.28.8)");
   const classification = JSON.parse(JSON.stringify(payloads.classification));
-  classification.rows.forEach((r, i) => { r.type = ["Plug", "Plug", "Switch", null][i % 4]; });
-  ({ root, window } = await open(`${PREFIX}/classification`, { classification }));
+  classification.rows.forEach((r, i) => { r.watched = i === 0; r.set_aside = i === 0 ? "" : "service"; r.type = ["Plug", "Plug", "Switch", null][i % 4]; });
+  ({ root, window } = await open(`${PREFIX}/devices`, { classification }));
+  await click([...root.querySelectorAll(".chips .chip")].find((b) => b.textContent.startsWith("Set aside")));
   let table = root.querySelector("table");
-  check("TYPE sits after INTEGRATION", headers(table).slice(0, 3).join("|") === "DEVICE|INTEGRATION|TYPE", headers(table));
-  check("Every column sorts", headers(table).every((h) => h) && table.querySelectorAll("thead button.sort").length === headers(table).length);
-  const plugs = classification.rows.filter((r) => r.type === "Plug");
-  await click(linkNamed(root, "Plug"));
-  check("Classification: pressing a type in a row narrows the list to it",
-    tableRows(root.querySelector("table")).length === plugs.length
-    && root.querySelector('select[aria-label="Show one type"]').value === "Plug",
-    tableRows(root.querySelector("table")).length);
-  await click(linkNamed(root, "Show all"));
+  const aside = classification.rows.filter((r) => !r.watched);
+  // LAST REPORT and WINDOW are blank here, so they do not sort.
+  check("Set aside lists them, each sorting column a button", tableRows(table).length === aside.length
+    && table.querySelectorAll("thead button.sort").length === 4, tableRows(table).length);
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Plug");
   table = root.querySelector("table");
-  check("Choosing a type narrows the table", tableRows(table).length === plugs.length, tableRows(table).length);
-  const chipText = [...root.querySelectorAll(".chips .chip")].map((b) => b.textContent);
-  check("The chips count only that type", chipText[0] === `All ${plugs.length}`
-    && chipText[1] === `Watched ${plugs.filter((r) => r.watched).length}`, chipText);
-  await click([...root.querySelectorAll("thead button")].find((b) => b.textContent === "DEVICE"));
-  const names = tableRows(root.querySelector("table")).map((tr) => tr.firstChild.textContent);
-  check("Sorting keeps the type chosen", names.length === plugs.length && names.join("|") === [...names].sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1).join("|"), names);
+  check("Choosing a type narrows the set-aside devices", tableRows(table).length === aside.filter((r) => r.type === "Plug").length, tableRows(table).length);
+  check("A set-aside device's type is words, with nothing to set", !table.querySelector("tbody a.notset"));
 
   console.log("\nDevices tab: a type in a row, and Not Set (0.27.14)");
   const devices = JSON.parse(JSON.stringify(payloads.devices));

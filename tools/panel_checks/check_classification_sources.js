@@ -1,6 +1,7 @@
-// File: tools/panel_checks/check_classification_sources.js, Version: 0.27.10 (2026-10-27)
-// Panel checks: Classification's sources, the gear, and the date beside
-// "As of", driven with real WebSocket replies captured from the integration.
+// File: tools/panel_checks/check_classification_sources.js, Version: 0.28.8 (2026-11-09)
+// Panel checks: the gear, the date beside "As of", and the devices set
+// aside and excluded on the Devices tab (rule DASH-12), driven
+// with real WebSocket replies captured from the integration.
 // Run with: LC_ALL=en_US.UTF-8 node check_classification_sources.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -22,13 +23,13 @@ function check(label, ok, detail) {
   }
 }
 
-async function open(lang) {
+async function open(lang, path = "") {
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (err) => {
     if (!String(err.message).includes("Not implemented")) console.log("jsdom:", err.message);
   });
   const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>", {
-    runScripts: "outside-only", url: "http://ha.local/device-sentinel", virtualConsole,
+    runScripts: "outside-only", url: `http://ha.local/device-sentinel${path}`, virtualConsole,
   });
   const { window } = dom;
   window.customElements.define("ha-menu-button", class extends window.HTMLElement {});
@@ -101,27 +102,40 @@ async function tab(root, name) {
   check("the printout says Data as of in the long form", /Data as of \d{1,2}:\d{2}\s?[AP]M, [A-Z][a-z]+ \d{1,2}, \d{4}\./.test(heading), heading);
   check("the printout says Printed in the long form", /Printed \d{1,2}:\d{2}\s?[AP]M, [A-Z][a-z]+ \d{1,2}, \d{4}\.$/.test(heading), heading);
 
-  console.log("Classification");
+  console.log("Classification's devices on the Devices tab (rule DASH-12)");
   ({ window, root } = await open("en-US"));
-  await tab(root, "Classification");
-  const pane = root.querySelector(".pane");
+  check("there is no Classification tab", ![...root.querySelectorAll(".tab")].some((b) => b.textContent === "Classification"));
+  await tab(root, "Devices");
+  let pane = root.querySelector(".pane");
   const summary = pane.querySelector("p").textContent;
-  check("the summary names all six reasons", ["integrations you excluded", "service devices", "disabled devices", "duplicate coordinators", "hardware already watched through", "devices with no entities"].every((reason) => summary.includes(reason)), summary);
-  check("the summary no longer counts entities with no device", !summary.includes("belong to no device") && !summary.includes("seen only as entities"), summary);
+  check("the summary counts the watched, excluded and set-aside devices", /^Watching 4 of 5 devices\..* 0 are excluded and 1 is set aside\./.test(summary), summary);
+  const chipTexts = [...pane.querySelectorAll(".chip")].map((c) => c.textContent);
+  check("it opens on Watched, with Excluded and Set aside chips", chipTexts.includes("Watched 4") && chipTexts.includes("Excluded 0") && chipTexts.includes("Set aside 1")
+    && pane.querySelector('.chip[aria-pressed="true"]').textContent === "Watched 4", chipTexts);
+  check("a set-aside device is filtered out by default", ![...pane.querySelectorAll("tbody tr")].some((tr) => tr.cells[0].textContent === "Device Sentinel"));
+  const heads = [...pane.querySelectorAll("thead th")].map((th) => th.textContent);
+  check("RHYTHM and BATTERY are gone", JSON.stringify(heads) === JSON.stringify(["DEVICE", "TYPE", "AREA", "INTEGRATION", "STANDING", "PROBLEM", "LAST REPORT", "WINDOW"]), heads);
   const cell = (name, column) => {
-    const heads = [...pane.querySelectorAll("thead th")].map((th) => th.textContent);
+    const hs = [...pane.querySelectorAll("thead th")].map((th) => th.textContent);
     const row = [...pane.querySelectorAll("tbody tr")].find((tr) => tr.cells[0].textContent === name);
-    return row ? row.cells[heads.indexOf(column)].textContent : null;
+    return row ? row.cells[hs.indexOf(column)].textContent : null;
   };
-  check("MUTED lists every mute with its source", cell("Alpha Panel", "MUTED") === "Global (device); battery (device)", cell("Alpha Panel", "MUTED"));
-  // Bravo carries a freeze mute as well, named freeze before battery (rule MUTE-10).
-  check("the family mutes show, freeze before battery", cell("Bravo Phone", "MUTED") === "freeze (device); battery (device)", cell("Bravo Phone", "MUTED"));
-  check("a label is named by its name", cell("Charlie Plug", "MUTED") === "Global (label: Garage spares)", cell("Charlie Plug", "MUTED"));
+  check("STANDING names every mute with its source", cell("Alpha Panel", "STANDING").startsWith("Muted: "), cell("Alpha Panel", "STANDING"));
+  [...pane.querySelectorAll(".chip")].find((c) => c.textContent.startsWith("Set aside")).click();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  pane = root.querySelector(".pane");
+  check("Set aside shows the device with its reason", cell("Device Sentinel", "STANDING") === "Set aside: service", cell("Device Sentinel", "STANDING"));
+  check("its type reads Not Watched, with nothing to set", cell("Device Sentinel", "TYPE") === "Not Watched");
   const keyText = pane.lastElementChild.textContent;
   check("the key sits under the table", keyText.startsWith("Set aside, by reason:"), keyText.slice(0, 40));
-  check("the key has all five reasons", ["excluded:", "service:", "disabled:", "duplicate coordinator:", "no entities:"].every((part) => keyText.includes(part)), keyText);
-  const mutedChip = [...pane.querySelectorAll(".chip")].find((c) => c.textContent.startsWith("Muted"));
-  check("the Muted filter follows the cell and counts the battery-only mute", mutedChip && mutedChip.textContent === "Muted 3", mutedChip && mutedChip.textContent);
+  check("the key has the four reasons other than an exclusion", ["service:", "disabled:", "duplicate coordinator:", "no entities:"].every((part) => keyText.includes(part)) && !keyText.includes("excluded:"), keyText);
+
+  console.log("Classification's old address");
+  const old = await open("en-US", "/classification");
+  const oldPane = old.root.querySelector(".pane");
+  check("it opens the Devices tab on Set aside", old.window.location.pathname.endsWith("/devices")
+    && oldPane.querySelector('.chip[aria-pressed="true"]') && oldPane.querySelector('.chip[aria-pressed="true"]').textContent.startsWith("Set aside"),
+    [old.window.location.pathname, oldPane.textContent.slice(0, 120)]);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

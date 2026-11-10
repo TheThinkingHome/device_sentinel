@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.27.15 (2026-10-30)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -228,11 +228,21 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   check("Simple Devices: DEVICE, TYPE, INTEGRATION, STANDING, PROBLEM", heads.join() === "DEVICE,TYPE,INTEGRATION,STANDING,PROBLEM", heads);
   check("Simple Devices: the type filter", [...root.querySelectorAll(".pane select")].some((s) => /All types/.test(s.textContent)));
   check("Simple Devices: no label filter", ![...root.querySelectorAll(".pane select")].some((s) => /All labels/.test(s.textContent)));
+  // Simple has the Excluded chip and no Set aside chip, and its summary
+  // leaves the set-aside devices out (rule DASH-12).
+  const simpleChips = [...root.querySelectorAll(".pane .chips .chip")].map((c) => c.textContent);
+  check("Simple Devices: Watched, With a problem, Muted and Excluded, no Set aside",
+    simpleChips.length === 4 && simpleChips[3].startsWith("Excluded") && !simpleChips.some((c) => c.startsWith("Set aside")), simpleChips);
+  const simpleSummary = root.querySelector(".pane p").textContent;
+  check("Simple Devices: the summary leaves out the devices set aside",
+    /^Watching 4 of 4 devices\..* 0 are excluded\.$/.test(simpleSummary) && !/set aside/.test(simpleSummary), simpleSummary);
   ({ root } = await open({ __mode: "advanced", __path: "/devices" }));
   heads = [...root.querySelectorAll(".pane thead th")].map((th) => th.textContent);
-  check("Advanced Devices keeps TYPE, LAST REPORT, RHYTHM and WINDOW",
-    ["TYPE", "LAST REPORT", "RHYTHM", "WINDOW"].every((h) => heads.includes(h)), heads);
-  check("Advanced Devices adds AREA and BATTERY", heads.includes("AREA") && heads.includes("BATTERY"), heads);
+  // RHYTHM and BATTERY are read on the device page and Battery Trends
+  // (rule DASH-12).
+  check("Advanced Devices: DEVICE, TYPE, AREA, INTEGRATION, STANDING, PROBLEM, LAST REPORT, WINDOW",
+    heads.join() === "DEVICE,TYPE,AREA,INTEGRATION,STANDING,PROBLEM,LAST REPORT,WINDOW", heads);
+  check("Advanced Devices has no RHYTHM or BATTERY", !heads.includes("RHYTHM") && !heads.includes("BATTERY"), heads);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

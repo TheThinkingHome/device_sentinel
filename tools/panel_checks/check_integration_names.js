@@ -1,7 +1,7 @@
-// File: tools/panel_checks/check_integration_names.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_integration_names.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: an integration is named as Home Assistant shows it, the
 // way the Daily Brief names it (rule GEN-07).
-// The Classification tab's INTEGRATION column shows and sorts by the
+// The Devices tab's INTEGRATION column shows and sorts by the
 // integration_name the server sends ("Z-Wave"), never the id
 // ("zwave_js"); the link keeps the id (rule DASH-16).
 // Run with: LC_ALL=en_US.UTF-8 node check_integration_names.js [path/to/panel.js]
@@ -55,12 +55,12 @@ async function open(path, answers = {}) {
 }
 
 (async () => {
-  console.log("The Classification tab's INTEGRATION column (rule GEN-07)");
+  console.log("The Devices tab's INTEGRATION column (rule GEN-07)");
   // Ids and names that sort differently: by id, mqtt comes before
   // zwave_js; by name, "Z-Wave" comes after "MQTT", and "Alarm Hub"
   // (id zzz_alarm) first.
-  const classification = () => {
-    const c = JSON.parse(JSON.stringify(payloads.classification));
+  const devices = () => {
+    const c = JSON.parse(JSON.stringify(payloads.devices));
     const names = {
       "Alpha Panel": ["zwave_js", "Z-Wave"], "Bravo Phone": ["mqtt", "MQTT"], "Charlie Plug": ["zzz_alarm", "Alarm Hub"],
     };
@@ -71,7 +71,7 @@ async function open(path, answers = {}) {
     }
     return c;
   };
-  const { root } = await open(`${PREFIX}/classification`, { classification });
+  const { root } = await open(`${PREFIX}/devices`, { devices });
   const pane = root.querySelector(".pane");
   const heads = () => [...pane.querySelectorAll("thead th")].map((th) => th.textContent.trim());
   const col = heads().findIndex((h) => h.startsWith("INTEGRATION"));

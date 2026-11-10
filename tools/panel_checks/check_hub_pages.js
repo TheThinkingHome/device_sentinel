@@ -1,7 +1,7 @@
-// File: check_hub_pages.js, Version: 0.28.6 (2026-11-08)
+// File: check_hub_pages.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: a device judged by its hub (rule STACK-10). A hub's
-// page, the pages of the devices it controls, and the Classification
-// tick.
+// page, the pages of the devices it controls, and the Devices tab's
+// STANDING.
 // Run with: LC_ALL=en_US.UTF-8 node check_hub_pages.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -258,7 +258,11 @@ const hubPage = (tweak) => (m) => {
   r = await open({ answers: { device: hubPage((p) => { p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB, since: null }; }) } });
   check("A missing time never prints 1969", !/1969|Invalid Date/.test(r.root.textContent));
 
-  r = await open({ path: `${PREFIX}/classification`, answers: { classification: () => {
+  r = await open({ path: `${PREFIX}/devices`, answers: { devices: () => {
+    const data = JSON.parse(JSON.stringify(payloads.devices));
+    data.rows.forEach((row) => { row.muted = ""; });
+    return data;
+  }, classification: () => {
     const data = JSON.parse(JSON.stringify(payloads.classification));
     data.rows = data.rows.slice(0, 2);
     data.rows[0].judged = "judged by its hub";
@@ -266,8 +270,18 @@ const hubPage = (tweak) => (m) => {
     return data;
   } } });
   text = r.root.textContent;
-  check("Classification says judged by its hub", text.includes("✓ judged by its hub"));
-  check("Classification marks the hub", text.includes("✓ hub"));
+  // The Devices tab's STANDING says it beside Watched (rule STACK-10).
+  check("Devices says judged by its hub", text.includes("Watched, judged by its hub"), text);
+  check("Devices marks the hub", text.includes("Watched, a hub"));
+  r = await open({ path: `${PREFIX}/devices`, answers: { classification: () => {
+    const data = JSON.parse(JSON.stringify(payloads.classification));
+    data.rows[0].judged = "judged by its hub";
+    data.rows[0].copies = 2;
+    return data;
+  } } });
+  text = r.root.textContent;
+  check("A muted device's hub and copies follow its mutes as a sentence",
+    /Muted: [^]*?\. Judged by its hub, 2 copies/.test(text), text.slice(text.indexOf("STANDING")));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

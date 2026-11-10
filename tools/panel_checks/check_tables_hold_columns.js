@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_tables_hold_columns.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_tables_hold_columns.js, Version: 0.28.8 (2026-11-09)
 // Panel checks: every table keeps its columns still, whatever is filtered
 // or sorted, on the reference fleet's real contents.
 // Run with: LC_ALL=en_US.UTF-8 node check_tables_hold_columns.js [path/to/panel.js]
@@ -70,7 +70,7 @@ const backLink = (root) => {
   return link ? { text: link.textContent, href: link.getAttribute("href") } : null;
 };
 
-const TABS = ["daily-brief", "problem-list", "battery-trends", "signal-trends", "classification", "integrations", "devices", "recommendations"];
+const TABS = ["daily-brief", "problem-list", "battery-trends", "signal-trends", "integrations", "devices", "recommendations"];
 const headings = (table) => [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
 const widths = (table) => [...table.querySelectorAll("colgroup col")].map((col) => col.style.width);
 const tables = (root) => [...root.querySelectorAll(".pane table")];
@@ -143,7 +143,7 @@ const settleLong = () => new Promise((resolve) => setTimeout(resolve, 80));
   checkPinned("integration page", root) && check("the integration page's tables are pinned", true);
 
   console.log("On a narrow screen");
-  ({ root } = await open(`${PREFIX}/classification`));
+  ({ root } = await open(`${PREFIX}/devices`));
   await settleLong();
   const t = tables(root)[0];
   check("a table in a scrolling box keeps a minimum width, so it scrolls instead of crushing", t && t.parentElement.classList.contains("scroll") && parseInt(t.style.minWidth, 10) > 0, t && t.style.minWidth);
