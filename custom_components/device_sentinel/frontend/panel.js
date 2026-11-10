@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.7 (2026-11-09)
+// File: panel.js, Version: 0.28.8 (2026-11-09)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -27,7 +27,6 @@ const TABS = [
   "Problem List",
   "Battery Trends",
   "Signal Trends",
-  "Classification",
   "Integrations",
   "Networks",
   "Devices",
@@ -37,14 +36,14 @@ const TABS = [
 // and a bookmark all return to the tab that was on screen. The Daily
 // Brief owns the bare address, so opening the dashboard lands on it.
 // The tabs Simple leaves off the row (rule DASH-04).
-const SIMPLE_HIDDEN_TABS = ["Signal Trends", "Classification"];
+const SIMPLE_HIDDEN_TABS = ["Signal Trends"];
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 // A type, an area or a battery nobody has set, the same words on
 // every tab, and the Type filters' choice for it (rules DEV-10, DASH-04).
 const NOT_SET = "Not Set";
 const NOT_KNOWN_TYPE = NOT_SET;
-// Classification's TYPE for a device Device Sentinel does not watch and
+// The Devices tab's TYPE for a device Device Sentinel does not watch and
 // knows no type for: nothing to set (rule DEV-12).
 const NOT_WATCHED = "Not Watched";
 // How a battery's readings move, in words a reader can use (rule BAT-02).
@@ -79,7 +78,7 @@ const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel
 const ACK_HOVER = "Acknowledged. Press to take it back.";
 // Where a "Not Set" was set from, by tab, so the brief says so
 // (rule BRIEF-07).
-const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab", "Classification": "classification",
+const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab",
   "Recommendations": "recommendations", "Problem List": "problem_list" };
 // A battery level as reported, the same on every surface: "15.5%",
 // "16%", one decimal at most, rounded half up on the number as
@@ -112,13 +111,7 @@ const modelPaceWords = (pace) => {
   const said = levelNumber(pace.pace_low) === "0" && range !== high ? `up to ${high}` : range;
   return `Others of this model lose ${said} ${said === "1" || said === "up to 1" ? "point" : "points"} a week.`;
 };
-const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Networks", "Devices", "Recommendations"]);
-const FILTERS = [
-  ["all", "All"],
-  ["watched", "Watched"],
-  ["muted", "Muted"],
-  ["set_aside", "Set aside"],
-];
+const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Integrations", "Networks", "Devices", "Recommendations"]);
 const PROBLEM_FILTERS = [
   ["all", "All"],
   ["open", "Open"],
@@ -161,10 +154,14 @@ const TROUBLE_WORDS = [
   ["short_drop_outs", "short drop-outs", "short drop-out"],
   ["railed_signal", "signal railed"],
 ];
+// The Devices tab's chips (rule DASH-12): it opens on Watched; Set
+// aside is Advanced's.
 const DEVICE_FILTERS = [
-  ["all", "All"],
+  ["all", "Watched"],
   ["problem", "With a problem"],
   ["muted", "Muted"],
+  ["excluded", "Excluded"],
+  ["aside", "Set aside"],
 ];
 // A network page's problem groups, in its tiles' order, and their words
 // (rule DASH-17). The first four always show; the others when counted.
@@ -417,7 +414,9 @@ function rootTab(from) {
 const COLUMN_SHARE = {
   "DEVICE": 3, "MAKER AND MODEL": 3, "WHAT HAPPENED": 3,
   "MUTED": 2.5, "WHICH ONE": 2.5, "WHAT": 2.5,
-  "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
+  "PROBLEM": 2.2, "SET ASIDE": 2.2, "DEVICES THAT WENT DOWN": 2,
+  // A mute's sources, a set-aside reason or Cancel the exclusion.
+  "STANDING": 2.6,
   "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "GAP STARTED": 1.4,
   // Room for "Door/Window Sensor" and "Judged by its connection" on one
   // line.
@@ -790,7 +789,6 @@ class DeviceSentinelPanel extends HTMLElement {
     // it was. The address's ?open= opens its card once.
     this._openCards = new Set();
     this._openFromAddress = null;
-    this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
     this._integrationFilter = "all";
@@ -803,8 +801,6 @@ class DeviceSentinelPanel extends HTMLElement {
     this._deviceSort = null;
     // The Devices tab's search, area and label (rule DASH-12).
     this._deviceSearch = "";
-    // The watched devices, or the devices on the exclusion lists.
-    this._deviceView = "watched";
     this._deviceArea = "";
     this._deviceLabel = "";
     // One network and one problem group, set from a network's counts
@@ -872,9 +868,19 @@ class DeviceSentinelPanel extends HTMLElement {
     // address names its tab; one that names nothing falls back to the
     // Daily Brief.
     const from = next ? new URLSearchParams(window.location.search).get("from") || "" : "";
+    const slug = path.replace(/^\/+|\/+$/g, "");
+    // Classification's old address opens the Devices tab on the devices
+    // it listed as set aside (rule DASH-12), so a bookmark still works.
+    if (!next && slug === "classification") {
+      this._chooseDeviceChip("aside");
+      history.replaceState(null, "", this._tabPath("Devices"));
+      // Home Assistant's router learns the new address, so it never
+      // hands this page the old one again.
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
+    }
     const tab = next
       ? rootTab(from) || ({ device: "Devices", network: "Networks" }[next.kind] || "Integrations")
-      : TAB_BY_SLUG[path.replace(/^\/+|\/+$/g, "")] || "Daily Brief";
+      : slug === "classification" ? "Devices" : TAB_BY_SLUG[slug] || "Daily Brief";
     const changed = JSON.stringify(next) !== JSON.stringify(this._view)
       || tab !== this._tab || from !== this._from;
     // The Send to Battery Notes offer belongs to the save that made it:
@@ -907,6 +913,26 @@ class DeviceSentinelPanel extends HTMLElement {
     return `${this._base}/device/${encodeURIComponent(id)}?from=${encodeURIComponent(this._here())}`;
   }
 
+  // A device's name as a link: to its page here when Device Sentinel has
+  // one, which a watched device has and one it once watched keeps until
+  // its history goes; to Home Assistant's own device page for any other
+  // device still in Home Assistant; and plain words for one removed from
+  // it. So a name never opens "no record", and Previous and Next pass by
+  // what has no page here (rule DASH-12). Without the tab's lists to go
+  // by, the page here.
+  _deviceLink(name, id) {
+    const snap = this._snapshot;
+    if (!snap || !snap.devices || !Array.isArray(snap.devices.rows) || !snap.classification) {
+      return this._link(name, this._devicePath(id));
+    }
+    const excluded = (snap.devices.excluded || []).find((row) => row.device_id === id);
+    const found = (snap.classification.rows || []).find((row) => row.device_id === id);
+    if (snap.devices.rows.some((row) => row.device_id === id) || (excluded && excluded.page) || (found && (found.watched || found.page))) {
+      return this._link(name, this._devicePath(id));
+    }
+    return excluded || found ? this._link(name, `/config/devices/device/${encodeURIComponent(id)}`) : name;
+  }
+
   _integrationPath(domain) {
     return `${this._base}/integration/${encodeURIComponent(domain)}?from=${encodeURIComponent(this._here())}`;
   }
@@ -918,8 +944,8 @@ class DeviceSentinelPanel extends HTMLElement {
   // The Devices tab, filtered to one network and, if given, one problem
   // group, opened from a network's counts (rule DASH-17).
   _devicesOnNetwork(key, group, problems = false) {
-    this._deviceView = "watched";
     this._deviceFilter = problems ? "problem" : "all";
+    this._chipFinders = {};
     this._deviceType = "";
     this._deviceArea = "";
     this._deviceLabel = "";
@@ -1439,8 +1465,8 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _paintTabs() {
-    // Simple hides Signal Trends and Classification (rule DASH-04); either
-    // still opens from a link, and its tab shows while it is open.
+    // Simple hides Signal Trends (rule DASH-04); it still opens from a
+    // link, and its tab shows while it is open.
     const hidden = this._snapshot && this._isSimple() ? SIMPLE_HIDDEN_TABS : [];
     const shown = TABS.filter((name) => !hidden.includes(name) || name === this._tab);
     this._tabRow.replaceChildren(...shown.map((name) =>
@@ -1478,8 +1504,7 @@ class DeviceSentinelPanel extends HTMLElement {
     else if (this._tab === "Signal Trends") this._paintSignalTrends();
     else if (this._tab === "Integrations") this._paintIntegrations();
     else if (this._tab === "Problem List") this._paintProblems();
-    else if (this._tab === "Recommendations") this._paintRecommendations();
-    else this._paintClassification();
+    else this._paintRecommendations();
   }
 
   _sortHeader(label, key) {
@@ -2153,7 +2178,11 @@ class DeviceSentinelPanel extends HTMLElement {
     const devices = el("div", { class: "scroll" }, el("table", {},
       el("thead", {}, el("tr", {}, ...["DEVICE", "STANDING", "PROBLEM"].map((h) => el("th", {}, h)))),
       el("tbody", {}, ...page.devices.map((d) => el("tr", {},
-        el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
+        // A device set aside that Device Sentinel never watched has no
+        // page here, so its name opens Home Assistant's own, and
+        // Previous and Next pass it by (rule DASH-12).
+        el("td", {}, d.page === false ? this._link(d.name, `/config/devices/device/${encodeURIComponent(d.device_id)}`)
+          : this._link(d.name, this._devicePath(d.device_id))),
         el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
         el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))));
     // Devices another integration owns that reach Home Assistant
@@ -2164,7 +2193,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ? el("div", { class: "scroll" }, el("table", {},
           el("thead", {}, el("tr", {}, ...["DEVICE", "INTEGRATION", "STANDING", "PROBLEM"].map((h) => el("th", {}, h)))),
           el("tbody", {}, ...riders.map((d) => el("tr", {},
-            el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
+            el("td", {}, this._deviceLink(d.name, d.device_id)),
             el("td", {}, d.integration),
             el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
             el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))))
@@ -2470,7 +2499,7 @@ class DeviceSentinelPanel extends HTMLElement {
         const kv = el("div", { class: "kv" });
         for (const row of page.hardware) {
           kv.append(el("span", { class: "k" }, row.label),
-            el("span", {}, row.device_id ? this._link(row.value, this._devicePath(row.device_id)) : row.value));
+            el("span", {}, row.device_id ? this._deviceLink(row.value, row.device_id) : row.value));
         }
         sections.push(el("h3", { class: "section" }, hub ? "The Hub" : page.key === "zwave_js" ? "The Controller" : "The Coordinator"), kv);
       }
@@ -2502,7 +2531,8 @@ class DeviceSentinelPanel extends HTMLElement {
         } }, "Stop expecting this") : null;
         bodyRows.push(el("tr", { class: "patternrow" }, el("td", { colspan: "4" },
           el("strong", {}, pattern.sentence), pattern.expected ? " Expected. " : " ", stop)));
-        for (const i of pattern.outages) {
+        // Newest first, as the rest of the table.
+        for (const i of [...pattern.outages].sort((a, b) => a - b)) {
           if (!outages[i]) continue;
           inPattern.add(i);
           bodyRows.push(el("tr", { class: "inpattern" }, ...outageCells(outages[i])));
@@ -2673,7 +2703,7 @@ class DeviceSentinelPanel extends HTMLElement {
               ...(row.acknowledged ? { checked: "" } : {}),
               onchange: (ev) => this._acknowledge(row.uid, ev.target.checked),
             }))) : null,
-          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+          el("td", {}, this._deviceLink(row.name, row.device_id)),
           el("td", {}, row.problem),
           el("td", {}, row.since ? moment(row.since) : ""),
           el("td", {}, row.seconds ? span(row.seconds) : ""))))))
@@ -2691,7 +2721,7 @@ class DeviceSentinelPanel extends HTMLElement {
           el("thead", {}, el("tr", {}, ...["DEVICE", "WHAT HAPPENED", "TIMES", "WHEN", "TYPICAL", "WITH"]
             .map((h) => el("th", {}, h)))),
           el("tbody", {}, ...repeatRows.map((row) => el("tr", {},
-            el("td", {}, row.device_id ? this._link(row.name, this._devicePath(row.device_id)) : row.name),
+            el("td", {}, row.device_id ? this._deviceLink(row.name, row.device_id) : row.name),
             el("td", {}, row.what),
             el("td", {}, String(row.times)),
             el("td", {}, row.when),
@@ -2710,7 +2740,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("thead", {}, el("tr", {}, ...["TIME", "DEVICE", "WHAT HAPPENED"].map((h) => el("th", {}, h)))),
         el("tbody", {}, ...brief.events.map((row) => el("tr", {},
           el("td", {}, new Date(row.when).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })),
-          el("td", {}, row.device_id ? this._link(row.who, this._devicePath(row.device_id)) : row.who),
+          el("td", {}, row.device_id ? this._deviceLink(row.who, row.device_id) : row.who),
           el("td", {}, row.what))))))
       : null;
 
@@ -2883,7 +2913,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // included.
         this._deviceNetwork = "";
         this._deviceGroup = "";
-        this._deviceFilter = "all";
+        this._chooseDeviceChip("all");
         this._paintDevices();
       } }, "Show all"));
   }
@@ -3349,87 +3379,115 @@ class DeviceSentinelPanel extends HTMLElement {
       table(steady));
   }
 
+  // Each Devices chip keeps its own Area, Label and Type choices, so going
+  // back to a chip finds them as they were; a chip not chosen before
+  // starts from the choices showing (rule DASH-12).
+  _chooseDeviceChip(key) {
+    if (key === this._deviceFilter) return;
+    this._chipFinders = { ...(this._chipFinders || {}),
+      [this._deviceFilter]: { area: this._deviceArea, label: this._deviceLabel, type: this._deviceType } };
+    const kept = this._chipFinders[key];
+    if (kept) {
+      this._deviceArea = kept.area;
+      this._deviceLabel = kept.label;
+      this._deviceType = kept.type;
+    }
+    this._deviceFilter = key;
+  }
+
   _paintDevices() {
     const all = this._snapshot.devices.rows;
-    const excludedAll = this._snapshot.devices.excluded || [];
+    const simple = this._isSimple();
+    // The devices Device Sentinel found and does not watch, for a reason
+    // other than an exclusion, with their reason (rule DASH-12); and how
+    // many watched devices share each watched device's name (rule DEV-01).
+    const classRows = (this._snapshot.classification && this._snapshot.classification.rows) || [];
+    const asideAll = classRows.filter((row) => !row.watched && !String(row.set_aside || "").startsWith("excluded"));
+    // An excluded device keeps the type Device Sentinel knows for it
+    // (rule DEV-12).
+    const knownType = Object.fromEntries(classRows.filter((row) => row.type).map((row) => [row.device_id, row.type]));
+    const excludedAll = (this._snapshot.devices.excluded || []).map((row) => ({ ...row, type: row.type || knownType[row.device_id] || null }));
+    const copies = Object.fromEntries(classRows.filter((row) => row.copies > 1).map((row) => [row.device_id, row.copies]));
+    // A hub, and a device judged by its hub, said beside Watched (rule STACK-10).
+    const judged = Object.fromEntries(classRows.filter((row) => row.judged).map((row) => [row.device_id, row.judged]));
     const at = this._snapshot.at.getTime();
+    // The Set aside chip is Advanced's; Simple opens on the watched devices.
+    if (simple && this._deviceFilter === "aside") this._chooseDeviceChip("all");
     const counts = {
       all: all.length,
       problem: all.filter((row) => row.problem).length,
       muted: all.filter((row) => row.muted).length,
+      excluded: excludedAll.length,
+      aside: asideAll.length,
     };
-    // Search, Area and Label narrow either list (rule DASH-12). A chosen
-    // area or label nothing carries any longer goes back to All.
-    const excludedView = this._deviceView === "excluded";
-    const listed = excludedView ? excludedAll : all;
+    // Search, Area and Label narrow every chip's rows (rule DASH-12). A
+    // chosen area or label nothing carries any longer goes back to All.
+    const listed = { excluded: excludedAll, aside: asideAll }[this._deviceFilter] || all;
     const areas = [...new Set(listed.map((row) => row.area).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const labels = [...new Set(listed.flatMap((row) => row.labels || []))].sort((a, b) => a.localeCompare(b));
     if (this._deviceArea && this._deviceArea !== NO_AREA && !areas.includes(this._deviceArea)) this._deviceArea = "";
     if (this._deviceLabel && !labels.includes(this._deviceLabel)) this._deviceLabel = "";
     const wanted = this._deviceSearch.trim().toLocaleLowerCase();
     const narrow = (list) => list.filter((row) =>
-      (!wanted || row.name.toLocaleLowerCase().includes(wanted))
+      (!wanted || String(row.name || "").toLocaleLowerCase().includes(wanted))
       && (!this._deviceArea || (this._deviceArea === NO_AREA ? !row.area : row.area === this._deviceArea))
-      && (this._isSimple() || !this._deviceLabel || (row.labels || []).includes(this._deviceLabel)));
+      && (simple || !this._deviceLabel || (row.labels || []).includes(this._deviceLabel)));
     const finders = this._deviceFinders(areas, labels, listed);
-    const chipsFor = () => el("div", { class: "chips" }, ...DEVICE_FILTERS.map(([key, label]) =>
+    // The tab opens on Watched; Excluded and Set aside are chips of their
+    // own, so a device not watched shows only when asked for (rule DASH-12).
+    const chips = el("div", { class: "chips" }, ...DEVICE_FILTERS.filter(([key]) => !(simple && key === "aside")).map(([key, label]) =>
       el("button", {
         class: "chip", type: "button", "aria-pressed": String(key === this._deviceFilter),
         onclick: () => {
-          this._deviceFilter = key;
+          this._chooseDeviceChip(key);
           this._paintDevices();
         },
       }, `${label} ${counts[key]}`)));
-    // A view of its own rather than a filter chip: its table has other
-    // columns, and a filter never moves a table's columns.
-    const switchView = (view) => el("button", { class: "linkbtn", type: "button",
-      onclick: () => { this._deviceView = view; this._paintDevices(); } },
-      view === "excluded"
-        ? `Show the ${excludedAll.length} excluded ${excludedAll.length === 1 ? "device" : "devices"}`
-        : "Back to the watched devices");
-    if (excludedView) {
-      this._paintExcludedDevices(narrow(excludedAll), excludedAll.length, switchView("watched"), finders);
-      return;
-    }
-    let rows = narrow(all).filter({
+    let rows = narrow(listed).filter({
       all: () => true,
       problem: (row) => row.problem,
       muted: (row) => row.muted,
-    }[this._deviceFilter]);
-    // The Type filter (rule DEV-12), beside the chips, in both views:
-    // every type a watched device has, then the ones not set.
-    const NOT_KNOWN = NOT_SET;
+      excluded: () => true,
+      aside: () => true,
+    }[this._deviceFilter] || (() => true));
+    // The Type filter (rule DEV-12), beside the chips: every type a
+    // device on the chip has, then the ones not set.
+    // A device not watched with no type reads Not Watched, and the
+    // filter offers it under those words (rule DEV-12).
+    const NOT_KNOWN = this._deviceFilter === "excluded" || this._deviceFilter === "aside" ? NOT_WATCHED : NOT_SET;
+    const typeOf = (row) => row.type || "";
     // Sorted as people read, so an owner's "lamp" sits with the L's.
-    const types = [...new Set(all.map((row) => row.type).filter(Boolean))]
+    const types = [...new Set(listed.map(typeOf).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0));
     // A chosen type no device has any longer goes back to All types,
     // Not Set included once every device has a type.
-    if (this._deviceType && (this._deviceType === NOT_KNOWN ? all.every((row) => row.type) : !types.includes(this._deviceType))) {
+    if (this._deviceType && (this._deviceType === NOT_KNOWN ? listed.every((row) => typeOf(row)) : !types.includes(this._deviceType))) {
       this._deviceType = "";
     }
     if (this._deviceType) {
-      rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
+      rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !typeOf(row) : typeOf(row) === this._deviceType));
     }
     // A network's counts open this tab on its devices (rule DASH-17).
-    if (this._deviceNetwork) rows = rows.filter((row) => (row.networks || []).includes(this._deviceNetwork));
-    if (this._deviceGroup) rows = rows.filter((row) => (row.groups || []).includes(this._deviceGroup));
+    // Only a watched device is on a network, so the Excluded and Set
+    // aside chips leave a network's filter aside.
+    const onChipWatched = this._deviceFilter !== "excluded" && this._deviceFilter !== "aside";
+    if (onChipWatched && this._deviceNetwork) rows = rows.filter((row) => (row.networks || []).includes(this._deviceNetwork));
+    if (onChipWatched && this._deviceGroup) rows = rows.filter((row) => (row.groups || []).includes(this._deviceGroup));
     const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
     const pickArea = (area) => { this._deviceArea = area; this._paintDevices(); };
     // A sort on a column Simple leaves out does not order Simple's rows.
-    const sort = this._isSimple() && this._deviceSort && ["area", "battery", "last", "rhythm", "window"].includes(this._deviceSort.key)
+    const sort = simple && this._deviceSort && ["area", "last", "window"].includes(this._deviceSort.key)
       ? null : this._deviceSort;
     if (sort) {
       const value = {
-        name: (row) => row.name.toLowerCase(),
-        type: (row) => (row.type || "\uffff").toLowerCase(),
-        integration: (row) => row.integration_name.toLowerCase(),
+        name: (row) => String(row.name || "").toLowerCase(),
+        type: (row) => (typeOf(row) || "\uffff").toLowerCase(),
+        integration: (row) => String(row.integration_name || row.integration || "").toLowerCase(),
         area: (row) => (row.area || "\uffff").toLowerCase(),
-        battery: (row) => (row.battery == null ? 999 : row.battery),
         last: (row) => (row.last_activity ? new Date(row.last_activity).getTime() : 0),
-        rhythm: (row) => row.rhythm || 0,
         window: (row) => row.window || 0,
       }[sort.key];
-      rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
+      if (value) rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
     }
     const header = (label, key, cls) => {
       const direction = sort && sort.key === key ? sort.dir : null;
@@ -3442,44 +3500,91 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, label));
     };
-    // Simple leaves out AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW,
-    // and the label filter; TYPE and its filter show in both (rule DASH-04).
-    const simple = this._isSimple();
+    const watching = this._deviceFilter !== "excluded" && this._deviceFilter !== "aside";
+    // Simple has no Set aside chip, so its count and total leave them out.
+    const total = all.length + excludedAll.length + (simple ? 0 : asideAll.length);
+    // Simple leaves out AREA, LAST REPORT and WINDOW, and the label
+    // filter; TYPE and its filter show in both (rule DASH-04).
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `${all.length} devices are watched. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
-      + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted.`
-      + (simple ? "" : " Each device's window is how long it may stay quiet before it is called frozen, learned from its own rhythm."));
-    const chips = chipsFor();
+      `Watching ${all.length} of ${total} devices. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
+      + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted. `
+      + (simple ? `${counts.excluded} ${counts.excluded === 1 ? "is" : "are"} excluded.`
+        : `${counts.excluded} ${counts.excluded === 1 ? "is" : "are"} excluded and ${counts.aside} ${counts.aside === 1 ? "is" : "are"} set aside.`)
+      + (simple || !watching ? "" : " Each device's window is how long it may stay quiet before it is called frozen, learned from its own rhythm."));
+    // STANDING: watched, muted, excluded with its way back, or set aside
+    // with its reason; and how many watched devices share its name
+    // (rule DASH-12).
+    const takeBack = (row) => el("button", { class: "chip", type: "button", style: "white-space:nowrap",
+      onclick: async () => {
+        try {
+          await this._call({ type: "device_sentinel/device_exclude", device_id: row.device_id, on: false, source: "devices_tab" });
+        } catch (err) { /* the refresh shows the list as it stands */ }
+        await this._refresh();
+      } }, "Cancel the exclusion");
+    const standing = (row) => {
+      if (this._deviceFilter === "excluded") {
+        if (row.how === "integration") {
+          return ["Excluded with its integration. ", this._link("Open its integration page", this._integrationPath(row.integration))];
+        }
+        return [`Excluded${row.page ? ", history kept until midnight" : ", history deleted"}. `, takeBack(row)];
+      }
+      if (this._deviceFilter === "aside") return [`Set aside: ${row.set_aside}`];
+      const more = [judged[row.device_id] === "hub" ? "a hub" : judged[row.device_id] || "",
+        copies[row.device_id] ? `${copies[row.device_id]} copies` : ""].filter(Boolean).join(", ");
+      // A mute's own list holds commas and semicolons, so what follows it
+      // starts a sentence of its own.
+      if (row.muted) return [`Muted: ${row.muted}${more ? `. ${more[0].toUpperCase()}${more.slice(1)}` : ""}`];
+      return [`Watched${more ? `, ${more}` : ""}`];
+    };
+    // A device not watched has no Device Sentinel page once its history
+    // has gone, so its name opens Home Assistant's own.
+    const nameLink = (row) => (!watching && !row.page
+      ? this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)
+      : this._link(row.name, this._devicePath(row.device_id)));
+    const typeCell = (row) => (watching ? this._typeLink(row.type, row.device_id, pickType)
+      : row.type ? row.type : el("span", { class: "muted" }, NOT_WATCHED));
     const table = el("table", { "data-shares": "devices" },
       el("thead", {}, el("tr", {},
         header("DEVICE", "name"), header("TYPE", "type"), simple ? null : header("AREA", "area"),
         header("INTEGRATION", "integration"), el("th", {}, "STANDING"), el("th", {}, "PROBLEM"),
-        ...(simple ? [] : [header("BATTERY", "battery", "num"), header("LAST REPORT", "last"),
-          header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num")]))),
+        // LAST REPORT and WINDOW are a watched device's; on the other
+        // chips they are blank, so they do not sort.
+        ...(simple ? [] : watching ? [header("LAST REPORT", "last"), header("WINDOW", "window", "num")]
+          : [el("th", {}, "LAST REPORT"), el("th", { class: "num" }, "WINDOW")]))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
-        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", {}, this._typeLink(row.type, row.device_id, pickType)),
+        el("td", {}, nameLink(row)),
+        el("td", {}, typeCell(row)),
         simple ? null : el("td", {}, this._areaWords(row.area, row.device_id, pickArea)),
-        el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
-        el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
+        el("td", {}, this._link(row.integration_name || row.integration, this._integrationPath(row.integration))),
+        el("td", watching && !row.muted ? {} : { class: "muted" }, ...standing(row)),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
         ...(simple ? [] : [
-          el("td", { class: "num" }, row.battery == null ? "" : `${Math.round(row.battery)}%`),
-          el("td", {}, ago(row.last_activity, at)),
-          el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
-          el("td", { class: "num" }, row.judged_by ? this._judgedByWords(row.judged_by)
+          el("td", {}, watching ? ago(row.last_activity, at) : ""),
+          el("td", { class: "num" }, !watching ? "" : row.judged_by ? this._judgedByWords(row.judged_by)
             : row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")])))));
-    // The order a device page's Previous and Next follow.
-    this._keepList(TAB_SLUG.Devices, rows.map((row) => row.device_id));
+    // The order a device page's Previous and Next follow: the rows shown
+    // that have a page here.
+    this._keepList(TAB_SLUG.Devices, rows.filter((row) => watching || row.page).map((row) => row.device_id));
     const typeFilter = el("select", { class: "actinput", "aria-label": "Show one type",
       onchange: (ev) => { this._deviceType = ev.target.value; this._paintDevices(); } },
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
       ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
-        `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
+        `${type} ${type === NOT_KNOWN ? listed.filter((row) => !typeOf(row)).length : listed.filter((row) => typeOf(row) === type).length}`)));
+    // The key to the reasons, the same words as classification.md's. An
+    // excluded row says which exclusion in its own STANDING, so the
+    // Excluded chip's key is the one line on its history.
+    const meanings = ((this._snapshot.classification && this._snapshot.classification.set_aside_meanings) || [])
+      .filter(([reason]) => reason !== "excluded");
+    const key = this._deviceFilter === "aside" && meanings.length ? el("div", { class: "muted", style: "font-size:13px;line-height:1.5" },
+      el("p", { style: "margin:0 0 4px" }, "Set aside, by reason:"),
+      ...meanings.map(([reason, meaning]) => el("p", { style: "margin:0" }, el("strong", {}, reason), `: ${meaning}`)))
+      : this._deviceFilter === "excluded" ? el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" },
+        "Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded.") : null;
     this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
-      excludedAll.length ? el("p", { style: "margin:0" }, switchView("excluded")) : null,
-      this._typeShowing(this._deviceType, pickType), this._networkShowing(),
-      el("div", { class: "scroll" }, table)].filter((part) => part));
+      this._typeShowing(this._deviceType, pickType), watching ? this._networkShowing() : null,
+      rows.length || !listed.length ? el("div", { class: "scroll" }, table)
+        : el("p", { class: "muted", style: "margin:0" }, "No device matches."),
+      key].filter((part) => part));
     this._keepSearchFocus();
   }
 
@@ -3524,51 +3629,6 @@ class DeviceSentinelPanel extends HTMLElement {
     if (!box) return;
     box.focus();
     try { box.setSelectionRange(start, end); } catch (err) { /* a search box that cannot take a range keeps its focus */ }
-  }
-
-  // The Excluded list (rule DASH-12): the devices on the exclusion lists,
-  // as Home Assistant has them now, since nothing of them is recorded. A
-  // device excluded on its own is taken back here; one excluded with its
-  // integration is taken back on that integration's page, because the
-  // broader exclusion covers it (rule MUTE-04). A device whose history
-  // has gone has no Device Sentinel page, so its name opens Home
-  // Assistant's own.
-  _paintExcludedDevices(rows, total, back, finders) {
-    const pickArea = (area) => { this._deviceArea = area; this._paintDevices(); };
-    const summary = el("p", { style: "margin:0;line-height:1.5" },
-      total
-        ? `${total} ${total === 1 ? "device is" : "devices are"} excluded. Device Sentinel does not watch `
-          + `${total === 1 ? "it" : "them"}, and deletes each one's history at the midnight after it is excluded.`
-        : "No device is excluded.");
-    const takeBack = (row) => el("button", { class: "chip", type: "button",
-      onclick: async () => {
-        try {
-          await this._call({ type: "device_sentinel/device_exclude", device_id: row.device_id, on: false, source: "devices_tab" });
-        } catch (err) { /* the refresh shows the list as it stands */ }
-        await this._refresh();
-      } }, "Cancel the exclusion");
-    // Its own widths, so the last column's button and link sit on one
-    // line (rule DASH-12).
-    const table = el("table", { "data-shares": "excluded" },
-      el("thead", {}, el("tr", {}, ...["DEVICE", "INTEGRATION", "AREA", "EXCLUDED", "HISTORY", ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, ...rows.map((row) => el("tr", {},
-        el("td", {}, row.page
-          ? this._link(row.name, this._devicePath(row.device_id))
-          : this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)),
-        el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
-        el("td", {}, this._areaWords(row.area, row.device_id, pickArea)),
-        el("td", {}, row.how === "integration" ? "With its integration" : "By you"),
-        el("td", {}, row.page ? "Kept until midnight" : "Deleted"),
-        el("td", { style: "white-space:nowrap" }, row.how === "integration"
-          ? this._link("Open its integration page", this._integrationPath(row.integration))
-          : takeBack(row))))));
-    // Previous and Next on an excluded device opened here step through
-    // the excluded devices shown (rule DASH-07).
-    this._keepList(TAB_SLUG.Devices, rows.filter((row) => row.page).map((row) => row.device_id));
-    this._pane.replaceChildren(summary, el("p", { style: "margin:0" }, back), finders,
-      rows.length || !total ? el("div", { class: "scroll" }, table)
-        : el("p", { class: "muted", style: "margin:0" }, "No excluded device matches."));
-    this._keepSearchFocus();
   }
 
   _paintReadings() {
@@ -5560,88 +5620,6 @@ class DeviceSentinelPanel extends HTMLElement {
         el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.2" }),
           "the same, during maintenance")),
       toggle, table);
-  }
-
-  _paintClassification() {
-    const data = this._snapshot.classification;
-    // One type at a time (rule DEV-12), together with the chips: the counts
-    // on the chips follow the type chosen.
-    // A device not watched with no type reads "Not Watched", so the
-    // filter counts and finds it under those words, and "Not Set" holds
-    // only watched devices whose type nobody has set (rule DEV-12).
-    const typeOf = (row) => row.type || (row.watched ? "" : NOT_WATCHED);
-    const types = this._countTypes(data.rows.map((row) => ({ type: typeOf(row) })));
-    let chosen = this._classType || "";
-    if (chosen && !data.rows.some((row) => this._typeMatch(chosen, typeOf(row)))) chosen = this._classType = "";
-    const pick = (type) => { this._classType = type; this._paintClassification(); };
-    const ofType = data.rows.filter((row) => this._typeMatch(chosen, typeOf(row)));
-    const counts = {
-      all: ofType.length,
-      watched: ofType.filter((row) => row.watched).length,
-      muted: ofType.filter((row) => row.muted).length,
-      set_aside: ofType.filter((row) => !row.watched).length,
-    };
-    const keep = {
-      all: () => true,
-      watched: (row) => row.watched,
-      muted: (row) => row.muted,
-      set_aside: (row) => !row.watched,
-    }[this._filter];
-    this._classSort = this._classSort || { key: null, dir: 1 };
-    const again = () => this._paintClassification();
-    const rows = this._sortRows(ofType.filter(keep), this._classSort, {
-      name: (row) => (row.name || "").toLowerCase(),
-      // By the name shown, as the Daily Brief names it (rule GEN-07).
-      integration: (row) => (row.integration_name || row.integration || "").toLowerCase(),
-      type: (row) => (row.type || "\uffff").toLowerCase(),
-      watched: (row) => (row.watched ? 0 : 1),
-      muted: (row) => (row.muted || "\uffff").toLowerCase(),
-      set_aside: (row) => (row.set_aside || "\uffff").toLowerCase(),
-      copies: (row) => -(row.copies || 1),
-    });
-    // All seven reasons, and no count of entities with no device: those
-    // are never watched, so "seen only as entities" would mislead (rule GEN-03).
-    const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `Watching ${data.watched} of ${data.rows.length} devices. ${data.set_aside} are set aside: integrations you `
-      + "excluded, service devices, disabled devices, duplicate coordinators, hardware already watched through "
-      + "another device, devices with nothing switched on that can report, and devices with no entities. MUTED "
-      + "names every mute on a device and its source.");
-    const chips = el("div", { class: "chips" }, ...FILTERS.map(([key, label]) =>
-      el("button", {
-        class: "chip", type: "button", "aria-pressed": String(key === this._filter),
-        onclick: () => {
-          this._filter = key;
-          this._paintClassification();
-        },
-      }, `${label} ${counts[key]}`)));
-    const showCopies = data.rows.some((row) => row.copies > 1);
-    const head = (label, key) => this._sortHead(this._classSort, label, key, again);
-    const table = el("table", {},
-      el("thead", {}, el("tr", {}, head("DEVICE", "name"), head("INTEGRATION", "integration"), head("TYPE", "type"),
-        head("WATCHED", "watched"), head("MUTED", "muted"), head("SET ASIDE", "set_aside"),
-        showCopies ? head("COPIES", "copies") : null)),
-      el("tbody", {}, ...rows.map((row) => el("tr", {},
-        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        // The integration's name; its id still opens its page (rule GEN-07).
-        el("td", {}, this._link(row.integration_name || row.integration, this._integrationPath(row.integration))),
-        // A device Device Sentinel does not watch has nothing to set:
-        // its type, if known, else "Not Watched" in grey (rule DEV-12).
-        el("td", {}, row.watched || row.type ? this._typeLink(row.type, row.device_id, pick)
-          : el("span", { class: "muted" }, NOT_WATCHED)),
-        el("td", {}, row.watched ? (row.judged ? `\u2713 ${row.judged}` : "\u2713") : ""),
-        el("td", {}, row.muted),
-        el("td", {}, row.set_aside),
-        showCopies ? el("td", {}, row.copies > 1 ? String(row.copies) : "") : null))));
-    // The key to SET ASIDE, the same words as classification.md's.
-    const key = el("div", { class: "muted", style: "font-size:13px;line-height:1.5" },
-      el("p", { style: "margin:0 0 4px" }, "Set aside, by reason:"),
-      ...(data.set_aside_meanings || []).map(([reason, meaning]) =>
-        el("p", { style: "margin:0" }, el("strong", {}, reason), `: ${meaning}`)));
-    this._pane.replaceChildren(...[summary,
-      el("div", { class: "actrow" }, chips, this._typePicker(types, chosen, pick)),
-      this._typeShowing(chosen, pick),
-      el("div", { class: "scroll" }, table),
-      el("p", { class: "muted", style: "margin:0;font-size:13px" }, `${rows.length} shown.`), key].filter((part) => part));
   }
 
   async _maintenance() {
