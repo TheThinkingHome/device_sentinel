@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.27.10 (2026-10-27)
+# File: test_hardening.py, Version: 0.28.9 (2026-11-10)
 
 """Report edges, old-field cleanup, and the per-screen wiki links hold
 (rules CODE-06, CODE-07, CODE-10, CODE-14, STOR-19, CFG-03).
@@ -410,6 +410,7 @@ PUBLISHED_PAGES = {
     "Notifications-and-Daily-Brief",
     "Repairs",
     "Screenshots",
+    "Sending-the-Daily-Brief-by-Email",
     "Signal-Strength",
     "The-Bridge-and-Broker-Sensors",
     "The-Daily-Brief",

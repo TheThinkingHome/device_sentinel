@@ -162,5 +162,15 @@ def test_the_help_and_the_error_say_it_in_both_files():
         text = json.loads((TRANSLATIONS / name).read_text(encoding="utf-8"))
         help_line = text["options"]["step"]["notifications"]["sections"]["brief"]["data_description"][CONF_BRIEF_TARGETS]
         assert help_line.startswith("The email or other services that will be used to send the Daily Brief.")
-        assert "(https://github.com/TheThinkingHome/device_sentinel/wiki/Sending-the-Daily-Brief-by-Email)" in help_line
+        assert "[Sending the Daily Brief by Email]({email_link})" in help_line
+        assert "https://" not in help_line
         assert "brief_target_is_address" in text["options"]["error"]
+
+
+async def test_the_screen_supplies_the_email_page(hass: HomeAssistant):
+    """The help text names the page; the screen supplies its address,
+    because Home Assistant refuses a URL written into a string."""
+    entry = await setup_entry(hass)
+    result = await _open(hass, entry)
+    link = result["description_placeholders"]["email_link"]
+    assert link == "https://github.com/TheThinkingHome/device_sentinel/wiki/Sending-the-Daily-Brief-by-Email"
