@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -111,10 +111,11 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Quiet hours:** they do not hold the file or its sending, because the brief carries what quiet hours held back.
 - **Which brief is sent:** only the brief that closes a window, once. Never one written by a start, a regenerate or a midnight rewrite.
 - **Who gets it:** it is one document, the same for each target. It goes only to Send the Full Brief To, its own list for email and other services that carry the whole document, empty by default. The high-priority and normal-priority targets receive pushes, never the brief (see [NOTE](Rulebook__12_NOTE_Notifications.md)).
+- **A service, never an address (since 0.28.9, issue #31):** Send the Full Brief To takes a service chosen from its list. A value holding "@" is refused on Submit: the screen stays open with what was entered, the Daily Brief section opens, an error above it says the field needs an email service, not an email address, and nothing is saved. Before 0.28.9 a typed address was saved, and the brief was handed each morning to an action named after it and never sent. The help text says so and links to the wiki page Sending the Daily Brief by Email. A typed address already saved is listed by the Repairs card for targets Home Assistant does not have, worded so it fits a value that never was a service.
 - **Mail:** it goes through Home Assistant's own services, never by Device Sentinel itself. An SMTP recipient is offered as its notify entity and sent the page through smtp.send_message. An old-style notify action already chosen keeps working until Home Assistant removes it.
 - **Daylight saving:** a brief time inside the hour daylight saving repeats sends one brief, and one inside the hour it skips still sends that day's.
 
-*Proof:* [`test_brief_email.py`](../tests/test_brief_email.py), [`test_smtp_brief.py`](../tests/test_smtp_brief.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_brief_window.py`](../tests/test_brief_window.py), [`test_priority_targets.py`](../tests/test_priority_targets.py).
+*Proof:* [`test_brief_email.py`](../tests/test_brief_email.py), [`test_brief_targets.py`](../tests/test_brief_targets.py), [`test_smtp_brief.py`](../tests/test_smtp_brief.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_brief_window.py`](../tests/test_brief_window.py), [`test_priority_targets.py`](../tests/test_priority_targets.py).
 
 ### BRIEF-12 One Page, Sent as Written
 

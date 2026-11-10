@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 A person makes two choices about what Device Sentinel reports. Excluding stops the watching; muting stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md). Battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md), and the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -37,8 +37,8 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 - **Where:** in Settings under Integrations and Devices to Exclude, or from the Excluded row on its device page. One press excludes it, with no question.
 - **Removed from Home Assistant:** an excluded device removed from Home Assistant is not held for 30 days. Its record and answers go with it.
 - **The Excluded row:** it shows only "Exclude this device" until it is used. Then it reads "Excluded. Device Sentinel has stopped watching this device and deletes its history at midnight" and offers "Cancel the exclusion" until midnight. It says that after midnight the device is taken back in Settings, and that another listing of the same hardware may be watched instead.
-- **An integration's page:** it has "Exclude this integration", or "Cancel the exclusion" when it is excluded. This writes the same setting as Settings and keeps the integration's mutes and its devices' own, as a device's exclusion does, so taking it back before midnight loses nothing. The brief records it as one row: "ZHA: excluded, from its integration page, at 9:14 AM."
-- **In Simple:** Exclude this device is hidden. Exclude this integration shows in both views.
+- **An integration's page (since 0.28.9):** it has the Integrations tab's five buttons for that integration: Exclude, Mute everything, Mute freeze, Mute battery and Mute signal, the same look and the same rules, each lit while it is on, and a second press undoes it. Before 0.28.9 it had one button, "Exclude this integration" or "Cancel the exclusion", and no mutes. Exclude writes the same setting as Settings and keeps the integration's mutes and its devices' own, as a device's exclusion does, so taking it back before midnight loses nothing. The brief records it as one row: "ZHA: excluded, from its integration page, at 9:14 AM."
+- **In Simple:** Exclude this device is hidden. An integration's five buttons show in both views.
 
 **The Integrations tab, in Simple and Advanced alike, lists each integration with five buttons on its row: Exclude, Mute everything, Mute freeze, Mute battery and Mute signal. One press sets it, with no question, and a second press undoes it.**
 - **Lit buttons:** a button that is on is lit and reads with "✓ ". Mute everything lights the three single mutes and holds them, and an excluded integration's mutes rest.

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -74,7 +74,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 
 **Each row of a device card, and each written recommendation, has an Acknowledged tick that can be taken off again.**
 - **A ticked row:** stays listed, faded to 75%, and leaves the counts and the Daily Brief. The tick is kept in the answers file.
-- **The tick itself:** it and the word "Acknowledged" never fade, so it still reads as something to press, here, on the Problem List and on the Daily Brief tab. A ticked box's hover reads "Acknowledged. Press to take it back."
+- **The tick itself:** it and the word "Acknowledged" never fade, so it still reads as something to press, here and on the Daily Brief's Problem List. A ticked box's hover reads "Acknowledged. Press to take it back."
 - **At the midnight run:** a tick whose device has left the card, or whose line has gone, is forgotten. So a problem that comes back on a later day is active again.
 - **Back the same day:** one that leaves and comes back the same day, or across a restart, comes back ticked.
 - **Already ticked:** a sensor a person switched off themselves starts ticked.
