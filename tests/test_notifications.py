@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.27.10 (2026-10-27)
+# File: test_notifications.py, Version: 0.28.9 (2026-11-10)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -1084,16 +1084,17 @@ async def test_card_failed_write_is_tried_again():
 # with a link there; the all-clear has nothing to open (rule NOTE-11).
 
 
-def _problem_list_slug() -> str:
-    """The Problem List's address as the panel itself builds it."""
+def _daily_brief_is_first() -> bool:
+    """The Problem List heads the Daily Brief, the tab the dashboard's own
+    address opens, as the panel itself orders its tabs (rule DASH-02)."""
     import re
     from pathlib import Path
 
     panel = Path(__file__).parent.parent / "custom_components" / "device_sentinel" / "frontend" / "panel.js"
     text = panel.read_text(encoding="utf-8")
     tabs = re.search(r"const TABS = \[(.*?)\];", text, re.S).group(1)
-    assert '"Problem List"' in tabs
-    return "problem-list"
+    names = re.findall(r'"([^"]+)"', tabs)
+    return names[0] == "Daily Brief" and "Problem List" not in names
 
 
 async def test_a_card_that_lists_anything_links_the_problem_list():
@@ -1110,7 +1111,7 @@ async def test_a_card_that_lists_anything_links_the_problem_list():
     h.entry.options = {CONF_PERSISTENT_ENABLED: True}
     await h.async_update_card()
     _domain, _service, payload = h.sent[0]
-    assert PROBLEM_LIST_PATH == f"/{PANEL_URL_PATH}/{_problem_list_slug()}"
+    assert PROBLEM_LIST_PATH == f"/{PANEL_URL_PATH}" and _daily_brief_is_first()
     assert payload["message"].endswith(f"\n\n[Open the Problem List]({PROBLEM_LIST_PATH})")
     assert payload["message"].startswith("Frozen") or "Door X unavailable" in payload["message"]
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integrations_tab.py, Version: 0.27.11 (2026-10-28)
+# File: tests/test_integrations_tab.py, Version: 0.28.9 (2026-11-10)
 
 """The Integrations tab excludes and mutes whole integrations (rules
 MUTE-02, MUTE-03, MUTE-04, MUTE-06, BRIEF-07, DASH-16).
@@ -82,6 +82,24 @@ async def test_a_mute_press_writes_the_list_settings_writes(hass: HomeAssistant,
     await hass.async_block_till_done()
     assert reply["success"] and entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == []
     assert _rows(coord, SYS_INTEGRATIONS_TAB)[-1][SYS_DETAIL] == "freeze mute lifted"
+
+
+async def test_a_mute_on_an_integrations_page_says_so(hass: HomeAssistant, hass_ws_client):
+    """An integration's page has the tab's five buttons; the brief names
+    the page a mute was pressed on, and the page reads each mute as it
+    stands, so its buttons are lit as they are (rule MUTE-03)."""
+    entry, coord = await _house(hass)
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/integration_mute", domain="test", kind="battery", on=True,
+                      source="integration_page")
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    events = _rows(coord, SYS_INTEGRATION_PAGE)
+    assert [(r[SYS_SCOPE], r[SYS_DETAIL]) for r in events] == [("test", "muted for battery")]
+    assert _rows(coord, SYS_INTEGRATIONS_TAB) == []
+    page = coord.dashboard_integration("test")
+    assert page["mutes"] == {"everything": False, "freeze": False, "battery": True, "signal": False}
+    assert page["excluded"] is False
 
 
 async def test_a_second_press_undoes_a_press_exactly(hass: HomeAssistant, hass_ws_client):
