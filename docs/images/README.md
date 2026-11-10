@@ -44,12 +44,6 @@ The Signal Trends tab: devices that keep dropping out, days when several devices
 
 ![Dashboard Signal Trends](./Dashboard%20Signal%20Trends.png)
 
-### Dashboard Classification.png
-
-The Classification tab: every device Device Sentinel found, whether it is watched, what mutes it, and why a set-aside device was set aside. A device another integration also lists reads "clone".
-
-![Dashboard Classification](./Dashboard%20Classification.png)
-
 ### Dashboard Integrations.png
 
 The Integrations tab: one row per integration with its standing, how many of its devices are watched, muted or set aside, its open problems and its outages over fourteen days. The key under the table says what each standing means.
@@ -64,7 +58,7 @@ An integration's own page: its devices with problems first, its outages over the
 
 ### Dashboard Devices.png
 
-The Devices tab: every watched device with its type, integration, standing, problem, last report, rhythm and freeze window. Click a type to narrow the list, or filter to the devices with a problem or the muted ones.
+The Devices tab: every device Device Sentinel found, opening on the watched ones, with each one's type, integration, standing, problem, last report and freeze window. Click a type to narrow the list, or choose the devices with a problem, the muted, the excluded or the ones set aside, each with its reason.
 
 ![Dashboard Devices](./Dashboard%20Devices.png)
 
