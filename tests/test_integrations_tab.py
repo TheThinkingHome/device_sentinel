@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integrations_tab.py, Version: 0.28.9 (2026-11-10)
+# File: tests/test_integrations_tab.py, Version: 0.28.10 (2026-11-10)
 
 """The Integrations tab excludes and mutes whole integrations (rules
 MUTE-02, MUTE-03, MUTE-04, MUTE-06, BRIEF-07, DASH-16).
@@ -22,6 +22,7 @@ import itertools
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_FREEZE_MUTED_INTEGRATIONS,
@@ -195,6 +196,23 @@ async def test_an_exclusion_from_the_tab_says_so(hass: HomeAssistant, hass_ws_cl
     assert [(r[SYS_SCOPE], r[SYS_DETAIL]) for r in events] == [("test", "excluded")]
     row = next(r for r in coord.dashboard_integrations() if r["domain"] == "test")
     assert row["excluded"] is True and row["devices"] == 2 and row["recommended"] is None
+
+
+async def test_an_excluded_integrations_page_says_whether_history_remains(hass: HomeAssistant, hass_ws_client):
+    """Its page offers to keep the history only while there is some to
+    keep (rule MUTE-03): until the midnight after the exclusion, its
+    devices' records are there; after it, they are gone."""
+    entry, coord = await _house(hass)
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="test", on=True, source="integration_page")
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    page = coord.dashboard_integration("test")
+    assert page["excluded"] is True and page["history_kept"] is True
+    for device_id, (_name, domain, _reason) in list(coord._set_aside.items()):
+        if domain == "test":
+            coord.data[DATA_DEVICES].pop(device_id, None)
+    assert coord.dashboard_integration("test")["history_kept"] is False
 
 
 async def test_each_row_carries_its_trouble(hass: HomeAssistant):

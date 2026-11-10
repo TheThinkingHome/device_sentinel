@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.27.17 (2026-11-01)
+# File: test_brief_wording.py, Version: 0.28.10 (2026-11-10)
 
 """How the brief says things: prose, device lines, pairing
 (rules BRIEF-02, BRIEF-03, BRIEF-04, BRIEF-06, BRIEF-09, DEV-02).
@@ -1697,8 +1697,8 @@ async def test_a_storm_inside_a_restart_is_the_restart(
 
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    assert "The mqtt integration reloaded" not in text
-    assert "The ZHA integration reloaded" in text
+    assert "mqtt updated" not in text
+    assert "ZHA updated" in text
 
 
 async def test_a_clean_stop_is_named_clean(hass: HomeAssistant):
@@ -1980,10 +1980,10 @@ async def test_a_storm_run_inside_one_minute_names_its_minute_once(hass: HomeAss
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
     sentences = [part.strip() + "." for part in text.replace("\n", " ").split(". ")]
-    zha = next(part for part in sentences if "The ZHA integration reloaded" in part)
+    zha = next(part for part in sentences if "ZHA updated" in part)
     assert " at " in zha and "between" not in zha, zha
-    assert "the largest affecting 41 devices" in zha
-    mqtt = next(part for part in sentences if "integration reloaded" in part and "ZHA" not in part)
+    assert "as many as 41 at a time" in zha
+    mqtt = next(part for part in sentences if " updated " in part and "at once" in part and "ZHA" not in part)
     assert "between" in mqtt and " and " in mqtt, mqtt
 
 
@@ -2000,7 +2000,7 @@ async def test_a_run_crossing_a_minute_keeps_between(hass: HomeAssistant, freeze
     coord.data[DATA_SYSTEM_EVENTS] = events
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass).replace("\n", " ")
-    zha = next(part for part in text.split(". ") if "The ZHA integration reloaded" in part)
+    zha = next(part for part in text.split(". ") if "ZHA updated" in part)
     assert "between" in zha, zha
 
 

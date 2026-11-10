@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storm_tally.py, Version: 0.27.10 (2026-10-27)
+# File: test_storm_tally.py, Version: 0.28.10 (2026-11-10)
 
 """The storm tally and the flood sentence (rules UP-17, UP-18).
 
@@ -142,9 +142,10 @@ async def test_the_flood_sentence_reads_the_newest_day(
     said = coord._noisy_integration_advice()
     assert len(said) == 1
     sentence = said[0]
-    assert "the poller integration" in sentence
+    assert sentence.startswith("poller updates all its devices at once")
     assert "every 36 seconds" in sentence
-    assert "Exclusions and Muting" in sentence
+    # What is true, and no advice to exclude (rule UP-18).
+    assert "exclude" not in sentence.lower()
 
 
 async def test_an_excluded_domain_is_not_named(hass: HomeAssistant):

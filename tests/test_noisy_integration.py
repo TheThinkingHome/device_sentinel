@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_noisy_integration.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_noisy_integration.py, Version: 0.28.10 (2026-11-10)
 
-"""Which integrations are worth excluding for their noise (rule UP-18).
+"""Which integrations update all their devices at once, and what that
+means for watching them (rule UP-18). No poller is advised for exclusion.
 
 A storm inside an outage, a maintenance window or a restart is the
 house recovering, not an integration polling, so it stays out of the
@@ -114,8 +115,10 @@ async def test_a_poller_on_two_days_is_advised(hass: HomeAssistant):
     ]
     said = coord._noisy_integration_advice()
     assert len(said) == 1
-    assert "the poller integration is a poller" in said[0]
-    assert "publishing its fleet data every 14 seconds" in said[0]
+    assert "poller updates all its devices at once, every 14 seconds." in said[0]
+    assert "It tells you when the whole integration stops updating, but not when one of its devices fails." in said[0]
+    # What is true, and no advice to exclude (rule UP-18).
+    assert "exclude" not in said[0].lower()
 
 
 async def test_one_bad_day_is_not_advised(hass: HomeAssistant):

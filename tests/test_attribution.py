@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_attribution.py, Version: 0.28.10 (2026-11-10)
 
 """What explains an incident, and what a flood reads as
 (rules BRIEF-05, UP-17, UP-06, BRIEF-04).
@@ -188,7 +188,7 @@ def test_the_phrase_names_the_scope():
     )
     said = {attribution.phrase(span) for span in spans}
     assert "the MQTT broker going down and coming back" in said
-    assert "the reolink integration reloading" in said
+    assert "reolink updating its devices all at once" in said
 
 
 async def test_the_flood_collapses_to_one_sentence(hass: HomeAssistant):
@@ -607,12 +607,13 @@ async def test_a_repeated_storm_reads_as_one_line(hass: HomeAssistant):
         rows[-1][SYS_DEVICES] = 5
     said = coord._house_sentences(rows)
     assert len(said) == 1
-    assert said[0].startswith("The tplink_router integration reloaded 20 times")
-    assert "the largest affecting 5 devices" in said[0]
+    assert said[0].startswith("tplink_router updated its devices all at once 20 times")
+    assert "as many as 5 at a time" in said[0]
 
 
-async def test_one_storm_keeps_its_own_two_sentences(hass: HomeAssistant):
-    """A single reload is not repetition and reads as it always did."""
+async def test_one_storm_is_one_sentence_with_its_size(hass: HomeAssistant):
+    """A single burst is one sentence, sized by its own end, and never
+    called a reload (rule UP-17)."""
     from custom_components.device_sentinel.const import (
         SYS_DEVICES,
         SYS_STORM_CLOSED,
@@ -625,8 +626,9 @@ async def test_one_storm_keeps_its_own_two_sentences(hass: HomeAssistant):
     said = coord._house_sentences(
         [_event(SYS_STORM_OPEN, "reolink", T0), closed]
     )
-    assert len(said) == 2
-    assert said[0].startswith("The reolink integration reloaded at ")
+    assert len(said) == 1
+    assert said[0].startswith("reolink updated 4 devices at once at ")
+    assert "reload" not in said[0] and "settled" not in said[0]
 
 
 async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
@@ -650,7 +652,7 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
     said = coord._house_sentences(
         [_event(SYS_STORM_OPEN, "mqtt", T0), good_close, orphan]
     )
-    assert len(said) == 2
+    assert len(said) == 1
     assert "47 devices" not in " ".join(said)
     assert "50 devices" in " ".join(said)
 

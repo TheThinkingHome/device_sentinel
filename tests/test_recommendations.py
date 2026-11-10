@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.27.11 (2026-10-28)
+# File: tests/test_recommendations.py, Version: 0.28.10 (2026-11-10)
 
 """The brief's Recommendations section and the device cards (rules
 REC-02, REC-04, REC-10).
@@ -165,7 +165,7 @@ async def test_the_worst_comes_first(hass: HomeAssistant):
     coord.data[DATA_STORM_DAYS] = _noisy(["poller"])
     lines = coord._recommendation_items()
     missing = next(i for i, line in enumerate(lines) if "notify.old_phone" in line)
-    noisy = next(i for i, line in enumerate(lines) if "the poller integration" in line)
+    noisy = next(i for i, line in enumerate(lines) if line.startswith("poller updates all its devices at once"))
     assert missing < noisy
 
 
@@ -181,7 +181,7 @@ async def test_every_line_shows(hass: HomeAssistant):
     ]
     assert len(body) == 7
     assert not any(line.startswith("And ") for line in body)
-    assert "the poller5 integration" in body[-1]
+    assert body[-1].startswith("poller5 updates all its devices at once")
 
 
 async def test_the_written_brief_carries_the_section(hass: HomeAssistant):

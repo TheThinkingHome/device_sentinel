@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hostile_names.py, Version: 0.28.9 (2026-11-10)
+# File: tests/test_hostile_names.py, Version: 0.28.10 (2026-11-10)
 
 """Names and typed text that could break a page (rules CODE-10, DEV-05).
 
@@ -93,7 +93,7 @@ async def test_the_card_shows_names_as_text(hass: HomeAssistant):
     await coord.async_update_card()
     message = card_message(hass)
     assert "\\!\\[pic\\]\\(https://evil.example/p.png\\)" in message, message
-    assert message.endswith("[Open the Problem List](/device-sentinel)"), "the card's own link stays a link"
+    assert message.endswith("[Open the Problem List](/device-sentinel?open=today)"), "the card's own link stays a link"
     assert _card_text("Soil Irrigation (Monstera)\nTwo") == "Soil Irrigation \\(Monstera\\) Two"
 
 

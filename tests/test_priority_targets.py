@@ -3,13 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_priority_targets.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_priority_targets.py, Version: 0.28.10 (2026-11-10)
 
 """Who gets a push, and when (rules NOTE-02, NOTE-07, BRIEF-11).
 
 High-priority targets get every push, Quiet Hours included.
 Normal-priority targets get every push except during Quiet Hours. The
-Daily Brief goes only to Send the Full Brief To.
+Daily Brief goes only to Send the Full Brief To. A typed email address
+in either priority list is refused on Submit, as in the brief's, because
+each alert to it would be lost.
 """
 
 from __future__ import annotations
@@ -102,3 +104,67 @@ async def test_the_brief_goes_to_no_priority_target(hass: HomeAssistant):
     assert high == [] and normal == []
     # A house whose only targets are normal priority is reachable.
     assert delivery_is_configured(entry) is True
+
+
+# A typed email address in the instant alert targets (rule NOTE-02).
+
+ADDRESS = "someone@example.com"
+
+
+async def _notifications_screen(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "notifications"}
+    )
+
+
+def _screen(high, normal):
+    from tests.test_brief_targets import _submit
+    form = _submit([])
+    form["instant"][CONF_HIGH_PRIORITY_TARGETS] = high
+    form["instant"][CONF_NORMAL_PRIORITY_TARGETS] = normal
+    return form
+
+
+async def test_an_address_in_either_priority_list_is_refused(hass: HomeAssistant):
+    from homeassistant.data_entry_flow import FlowResultType
+    from tests.test_brief_targets import _default
+
+    for high, normal in (([ADDRESS], []), ([], [ADDRESS]), ([ADDRESS], [ADDRESS])):
+        entry = await setup_entry(hass)
+        result = await _notifications_screen(hass, entry)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], _screen(high, normal)
+        )
+        assert result["type"] is FlowResultType.FORM, (high, normal)
+        assert result["errors"] == {"instant": "priority_target_is_address"}
+        assert ADDRESS not in (entry.options.get(CONF_HIGH_PRIORITY_TARGETS) or [])
+        assert ADDRESS not in (entry.options.get(CONF_NORMAL_PRIORITY_TARGETS) or [])
+        # The screen keeps what was entered.
+        assert _default(result, "instant", CONF_HIGH_PRIORITY_TARGETS) == high
+        assert _default(result, "instant", CONF_NORMAL_PRIORITY_TARGETS) == normal
+        await hass.config_entries.async_remove(entry.entry_id)
+
+
+async def test_a_notify_action_is_kept_and_a_saved_address_can_go(hass: HomeAssistant):
+    from homeassistant.data_entry_flow import FlowResultType
+
+    entry = await setup_entry(hass, {CONF_HIGH_PRIORITY_TARGETS: [ADDRESS]})
+    result = await _notifications_screen(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _screen(["notify.mobile_app_phone"], ["notify.mobile_app_tablet"])
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == ["notify.mobile_app_phone"]
+    assert entry.options[CONF_NORMAL_PRIORITY_TARGETS] == ["notify.mobile_app_tablet"]
+
+
+def test_the_refusal_is_worded_in_both_files():
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent / "custom_components" / "device_sentinel"
+    for name in ("strings.json", "translations/en.json"):
+        text = json.loads((root / name).read_text(encoding="utf-8"))
+        words = text["options"]["error"]["priority_target_is_address"]
+        assert "High-Priority Targets" in words and "not an email address" in words
