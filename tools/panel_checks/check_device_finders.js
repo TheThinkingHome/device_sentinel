@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_finders.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_device_finders.js, Version: 0.28.10 (2026-11-10)
 //
 // Panel checks: finding a device, and taking an exclusion back from the
 // dashboard (rules DASH-12, MUTE-03). The Devices tab's name
@@ -247,6 +247,24 @@ const linkButton = (root, start) => [...root.querySelectorAll(".pane button.link
   check("An excluded integration's page shows Excluded lit", chip("Excluded") && chip("Excluded").classList.contains("on"));
   check("with its mutes at rest", ["Mute everything", "Mute freeze", "Mute battery", "Mute signal"].every((w) => chip(w).getAttribute("aria-disabled") === "true"));
   check("and how to keep its history", root.querySelector(".pane").textContent.includes("Press Excluded again before then to keep it."));
+  {
+    // Excluded before the last midnight: its history is gone, and its
+    // devices read and count as the Devices tab has them.
+    const gone = { ...excludedPage, history_kept: false, devices: [
+      { device_id: "x1", name: "Camera Back", watched: false, muted: "", set_aside: `excluded (integration: ${fleet.integration.name})`, problem: "", acknowledged: false, page: false },
+      { device_id: "x2", name: "Old Plug", watched: false, muted: "", set_aside: "excluded (device)", problem: "", acknowledged: false, page: true },
+      { device_id: "x3", name: "Spare Hub", watched: false, muted: "", set_aside: "no entities", problem: "", acknowledged: false, page: false },
+    ] };
+    const page = await open(`${PREFIX}/integration/${domain}`, { integration: gone, integrations: tabRows(false, {}) });
+    const text = page.root.querySelector(".pane").textContent;
+    check("Excluded long ago, it no longer offers to keep a history that has gone",
+      text.includes("Their history was deleted at the midnight after it was excluded.") && !text.includes("Press Excluded again before then"), text.slice(0, 400));
+    const standing = (name) => [...page.root.querySelectorAll(".pane tbody tr")].find((tr) => tr.textContent.startsWith(name)).children[1].textContent;
+    check("its devices read as on the Devices tab",
+      standing("Camera Back") === "Excluded by its integration." && standing("Old Plug") === "Excluded by you, history kept until midnight."
+      && standing("Spare Hub") === "Set aside: no entities", [standing("Camera Back"), standing("Old Plug"), standing("Spare Hub")]);
+    check("and are counted as excluded, not set aside", /0 watched, 2 excluded, 1 set aside\./.test(text), text.slice(0, 300));
+  }
   mark = calls.length;
   chip("Excluded").click();
   await settle();

@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_problem_list.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_problem_list.js, Version: 0.28.10 (2026-11-10)
 // Panel checks: the Problem List, a section of the Daily Brief tab
 // (rule DASH-02). Today it is the list to act on, with its filters,
 // sorts, ticks and mutes; a past day's is the problems that stood that
-// night, to read; the old address opens the Daily Brief. Its SINCE column. A device that has
+// night, to read; the old address opens the Daily Brief. The
+// notification card's link opens today even on a past day, and the same
+// address handed back by Home Assistant keeps the day. Its SINCE column. A device that has
 // never reported has no moment it stopped: its time is when it was
 // discovered, and the tab says so, as the Daily Brief does ("discovered
 // 3:47 PM", rule LIST-10). Every other problem
@@ -151,6 +153,31 @@ async function open(path, answers = {}) {
     const text = failing.root.querySelector(".pane").textContent;
     check("today's brief failing still shows the Problem List, with words that fit", text.includes("Today's brief could not be read")
       && failing.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2, text.slice(0, 160));
+  }
+
+  console.log("\nThe notification card's link (rules NOTE-11, DASH-02)");
+  {
+    const asked = [];
+    const brief = (m) => { asked.push(m.day || "today"); const b = JSON.parse(JSON.stringify(payloads.brief));
+      return m.day ? { ...b, is_today: false, day: m.day, back: null, forward: null, now: [] } : { ...b, is_today: true }; };
+    const card = await open(PREFIX, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }), brief });
+    await card.panel._briefGo("2026-09-20");
+    await settle();
+    // Home Assistant hands the page the address it already has.
+    card.panel.route = { prefix: PREFIX, path: "" };
+    await settle();
+    check("the same address handed back keeps the past day", asked[asked.length - 1] === "2026-09-20", asked);
+    // The card's link, followed while the past day shows.
+    card.window.history.pushState(null, "", `${PREFIX}?open=today`);
+    card.window.dispatchEvent(new card.window.CustomEvent("location-changed"));
+    await settle(); await settle();
+    check("the card's link opens today, with the list to act on", asked[asked.length - 1] === "today"
+      && card.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2, asked);
+    check("and the marker leaves the address", card.window.location.search === "" && card.window.location.pathname === PREFIX,
+      card.window.location.href);
+    const fresh = await open(`${PREFIX}?open=today`, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }) });
+    check("opened fresh from the card, the dashboard shows today's Daily Brief", fresh.panel._tab === "Daily Brief"
+      && !fresh.panel._briefDay && fresh.window.location.search === "", fresh.window.location.href);
   }
 
   console.log("\nA late reply is not drawn over another tab");
