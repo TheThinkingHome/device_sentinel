@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -73,7 +73,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Going unavailable:** a device that became unavailable or unknown is timed from when it went, if that was within 15 minutes of its listing. In Short and the dashboard date it the same way.
 - **Wi-Fi outages:** a recovery beginning and stalling each get a row, and the row that closes the outage says it ended.
 - **A restart:** it is a row on the system's line, "The system", reading "restarted, 76s unwatched", so the word "system" is not said twice.
-- **A person's acts on a device:** each act (a mute, an exclusion, a sensor turned on, a power source, a type, an area or a name set) is one row on the device's own line, saying where it was done: "from its device page", "from the Recommendations tab", "from the Problem List", "from the Devices tab", "from the Battery Trends tab" or "from the Classification tab".
+- **A person's acts on a device:** each act (a mute, an exclusion, a sensor turned on, a power source, a type, an area or a name set) is one row on the device's own line, saying where it was done: "from its device page", "from the Recommendations tab", "from the Problem List", "from the Devices tab", "from the Battery Trends tab", or, for an act made before 0.28.8, "from the Classification tab".
 - **Acts on an integration:** an act on a whole integration says "from its integration page", "from the Integrations tab" or, for Exclude on its card, "from the Recommendations tab". A page mute's options stay out of the Settings changed row.
 - **Batteries and handling:** a battery change and a device handled by hand go on the device's own line here and on the Daily Brief tab.
 - **Settings:** a setting a person changed is named by the label its own screen carries, in In Short, in this table and on the Daily Brief tab alike.

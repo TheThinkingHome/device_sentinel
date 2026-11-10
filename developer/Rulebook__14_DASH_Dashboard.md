@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -16,7 +16,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **In the band:** Refresh, the Maintenance Mode button with its length list, the Active Recommendations button (REC), the Simple and Advanced switch, and the time the figures were read.
 - **One row (since 0.28.0):** the status tiles and the buttons sit in one row, each part as wide as its words, wrapping onto a second row only on a narrow screen. "As of" sits under the band, at its right edge, in small text.
 - **The Maintenance Mode button:** it says what pressing it does. Off, it reads "Start Maintenance Mode". Open, it reads "End Maintenance Mode" with the minutes left, counted down while the page is open.
-- **The tabs:** Daily Brief, Problem List, Battery Trends, Signal Trends, Classification, Integrations, Networks ([DASH-17](#dash-17-the-networks-tab)), Devices and Recommendations, each with its own address.
+- **The tabs:** Daily Brief, Problem List, Battery Trends, Signal Trends, Integrations, Networks ([DASH-17](#dash-17-the-networks-tab)), Devices and Recommendations, each with its own address. Since 0.28.8 there is no Classification tab: the Devices tab shows every device found ([DASH-12](#dash-12-finding-a-device)), and Classification's old address opens it on the Set aside chip.
 
 *Proof:* [`tools/panel_checks/check_controls_band.js`](../tools/panel_checks/check_controls_band.js), `check_tab_addresses.js`, `check_recommendations.js`, `check_acknowledged_rows.js`.
 
@@ -31,11 +31,11 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 
 ### DASH-04 What Simple Shows
 
-**Simple shows six tabs: Daily Brief, Problem List, Battery Trends, Integrations, Devices and Recommendations.** Which recommendations Simple shows is in [REC](Rulebook__15_REC_Recommendations.md).
-- **Tabs left off:** Signal Trends and Classification. Each still opens from its own address, and no page in Simple links to it.
+**Simple shows seven tabs: Daily Brief, Problem List, Battery Trends, Integrations, Networks, Devices and Recommendations.** Which recommendations Simple shows is in [REC](Rulebook__15_REC_Recommendations.md).
+- **Tab left off:** Signal Trends. It still opens from its own address, and no page in Simple links to it.
 - **Battery Trends in Simple:** it leaves out the TYPICAL LEVEL, LOWEST CELL and WHICH ONE columns, the weekly levels under Falling, DAYS RECORDED, STEPS and MODEL, A WEEK under Other Cells, and the Not a Percentage list. Advanced's At or Under the Threshold adds 4 WEEKS.
 - **Battery Trends' tables:** they share one scale, so DEVICE, TYPE and LEVEL stand in the same place in each. A table with few columns ends short of the edge.
-- **Devices tab in Simple:** it shows TYPE and its filter. It leaves out the label filter, AREA, BATTERY, LAST REPORT, RHYTHM and WINDOW.
+- **Devices tab in Simple:** it shows TYPE and its filter, and the Excluded chip. It leaves out the Set aside chip, the label filter, AREA, LAST REPORT and WINDOW.
 - **"Not Set":** a type, an area or a battery type nobody has set reads "Not Set", in Simple and Advanced, on every tab and on the device page. It is a link that opens the way to set it in place, with no question first. A type or a battery type is set for every device of the model; an area for that one device, in Home Assistant. The brief says where it was set ([BRIEF-07](Rulebook__13_BRIEF_Daily_Brief.md#brief-07-last-24-hours)). A value that is set is words, with nothing to press; on Simple's device page it is grey. In Advanced the device page keeps the pencil beside each value, set or not, so anything set can be changed. The Type and Area filters name the choice "Not Set" too.
 - **Asking for input:** nothing in Simple asks for more, except "Not Set", the Battery last replaced pencil, the Confirm Battery Replacement card and the Mute buttons.
 - **Device page actions in Simple:** no Rename, no "Use the 14-Day Trimmed Maximum" and no button to turn a sensor on. A switched-off sensor is turned on from its Recommendations card (REC). Type, Area and Power (with the battery type) are read-only once set.
@@ -67,7 +67,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-07 The Device Page's Top Row
 
 **The top row carries the way back, Previous and Next, and "Open in Home Assistant", which appears once and only there.**
-- **Previous and Next:** they step through the list the page was opened from, in the order it was shown: the Devices tab (or its Excluded list), the Problem List, a recommendation card, or, since 0.28.7, any other page that links to devices, such as an integration's or a network's page, the Daily Brief or Battery Trends. On such a page the list is the table, list or card the device was pressed in, so Next from the Daily Brief's Last 24 Hours table stays in that table; pressed outside any, it is every device the page links to. They skip a device removed from the house since the list was drawn; a set-aside or excluded device the page showed is stepped to. A device opened straight from its own address steps through the Devices tab's order. Since 0.28.7, a device opened from another page whose list is gone, as after a reload, has nowhere to step: Previous and Next are grey, so Next never leaves the list the page was opened from (before, it fell back to the Devices tab and walked into other integrations' devices).
+- **Previous and Next:** they step through the list the page was opened from, in the order it was shown: the Devices tab (on any of its chips), the Problem List, a recommendation card, or, since 0.28.7, any other page that links to devices, such as an integration's or a network's page, the Daily Brief or Battery Trends. On such a page the list is the table, list or card the device was pressed in, so Next from the Daily Brief's Last 24 Hours table stays in that table; pressed outside any, it is every device the page links to. They skip a device removed from the house since the list was drawn; a set-aside or excluded device the page showed is stepped to. A device opened straight from its own address steps through the Devices tab's order. Since 0.28.7, a device opened from another page whose list is gone, as after a reload, has nowhere to step: Previous and Next are grey, so Next never leaves the list the page was opened from (before, it fell back to the Devices tab and walked into other integrations' devices).
 
 *Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_device_actions.js`.
 
@@ -114,14 +114,17 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 
 ### DASH-12 Finding a Device
 
-**The Devices tab has a name search, an Area filter with "Not Set", and a Label filter beside the type filter.**
-- **An area in a row:** in both lists, a set area is a link. Pressing it narrows the list to that area, the same as choosing it in the Area filter. AREA shows in Advanced only.
-- **The Excluded list:** a link, "Show the N excluded devices", opens it. It lists the devices on the exclusion lists, read live from Home Assistant's registry and the settings, with nothing stored.
-- **Each row says:** whether the device was excluded by the person or with its integration, and whether its history is kept until midnight or already deleted. Its AREA reads "Not Set" when none is set ([DASH-04](#dash-04-what-simple-shows)).
-- **Its columns:** the list has its own widths, so "Cancel the exclusion" or "Open its integration page" stays on one line.
-- **Ways back:** a device excluded on its own has "Cancel the exclusion", which the brief records as "from the Devices tab". One excluded with its integration links to that integration's page. One whose history has gone opens Home Assistant's own device page.
+**The Devices tab shows every device Device Sentinel found, and opens on the ones it watches.**
+- **Its chips (since 0.28.8):** Watched, the default, With a problem, Muted, Excluded and Set aside, each with its count. Excluded shows in Simple and Advanced; Set aside in Advanced only. Before 0.28.8, a link, "Show the N excluded devices", opened the excluded devices, and the devices set aside were on a Classification tab of their own.
+- **Its finders:** a name search, an Area filter with "Not Set", a Label filter in Advanced, and the Type filter ([DEV-12](Rulebook__04_DEV_Device_Identity.md)). Each narrows whichever chip is chosen, and each chip keeps its own Area, Label and Type choices, so going back to a chip finds them as they were. A network's filter ([DASH-17](#dash-17-the-networks-tab)) narrows only the watched devices' chips, since only a watched device is on a network.
+- **An area in a row:** on each chip, a set area is a link. Pressing it narrows the list to that area, the same as choosing it in the Area filter. AREA shows in Advanced only.
+- **STANDING:** "Watched" or "Muted: " and what mutes it. A hub reads "a hub" and a device judged by its hub "judged by its hub" ([STACK-10](Rulebook__08_STACK_Stacks.md)), and a device whose name other watched devices share reads how many carry it, such as "Watched, 2 copies", the COPIES of classification.md ([DEV-01](Rulebook__04_DEV_Device_Identity.md)). After a mute's own list, these start a sentence of their own. A device set aside reads "Set aside: " and its reason, in the words of classification.md, with the meaning of each reason under the table. RHYTHM and BATTERY are no longer columns; they are read on the device page and on Battery Trends.
+- **Excluded:** it lists the devices on the exclusion lists, read live from Home Assistant's registry and the settings, with nothing stored. A device excluded on its own reads whether its history is kept until midnight or already deleted; one excluded with its integration reads "Excluded with its integration". Its TYPE is the type Device Sentinel knows for it, or "Not Watched". Its AREA reads "Not Set" when none is set ([DASH-04](#dash-04-what-simple-shows)). LAST REPORT and WINDOW, blank on the Excluded and Set aside chips, do not sort there.
+- **Ways back:** a device excluded on its own has "Cancel the exclusion", which the brief records as "from the Devices tab". One excluded with its integration links to that integration's page.
+- **A name not watched (since 0.28.8):** wherever a device is named, on the Devices tab's chips, an integration's page, MQTT's Also on the Broker, a network page's hardware and the Daily Brief's tables, a device Device Sentinel watches or keeps a record for opens its page here; any other device still in Home Assistant opens Home Assistant's own device page; one removed from Home Assistant is its name in plain words. Previous and Next step only through the ones with a page here.
+- **The summary:** "Watching N of M devices", how many have a problem and are muted, then how many are excluded and set aside, so M counts every device found. Simple, with no Set aside chip, leaves the devices set aside out of M and the sentence.
 
-*Proof:* [`tools/panel_checks/check_device_finders.js`](../tools/panel_checks/check_device_finders.js), `check_not_set.js`.
+*Proof:* [`tools/panel_checks/check_device_finders.js`](../tools/panel_checks/check_device_finders.js), `check_not_set.js`, `check_classification_sources.js`, `check_hub_pages.js`, `check_type_filters.js`, `check_tab_addresses.js`, `check_integrations_tab.js`, `check_device_links.js`.
 
 ### DASH-13 Devices Behind the Broker
 
@@ -146,13 +149,13 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-16 Names and Counts on the Tabs
 
 **The status band names the Wi-Fi tile "Wi-Fi", whatever the sensor is called. No page draws a part left out as the word "null".**
-- **Classification tab:** it names each integration as Home Assistant shows it, not by its id, and a set-aside reason names the integration the same way.
+- **Devices tab:** it names each integration as Home Assistant shows it, not by its id, and a set-aside reason names the integration the same way.
 - **Integrations tab summary:** it opens with the All chip's total. Its chips are All, Recommended, Trouble, Excluded and Muted.
 - **Integrations tab columns in Simple:** three. INTEGRATION has the name, its device count in brackets and its id, and under them what Device Sentinel recommends and, for one with nothing to watch, what it is. EXCLUDE AND MUTE has the five buttons ([MUTE-03](Rulebook__03_MUTE_Muting_and_Exclusion.md#mute-03-excluding-one-device-or-one-integration)). TROUBLE has what is wrong on its devices at present, worst first, after "Down since" when the integration is down.
 - **Integrations tab in Advanced:** it adds SET ASIDE and OUTAGES, 14 DAYS before TROUBLE, which stays last.
 - **The five buttons:** each keeps one width on one line.
 - **An integration's page:** it counts its devices muted from everything.
-- **Devices tab in Advanced:** it shows DEVICE, TYPE, AREA, INTEGRATION, STANDING, PROBLEM, BATTERY (the level as a percentage; a raw value is left blank), LAST REPORT, RHYTHM and WINDOW.
+- **Devices tab in Advanced:** it shows DEVICE, TYPE, AREA, INTEGRATION, STANDING, PROBLEM, LAST REPORT and WINDOW. Before 0.28.8 it also had BATTERY and RHYTHM.
 - **Still learning:** on the Devices tab, a device whose wait is still being learned reads "learning" under WINDOW, never a blank.
 - **Never judged for freezing:** such a device reads "Judged by its hub, <name>", the name opening the hub's page, or "Judged by its connection", in place of a window. This shows on the Devices tab and on the device page.
 

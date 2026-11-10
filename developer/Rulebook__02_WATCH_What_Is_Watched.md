@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: What Is Watched (WATCH)
 
-*Version: rulebook, 28 October 2026, on Device Sentinel 0.27.13. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers which devices Device Sentinel watches and what it reads them through. It also covers which devices it sets aside and why, what happens to a device that is removed or taken back, and the quiet first minutes after a start. Excluding and muting, the two choices a person makes, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). What is judged once a device is watched is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. The stack readers are under [STACK](Rulebook__08_STACK_Stacks.md).
 
@@ -24,7 +24,7 @@ This section covers which devices Device Sentinel watches and what it reads them
 ### WATCH-03 Set Aside
 
 **A device that is set aside is never judged or reported. It keeps its record unless it was excluded.**
-- **The reason shown:** the Classification tab gives one reason, the first that fits in this order: excluded (see [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md)), service, disabled, duplicate coordinator, clone, nothing switched on that can report, no entities.
+- **The reason shown:** the Devices tab's Set aside chip and classification.md give one reason, the first that fits in this order: excluded (see [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md)), service, disabled, duplicate coordinator, clone, nothing switched on that can report, no entities.
 - **Service:** a device Home Assistant marks as one, such as an add-on.
 - **Disabled:** a device disabled by a person, by its integration or with its config entry.
 - **No entities:** the device has no entities of its own that could report (firmware notices and buttons do not count, switched on or off). So it is never judged never reported.
@@ -56,7 +56,7 @@ This section covers which devices Device Sentinel watches and what it reads them
 - **Which one is watched:** one is chosen in this order: switched-on entities of its own, no device tracker of its own, an address recorded on the device itself (a copy joined only through its identifier ranks below it), a battery reading, the most direct connection, the most entities, the lowest id.
 - **The others:** they are set aside as clones and keep their records. They come back with their history if the group parts.
 - **No entities:** a device with no entities is never kept or set aside as a clone.
-- **On screen:** the watched device's page names each clone in a Same hardware row, with its integration named as the rest of the page names it ("UniFi Network"). The device page and the Classification tab call such a device a clone.
+- **On screen:** the watched device's page names each clone in a Same hardware row, with its integration named as the rest of the page names it ("UniFi Network"). The device page, the Devices tab and classification.md call such a device a clone.
 
 *Proof:* [`test_hardware_copies.py`](../tests/test_hardware_copies.py), `check_same_hardware.js`.
 
@@ -81,7 +81,7 @@ This section covers which devices Device Sentinel watches and what it reads them
 
 ### WATCH-09 Lists Show Watched Devices Only
 
-**Each list, report, sensor and count that walks devices reads only the watched devices. So a device set aside or excluded never reaches the Problem List, the brief or a trend. The exceptions are the Classification tab and the Excluded list, which exist to show them.**
+**Each list, report, sensor and count that walks devices reads only the watched devices. So a device set aside or excluded never reaches the Problem List, the brief or a trend. The exceptions are the Devices tab's Excluded and Set aside chips and classification.md, which exist to show them.**
 
 *Proof:* [`test_ignored_integrations.py`](../tests/test_ignored_integrations.py), [`test_removed_hold.py`](../tests/test_removed_hold.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
 
