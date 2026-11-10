@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.8 (2026-11-09)
+// File: panel.js, Version: 0.28.9 (2026-11-10)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -24,7 +24,6 @@
 
 const TABS = [
   "Daily Brief",
-  "Problem List",
   "Battery Trends",
   "Signal Trends",
   "Integrations",
@@ -38,7 +37,11 @@ const TABS = [
 // The tabs Simple leaves off the row (rule DASH-04).
 const SIMPLE_HIDDEN_TABS = ["Signal Trends"];
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
-const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
+// The addresses of tabs folded into others, so a bookmark or a back link
+// still lands: Classification into Devices, the Problem List into the
+// Daily Brief (rules DASH-02, DASH-12).
+const OLD_SLUGS = { "classification": "Devices", "problem-list": "Daily Brief" };
+const TAB_BY_SLUG = { ...Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name])), ...OLD_SLUGS };
 // A type, an area or a battery nobody has set, the same words on
 // every tab, and the Type filters' choice for it (rules DEV-10, DASH-04).
 const NOT_SET = "Not Set";
@@ -79,7 +82,7 @@ const ACK_HOVER = "Acknowledged. Press to take it back.";
 // Where a "Not Set" was set from, by tab, so the brief says so
 // (rule BRIEF-07).
 const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab",
-  "Recommendations": "recommendations", "Problem List": "problem_list" };
+  "Recommendations": "recommendations" };
 // A battery level as reported, the same on every surface: "15.5%",
 // "16%", one decimal at most, rounded half up on the number as
 // written, as battery_level.py does, so the brief, the device page and
@@ -111,7 +114,7 @@ const modelPaceWords = (pace) => {
   const said = levelNumber(pace.pace_low) === "0" && range !== high ? `up to ${high}` : range;
   return `Others of this model lose ${said} ${said === "1" || said === "up to 1" ? "point" : "points"} a week.`;
 };
-const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Integrations", "Networks", "Devices", "Recommendations"]);
+const BUILT = new Set(["Daily Brief", "Battery Trends", "Signal Trends", "Integrations", "Networks", "Devices", "Recommendations"]);
 const PROBLEM_FILTERS = [
   ["all", "All"],
   ["open", "Open"],
@@ -414,9 +417,7 @@ function rootTab(from) {
 const COLUMN_SHARE = {
   "DEVICE": 3, "MAKER AND MODEL": 3, "WHAT HAPPENED": 3,
   "MUTED": 2.5, "WHICH ONE": 2.5, "WHAT": 2.5,
-  "PROBLEM": 2.2, "SET ASIDE": 2.2, "DEVICES THAT WENT DOWN": 2,
-  // A mute's sources, a set-aside reason or Cancel the exclusion.
-  "STANDING": 2.6,
+  "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
   "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "GAP STARTED": 1.4,
   // Room for "Door/Window Sensor" and "Judged by its connection" on one
   // line.
@@ -432,16 +433,13 @@ const BATTERY_SHARE = {
   "CELL": 1.2, "MODEL, A WEEK": 1.1,
 };
 const BATTERY_BASE = 13.4;
-// The Devices tab's own widths: ten columns in Advanced, each word whole
-// (rule DASH-04).
+// The Devices tab's own widths: eight columns in Advanced, each word
+// whole, and STANDING wide enough for "Excluded by its integration." on
+// one line on a wide screen (rules DASH-04, DASH-12).
 const DEVICES_SHARE = {
-  "DEVICE": 2.6, "TYPE": 2.4, "AREA": 1.6, "INTEGRATION": 1.6, "STANDING": 1.6, "PROBLEM": 1.6,
-  "BATTERY": 1.15, "LAST REPORT": 1.15, "RHYTHM": 1.1, "WINDOW": 1.5,
+  "DEVICE": 2.6, "TYPE": 2.0, "AREA": 1.5, "INTEGRATION": 1.6, "STANDING": 3.2, "PROBLEM": 1.6,
+  "LAST REPORT": 1.15, "WINDOW": 1.4,
 };
-// The Devices tab's Excluded list: the last column, which has no
-// heading, holds "Cancel the exclusion" or "Open its integration page"
-// on one line (rule DASH-12).
-const EXCLUDED_SHARE = { "DEVICE": 2.6, "INTEGRATION": 1.6, "AREA": 1.4, "EXCLUDED": 1.5, "HISTORY": 1.5, "": 2.2 };
 // The Integrations tab: the five buttons get the room they need, so
 // none breaks inside a word (rule DASH-16).
 const INTEGRATION_SHARE = { "INTEGRATION": 3, "EXCLUDE AND MUTE": 4.6, "SET ASIDE": 0.9, "OUTAGES, 14 DAYS": 1.1, "TROUBLE": 1.6 };
@@ -459,8 +457,7 @@ function pinTable(table) {
   const base = Number(table.dataset.base) || 0;
   const own = table.dataset.shares === "battery" ? BATTERY_SHARE
     : table.dataset.shares === "integrations" ? INTEGRATION_SHARE
-      : table.dataset.shares === "devices" ? DEVICES_SHARE
-        : table.dataset.shares === "excluded" ? EXCLUDED_SHARE : null;
+      : table.dataset.shares === "devices" ? DEVICES_SHARE : null;
   if (own && heads) shares = heads.map((head) => own[head] ?? 1);
   else if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
   else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
@@ -869,23 +866,28 @@ class DeviceSentinelPanel extends HTMLElement {
     // Daily Brief.
     const from = next ? new URLSearchParams(window.location.search).get("from") || "" : "";
     const slug = path.replace(/^\/+|\/+$/g, "");
-    // Classification's old address opens the Devices tab on the devices
-    // it listed as set aside (rule DASH-12), so a bookmark still works.
-    if (!next && slug === "classification") {
-      this._chooseDeviceChip("aside");
-      history.replaceState(null, "", this._tabPath("Devices"));
+    // A folded tab's old address opens the tab it joined, so a bookmark
+    // still works: Classification's on the devices it listed as set aside
+    // (rule DASH-12), the Problem List's on the Daily Brief (rule DASH-02).
+    if (!next && OLD_SLUGS[slug]) {
+      if (slug === "classification") this._chooseDeviceChip("aside");
+      history.replaceState(null, "", this._tabPath(OLD_SLUGS[slug]));
       // Home Assistant's router learns the new address, so it never
       // hands this page the old one again.
       window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
     }
     const tab = next
       ? rootTab(from) || ({ device: "Devices", network: "Networks" }[next.kind] || "Integrations")
-      : slug === "classification" ? "Devices" : TAB_BY_SLUG[slug] || "Daily Brief";
+      : TAB_BY_SLUG[slug] || "Daily Brief";
     const changed = JSON.stringify(next) !== JSON.stringify(this._view)
       || tab !== this._tab || from !== this._from;
     // The Send to Battery Notes offer belongs to the save that made it:
     // leaving the tab ends it (rule DEV-09).
     if (changed) this._recReport = null;
+    // Coming to the Daily Brief from another tab opens it on today, so
+    // the Problem List is the one to act on; Back, Forward, Refresh and a
+    // page opened from the brief and left keep the day shown (rule DASH-02).
+    const toToday = !next && tab === "Daily Brief" && this._tab !== "Daily Brief" && Boolean(this._briefDay);
     this._view = next;
     this._tab = tab;
     this._from = from;
@@ -893,6 +895,7 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._started && changed) {
       this._paintTabs();
       this._openView();
+      if (toToday) this._briefGo(null);
     }
   }
 
@@ -1294,6 +1297,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._refreshButton.disabled = true;
     this._areaChoices = null;
     try {
+      const askedDay = this._briefDay;
       const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
@@ -1304,11 +1308,13 @@ class DeviceSentinelPanel extends HTMLElement {
         // every other tab still draws (rule DASH-17).
         this._call({ type: "device_sentinel/networks" }).catch(() => ({ rows: [], failed: true })),
         this._call({ type: "device_sentinel/devices" }),
-        this._call({ type: "device_sentinel/brief", ...(this._briefDay ? { day: this._briefDay } : {}) }),
+        this._call({ type: "device_sentinel/brief", ...(askedDay ? { day: askedDay } : {}) }),
         this._call({ type: "device_sentinel/battery_trends" }),
         this._call({ type: "device_sentinel/signal_trends" }),
       ]);
-      this._snapshot = { status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal, at: new Date() };
+      // A day stepped to while this was asked keeps its own brief.
+      const shownBrief = askedDay === this._briefDay ? brief : (this._snapshot && this._snapshot.brief) || brief;
+      this._snapshot = { status, classification, problems, recommendations, integrations, networks, devices, brief: shownBrief, battery, signal, at: new Date() };
       // An open "Change date" is dropped once its device waits on no
       // detection, answered here or anywhere else.
       if (this._batteryDayOpen) {
@@ -1475,7 +1481,12 @@ class DeviceSentinelPanel extends HTMLElement {
         onclick: () => {
           // The address moves, and the route that follows paints the
           // tab, the same way a link or the back button does.
-          if (!this._view && name === this._tab) return;
+          // The Daily Brief pressed while it shows a past day opens today,
+          // with the list to act on (rule DASH-02).
+          if (!this._view && name === this._tab) {
+            if (name === "Daily Brief" && this._briefDay) this._briefGo(null);
+            return;
+          }
           this._navigate(this._tabPath(name));
         },
       }, name === "Recommendations" && this._snapshot && this._activeRecs()
@@ -1503,7 +1514,6 @@ class DeviceSentinelPanel extends HTMLElement {
     else if (this._tab === "Battery Trends") this._paintBatteryTrends();
     else if (this._tab === "Signal Trends") this._paintSignalTrends();
     else if (this._tab === "Integrations") this._paintIntegrations();
-    else if (this._tab === "Problem List") this._paintProblems();
     else this._paintRecommendations();
   }
 
@@ -1515,13 +1525,17 @@ class DeviceSentinelPanel extends HTMLElement {
       "aria-sort": direction === 1 ? "ascending" : direction === -1 ? "descending" : "none",
       onclick: () => {
         this._problemSort = { key, dir: direction === 1 ? -1 : 1 };
-        this._paintProblems();
+        this._paintBrief();
       },
     }, label);
     return button;
   }
 
-  _paintProblems() {
+  // The Daily Brief's Problem List section for today: every problem
+  // standing now, worst first, with its filters, sorts, ticks and mutes
+  // (rules DASH-02, LIST). Its rows are a list of their own for a device
+  // page's Previous and Next, as each of the brief's tables is.
+  _problemParts() {
     const all = this._snapshot.problems.rows;
     const at = this._snapshot.at.getTime();
     const acked = all.filter((row) => row.acknowledged).length;
@@ -1541,12 +1555,7 @@ class DeviceSentinelPanel extends HTMLElement {
       }[sort.key];
       rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
     }
-    // The order a device page's Previous and Next follow.
-    this._keepList(TAB_SLUG["Problem List"], [...new Set(rows.map((row) => row.device_id))]);
-    if (!all.length) {
-      this._pane.replaceChildren(el("p", {}, "Nothing needs attention."));
-      return;
-    }
+    if (!all.length) return [el("p", { class: "muted", style: "margin:0" }, "Nothing needs attention.")];
     const summary = el("p", { style: "margin:0" },
       `${all.length} ${all.length === 1 ? "problem" : "problems"}, worst first. ${acked} acknowledged.`);
     const chips = el("div", { class: "chips" },
@@ -1554,14 +1563,14 @@ class DeviceSentinelPanel extends HTMLElement {
         class: "chip", type: "button", "aria-pressed": String(key === this._problemFilter),
         onclick: () => {
           this._problemFilter = key;
-          this._paintProblems();
+          this._paintBrief();
         },
       }, `${label} ${key === "all" ? all.length : key === "open" ? all.length - acked : acked}`)),
       sort ? el("button", {
         class: "chip", type: "button",
         onclick: () => {
           this._problemSort = null;
-          this._paintProblems();
+          this._paintBrief();
         },
       }, "Worst first") : null);
     const ackHead = this._sortHeader("", "acknowledged");
@@ -1594,10 +1603,10 @@ class DeviceSentinelPanel extends HTMLElement {
         // Brief does (rule LIST-10).
         el("td", {}, row.since ? `${row.never_reported ? "discovered " : ""}${moment(row.since)}` : ""),
         el("td", {}, row.since ? span((at - new Date(row.since).getTime()) / 1000) : "")))));
-    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table),
+    return [summary, chips, el("div", { class: "scroll" }, table),
       el("p", { class: "muted", style: "margin:0;font-size:13px" },
         "Tick a problem to acknowledge it: it stays listed, but nothing reminds you of it again. "
-        + "Its recovery is still reported, and the same tick shows on the to-do list."));
+        + "Its recovery is still reported, and the same tick shows on the to-do list.")];
   }
 
   // A mute beside a Problem List item: the item leaves the list
@@ -2026,13 +2035,17 @@ class DeviceSentinelPanel extends HTMLElement {
   // lights the three single mutes and holds them; an excluded
   // integration's mutes rest. Unavailable is never muted by
   // integration (rule MUTE-06).
-  _integrationButtons(row) {
+  _integrationButtons(row, source = "integrations_tab") {
     const act = async (message) => {
       this._integrationNote = null;
       try {
         await this._call(message);
       } catch (err) {
-        this._integrationNote = { domain: "*", text: `${row.name}: ${err.message || "Home Assistant refused the change."}` };
+        // On the tab, the refusal names the integration above the table;
+        // on its own page, it sits under its buttons.
+        this._integrationNote = source === "integration_page"
+          ? { domain: row.domain, text: err.message || "Home Assistant refused the change." }
+          : { domain: "*", text: `${row.name}: ${err.message || "Home Assistant refused the change."}` };
       }
       await this._refresh();
     };
@@ -2040,7 +2053,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const exclude = el("button", {
       class: row.excluded ? "chip on" : "chip", type: "button", "aria-pressed": String(Boolean(row.excluded)),
       title: row.excluded ? "History deleted at midnight. Press again before then to keep it." : "",
-      onclick: () => act({ type: "device_sentinel/integration_exclude", domain: row.domain, on: !row.excluded, source: "integrations_tab" }),
+      onclick: () => act({ type: "device_sentinel/integration_exclude", domain: row.domain, on: !row.excluded, source }),
     }, row.excluded ? "✓ Excluded" : "Exclude");
     const mute = (kind, words) => {
       const covered = kind !== "everything" && mutes.everything;
@@ -2051,7 +2064,7 @@ class DeviceSentinelPanel extends HTMLElement {
         ...(resting ? { "aria-disabled": "true" } : {}),
         onclick: () => {
           if (resting) return;
-          act({ type: "device_sentinel/integration_mute", domain: row.domain, kind, on: !mutes[kind] });
+          act({ type: "device_sentinel/integration_mute", domain: row.domain, kind, on: !mutes[kind], source });
         },
       }, lit ? `✓ ${words}` : words);
     };
@@ -2140,19 +2153,15 @@ class DeviceSentinelPanel extends HTMLElement {
         this._link("Device Sentinel settings", SETTINGS_PATH)));
     // Exclude the integration, or take it back, here as well as in
     // Settings, in Simple and Advanced alike (rule MUTE-03).
-    const exclusion = el("div", { class: "actrow" },
-      el("button", { class: "chip", type: "button",
-        onclick: async () => {
-          this._integrationNote = null;
-          try {
-            await this._call({ type: "device_sentinel/integration_exclude", domain: page.domain, on: !page.excluded });
-          } catch (err) {
-            this._integrationNote = { domain: page.domain, text: err.message || "Home Assistant refused the change." };
-          }
-          await this._refresh();
-        } }, page.excluded ? "Cancel the exclusion" : "Exclude this integration"),
+    // The Integrations tab's five buttons for this integration, the same
+    // look and the same rules: lit when on, and a second press undoes
+    // each (rules MUTE-03, DASH-16). Lit as the page read them, which is
+    // newer than the tab's list.
+    const tabRow = { domain: page.domain, name: page.name, excluded: page.excluded, mutes: page.mutes || {} };
+    const exclusion = el("div", { style: "display:flex;flex-direction:column;gap:6px" },
+      this._integrationButtons(tabRow, "integration_page"),
       page.excluded
-        ? el("span", { class: "muted" }, "Device Sentinel does not watch its devices, and deletes their history at the midnight after it is excluded.")
+        ? el("span", { class: "muted" }, "Device Sentinel does not watch its devices, and deletes their history at the midnight after it is excluded. Press Excluded again before then to keep it.")
         : null,
       this._integrationNote && this._integrationNote.domain === page.domain
         ? el("span", { class: "actnote refused" }, this._integrationNote.text) : null);
@@ -2648,17 +2657,27 @@ class DeviceSentinelPanel extends HTMLElement {
     this._briefDay = day;
     try {
       const brief = await this._call({ type: "device_sentinel/brief", ...(day ? { day } : {}) });
+      // An older step's reply never overwrites the day now chosen.
+      if (this._briefDay !== day) return;
       this._snapshot.brief = brief;
     } catch (err) {
-      this._snapshot.brief = { error: "That day is no longer kept." };
+      if (this._briefDay !== day) return;
+      this._snapshot.brief = { error: day ? "That day is no longer kept." : "Today's brief could not be read. Press Refresh to try again." };
     }
+    // A reply that comes after another tab, a page or another day was
+    // chosen is not drawn over it.
+    if (this._briefDay !== day || this._view || this._tab !== "Daily Brief") return;
     this._paintBrief();
   }
 
   _paintBrief() {
     const brief = this._snapshot.brief;
     if (!brief || brief.error) {
-      this._pane.replaceChildren(el("p", {}, (brief && brief.error) || "Loading."));
+      // Today's Problem List is read on its own, so it still shows when
+      // the rest of today's brief could not be read.
+      this._pane.replaceChildren(el("p", {}, (brief && brief.error) || "Loading."),
+        this._briefDay ? el("div", { class: "chips" }, el("button", { class: "chip", type: "button", onclick: () => this._briefGo(null) }, "Today")) : null,
+        ...(!this._briefDay && this._snapshot.problems ? [el("h3", { class: "section" }, "Problem List"), ...this._problemParts()] : []));
       return;
     }
     const at = this._snapshot.at.getTime();
@@ -2759,10 +2778,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const confirm = this._recsInView().cards.find((card) => card.kind === "battery_confirm");
     const confirmLine = confirm && confirm.brief ? el("p", { class: "recline", style: "margin:0" }, confirm.brief) : null;
     this._pane.replaceChildren(...[recLine, confirmLine, nav,
-      el("h3", { class: "section" }, "Now"),
-      nowLine ? el("p", { style: "margin:0" }, nowLine) : null, nowTable,
+      // Today's problems are the Problem List itself, to act on; a past
+      // day's are the ones that stood that night, to read (rule DASH-02).
+      el("h3", { class: "section" }, "Problem List"),
+      ...(brief.is_today ? this._problemParts() : [nowLine ? el("p", { style: "margin:0" }, nowLine) : null, nowTable]),
       el("h3", { class: "section" }, "Repeat Offenders"), ...repeat,
-      el("h3", { class: "section" }, "Last 24 Hours"),
+      el("h3", { class: "section" }, "What Happened"),
       el("p", { style: "margin:0" }, eventsLine), eventsTable].filter((part) => part));
   }
 
@@ -3514,19 +3535,14 @@ class DeviceSentinelPanel extends HTMLElement {
     // STANDING: watched, muted, excluded with its way back, or set aside
     // with its reason; and how many watched devices share its name
     // (rule DASH-12).
-    const takeBack = (row) => el("button", { class: "chip", type: "button", style: "white-space:nowrap",
-      onclick: async () => {
-        try {
-          await this._call({ type: "device_sentinel/device_exclude", device_id: row.device_id, on: false, source: "devices_tab" });
-        } catch (err) { /* the refresh shows the list as it stands */ }
-        await this._refresh();
-      } }, "Cancel the exclusion");
     const standing = (row) => {
       if (this._deviceFilter === "excluded") {
+        // Information only: the way back is the integration's page or
+        // the device's own (rule DASH-12).
         if (row.how === "integration") {
-          return ["Excluded with its integration. ", this._link("Open its integration page", this._integrationPath(row.integration))];
+          return ["Excluded by its ", this._link("integration", this._integrationPath(row.integration)), "."];
         }
-        return [`Excluded${row.page ? ", history kept until midnight" : ", history deleted"}. `, takeBack(row)];
+        return [`Excluded by you, ${row.page ? "history kept until midnight" : "history deleted"}.`];
       }
       if (this._deviceFilter === "aside") return [`Set aside: ${row.set_aside}`];
       const more = [judged[row.device_id] === "hub" ? "a hub" : judged[row.device_id] || "",
@@ -3579,7 +3595,8 @@ class DeviceSentinelPanel extends HTMLElement {
       el("p", { style: "margin:0 0 4px" }, "Set aside, by reason:"),
       ...meanings.map(([reason, meaning]) => el("p", { style: "margin:0" }, el("strong", {}, reason), `: ${meaning}`)))
       : this._deviceFilter === "excluded" ? el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" },
-        "Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded.") : null;
+        "Device Sentinel does not watch an excluded device, and deletes its history at the midnight after it is excluded. "
+        + "To take one back, open its integration's page, or for a device excluded on its own, its page or Exclusions and Muting in Device Sentinel's settings.") : null;
     this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
       this._typeShowing(this._deviceType, pickType), watching ? this._networkShowing() : null,
       rows.length || !listed.length ? el("div", { class: "scroll" }, table)
