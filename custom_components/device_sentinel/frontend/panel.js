@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.9 (2026-11-10)
+// File: panel.js, Version: 0.28.10 (2026-11-10)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -876,6 +876,18 @@ class DeviceSentinelPanel extends HTMLElement {
       // hands this page the old one again.
       window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
     }
+    // The notification card's link asks for today once: the marker is
+    // read here and taken off the address, so the link always opens
+    // today's Problem List, and Home Assistant handing the page the same
+    // address again keeps the day shown (rules NOTE-11, DASH-02).
+    const params = new URLSearchParams(window.location.search);
+    const askedToday = !next && params.get("open") === "today";
+    if (askedToday) {
+      params.delete("open");
+      const rest = params.toString();
+      history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
+    }
     const tab = next
       ? rootTab(from) || ({ device: "Devices", network: "Networks" }[next.kind] || "Integrations")
       : TAB_BY_SLUG[slug] || "Daily Brief";
@@ -887,7 +899,8 @@ class DeviceSentinelPanel extends HTMLElement {
     // Coming to the Daily Brief from another tab opens it on today, so
     // the Problem List is the one to act on; Back, Forward, Refresh and a
     // page opened from the brief and left keep the day shown (rule DASH-02).
-    const toToday = !next && tab === "Daily Brief" && this._tab !== "Daily Brief" && Boolean(this._briefDay);
+    const toToday = !next && tab === "Daily Brief" && Boolean(this._briefDay)
+      && (this._tab !== "Daily Brief" || askedToday);
     this._view = next;
     this._tab = tab;
     this._from = from;
@@ -896,6 +909,8 @@ class DeviceSentinelPanel extends HTMLElement {
       this._paintTabs();
       this._openView();
       if (toToday) this._briefGo(null);
+    } else if (this._started && toToday) {
+      this._briefGo(null);
     }
   }
 
@@ -1817,6 +1832,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", { class: "ackhold" }, card.kind === "battery_confirm" ? null
           : this._ackBox(row.acknowledged, { kind: card.kind, device_id: row.device_id })));
     });
+    if (card.grouped) return this._recModelCard(card, open, rows, nameLink, refresh);
     return el("article", { class: "rec", "data-kind": card.kind },
       // The rows not yet ticked, as the tab and the button count them
       // (rule REC-08); no number once every row is ticked.
@@ -1825,6 +1841,82 @@ class DeviceSentinelPanel extends HTMLElement {
       this._recDetails(card.kind, open,
         el("summary", {}, `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
         el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...rows)))));
+  }
+
+  // A card whose answer covers a model, one row per model (rules DEV-06,
+  // REC-04): the maker and model, how many devices, one chooser and one
+  // tick for them all, and the devices listed when the row is opened. A
+  // device with no model, or one that stands for none, keeps its own
+  // row, drawn as on any card.
+  _recModelCard(card, open, deviceRows, nameLink, refresh) {
+    const groups = [];
+    const byKey = new Map();
+    card.devices.forEach((row, index) => {
+      if (!row.model_key) { groups.push({ single: deviceRows[index], rows: [row] }); return; }
+      let group = byKey.get(row.model_key);
+      if (!group) { group = { key: row.model_key, model: row.model, rows: [], index }; byKey.set(row.model_key, group); groups.push(group); }
+      group.rows.push(row);
+      group.single = group.rows.length === 1 ? deviceRows[index] : null;
+    });
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const drawn = groups.map((group) => {
+      if (group.single) return group.single;
+      const first = group.rows[0];
+      const note = el("span", { class: "small" }, "");
+      const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
+      let action = null;
+      if (card.kind === "power") action = this._recPowerPicker(first.device_id, refresh, fail, group.model);
+      if (card.kind === "type") action = this._recTypePicker(first.device_id, refresh, fail);
+      if (card.kind === "mixed_types") {
+        const counts = {};
+        for (const row of group.rows) counts[row.type] = (counts[row.type] || 0) + 1;
+        const split = Object.keys(counts).sort().map((type) => `${counts[type]} ${type}`).join(", ");
+        action = el("span", { class: "actcol" }, el("span", { class: "small" }, split),
+          this._recTypePicker(first.device_id, refresh, fail, "recommendations", true));
+      }
+      const acked = group.rows.every((row) => row.acknowledged);
+      const list = el("details", {},
+        el("summary", {}, `${group.model}, ${plural(group.rows.length, "device", "devices")}`),
+        el("ul", { class: "modeldevices", style: "margin:4px 0 0;padding-left:18px" },
+          ...group.rows.map((row) => el("li", {}, nameLink(row),
+            card.kind === "mixed_types" ? el("span", { class: "small" }, `, ${row.type}`) : null,
+            row.area ? el("span", { class: "small muted" }, `, ${row.area}`) : null))));
+      return el("tr", acked ? { class: "acked" } : {},
+        el("td", {}, list),
+        el("td", { class: "small" }, ""),
+        el("td", {}, el("div", { class: "actrow" }, action, note)),
+        el("td", { class: "ackhold" }, this._ackGroupBox(acked, card.kind, group.rows.map((row) => row.device_id))));
+    });
+    const left = card.devices.filter((row) => !row.acknowledged);
+    const models = new Set(left.filter((row) => row.model_key).map((row) => row.model_key)).size;
+    const all = new Set(card.devices.filter((row) => row.model_key).map((row) => row.model_key)).size;
+    // The models to answer and the devices they cover (rule REC-08).
+    const counted = left.length
+      ? ` (${models ? `${plural(models, "model", "models")}, ` : ""}${plural(left.length, "device", "devices")})` : "";
+    return el("article", { class: "rec", "data-kind": card.kind },
+      el("h3", {}, `${card.title}${counted}`),
+      el("p", {}, card.body),
+      this._recDetails(card.kind, open,
+        el("summary", {}, `Show the ${all ? `${plural(all, "model", "models")} and ` : ""}${plural(card.devices.length, "device", "devices")}`),
+        el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...drawn)))));
+  }
+
+  // One tick for a model's row: each of its devices ticked or unticked
+  // together (rule REC-07).
+  _ackGroupBox(on, kind, ids) {
+    const box = el("input", { type: "checkbox", "aria-label": "Acknowledged", ...(on ? { checked: "" } : {}) });
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try {
+        for (const id of ids) await this._call({ type: "device_sentinel/recommendation_ack", on: box.checked, kind, device_id: id });
+        this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+      } catch (err) {
+        box.checked = !box.checked;
+      }
+      this._paintActiveRecs();
+      if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+    });
+    return el("label", { class: "ack small", ...(on ? { title: ACK_HOVER } : {}) }, box, " Acknowledged");
   }
 
   // A card's device list, remembered open or closed as the person
@@ -1879,7 +1971,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The Type choices in a list row, as the device page's
   // pencil offers them; Save sets the whole model, as there.
-  _recTypePicker(deviceId, refresh, fail, source = "recommendations") {
+  _recTypePicker(deviceId, refresh, fail, source = "recommendations", wholeModel = false) {
     const kinds = this._snapshot.recommendations.types || { choices: [], other: "Other" };
     const select = el("select", { class: "actinput", "aria-label": "What this device is" },
       el("option", { value: "" }, "Choose…"), ...kinds.choices.map((c) => el("option", { value: c }, c)));
@@ -1890,6 +1982,8 @@ class DeviceSentinelPanel extends HTMLElement {
       // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
       const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value, source };
       if (select.value === kinds.other) message.other = other.value;
+      // A model's row sets the whole model, its devices' own answers with it (rule REC-04).
+      if (wholeModel) message.whole_model = true;
       try { await this._call(message); await refresh(); } catch (err) { fail(err); }
     } }, "Save");
     const repaint = () => {
@@ -2139,11 +2233,19 @@ class DeviceSentinelPanel extends HTMLElement {
     // Counted as the Integrations tab counts it: muted from
     // everything, not a battery or signal mute alone.
     const muted = page.devices.filter((d) => (d.muted_global === undefined ? d.muted : d.muted_global)).length;
-    const aside = page.devices.length - watched;
+    // An excluded device is counted and worded as the Devices tab has
+    // it, not as set aside (rules DASH-12, MUTE-03).
+    const isExcluded = (d) => !d.watched && /^excluded\b/.test(d.set_aside || "");
+    const excludedCount = page.devices.filter(isExcluded).length;
+    const aside = page.devices.length - watched - excludedCount;
+    const standingOf = (d) => (d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched")
+      : isExcluded(d) ? (/^excluded \(integration/.test(d.set_aside) ? "Excluded by its integration."
+        : `Excluded by you, ${d.page === false ? "history deleted" : "history kept until midnight"}.`)
+        : `Set aside: ${d.set_aside}`);
     const open = page.devices.filter((d) => d.problem && !d.acknowledged).length;
     const acked = page.devices.filter((d) => d.acknowledged).length;
     const standingLine = `${this._standingText(page)}. ${watched} watched`
-      + `${muted ? `, ${muted} of them muted` : ""}${aside ? `, ${aside} set aside` : ""}.`;
+      + `${muted ? `, ${muted} of them muted` : ""}${excludedCount ? `, ${excludedCount} excluded` : ""}${aside ? `, ${aside} set aside` : ""}.`;
     const head = el("div", { class: "pagehead" },
       el("div", {},
         el("h2", {}, page.name, " ", el("span", { class: "small" }, page.domain)),
@@ -2160,8 +2262,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const tabRow = { domain: page.domain, name: page.name, excluded: page.excluded, mutes: page.mutes || {} };
     const exclusion = el("div", { style: "display:flex;flex-direction:column;gap:6px" },
       this._integrationButtons(tabRow, "integration_page"),
+      // Keeping the history is offered only while there is some to keep:
+      // after the midnight that deleted it, the page says so (rule MUTE-03).
       page.excluded
-        ? el("span", { class: "muted" }, "Device Sentinel does not watch its devices, and deletes their history at the midnight after it is excluded. Press Excluded again before then to keep it.")
+        ? el("span", { class: "muted" }, page.history_kept === false
+          ? "Device Sentinel does not watch its devices. Their history was deleted at the midnight after it was excluded."
+          : "Device Sentinel does not watch its devices, and deletes their history at the midnight after it is excluded. Press Excluded again before then to keep it.")
         : null,
       this._integrationNote && this._integrationNote.domain === page.domain
         ? el("span", { class: "actnote refused" }, this._integrationNote.text) : null);
@@ -2192,7 +2298,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // Previous and Next pass it by (rule DASH-12).
         el("td", {}, d.page === false ? this._link(d.name, `/config/devices/device/${encodeURIComponent(d.device_id)}`)
           : this._link(d.name, this._devicePath(d.device_id))),
-        el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
+        el("td", {}, standingOf(d)),
         el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))));
     // Devices another integration owns that reach Home Assistant
     // through the broker, such as Tasmota's, on MQTT's page beneath
