@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -17,6 +17,7 @@ This section covers how Device Sentinel tells people and automations about the P
 **High-priority targets receive each live push as problems appear and clear, at any hour, Quiet Hours included. Normal-priority targets receive each live push except during Quiet Hours.**
 - **The difference:** the tiers differ in Quiet Hours, not in urgency or content.
 - **The Daily Brief:** goes to neither tier. It goes only to Send the Full Brief To (see [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md)).
+- **A typed email address (since 0.28.10):** a value holding "@" in either list is refused on Submit, with "High-Priority Targets and Normal-Priority Targets need a notify action, such as your phone's Companion app, not an email address." above the section, and nothing is saved. A notify action's name cannot hold "@", so nothing that works is refused. Each alert to an address would be lost, as the brief was ([BRIEF-11](Rulebook__13_BRIEF_Daily_Brief.md)).
 
 *Proof:* [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_settings_screen_text.py`](../tests/test_settings_screen_text.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_settings.py`](../tests/test_settings.py).
 
@@ -96,11 +97,11 @@ This section covers how Device Sentinel tells people and automations about the P
 ### NOTE-11 The Persistent Card
 
 **The persistent card shows the house's current trouble, one line each for Device, Battery and Signal, and reads "All devices reporting." when nothing is wrong.**
-- **The link:** a card that lists anything ends with a link, Open the Problem List, to the dashboard's own address, where the Problem List heads the Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)). The all-clear and the pushes carry none.
+- **The link:** a card that lists anything ends with a link, Open the Problem List, to the dashboard's own address, where the Problem List heads the Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)). Since 0.28.10 the link asks for today once (`?open=today`), so it opens today's list even when the tab is showing an earlier day; the dashboard takes the marker off the address. The all-clear and the pushes carry none.
 - **Updates:** the card is rewritten only when its words change, and is never held back by Quiet Hours.
 - **On or off:** a new install starts with it off. An install from before 0.22.5 that never saved the setting keeps it on, and a saved setting is never touched. Turning it off removes the card.
 
-*Proof:* [`test_notifications.py`](../tests/test_notifications.py), [`test_persistent_default.py`](../tests/test_persistent_default.py).
+*Proof:* [`test_notifications.py`](../tests/test_notifications.py), [`test_persistent_default.py`](../tests/test_persistent_default.py), `check_problem_list.js`.
 
 ### NOTE-12 The Bus Events
 

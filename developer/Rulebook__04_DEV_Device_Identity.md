@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -46,11 +46,12 @@ This section covers what a device is called, what kind of device it is, what pow
 
 **What powers a device comes from, in order: the answer given for that device, the answer given for its model, then the Battery Notes library shipped inside Device Sentinel. Otherwise it reads "Not known".**
 - **A model's answer:** an answer entered on one device covers each device of the same model, meaning the same manufacturer, model and model ID exactly as Home Assistant reports them. The hardware version is left out. A device with no manufacturer or no model keeps its answer to itself.
+- **A maker or model that stands for none (since 0.28.10):** "Default-Manufacturer", "Default-Model", "Unknown" and the like, compared without capitals, count as none: devices that share one are not the same hardware, so an answer on one covers only that one. An answer stored that way before belongs to the device that gave it. On a tester's house, four HomeKit accessories reported Default-Manufacturer and Default-Model. Tasmota's "Generic" counts as none, and so does a maker that names the chip, not the product: ESPHome reports a device built on a bare board as made by Espressif, with the board as its model, and on two testers' houses one board name covered a dryer sensor, a furnace monitor and a display, or a dimmer and audio boards. A device given its own project name keeps it as its model.
 - **The library:** it is read-only and never downloaded while running. An installed Battery Notes is never read, linked or depended on.
 - **No looser match:** the lookup is Battery Notes' own and nothing looser, because a match that is not certain is worse than "Not known" and a report to the library.
 - **Bad entries:** a malformed library entry is skipped and the rest kept, with one warning naming the count. A device's own fields are read as text.
 
-*Proof:* [`test_power_source.py`](../tests/test_power_source.py), [`test_fleet_answers.py`](../tests/test_fleet_answers.py).
+*Proof:* [`test_power_source.py`](../tests/test_power_source.py), [`test_fleet_answers.py`](../tests/test_fleet_answers.py), [`test_recommendation_models.py`](../tests/test_recommendation_models.py).
 
 ### DEV-07 The Power Row
 

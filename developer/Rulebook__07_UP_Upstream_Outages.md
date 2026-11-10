@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -187,23 +187,28 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 
 *Proof:* [`test_wifi_recovery.py`](../tests/test_wifi_recovery.py), [`test_wifi_recovery_fleet.py`](../tests/test_wifi_recovery_fleet.py), [`test_wifi_outage_fleet.py`](../tests/test_wifi_outage_fleet.py), [`test_wifi_row.py`](../tests/test_wifi_row.py).
 
-### UP-17 Storms
+### UP-17 Storms and Pollers
 
-**A storm is one integration's entry republishing many devices at once: 15 different devices inside 2 seconds.**
-- **The record:** each is recorded as a `storm_open` and `storm_closed` pair in the system events and as a row in a series. A storm that starts inside the startup grace is not recorded.
-- **Synchronized pollers:** an integration with ten or more storms in an hour is a synchronized poller. Its storms are still recorded and counted and its devices still learn, but it writes no event and no episode stamp. The verdict is worked out again from the last hour, so a poller that settles loses it within the hour.
+**A storm is one integration's entry republishing many devices at once: 15 different devices inside 2 seconds. An integration that updates all its devices at once is a poller, and a poller that stops updating is an outage of its own kind.**
+- **The record:** each storm is recorded as a `storm_open` and `storm_closed` pair in the system events and as a row in a series. A storm that starts inside the startup grace is not recorded. The event names stay as they are, for the automations that use them.
+- **The words (since 0.28.10):** a storm is told as what was seen, never as a cause: "Alarm.com updated 15 devices at once at 5:34 AM.", its size taken from its own end, in one sentence and one table row. Several in a day: "Tado updated its devices all at once 12 times between 1:02 AM and 4:47 AM, as many as 20 at a time." Device Sentinel cannot know whether an integration reloaded, reconnected or polled, so it never says "reloaded" or "settled".
+- **A poller, the lasting verdict (since 0.28.10):** taken at each midnight on every house, whether or not Extended Diagnostics is on. An integration is a poller when its devices are in lockstep, the measure of [STACK-14](Rulebook__08_STACK_Stacks.md#stack-14-problem-sensors-and-polling), or when its storm tally holds 48 or more storms a day on 2 of the last 7 days, which reaches a new install in 2 days. Days are counted by date, so two rows for one day count once. The verdict is stored with the day it was first and last seen, kept across a restart, and dropped after 7 days in which neither holds. Its usual longest gap is the middle of its devices' daily longest gaps when they are in lockstep; for one known by its storms, the larger of the time between storms and the middle of its devices' own longest gaps, so a poller that slows at night keeps its nights. A day removed by hand ([FRZ-25](Rulebook__05_FRZ_Freeze.md#frz-25-a-day-removed-by-hand)) is not counted in either, so removing a stall's day brings the threshold back to the poll's own rhythm.
+- **A poller, the fast path:** ten or more storms in the last hour, as before, for the first days.
+- **What a poller's storms do:** they are still recorded and counted and its devices still learn, but they write no event and no episode stamp, so they never cut a silence short and are never told.
+- **A poller stops (since 0.28.10):** its entry still loaded, and none of its watched devices heard for twice its usual longest gap, never less than 10 minutes, outside the startup grace. That is an integration outage of a third kind, beside "went down" and "failed to start": "stopped updating". It has everything an outage has: one Problem List row, "Alarm.com stopped updating: 15 devices not heard from", pushed as any outage ([UP-09](#up-09-pushing-an-outage)); the bus pair; the brief, "Alarm.com stopped updating at 12:30 AM, 15 devices." and "Alarm.com was updating again at 2:59 AM, after 2 days and 11 hours."; resuming across a restart; its devices claimed, not listed; and the gap not learned ([FRZ-12](Rulebook__05_FRZ_Freeze.md#frz-12-what-a-completed-gap-teaches)). It ends at the first device heard, with no hand-back, since a poller returns in one update, and only then: a restart's young run, or a verdict dropped, keeps it open, so a restart in the middle of a stop never tells it over and pushes it again. The push at its end says it was updating again, as the brief does. A one-device entry is that device, judged on its own ([UP-05](#up-05-devices-behind-a-down-upstream)).
 - **Keeping storms:** raw storm rows are kept one hour. At the midnight fold each integration that stormed that day keeps one row: the count, and the middle interval, device count and length.
 - **Left out of the tally:** a storm is left out when an upstream outage or a maintenance window was open at its start, or one closed or Home Assistant restarted in the five minutes before.
 
-*Proof:* [`test_storm_tally.py`](../tests/test_storm_tally.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_learning_rhythm.py`](../tests/test_learning_rhythm.py), [`test_noisy_integration.py`](../tests/test_noisy_integration.py).
+*Proof:* [`test_poller_verdict.py`](../tests/test_poller_verdict.py), [`test_poller_stop.py`](../tests/test_poller_stop.py), [`test_storm_tally.py`](../tests/test_storm_tally.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_learning_rhythm.py`](../tests/test_learning_rhythm.py), [`test_noisy_integration.py`](../tests/test_noisy_integration.py).
 
-### UP-18 Advice on a Noisy Integration
+### UP-18 A Line on a Poller
 
-**An integration with three or more unexplained storms a day on two of the last seven days gets one line on the Recommendations tab.**
-- **The line:** it opens with the condition, a colon, then what it costs and where to change it. It names the integration as a poller, says how often it republishes, and says it should be excluded on the Exclusions and Muting screen.
+**An integration with three or more unexplained storms a day on two of the last seven days gets one line on the Recommendations tab. Since 0.28.10 it is never advised for exclusion.**
+- **The line:** what is true and nothing more: "Tado updates all its devices at once, every 5 minutes. Device Sentinel hears Tado's regular update, not each device. It tells you when the whole integration stops updating, but not when one of its devices fails." Exclude stays a button on the Integrations tab.
+- **The Integrations tab:** a poller gives no reason to exclude it.
 - **When it goes:** the line is gone when the integration quiets or is excluded.
 
-*Proof:* [`test_noisy_integration.py`](../tests/test_noisy_integration.py), [`test_storm_tally.py`](../tests/test_storm_tally.py).
+*Proof:* [`test_noisy_integration.py`](../tests/test_noisy_integration.py), [`test_storm_tally.py`](../tests/test_storm_tally.py), [`test_recommendations.py`](../tests/test_recommendations.py).
 
 ### UP-19 A Wi-Fi Device's Address, and an Address Two Devices Share
 

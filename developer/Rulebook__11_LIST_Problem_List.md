@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Problem List (LIST)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Problem List is Home Assistant's to-do list of what is wrong with the house's devices. This section covers what an item is, the kinds of problem and their words, acknowledgment, the order, when a problem is announced, what counts as a recovery and how an item leaves. What a push, the persistent card and the bus events do with an item is under [NOTE](Rulebook__12_NOTE_Notifications.md). How each problem is judged is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. An upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md), muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and the Problem List at the head of the dashboard's Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)) is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -104,8 +104,9 @@ The Problem List is Home Assistant's to-do list of what is wrong with the house'
 - **After it leaves:** once the problem leaves the list, by recovering, by deletion, by a mute, or by the device being set aside, it ages out on the usual 14 days. Unmuting opens a fresh problem.
 - **Excluded devices:** an excluded device's record goes at the next local midnight instead (see [LIST-09](#list-09-an-item-that-leaves-without-recovering)).
 - **Acknowledged items:** an acknowledgment does not release it, since the item stays on the list.
+- **Each problem's own start (since 0.28.10):** an item keeps each problem's start for as long as it holds that problem. A row is dated from the problem it names first: "unavailable, battery 0%" from when the device went, not from the older battery fault. An earlier day of the Daily Brief tab dates a problem the list still holds from the list's start, and lists it though its opening has left the incident log, which reopens an unavailable problem at a restart or a bridge outage.
 
-*Proof:* [`test_journal.py`](../tests/test_journal.py).
+*Proof:* [`test_journal.py`](../tests/test_journal.py), [`test_problem_start_dates.py`](../tests/test_problem_start_dates.py).
 
 ### LIST-12 A Lost Clocks File
 
