@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.10 (2026-11-10)
+# File: coordinator.py, Version: 0.28.11 (2026-11-10)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -795,6 +795,14 @@ class DeviceSentinelCoordinator(
         # hub's connection is up (rules STACK-09, STACK-10).
         self._init_hubs()
         self._entry_down_at: dict[str, float] = {}
+        # Each device's last real report in this run, set only where a
+        # report is taken in. A poller's stop is judged on these, never
+        # on a last-report stamp a restart, a clock step or a device's
+        # return rewrote (rule UP-17).
+        self._heard_at: dict[str, float] = {}
+        # No silence is counted from before this: the run's start, or a
+        # clock step, which leaves the stamps before it on another time.
+        self._heard_floor: float | None = None
         self._integration_told: set[str] = set()
         # Entry outages by entry: each one's detail, the one
         # device an entry carries, and whether the open outages in the
@@ -1075,7 +1083,9 @@ class DeviceSentinelCoordinator(
         await self.async_load_answers()
         try:
             loaded = await self._store.async_load()
-        except (HomeAssistantError, ValueError) as err:
+        except (HomeAssistantError, ValueError, RecursionError) as err:
+            # RecursionError: a document nested deeper than Python can
+            # walk, written by hand or by another tool (rule STOR-08).
             # Restore. The alternative to replacing an unreadable file
             # is not running at all, so nobody is asked (rule STOR-08).
             # Evidence first: all four files, raw, before anything is
@@ -1146,6 +1156,38 @@ class DeviceSentinelCoordinator(
                     f"fresh, or restore it from a backup to keep what "
                     f"was learned."
                 ) from err
+        if loaded is not None and not isinstance(loaded, dict):
+            # A document that parses but is not a mapping, a list or a
+            # number written by hand or by another tool, would stop the
+            # start at its first read. It is answered as an unreadable
+            # file is: the evidence copied, the last-good copy restored
+            # where it holds devices, and a first install otherwise,
+            # the copy left untouched (rules STOR-05, STOR-08).
+            stamp, copied = await async_copy_evidence(self.hass)
+            restored, taken = (False, None)
+            if await self.hass.async_add_executor_job(_last_good_holds_devices, self.hass):
+                restored, taken = await async_restore_main_file(self.hass)
+            fresh = (
+                await self.hass.async_add_executor_job(read_main_file_raw, self.hass)
+                if restored else None
+            )
+            LOGGER.error(
+                "Device Sentinel found %s holding no storage document%s. "
+                "Copies of what existed were written to %s as %s",
+                STORAGE_KEY,
+                ", so it was replaced from the last-good copy" if fresh is not None
+                else ", and its last-good copy could not be used, so it starts fresh",
+                TRIM_BACKUP_DIR,
+                stamp or "unstamped",
+            )
+            loaded = fresh if isinstance(fresh, dict) else None
+            if loaded is not None:
+                self._restored_from = taken
+                self._restore_evidence = stamp
+                self._restore_copied = copied
+                self._restore_reason = "damaged"
+            self._load_faulty = True
+            self._repairs_at_load += 1
         if loaded is None and self._restored_from is None:
             # The trigger that matters. Corruption never reaches the
             # except block above: Home Assistant's own Store catches
@@ -4500,6 +4542,7 @@ class DeviceSentinelCoordinator(
         self._close_episode(device_id, stamp, learned, taint_seconds)
 
         record[DEV_LAST_ACTIVITY] = stamp
+        self._heard_at[device_id] = stamp
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
         if record.get(DEV_SET_ASIDE_SINCE) is not None:
             # Spent: the gap spanning the absence has been judged
@@ -4620,6 +4663,10 @@ class DeviceSentinelCoordinator(
         drift = (wall - previous_wall) - (mono - previous_mono)
         if abs(drift) < CLOCK_RESET_THRESHOLD_SECONDS:
             return
+        # A poller's silence counts from here, as every device's clock
+        # does: the reports before are on the old time (rule UP-17).
+        self._heard_at.clear()
+        self._heard_floor = wall
         restarted = 0
         for record in self.data[DATA_DEVICES].values():
             if not isinstance(record, dict):

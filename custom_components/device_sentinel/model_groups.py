@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.27.16 (2026-10-31)
+# File: model_groups.py, Version: 0.28.11 (2026-11-10)
 
 """Devices read as groups of the same maker, model and hardware (rule DEV-14).
 
@@ -63,6 +63,7 @@ from .const import (
 )
 from .detect_battery import clear_raw_battery
 from .device_fields import device_field
+from .power_source import is_placeholder, stands_for_none
 from .records import restart_lognormal
 
 SECONDS_PER_DAY = 86400.0
@@ -236,6 +237,10 @@ def _group_key(
     maker = identity["maker"]
     model = identity["model_id"] or identity["model"]
     if maker is None or model is None:
+        return None
+    # A placeholder, or a chip maker naming its board, is no product:
+    # unrelated hardware would share a group (rule DEV-06).
+    if stands_for_none(maker, identity["model"]) or is_placeholder(identity["model_id"]):
         return None
     hardware = identity["hardware"]
     if hardware is None:

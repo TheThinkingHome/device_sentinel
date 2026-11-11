@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.10 (2026-11-10)
+# File: report_brief.py, Version: 0.28.11 (2026-11-10)
 
 """The daily brief: the one report written for a person.
 
@@ -154,7 +154,7 @@ def _plural(count: int) -> str:
 # divides table cells as distinct from the one a name carries. The
 # page escapes for HTML itself, so the backslashes come off first.
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
-_MARKDOWN_ESCAPED = re.compile(r"\\([|<>\[\]])")
+_MARKDOWN_ESCAPED = re.compile(r"\\([\\|<>\[\]])")
 
 
 def _markdown_unescaped(text: str) -> str:

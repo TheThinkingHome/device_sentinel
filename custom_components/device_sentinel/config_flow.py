@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.10 (2026-11-10)
+# File: config_flow.py, Version: 0.28.11 (2026-11-10)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -162,6 +162,7 @@ from .const import (
     MAINTENANCE_MINUTES_STEP,
     NOTIFY_DOMAIN,
     PERSISTENT_TARGET,
+    PERSISTENT_TARGETS,
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
@@ -1816,6 +1817,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 for key in (CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS)
                 for target in flat.get(key, [])
             )
+            # Nor is the persistent notification: a push goes to notify
+            # actions, so chosen here it reaches nobody, and the card has
+            # its own switch below (rules NOTE-02, NOTE-11).
+            typed_persistent = any(
+                str(target).strip().casefold() in PERSISTENT_TARGETS
+                or str(target).strip().casefold().startswith(f"{PERSISTENT_TARGET}.")
+                for key in (CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS)
+                for target in flat.get(key, [])
+            )
             # What was entered, for the screen to show after a refusal.
             entered = dict(flat)
             high = list(flat.get(CONF_HIGH_PRIORITY_TARGETS, []))
@@ -1829,6 +1839,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 # Shown above the instant alerts' section, as the brief's
                 # is above its own.
                 errors["instant"] = "priority_target_is_address"
+            elif typed_persistent:
+                errors["instant"] = "priority_target_is_persistent"
             if any("@" in str(target) for target in flat.get(CONF_BRIEF_TARGETS, [])):
                 # An email address is not a service: the brief would be
                 # handed to an action that does not exist and never sent
@@ -1854,11 +1866,18 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         discovered = _discover_notify_targets(self.hass)
 
-        def target_selector() -> selector.SelectSelector:
-            """A multi-select of discovered targets, typing allowed."""
+        def target_selector(saved: Any = ()) -> selector.SelectSelector:
+            """A multi-select of discovered targets, typing allowed.
+
+            Not the persistent notification: a push is a notify action,
+            and the card has its own switch below (rule NOTE-11), so
+            chosen here it reached nobody. One already saved keeps its
+            place, so the screen shows what the setting holds.
+            """
+            held = saved if isinstance(saved, list) else []
             return selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=discovered,
+                    options=[t for t in discovered if t not in PERSISTENT_TARGETS or t in held],
                     multiple=True,
                     custom_value=True,
                     mode=selector.SelectSelectorMode.LIST,
@@ -1897,13 +1916,13 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_HIGH_PRIORITY_TARGETS,
                     default=options.get(CONF_HIGH_PRIORITY_TARGETS, []),
-                ): target_selector(),
+                ): target_selector(options.get(CONF_HIGH_PRIORITY_TARGETS, [])),
                 vol.Optional(
                     CONF_NORMAL_PRIORITY_TARGETS,
                     default=options.get(
                         CONF_NORMAL_PRIORITY_TARGETS, []
                     ),
-                ): target_selector(),
+                ): target_selector(options.get(CONF_NORMAL_PRIORITY_TARGETS, [])),
                 vol.Required(
                     CONF_PERSISTENT_ENABLED,
                     default=options.get(

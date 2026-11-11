@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.28.11 (2026-11-10)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -54,6 +54,7 @@ from homeassistant.helpers.storage import Store
 
 from homeassistant.util import dt as dt_util
 
+from .backup import keep_as_last_good
 from .const import BACKUP_LAST_GOOD_SUFFIX, LOGGER, TRIM_BACKUP_DIR
 from .power_source import power_words
 
@@ -73,16 +74,22 @@ def _path(hass: Any, key: str, suffix: str = "") -> str:
 
 
 def _rotate_last_good(hass: Any) -> None:
-    """Rename the live answers file to last-good; nothing if there is none."""
-    live = _path(hass, ANSWERS_STORE_KEY)
-    if os.path.exists(live):
-        os.replace(live, _path(hass, ANSWERS_STORE_KEY, BACKUP_LAST_GOOD_SUFFIX))
+    """Keep the live answers file as last-good, the live file left in
+    place (rule STOR-04); nothing if there is none."""
+    keep_as_last_good(
+        _path(hass, ANSWERS_STORE_KEY),
+        _path(hass, ANSWERS_STORE_KEY, BACKUP_LAST_GOOD_SUFFIX),
+    )
 
 
 def _read_last_good(hass: Any, key: str) -> dict[str, Any] | None:
     """The data of a last-good file, or None if it is missing or unusable."""
+    path = _path(hass, key, BACKUP_LAST_GOOD_SUFFIX)
+    # Never a symbolic link: Device Sentinel does not make one (rule STOR-20).
+    if os.path.islink(path):
+        return None
     try:
-        with open(_path(hass, key, BACKUP_LAST_GOOD_SUFFIX), encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             document = json.load(handle)
     except (OSError, ValueError):
         return None

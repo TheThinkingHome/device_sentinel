@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_watch.py, Version: 0.28.10 (2026-11-10)
+# File: study_watch.py, Version: 0.28.11 (2026-11-10)
 
 """Problem sensors and polled integrations, recorded and never judged
 (rule STACK-14).
@@ -35,6 +35,7 @@ verdict.
 from __future__ import annotations
 
 import statistics
+from datetime import date
 from collections import deque
 from typing import Any
 
@@ -60,6 +61,9 @@ from .const import (
     STATUS_REPORTING,
     STATUS_SET_ASIDE,
     WATCH_LOCKSTEP_DAYS,
+    WATCH_LOCKSTEP_FLOOR,
+    WATCH_LOCKSTEP_FLOOR_SHARE,
+    WATCH_LOCKSTEP_MIN_DATES,
     WATCH_LOCKSTEP_MIN_DEVICES,
     WATCH_LOCKSTEP_SHARE,
     WATCH_LOCKSTEP_TOLERANCE,
@@ -67,7 +71,7 @@ from .const import (
     WATCH_STOP_FACTOR,
     WATCH_STOP_FLOOR,
 )
-from .removed_days import counted_gaps
+from .removed_days import counted_gaps, gap_dates
 from .study import PROBE_MUTED
 
 PROBLEM_CLASS = "problem"
@@ -78,51 +82,90 @@ NODE_POLLING = "polling"
 _NOT_A_VERDICT = ("", STATUS_SET_ASIDE, STATUS_NEVER_REPORTED, STATUS_LEARNING, STATUS_REPORTING, PROBE_MUTED)
 
 
+def _lockstep_tolerance(middle: float) -> float:
+    """How far a device's longest gap may sit from the day's middle.
+
+    1% of it, and never closer than WATCH_LOCKSTEP_FLOOR seconds, the
+    few seconds a cloud takes to write all its devices; but the floor is
+    held to WATCH_LOCKSTEP_FLOOR_SHARE of the middle, so devices on
+    their own fast timers, a plug every 10 seconds, are not drawn
+    together by it.
+    """
+    return max(
+        WATCH_LOCKSTEP_TOLERANCE * max(middle, 1.0),
+        min(WATCH_LOCKSTEP_FLOOR, WATCH_LOCKSTEP_FLOOR_SHARE * middle),
+    )
+
+
 def lockstep(records: dict[str, dict[str, Any]], watched: dict[str, str]) -> dict[str, dict[str, Any]]:
     """Each integration's lockstep measure, from its devices' daily maxima.
 
     A device is in step when each of its last WATCH_LOCKSTEP_DAYS daily
-    longest gaps sits within WATCH_LOCKSTEP_TOLERANCE of the median of
-    its integration's devices that day. An integration whose devices
-    report on their own scatter; one that polls a cloud and updates them
-    all at once does not: on a tester's house Alarm.com's 15 devices were
-    all in step and nothing else was. Integrations with fewer than
-    WATCH_LOCKSTEP_MIN_DEVICES measurable devices are left out.
+    longest gaps sits within WATCH_LOCKSTEP_TOLERANCE, and never closer
+    than WATCH_LOCKSTEP_FLOOR seconds, of the median of its
+    integration's devices on the same date. An integration whose
+    devices report on their own scatter; one that polls a cloud and
+    updates them all at once does not: on a tester's house Alarm.com's
+    15 devices were all in step and nothing else was. Integrations with
+    fewer than WATCH_LOCKSTEP_MIN_DEVICES measurable devices are left
+    out, and so is a date fewer of them hold.
+
+    Days are matched by date, not by place in the list: a device that
+    missed a day, or has one removed by hand, would otherwise be
+    compared with its neighbours' other days (rule FRZ-25).
     """
-    by_integration: dict[str, list[tuple[str, list[float]]]] = {}
+    by_integration: dict[str, list[tuple[str, dict[date, float]]]] = {}
     for device_id, integration in watched.items():
         record = records.get(device_id) or {}
-        # A day removed by hand is not counted (rule FRZ-25).
-        maxima = [
-            value for value in counted_gaps(record)
+        values = counted_gaps(record)
+        dated = {
+            when: float(value)
+            for when, value in zip(gap_dates(record, len(values)), values)
             if isinstance(value, (int, float)) and not isinstance(value, bool) and value == value and value >= 0
-        ]
-        if len(maxima) < WATCH_LOCKSTEP_DAYS:
+        }
+        if len(dated) < WATCH_LOCKSTEP_DAYS:
             continue
+        newest = sorted(dated)[-WATCH_LOCKSTEP_DAYS:]
         by_integration.setdefault(integration, []).append(
-            (device_id, [float(v) for v in maxima[-WATCH_LOCKSTEP_DAYS:]])
+            (device_id, {when: dated[when] for when in newest})
         )
     found: dict[str, dict[str, Any]] = {}
     for integration, devices in by_integration.items():
         if len(devices) < WATCH_LOCKSTEP_MIN_DEVICES:
             continue
-        days = list(zip(*(maxima for _device, maxima in devices)))
-        medians = [statistics.median(day) for day in days]
-        in_step = [
-            device_id for device_id, maxima in devices
-            if all(
-                abs(value - middle) <= WATCH_LOCKSTEP_TOLERANCE * max(middle, 1.0)
-                for value, middle in zip(maxima, medians)
-            )
+        on_date: dict[date, list[float]] = {}
+        for _device, days in devices:
+            for when, value in days.items():
+                on_date.setdefault(when, []).append(value)
+        medians = {
+            when: statistics.median(values)
+            for when, values in on_date.items()
+            if len(values) >= WATCH_LOCKSTEP_MIN_DEVICES
+        }
+        # A device is measured on the dates it shares with enough of the
+        # others; one with too few such dates says nothing either way,
+        # and is left out rather than counted in step on no evidence.
+        measured = [
+            (device_id, [(value, medians[when]) for when, value in days.items() if when in medians])
+            for device_id, days in devices
         ]
+        measured = [(device_id, pairs) for device_id, pairs in measured if len(pairs) >= WATCH_LOCKSTEP_MIN_DATES]
+        if len(measured) < WATCH_LOCKSTEP_MIN_DEVICES:
+            continue
+        in_step = [
+            device_id for device_id, pairs in measured
+            if all(abs(value - middle) <= _lockstep_tolerance(middle) for value, middle in pairs)
+        ]
+        devices = [(device_id, days) for device_id, days in devices if device_id in {d for d, _ in measured}]
         share = len(in_step) / len(devices)
         found[integration] = {
             "devices": len(devices),
             "in_step": len(in_step),
             "share": round(share, 2),
             "lockstep": share >= WATCH_LOCKSTEP_SHARE,
+            "in_step_ids": sorted(in_step),
             # The usual longest gap of a day, the middle of the middles.
-            "gap": statistics.median(statistics.median(maxima) for _device, maxima in devices),
+            "gap": statistics.median(statistics.median(days.values()) for _device, days in devices),
         }
     return found
 

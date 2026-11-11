@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.27.10 (2026-10-27)
+# File: backup.py, Version: 0.28.11 (2026-11-10)
 
 """Copies of the storage files: the one-shot copy, last-good, evidence
 copies and the restore.
@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -140,32 +141,80 @@ async def async_take_backup(
     return True
 
 
+def keep_as_last_good(live: str | Path, copy: str | Path) -> str | None:
+    """Make `copy` hold what `live` holds now, leaving `live` in place.
+
+    The live file is never moved away (rule STOR-04). Home Assistant
+    writes a stored file to a temporary name and swaps it in, and while
+    it is stopping it holds every save back until its final-write
+    stage, so a file renamed away at the stop was missing for the whole
+    shutdown, and a process killed in that time started next with no
+    main file. A tester's house on Docker reported it at a restart.
+
+    A hard link first: it writes no data, which matters on the eMMC
+    many houses run on, and the swap-in that replaces the live file
+    leaves the link holding the old contents. Where the file system
+    refuses links, as some network shares do, a copy. Either goes to a
+    temporary name and is swapped in, so a stop part way leaves the old
+    copy or the new one. Returns "link" or "copy", or None when there
+    is no live file, a first save with nothing to keep.
+    """
+    live, copy = Path(live), Path(copy)
+    if not live.exists():
+        return None
+    temporary = copy.with_name(copy.name + ".tmp")
+    if not copy.is_symlink() and copy.exists() and os.path.samefile(live, copy):
+        # Already the same file, as after a stop between this and the
+        # save it comes before: a swap between two names of one file
+        # does nothing and would leave the temporary name behind.
+        temporary.unlink(missing_ok=True)
+        return "link"
+    temporary.unlink(missing_ok=True)
+    try:
+        os.link(live, temporary)
+        how = "link"
+    except OSError:
+        _copy_new(live, temporary)
+        how = "copy"
+    os.replace(temporary, copy)
+    return how
+
+
+def _copy_new(source: Path, destination: Path) -> None:
+    """Copy into a file that must not exist yet, never through a link
+    someone left at that name."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    handle = os.open(destination, flags, 0o600)
+    with os.fdopen(handle, "wb") as out, open(source, "rb") as src:
+        shutil.copyfileobj(src, out)
+    # The source's times, as a link or the old rename kept them, so
+    # last-good's time is when its contents were written.
+    with suppress(OSError):
+        # A file system that refuses links may refuse times too; the
+        # copy stands without them.
+        shutil.copystat(source, destination, follow_symlinks=False)
+
+
 async def async_rotate_last_good(hass: HomeAssistant) -> bool:
-    """Rename the live main file to last-good, ahead of a clean save.
+    """Keep the live main file as last-good, ahead of a clean save.
 
     The one backup rule (rule STOR-04): before each clean save, the
     file about to be replaced becomes the last-good copy, so
-    last-good is always the most recent clean file. A rename rather
-    than a copy, because the atomic write that follows puts a whole
-    new file in place and the old one is otherwise discarded; the
-    crash window between the rename and the write is the case the
-    loader already restores from, a missing live file beside a
-    last-good.
+    last-good is always the most recent clean file. The live file stays
+    where it is (`keep_as_last_good`), so whatever stops the save, the
+    next start finds the old main file or the new one.
 
     Only the caller knows whether the save is clean and whether the
     live file on disk was itself written clean, so both judgments
-    stay with the caller; this renames and nothing more. A missing
-    live file is a first save and nothing to rotate. Returns True
-    when the rename happened.
+    stay with the caller; this keeps a copy and nothing more. A
+    missing live file is a first save and nothing to keep. Returns
+    True when a copy was kept.
     """
     live = _storage_path(hass, STORAGE_KEY)
     copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
 
     def _rotate() -> bool:
-        if not live.exists():
-            return False
-        os.replace(live, copy)
-        return True
+        return keep_as_last_good(live, copy) is not None
 
     try:
         return await hass.async_add_executor_job(_rotate)
@@ -189,6 +238,9 @@ def copy_main_over_last_good(hass: HomeAssistant) -> bool:
     if not live.exists():
         return False
     temporary = copy.with_name(copy.name + ".tmp")
+    # Never written into a name left behind, which may be another name
+    # of last-good itself (rule STOR-04).
+    temporary.unlink(missing_ok=True)
     shutil.copyfile(live, temporary)
     os.replace(temporary, copy)
     return True
@@ -448,7 +500,7 @@ async def async_restore_main_file(
     copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
 
     def _restore() -> tuple[bool, float | None]:
-        if not os.path.exists(copy):
+        if not os.path.exists(copy) or os.path.islink(copy):
             return False, None
         try:
             with open(copy, encoding="utf-8") as handle:
@@ -459,7 +511,13 @@ async def async_restore_main_file(
             # than the first alone.
             return False, None
         taken = os.path.getmtime(copy)
-        shutil.copy2(copy, live)
+        # To a temporary name and swapped in, never written over the
+        # live name in place: a live name still linked to last-good
+        # would take the copy's own contents with it (rule STOR-04).
+        temporary = Path(f"{live}.tmp")
+        temporary.unlink(missing_ok=True)
+        _copy_new(Path(copy), temporary)
+        os.replace(temporary, live)
         return True, taken
 
     try:
@@ -531,6 +589,10 @@ def _last_good_holds_devices(hass: HomeAssistant) -> bool:
     that matters, does it hold device records (rule STOR-08).
     """
     copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
+    # Device Sentinel never makes last-good a symbolic link, so one is
+    # not its copy and is never taken in (rule STOR-08).
+    if copy.is_symlink():
+        return False
     try:
         with open(copy, encoding="utf-8") as handle:
             payload = json.load(handle)

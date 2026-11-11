@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.28.8 (2026-11-09)
+# File: report_maintainer.py, Version: 0.28.11 (2026-11-10)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -344,7 +344,10 @@ class MaintainerReportMixin:
                             os.replace(f"{path}.{index}", f"{path}.{index + 1}")
                     os.replace(path, f"{path}.1")
             fresh = not os.path.exists(path)
-            with open(path, "a", encoding="utf-8") as handle:
+            # Appended to the file itself, never through a link left at
+            # its name (rule CODE-10).
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+            with os.fdopen(os.open(path, flags, 0o644), "a", encoding="utf-8") as handle:
                 if fresh:
                     handle.write("\n".join(self._probe_header()) + "\n")
                 handle.write(body)

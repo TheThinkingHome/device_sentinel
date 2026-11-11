@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.28.0 (2026-11-03)
+# File: history_file.py, Version: 0.28.11 (2026-11-10)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -81,6 +80,7 @@ from .const import (
     STORAGE_HISTORY_VERSION,
     SYS_WHEN,
 )
+from .backup import keep_as_last_good
 from .normalise import damaged_rows, series_fault
 
 # The daily signal series, on the record and in its second scale.
@@ -368,13 +368,10 @@ async def read_copy(hass: HomeAssistant, last_good: bool) -> tuple[Any, str | No
     return data, None
 
 
-def rename_to_last_good(hass: HomeAssistant) -> bool:
-    """Step 1: the live history file becomes last-good, by a rename."""
-    live = _path(hass, STORAGE_HISTORY_KEY)
-    if not live.exists():
-        return False
-    os.replace(live, _path(hass, LAST_GOOD))
-    return True
+def keep_last_good(hass: HomeAssistant) -> bool:
+    """Step 1: last-good becomes the live history file as it is now,
+    the live file left in place (rule STOR-04)."""
+    return keep_as_last_good(_path(hass, STORAGE_HISTORY_KEY), _path(hass, LAST_GOOD)) is not None
 
 
 async def write_copy(hass: HomeAssistant, body: dict[str, Any], last_good: bool) -> None:

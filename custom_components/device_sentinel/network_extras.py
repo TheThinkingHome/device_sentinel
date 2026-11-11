@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.28.8 (2026-11-09)
+# File: network_extras.py, Version: 0.28.11 (2026-11-10)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -86,6 +86,7 @@ from .const import (
     WIFI_KEY,
 )
 from .device_fields import device_field
+from .power_source import stands_for_none
 from .outage_detail import REMOVED, UNWATCHED, parse_detail
 from .short_drops import drop_day, is_short
 
@@ -738,7 +739,12 @@ class NetworkExtrasMixin:
                 continue
             maker, model = device_field(device, "manufacturer"), device_field(device, "model")
             version = device_field(device, "sw_version")
-            if isinstance(maker, str) and isinstance(model, str) and isinstance(version, str) and version.strip():
+            if (
+                isinstance(maker, str) and isinstance(model, str) and isinstance(version, str) and version.strip()
+                # Not one product: unrelated boards would read as one
+                # model on mixed firmware (rule DEV-06).
+                and not stands_for_none(maker, model)
+            ):
                 versions = models.setdefault((maker, model), {})
                 versions[version] = versions.get(version, 0) + 1
         mixed = [

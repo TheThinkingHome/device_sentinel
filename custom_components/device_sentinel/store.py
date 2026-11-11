@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.28.1 (2026-11-03)
+# File: store.py, Version: 0.28.11 (2026-11-10)
 
 """Storage: the files, the merge, and the unclean restart.
 
@@ -803,10 +803,10 @@ class StorageMixin:
         """Steps 1 and 2: last-good, then the new file, read back."""
         hass = self.hass  # type: ignore[attr-defined]
         try:
-            await hass.async_add_executor_job(history_file.rename_to_last_good, hass)
+            await hass.async_add_executor_job(history_file.keep_last_good, hass)
         except OSError as err:
             LOGGER.warning(
-                "The history file could not be moved to its last-good "
+                "The history file could not be kept as its last-good "
                 "copy, so the storage file is written whole: %s",
                 err,
             )

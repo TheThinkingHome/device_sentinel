@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.27.10 (2026-10-27)
+# File: messenger.py, Version: 0.28.11 (2026-11-10)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -24,6 +24,7 @@ now and inherits the formula behind it (rule BRIEF-11).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .const import (
@@ -34,6 +35,7 @@ from .const import (
     LOGGER,
     PERSISTENT_CREATE,
     PERSISTENT_TARGET,
+    PERSISTENT_TARGETS,
     RESTORE_NOTICE_TITLE,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
@@ -46,6 +48,12 @@ from .const import (
 # clients strip a <style> element and would render an unruled table
 # of times as a wall of text.
 
+
+
+# A square or angle bracket not already escaped: any number of escaped
+# backslashes before it, and an even count means it stands bare. Angle
+# brackets too, since the notification lets some HTML through.
+_UNESCAPED_BRACKET = re.compile(r"(?<!\\)((?:\\\\)*)([\[\]<>])")
 
 class MessengerMixin:
     """Delivery for the coordinator.
@@ -85,6 +93,12 @@ class MessengerMixin:
         notify services, which ignore a data key they do not know.
         """
         payload: dict[str, Any] = {"title": BRIEF_TITLE, "message": text}
+        if target in PERSISTENT_TARGETS:
+            # Shown as Markdown, and the brief carries no link of its
+            # own: a bracket a device's name brings into a sentence is
+            # escaped, so it cannot draw a link or load a picture from
+            # elsewhere. Table cells are escaped already (rule BRIEF-11).
+            payload["message"] = _UNESCAPED_BRACKET.sub(r"\1\\\2", text)
         if target != PERSISTENT_TARGET:
             # The emailed body is the brief page itself, the same
             # string written to the reports folder: one rendering

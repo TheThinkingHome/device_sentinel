@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.10 (2026-11-10)
+# File: interventions.py, Version: 0.28.11 (2026-11-10)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -1237,9 +1237,47 @@ class InterventionMixin:
         """True the first time an outage passes the dwell."""
         return entry_id not in self._integration_told
 
+    def _poller_scope(self, entry_id: str, domain: str) -> list[str]:
+        """The watched devices a stop of this entry is judged on: those
+        found in step, when the poller is known by them and any of them
+        is this entry's; otherwise all its watched devices. A device on
+        a timer of its own, as Alarm.com's cameras are, cannot then keep
+        a stop from being seen (rule UP-17)."""
+        own = [
+            device_id for device_id in self._watched
+            if self._entry_of_device.get(device_id) == entry_id
+        ]
+        in_step = self.poller_devices(domain)  # type: ignore[attr-defined]
+        if in_step:
+            chosen = [device_id for device_id in own if device_id in in_step]
+            if chosen:
+                return chosen
+        return own
+
+    def _poller_floor(self) -> float:
+        """No silence is counted from before this run's start, or a clock
+        step in it."""
+        floor = self._run_start()
+        if self._heard_floor is not None:
+            floor = max(floor, self._heard_floor)
+        return floor
+
+    def _poller_heard(self, device_id: str) -> float | None:
+        """When a device was last heard, for a poller's stop. A real
+        report in this run; before one, the stored stamp, never later
+        than the run's start, since a restart or a clock step may have
+        rewritten it without a report (rule UP-17)."""
+        heard = self._heard_at.get(device_id)
+        if heard is not None:
+            return heard
+        stamp = ((self.data.get(DATA_DEVICES) or {}).get(device_id) or {}).get(DEV_LAST_ACTIVITY)
+        if not isinstance(stamp, (int, float)) or isinstance(stamp, bool):
+            return None
+        return min(float(stamp), self._poller_floor())
+
     def _poller_stalled(self, entry, now: float) -> float | None:
-        """When a loaded poller's devices were last heard, if it has been
-        silent past its threshold; None otherwise (rule UP-17).
+        """When a loaded poller's silence began, if it has been silent
+        past its threshold; None otherwise (rule UP-17).
 
         Twice its usual longest gap, and never under ten minutes, the
         measure the Problem Sensors and Polling study proved on a
@@ -1257,44 +1295,33 @@ class InterventionMixin:
         if gap is None:
             return None
         threshold = max(WATCH_STOP_FLOOR, WATCH_STOP_FACTOR * gap)
-        records = self.data.get(DATA_DEVICES) or {}
         heard = [
             stamp
-            for device_id in self._watched
-            if self._entry_of_device.get(device_id) == entry.entry_id
-            for stamp in ((records.get(device_id) or {}).get(DEV_LAST_ACTIVITY),)
-            if isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+            for device_id in self._poller_scope(entry.entry_id, entry.domain)
+            for stamp in (self._poller_heard(device_id),)
+            if stamp is not None
         ]
         if not heard:
             return None
-        newest = float(max(heard))
         # The silence is counted from this run's start at the earliest:
         # time Home Assistant was down is not the poller stopping, and its
-        # first poll after a restart may be one of its slow ones.
-        counted_from = max(newest, self._run_start())
-        return newest if now - counted_from > threshold else None
+        # first poll after a restart may be one of its slow ones. The stop
+        # is dated from there too, not from before the restart.
+        counted_from = max(float(max(heard)), self._poller_floor())
+        return counted_from if now - counted_from > threshold else None
 
     def _poller_heard_since(self, entry_id: str, since: float) -> bool:
-        """Whether a watched device of this entry has been heard after
-        `since`. An entry with no watched device left has nothing to
-        wait for, and reads as heard (rule UP-17).
-
-        Only after this run began, too: an unclean restart sets each
-        device's last report to the moment it loads, before the run
-        starts, and that is no report.
-        """
-        since = max(since, self._run_start())
-        records = self.data.get(DATA_DEVICES) or {}
-        stamps = [
-            (records.get(device_id) or {}).get(DEV_LAST_ACTIVITY)
-            for device_id in self._watched
-            if self._entry_of_device.get(device_id) == entry_id
-        ]
-        if not stamps:
+        """Whether a device a stop of this entry is judged on has been
+        heard after `since`, by a real report. An entry with none of
+        them left has nothing to wait for, and reads as heard (rule
+        UP-17)."""
+        domain = self._integration_domain.get(entry_id) or ""
+        scope = self._poller_scope(entry_id, domain)
+        if not scope:
             return True
         return any(
-            isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > since
-            for stamp in stamps
+            (heard := self._heard_at.get(device_id)) is not None and heard > since
+            for device_id in scope
         )
 
     def integration_stalled(self, domain: str) -> bool:
@@ -2554,6 +2581,8 @@ class InterventionMixin:
     _integration_resumed: bool
     _broker_reader: Any | None
     _broker_down_at: float | None
+    _heard_at: dict[str, float]
+    _heard_floor: float | None
 
     def _storm_feed(
         self, entry_id: str | None, device_id: str, now: float

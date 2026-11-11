@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.10 (2026-11-10)
+# File: const.py, Version: 0.28.11 (2026-11-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1963,6 +1963,10 @@ DEFAULT_REPORT_LINKS = REPORT_LINKS_NONE
 # configuration screens to learn how a target is spelled.
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
+# Home Assistant's notify action for the same drawer, offered beside the
+# notify actions; it shows its message as Markdown too.
+PERSISTENT_NOTIFY_TARGET = "notify.persistent_notification"
+PERSISTENT_TARGETS = (PERSISTENT_TARGET, PERSISTENT_NOTIFY_TARGET)
 
 # An SMTP recipient, chosen as its notify entity and sent through
 # smtp.send_message, the action that still carries the HTML page (rule
@@ -2357,10 +2361,22 @@ TADO_KEY = "tado"
 # over this many days, of which at least this share keep each day's
 # longest gap within this tolerance of the integration's median that
 # day. A tester's Alarm.com: 15 of 15 within 1% over 5 days; nothing else
-# on three houses (rule STACK-14).
+# on three houses (rule STACK-14). Never closer than WATCH_LOCKSTEP_FLOOR
+# seconds: at a 30-second poll 1% is a third of a second, finer than the
+# few seconds a cloud takes to write all its devices, and the same
+# Alarm.com read 8 of 15. At 2 seconds it reads 13 of 15, while devices
+# that report on their own stay apart (a tester's TP-Link, every 10 seconds,
+# 54%; ESPHome under 10%; nothing new on four more houses).
 WATCH_LOCKSTEP_DAYS = 5
 WATCH_LOCKSTEP_MIN_DEVICES = 3
 WATCH_LOCKSTEP_TOLERANCE = 0.01
+WATCH_LOCKSTEP_FLOOR = 2.0
+# The floor is never more than this share of the day's middle, so a
+# fast reporter's few seconds of scatter still count against it.
+WATCH_LOCKSTEP_FLOOR_SHARE = 0.1
+# A device is measured on at least this many dates it shares with
+# WATCH_LOCKSTEP_MIN_DEVICES of the others; with fewer, it is left out.
+WATCH_LOCKSTEP_MIN_DATES = 3
 WATCH_LOCKSTEP_SHARE = 0.8
 # A stop of a lockstep integration's updates: no device of it heard for
 # this many times its usual longest gap, and never less than the floor.
@@ -2380,6 +2396,10 @@ POLLER_SINCE = "since"
 POLLER_SEEN = "seen"
 POLLER_BASIS = "basis"
 POLLER_GAP = "gap"
+# The devices found in step, for a poller known by them: a stop is
+# judged on these, so a device of the same entry on a timer of its own,
+# as Alarm.com's cameras are, cannot hide one.
+POLLER_DEVICES = "devices"
 POLLER_BASIS_LOCKSTEP = "lockstep"
 POLLER_BASIS_STORMS = "storms"
 POLLER_STORMS_PER_DAY = 48

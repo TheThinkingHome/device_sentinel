@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.27.10 (2026-10-27)
+# File: reports.py, Version: 0.28.11 (2026-11-10)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -124,8 +124,12 @@ class ReportWritingMixin(
         pasted into a page. Both need brackets, so escaping them is
         enough, and names like "Soil Irrigation (Monstera)" stay plain.
         """
+        # The backslash first, so a name's own backslash cannot undo
+        # the escape that follows it: "\\[x\\](url)" would otherwise
+        # read as a link again.
         return (
-            text.replace("\n", " ")
+            text.replace("\\", "\\\\")
+            .replace("\n", " ")
             .replace("\r", " ")
             .replace("|", "\\|")
             .replace("<", "\\<")
@@ -344,7 +348,12 @@ class ReportWritingMixin(
         """
         temporary = f"{path}.tmp"
         try:
-            with open(temporary, "w", encoding="utf-8") as handle:
+            # Never written through a name left at the temporary path:
+            # removed, then created new, refusing a link (rule CODE-10).
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(temporary)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            with os.fdopen(os.open(temporary, flags, 0o644), "w", encoding="utf-8") as handle:
                 handle.write(text)
             os.replace(temporary, path)
         except OSError:

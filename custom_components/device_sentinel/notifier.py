@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.28.1 (2026-11-03)
+# File: notifier.py, Version: 0.28.11 (2026-11-10)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -51,6 +51,7 @@ from homeassistant.util import dt as dt_util
 from .battery_level import level_text
 from .narrative import BRIEF_STATE_WORDS
 from .const import (
+    PERSISTENT_TARGETS,
     BROKER_LABEL,
     BROKER_SCOPE,
     DATA_SYSTEM_EVENTS,
@@ -146,6 +147,15 @@ def _card_text(text: str) -> str:
     """
     return _CARD_MARKDOWN.sub(r"\\\1", " ".join(str(text).splitlines()))
 
+
+def _shown_as_text(target: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The push for one target. One saved as Home Assistant's persistent
+    notification shows its message as Markdown, so a device's name in
+    it is escaped there as on the card (rules NOTE-02, CODE-10); every
+    other target gets the push as it is."""
+    if target not in PERSISTENT_TARGETS:
+        return payload
+    return {**payload, "message": _card_text(str(payload.get("message") or ""))}
 
 class NotifierMixin:
     """The event push engine, mixed into the coordinator.
@@ -451,7 +461,7 @@ class NotifierMixin:
                 continue
             try:
                 await self.hass.services.async_call(
-                    domain, service, payload, blocking=True
+                    domain, service, _shown_as_text(target, payload), blocking=True
                 )
             except Exception as err:  # noqa: BLE001 - one bad target
                 LOGGER.warning(
@@ -479,7 +489,7 @@ class NotifierMixin:
                 continue
             try:
                 await self.hass.services.async_call(
-                    domain, service, payload, blocking=True
+                    domain, service, _shown_as_text(target, payload), blocking=True
                 )
             except Exception as err:  # noqa: BLE001 - any notify platform error
                 LOGGER.warning(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.28.0 (2026-11-03)
+# File: repairs.py, Version: 0.28.11 (2026-11-10)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -71,6 +71,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
+from .notifier import _card_text
 from .const import (
     SMTP_DOMAIN,
     SMTP_SEND_MESSAGE,
@@ -411,8 +412,10 @@ def async_evaluate_shared_addresses(
     if not shared:
         _clear(hass, REPAIR_SHARED_ADDRESS)
         return
+    # A card is shown as Markdown: each name is escaped, so one cannot
+    # draw a link or load a picture (rule CODE-10).
     lines = [
-        f"{_english_list(names)} share {ip}"
+        f"{_english_list([_card_text(name) for name in names])} share {_card_text(ip)}"
         for ip, names in sorted(shared.items())
     ]
     _raise(

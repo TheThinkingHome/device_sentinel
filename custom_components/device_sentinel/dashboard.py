@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.10 (2026-11-10)
+# File: dashboard.py, Version: 0.28.11 (2026-11-10)
 
 """What the dashboard reads from the coordinator.
 
@@ -194,6 +194,7 @@ from .networks import problem_groups
 from .outage_detail import STALLED, pair_key, parse_detail
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
+from .power_source import stands_for_none
 
 
 
@@ -2287,10 +2288,14 @@ class TrendsViewMixin:
         groups: dict[tuple[str, str], list[tuple[str, float | None]]] = {}
         for device_id, _record, series in self._battery_cells():
             device = registry.async_get(device_id)
-            key = (
-                device_field(device, "manufacturer") or "not reported",
-                device_field(device, "model") or "not reported",
-            )
+            maker = device_field(device, "manufacturer")
+            model = device_field(device, "model")
+            # No model, or one that names no product, has no sisters to
+            # pace against: unrelated batteries would be pooled (rule
+            # DEV-06).
+            if not maker or not model or stands_for_none(maker, model):
+                continue
+            key = (maker, model)
             drop = battery_month_drop(series)
             groups.setdefault(key, []).append(
                 (device_id, drop / 3 if drop is not None else None)
@@ -2318,7 +2323,7 @@ class TrendsViewMixin:
     def battery_trends(self) -> dict[str, Any]:
         """The battery fleet: the bank, every model, and the report's groups."""
         registry = dr.async_get(self.hass)
-        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
         bank = [0] * 10
         # Each device's type, read once: the tab narrows to one
         # type, and By Model lists the types a model's cells have.
@@ -2336,10 +2341,13 @@ class TrendsViewMixin:
             level = float(record[DEV_BATTERY_VALUE])
             bank[min(9, int(level // 10))] += 1
             device = registry.async_get(device_id)
-            key = (
-                device_field(device, "manufacturer") or "not reported",
-                device_field(device, "model") or "not reported",
-            )
+            maker = device_field(device, "manufacturer")
+            model = device_field(device, "model")
+            key = (maker or "not reported", model or "not reported")
+            # A device that names no product is a row of its own, not
+            # pooled with unrelated hardware that also names none, as its
+            # pace is not (rule DEV-06).
+            alone = not maker or not model or stands_for_none(maker, model)
             cell = {
                 "device_id": device_id,
                 "name": self._device_name(device_id),
@@ -2350,10 +2358,12 @@ class TrendsViewMixin:
                 "rate": -(battery_month_drop(series) or 0.0) / 3,
                 "type": type_of(device_id),
             }
-            groups.setdefault(key, []).append(cell)
-            cell_rows.append({**cell, "maker": key[0], "model": key[1]})
+            groups.setdefault((*key, device_id if alone else ""), []).append(cell)
+            # "alone" tells the page to keep this cell a row of its own
+            # when it regroups by type, as here.
+            cell_rows.append({**cell, "maker": key[0], "model": key[1], "alone": alone})
         models = []
-        for (maker, model), cells in groups.items():
+        for (maker, model, _alone), cells in groups.items():
             lowest = min(cells, key=lambda cell: cell["level"])
             kinds: dict[str, int] = {}
             for cell in cells:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.10 (2026-11-10)
+# File: diagnostics.py, Version: 0.28.11 (2026-11-10)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import inspect
+import ipaddress
 import os
 import re
 from collections.abc import Callable
@@ -58,6 +59,7 @@ from .const import (
     EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
     CONF_BRIEF_TARGETS,
+    CONF_WIFI_NETWORKS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
     DAILY_MAX_KEEP,
@@ -111,7 +113,34 @@ TO_REDACT = {
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
+    # A house's Wi-Fi names, which public maps of networks can place
+    # (rule STOR-21).
+    CONF_WIFI_NETWORKS,
 }
+
+
+def _wifi_scan_hidden(scan: Any) -> Any:
+    """The Wi-Fi scan with each network's name replaced by a stand-in,
+    the same throughout: the house's own and every neighbour's the host
+    hears, which public maps of networks can place (rule STOR-21). What
+    the scan found stays readable: which chosen networks were heard."""
+    if not isinstance(scan, dict):
+        return scan
+    names: dict[str, str] = {}
+
+    def stand_in(name: Any) -> Any:
+        if not isinstance(name, str):
+            return name
+        if name not in names:
+            names[name] = f"SSID-{len(names) + 1:02d}"
+        return names[name]
+
+    hidden = dict(scan)
+    for field in ("networks", "missing", "heard"):
+        value = hidden.get(field)
+        if isinstance(value, (list, tuple, set)):
+            hidden[field] = [stand_in(name) for name in value]
+    return hidden
 
 
 def _taint_reasons(episodes: list[dict[str, Any]]) -> dict[str, int]:
@@ -322,7 +351,23 @@ _IPV4 = re.compile(
     r"|\b(?:10|127)(?:\." + _OCTET + r"){3}"
     r"|\b172\.(?:1[6-9]|2\d|3[01])(?:\." + _OCTET + r"){2}"
     r"|\b192\.168(?:\." + _OCTET + r"){2}"
-    r"|\b169\.254(?:\." + _OCTET + r"){2})\b"
+    r"|\b169\.254(?:\." + _OCTET + r"){2}"
+    # The carrier-grade range a mesh VPN such as Tailscale hands out.
+    r"|(?<![\d.])100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\." + _OCTET + r"){2}(?!\.?\d))\b"
+)
+# An IPv6 address: hex groups and colons, at least two colons, taken only
+# when it parses as one, so a time or a Zigbee address is never taken for
+# it. A router reports a device's global IPv6 address, which carries the
+# house's own prefix (rule STOR-21).
+_URL_USERINFO = re.compile(r"://[^/@\s]{1,256}@")
+_EMAIL = re.compile(r"(?<![\w.+/-])[\w.+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+")
+_IPV6_CANDIDATE = re.compile(
+    # The look-ahead is held to an address's own group length, so a long
+    # run of hex and colons cannot make the search slow.
+    r"(?<![0-9A-Za-z.])(?=[0-9A-Fa-f]{0,4}:[0-9A-Fa-f]{0,4}:)[0-9A-Fa-f:]{2,39}"
+    # An IPv4 tail, as in ::ffff:192.168.1.5, belongs to the address.
+    r"(?:(?<=:)\d{1,3}(?:\.\d{1,3}){3})?"
+    r"(?:%[0-9A-Za-z_.-]+)?(?![0-9A-Za-z]|:[0-9A-Fa-f]|\.[0-9A-Za-z])"
 )
 
 
@@ -358,10 +403,37 @@ def _redact_addresses(payload: Any) -> Any:
             ips[whole] = f"IP-{len(ips) + 1:02d}"
         return ips[whole]
 
+    def ipv6(match: re.Match[str]) -> str:
+        token = match.group(0)
+        # A colon after an address, "at 2001:db8::5:", is the sentence's.
+        tail = ""
+        while token.endswith(":") and not token.endswith("::"):
+            token, tail = token[:-1], ":" + tail
+        bare = token.split("%", 1)[0]
+        groups = bare.split(":")
+        # A Zigbee address is eight pairs, which also parses as IPv6;
+        # it is kept whole (rule STOR-21). "::" alone names nothing.
+        if "::" not in bare and all(len(group) == 2 for group in groups):
+            return token + tail
+        if not any(ch not in ":" for ch in bare):
+            return token + tail
+        try:
+            ipaddress.IPv6Address(bare)
+        except ValueError:
+            return token + tail
+        if token not in ips:
+            ips[token] = f"IP-{len(ips) + 1:02d}"
+        return ips[token] + tail
+
     def text(value: str) -> str:
+        # A web address's user and password, and an email address, are
+        # never a fault report's business (rule STOR-21).
+        value = _URL_USERINFO.sub("://USER@", value)
+        value = _EMAIL.sub("EMAIL", value)
         value = _MAC.sub(mac, value)
         value = _MAC_DOTTED.sub(mac_dotted, value)
         value = _MAC_BARE.sub(mac_bare, value)
+        value = _IPV6_CANDIDATE.sub(ipv6, value)
         return _IPV4.sub(ip, value)
 
     def walk(value: Any) -> Any:
@@ -604,7 +676,7 @@ async def async_get_config_entry_diagnostics(
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
-            "wifi_scan": coordinator.wifi_scan_diagnostics,
+            "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics),
             "study_hardware": list(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),

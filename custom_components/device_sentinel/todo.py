@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.27.10 (2026-10-27)
+# File: todo.py, Version: 0.28.11 (2026-11-10)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -59,7 +59,13 @@ from homeassistant.components.todo import (
     TodoListEntity,
     TodoListEntityFeature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.components.homeassistant.const import DATA_EXPOSED_ENTITIES
+from homeassistant.components.homeassistant.exposed_entities import (
+    KNOWN_ASSISTANTS,
+    async_expose_entity,
+)
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -86,6 +92,38 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Device Sentinel problem list."""
     async_add_entities([DeviceSentinelTodoList(entry.runtime_data)])
+
+
+# Marked on the entity's own registry options once it has been hidden,
+# so a person who later shows it to Assist keeps that choice.
+_ASSIST_HIDDEN = "assist_hidden"
+
+
+@callback
+def hide_from_assistants_once(hass: HomeAssistant, entity_id: str) -> None:
+    """Hide the Problem List from Assist and the voice assistants, once.
+
+    Home Assistant shows a to-do list to Assist by default, and with it
+    any conversation agent, an AI one included: one could read the
+    house's problems, and mark an item done, which takes it off the
+    card and out of the alerts (rule NOTE-08). So it is hidden the first
+    time the list is set up on this release, and a person who wants
+    Assist to see it turns that on under Settings, Voice assistants,
+    Expose. Done once, never again, so that choice is kept (rule
+    LIST-14). Where Home Assistant's exposure settings are not loaded,
+    nothing is marked and it is tried at the next start.
+    """
+    registry = er.async_get(hass)
+    entry = registry.async_get(entity_id)
+    if entry is None or DATA_EXPOSED_ENTITIES not in hass.data:
+        return
+    own = dict(entry.options.get(DOMAIN) or {})
+    if own.get(_ASSIST_HIDDEN):
+        return
+    for assistant in KNOWN_ASSISTANTS:
+        async_expose_entity(hass, assistant, entity_id, False)
+    own[_ASSIST_HIDDEN] = True
+    registry.async_update_entity_options(entity_id, DOMAIN, own)
 
 
 class DeviceSentinelTodoList(TodoListEntity):
@@ -129,6 +167,7 @@ class DeviceSentinelTodoList(TodoListEntity):
         self.async_on_remove(
             self._coordinator.async_add_listener(self._handle_refresh)
         )
+        hide_from_assistants_once(self.hass, self.entity_id)
 
     def _handle_refresh(self) -> None:
         """Reflect the stored items."""
