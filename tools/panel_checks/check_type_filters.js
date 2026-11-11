@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.28.11 (2026-11-10)
 // Panel checks: types on Battery Trends, Devices (set-aside devices too) and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -239,6 +239,18 @@ const BATTERY = {
   const mixed = root.querySelector('article[data-kind="mixed_types"]');
   check("A split model's card names the model and each device's type", text(mixed).includes("Third Reality Wireless motion sensor: Presence Sensor")
     && text(mixed).includes("Motion Laundry"), text(mixed));
+
+  console.log("\nBy Model with a type chosen keeps a device that names no product apart (rule BAT-18)");
+  const boards = [
+    Object.assign(cell("b1", "Dryer Sensor", "Espressif", "esp32", "Leak Sensor", 60, -0.4), { alone: true }),
+    Object.assign(cell("b2", "Furnace Monitor", "Espressif", "esp32", "Leak Sensor", 70, -0.2), { alone: true }),
+  ];
+  const withBoards = Object.assign({}, BATTERY, { cell_rows: [...CELLS, ...boards], cells: CELLS.length + 2 });
+  ({ root, window } = await open(`${PREFIX}/battery-trends`, { battery_trends: withBoards }));
+  await click(linkNamed(root, "Leak Sensor"));
+  const espRows = tableRows(section(root, "By Model")).filter((tr) => tr.firstChild.textContent === "Espressif esp32");
+  check("Two board devices of the type chosen are two rows, one cell each",
+    espRows.length === 2 && espRows.every((tr) => text(tr.children[2]) === "1"), espRows.map((tr) => text(tr)));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

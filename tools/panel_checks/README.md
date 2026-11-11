@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.28.10 (2026-11-10) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.28.11 (2026-11-10) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -17,7 +17,7 @@ written rather than what it proves).
 | Every tab | `check_tables_hold_columns.js` | 14 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
-| Every tab | `check_type_filters.js` | 35 | types on Battery Trends, Devices and Recommendations, a type in a row as a link that narrows the tab and Not Set to set one, a type set from a card saying so, and no "null" on a quiet day |
+| Every tab | `check_type_filters.js` | 36 | types on Battery Trends, Devices and Recommendations (a device that names no product kept a row of its own when a type is chosen), a type in a row as a link that narrows the tab and Not Set to set one, a type set from a card saying so, and no "null" on a quiet day |
 | Every tab | `check_not_set.js` | 17 | "Not Set" for a type, an area or a battery: a link that sets it in place on the Devices tab, Battery Trends and the device page, saved with where it was pressed, and "Not Watched" on the Devices tab's Excluded and Set aside chips for a device not watched, offered under its own words in the Type filter |
 | Every tab | `check_acknowledged_rows.js` | 13 | an acknowledged row fades to 75% but its tick and "Acknowledged", with the hover, on the Daily Brief's Problem List, a past day's problems with nothing to press, and the Recommendations cards; the Maintenance Mode button's words |
 | Every tab | `check_no_stray_words.js` | 56 | no "null" or "undefined" drawn on any tab, in Simple or Advanced |
@@ -65,7 +65,7 @@ written rather than what it proves).
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1242 checks in 53 files, as of 10 November 2026 (0.28.10).
+1243 checks in 53 files, as of 10 November 2026 (0.28.11).
 
 ## Running Them
 
