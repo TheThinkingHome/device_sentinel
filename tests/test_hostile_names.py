@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hostile_names.py, Version: 0.28.10 (2026-11-10)
+# File: tests/test_hostile_names.py, Version: 0.28.11 (2026-11-10)
 
 """Names and typed text that could break a page (rules CODE-10, DEV-05).
 
@@ -62,6 +62,18 @@ def test_the_report_escape_covers_links_and_pictures_and_comes_back_off():
     assert ReportWritingMixin._report_cell("Soil Irrigation (Monstera)") == "Soil Irrigation (Monstera)"
 
 
+def test_a_names_own_backslash_cannot_undo_the_escape():
+    """A device named with backslashes before its brackets, as a device
+    that names itself can be, read as a link in the brief delivered as
+    a notification: its backslashes escaped the escapes. Each special
+    character is now preceded by an odd number of backslashes."""
+    for name in ("\\[x\\](https://evil.example)", "\\![x\\](https://evil.example/p.png)", "ends\\", "a\\|b"):
+        cell = ReportWritingMixin._report_cell(name)
+        for match in re.finditer(r"(\\*)([|<>\[\]])", cell):
+            assert len(match.group(1)) % 2 == 1, (name, cell)
+        assert _markdown_unescaped(cell) == name
+
+
 async def test_the_last_24_hours_keeps_three_cells_whatever_is_typed(hass: HomeAssistant, hass_ws_client, tmp_path):
     devices = []
     for i, name in enumerate(HOSTILE):
@@ -109,3 +121,22 @@ async def test_a_name_with_hidden_characters_is_refused(hass: HomeAssistant, has
     await client.send_json({"id": 9, "type": "device_sentinel/device_rename", "device_id": device.id, "name": "Café 🔋 Ñandú"})
     assert (await client.receive_json())["success"], "ordinary letters and emoji are welcome"
     assert dr.async_get(hass).async_get(device.id).name_by_user == "Café 🔋 Ñandú"
+
+
+async def test_a_name_in_a_sentence_draws_no_link_in_the_notification(hass: HomeAssistant):
+    """The brief sent to Home Assistant's notification is shown as
+    Markdown. A device's name in a sentence, not a table, could draw a
+    link or load a picture from elsewhere; its brackets are escaped
+    there, and the brief carries no link of its own."""
+    from custom_components.device_sentinel.const import PERSISTENT_TARGET
+
+    coord = await setup_coordinator(hass)
+    text = "## Now\n\n![x](https://evil.example/p.png) is offline. A \\[LG\\] cell stays as it is.\n"
+    message = coord._brief_payload(PERSISTENT_TARGET, text)["message"]
+    assert "![x](" not in message and "!\\[x\\](" in message, message
+    assert "\\[LG\\]" in message and "\\\\[LG" not in message, message
+    # The page and the phone's plain text are left as they were.
+    assert coord._brief_payload("notify.phone", text)["message"] == text
+    # The notification lets some HTML through: angle brackets too.
+    tagged = coord._brief_payload(PERSISTENT_TARGET, "<img src=https://evil.example/p.png> is offline.")["message"]
+    assert not re.search(r"(?<!\\)<img", tagged) and "\\<img" in tagged, tagged

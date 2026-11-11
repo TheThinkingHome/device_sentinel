@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_model_pace.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_model_pace.py, Version: 0.28.11 (2026-11-10)
 
 """How fast the others of a battery's model fall, shown as context
 (rule BAT-16).
@@ -59,3 +59,30 @@ async def test_the_others_of_a_model_give_its_pace(hass: HomeAssistant):
     assert page["model_pace"] == paces[a.id]
     rows = {row["name"]: row for row in coord.battery_trends()["steady"] + coord.battery_trends()["falling"]}
     assert rows["Door A"]["model_pace"] == paces[a.id]
+
+
+async def test_boards_and_devices_with_no_model_get_no_pace(hass: HomeAssistant):
+    """Batteries on unrelated hardware that shares a board name, or
+    reports no model, are not sisters (rule DEV-06)."""
+    coord = await setup_coordinator(hass)
+    made = []
+    for n in range(3):
+        device, _ = register_device(hass, f"b{n}", f"Board {n}")
+        dr.async_get(hass).async_update_device(device.id, manufacturer="Espressif", model="esp32")
+        made.append(device)
+    for n in range(3):
+        device, _ = register_device(hass, f"n{n}", f"Nameless {n}")
+        made.append(device)
+    await registry_settled(hass)
+    for device in made:
+        record = coord.data["devices"][device.id]
+        record[DEV_BATTERY_DAILY] = _falling(1.0)
+        record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
+    paces = coord.battery_model_paces()
+    assert not any(device.id in paces for device in made)
+    # By Model agrees: each is a row of its own, not one pooled model.
+    models = coord.battery_trends()["models"]
+    boards = [row for row in models if row["model"] == "esp32"]
+    unknown = [row for row in models if row["model"] == "not reported"]
+    assert len(boards) == 3 and all(row["cells"] == 1 for row in boards)
+    assert len(unknown) == 3 and all(row["cells"] == 1 for row in unknown)

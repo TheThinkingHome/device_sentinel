@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_disk.py, Version: 0.28.3 (2026-11-05)
+# File: tests/test_history_file_disk.py, Version: 0.28.11 (2026-11-10)
 
 """The history file on disk: the four steps, a stop between any two,
 the restores, the evidence, the backups and the uninstall
@@ -114,7 +114,7 @@ async def test_the_four_steps_leave_two_matching_copies(hass: HomeAssistant, rea
 @pytest.mark.parametrize(
     ("stop_at", "expect_new"),
     [
-        ("after_rename", False),
+        ("after_last_good", False),
         ("after_history", False),
         ("after_main", True),
         ("after_copy", True),
@@ -133,7 +133,7 @@ async def test_a_stop_between_any_two_steps_doubles_and_loses_nothing(
     real_save = coord._store.async_save
 
     async def write_copy(hass_, body, last_good):
-        if stop_at == "after_rename" and not last_good:
+        if stop_at == "after_last_good" and not last_good:
             raise Stop
         if last_good and stop_at == "after_main":
             raise Stop
@@ -153,8 +153,10 @@ async def test_a_stop_between_any_two_steps_doubles_and_loses_nothing(
         except Stop:
             pass
     left = snapshot(real_disk)
-    if stop_at == "after_rename":
-        assert HIST not in left and HIST_COPY in left
+    if stop_at == "after_last_good":
+        # The live file is never moved away, so a stop here leaves it
+        # in place beside a last-good holding the same (rule STOR-04).
+        assert HIST in left and left[HIST_COPY] == left[HIST]
 
     coord2 = await restart_with(hass, entry, lambda: put_back(real_disk, left))
     joined = devices_only(learned(coord2))

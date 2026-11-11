@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_addresses.py, Version: 0.28.0 (2026-11-03)
+# File: tests/test_wifi_addresses.py, Version: 0.28.11 (2026-11-10)
 
 """Each Wi-Fi device's address and access point, and an address two
 devices hold at once (rule UP-19).
@@ -228,3 +228,19 @@ def test_the_diagnostics_download_replaces_the_addresses():
     text = repr(_redact_addresses(payload))
     assert "192.168.1.2" not in text
     assert "11:22:33" not in text
+
+
+async def test_the_card_shows_names_as_text_never_as_markdown(hass: HomeAssistant):
+    """A repair card is shown as Markdown: a name like a picture would
+    load it from elsewhere (rule CODE-10)."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.device_sentinel.repairs import async_evaluate_shared_addresses
+
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    async_evaluate_shared_addresses(
+        hass, entry, {"IP-01": ["![x](https://evil.example/p.png)", "Lamp"]}
+    )
+    detail = _issue(hass).translation_placeholders["detail"]
+    assert "![x](" not in detail and "\\!\\[x\\]" in detail, detail

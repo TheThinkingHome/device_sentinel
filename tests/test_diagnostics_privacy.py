@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_diagnostics_privacy.py, Version: 0.28.11 (2026-11-10)
 
 """Network addresses leave the diagnostics download (rule STOR-21).
 
@@ -177,3 +177,37 @@ async def test_held_values_do_not_reach_the_download(hass: HomeAssistant, freeze
     assert DEV_HELD_VALUES not in out["devices"][device.id]["statistics"]
     assert out["devices"][device.id]["held_value_count"] == 1
     assert out["classification"]["held_values"]["devices_with_held_values"] == 1
+
+
+def test_ipv6_and_mesh_vpn_addresses_go_and_zigbee_addresses_stay():
+    """A router reports a device's global IPv6 address, which carries
+    the house's own prefix, and a mesh VPN hands out addresses in the
+    100.64/10 range; both went into a download whole (rule STOR-21)."""
+    out = _redact_addresses({
+        "ip": "2800:370:1:2::5",
+        "ula": "fd7a:115c:a1e0::1",
+        "link": "fe80::1%eth0",
+        "vpn": "100.101.102.103",
+        "zigbee": "00:12:4b:00:1c:aa:bb:cc",
+        "time": "12:30:45",
+        "version": "1.2.3.4",
+    })
+    assert out["ip"].startswith("IP-") and out["ula"].startswith("IP-") and out["link"].startswith("IP-")
+    assert out["vpn"].startswith("IP-")
+    assert out["zigbee"] == "00:12:4b:00:1c:aa:bb:cc"
+    assert out["time"] == "12:30:45" and out["version"] == "1.2.3.4"
+
+
+def test_an_address_at_the_end_of_a_sentence_is_still_hidden():
+    out = _redact_addresses({
+        "a": "seen at 100.70.2.3.",
+        "b": "seen 2001:db8:1:2::5.",
+        "c": "at 2001:db8::5: then",
+        "d": "::ffff:192.168.1.5",
+        "e": "host:2001:db8::5",
+    })
+    assert out["a"] == "seen at IP-01." or out["a"].startswith("seen at IP-")
+    assert out["b"].startswith("seen IP-") and out["b"].endswith(".")
+    assert out["c"].startswith("at IP-") and out["c"].endswith(": then")
+    assert out["d"].startswith("IP-") and "." not in out["d"]
+    assert out["e"].startswith("host:IP-")

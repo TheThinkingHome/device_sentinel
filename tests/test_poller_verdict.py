@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_poller_verdict.py, Version: 0.28.10 (2026-11-10)
+# File: tests/test_poller_verdict.py, Version: 0.28.11 (2026-11-10)
 
 """The poller verdict that lasts (rule UP-17).
 
@@ -16,7 +16,9 @@ bursts are never announced, even in the first hour after a restart,
 when the hour of storms the older rule read is empty.
 
 A day removed by hand is not counted in either reading, as the freeze
-rules do not count it (rule FRZ-25).
+rules do not count it (rule FRZ-25). Devices are compared on the same
+dates, and never closer than two seconds, so a 30-second poll is still
+seen moving together while devices on their own timers stay apart.
 """
 
 from __future__ import annotations
@@ -206,8 +208,10 @@ def _with_stalls(coord, fleet, removed: bool) -> None:
 
 
 async def test_a_stall_removed_by_hand_is_not_a_pollers_gap(hass: HomeAssistant):
-    """Its stalls kept, the stop would wait for twice the 59 hours.
-    Removed from the count by hand, the gap is the poll's own."""
+    """Read as the freeze rules read a device's days: the newest 14,
+    the longest set aside. The 59-hour stall is set aside on its own,
+    though the 11-hour one beside it still counts; removed by hand, the
+    gap is the poll's own."""
     source = MockConfigEntry(domain="alarmdotcom")
     source.add_to_hass(hass)
     # Two devices, too few to read as moving together, so the verdict
@@ -217,10 +221,10 @@ async def test_a_stall_removed_by_hand_is_not_a_pollers_gap(hass: HomeAssistant)
     coord.data[DATA_STORM_DAYS] = [_storm_day("alarmdotcom", 2, 2800, 31.0), _storm_day("alarmdotcom", 1, 2800, 31.0)]
     _with_stalls(coord, fleet, removed=False)
     coord._fold_pollers(_day(1))
-    assert coord.data[DATA_POLLERS]["alarmdotcom"][POLLER_GAP] == 212411.8
+    assert coord.data[DATA_POLLERS]["alarmdotcom"][POLLER_GAP] == 39144.8
     _with_stalls(coord, fleet, removed=True)
     coord._fold_pollers(_day(1))
-    assert coord.data[DATA_POLLERS]["alarmdotcom"][POLLER_GAP] == 581.8
+    assert coord.data[DATA_POLLERS]["alarmdotcom"][POLLER_GAP] == 484.2
 
 
 async def test_a_day_removed_by_hand_is_not_read_for_lockstep(hass: HomeAssistant):
@@ -246,3 +250,91 @@ async def test_two_rows_for_one_day_count_once(hass: HomeAssistant):
     coord.data[DATA_STORM_DAYS] = [_storm_day("tester", 1, 400, 30.0), _storm_day("tester", 1, 300, 30.0)]
     coord._fold_pollers(_day(1))
     assert "tester" not in coord.data.get(DATA_POLLERS, {})
+
+
+def _dated(coord, device_id: str, days: list[float], skipped: list[str] | None = None) -> None:
+    record = coord.data[DATA_DEVICES].setdefault(device_id, {})
+    record[DEV_DAILY_MAX] = list(days)
+    record["daily_dates"] = {"daily_max": {"last": _day(1), "count": len(days), "skipped": [[d, d] for d in skipped or []]}}
+
+
+async def test_a_thirty_second_poll_still_moves_together(hass: HomeAssistant):
+    """A tester's Alarm.com after its cloud moved to a 30-second poll:
+    the last day read 30.8 and 31.7 seconds across its devices, under a
+    second apart, where 1% is a third of a second."""
+    source = MockConfigEntry(domain="alarmdotcom")
+    source.add_to_hass(hass)
+    fleet = register_fleet(hass, source, 15)
+    coord = await setup_coordinator(hass)
+    for n, (device, _entity) in enumerate(fleet):
+        _dated(coord, device.id, [502.3, 347.1, 360.0, 52.0, 30.8 if n < 5 else 31.7])
+    watched = {device.id: "alarmdotcom" for device, _ in fleet}
+    measure = lockstep(coord.data[DATA_DEVICES], watched)["alarmdotcom"]
+    assert measure["lockstep"] and measure["in_step"] == 15
+    coord._fold_pollers(_day(1))
+    assert len(coord.data[DATA_POLLERS]["alarmdotcom"]["devices"]) == 15
+
+
+async def test_days_are_compared_by_date(hass: HomeAssistant):
+    """A device that missed a day is compared with its neighbours on
+    the same dates, not on the entry before."""
+    source = MockConfigEntry(domain="alarmdotcom")
+    source.add_to_hass(hass)
+    fleet = register_fleet(hass, source, 4)
+    coord = await setup_coordinator(hass)
+    for device, _entity in fleet[:3]:
+        _dated(coord, device.id, [400.0, 300.0, 200.0, 100.0, 50.0, 40.0])
+    # The fourth missed the third-newest day: one entry fewer, the same
+    # values on the dates it has.
+    skipped = (dt_util.now().date() - timedelta(days=3)).isoformat()  # the day the others read 100
+    _dated(coord, fleet[3][0].id, [400.0, 300.0, 200.0, 50.0, 40.0], skipped=[skipped])
+    watched = {device.id: "alarmdotcom" for device, _ in fleet}
+    assert lockstep(coord.data[DATA_DEVICES], watched)["alarmdotcom"]["in_step"] == 4
+
+
+async def test_devices_on_their_own_ten_second_timers_stay_apart(hass: HomeAssistant):
+    """A tester's TP-Link plugs each report every 10 seconds: their
+    longest gaps sit a few seconds apart, and the two-second floor does
+    not draw them together."""
+    source = MockConfigEntry(domain="tplink")
+    source.add_to_hass(hass)
+    fleet = register_fleet(hass, source, 10)
+    coord = await setup_coordinator(hass)
+    for n, (device, _entity) in enumerate(fleet):
+        _dated(coord, device.id, [8.0 + (n * 3 + day * 7) % 9 for day in range(5)])
+    watched = {device.id: "tplink" for device, _ in fleet}
+    assert not lockstep(coord.data[DATA_DEVICES], watched)["tplink"]["lockstep"]
+
+
+async def test_a_device_with_no_dates_in_common_proves_nothing(hass: HomeAssistant):
+    """Two devices of three switched off for a week keep their old
+    dates; no date is held by three, so nothing is compared and the
+    integration is not a poller, not one in step on no evidence."""
+    source = MockConfigEntry(domain="hue")
+    source.add_to_hass(hass)
+    fleet = register_fleet(hass, source, 3)
+    coord = await setup_coordinator(hass)
+    _dated(coord, fleet[0][0].id, [4000.0, 3900.0, 4100.0, 4050.0, 3950.0])
+    for device, _entity in fleet[1:]:
+        record = coord.data[DATA_DEVICES].setdefault(device.id, {})
+        record[DEV_DAILY_MAX] = [300.0] * 5
+        old = (dt_util.now().date() - timedelta(days=8)).isoformat()
+        record["daily_dates"] = {"daily_max": {"last": old, "count": 5, "skipped": []}}
+    watched = {device.id: "hue" for device, _ in fleet}
+    assert "hue" not in lockstep(coord.data[DATA_DEVICES], watched)
+    coord._fold_pollers(_day(1))
+    assert "hue" not in coord.data.get(DATA_POLLERS, {})
+
+
+async def test_the_floor_is_held_to_a_tenth_of_a_fast_gap(hass: HomeAssistant):
+    """Plugs each reporting about every 10 seconds, a second or so
+    apart: two seconds would be a fifth of the gap and draw them
+    together; a tenth keeps them apart."""
+    source = MockConfigEntry(domain="tplink")
+    source.add_to_hass(hass)
+    fleet = register_fleet(hass, source, 3)
+    coord = await setup_coordinator(hass)
+    for n, (device, _entity) in enumerate(fleet):
+        _dated(coord, device.id, [10.0 + (1.5 if (n + day) % 3 == 0 else 0.0) for day in range(5)])
+    watched = {device.id: "tplink" for device, _ in fleet}
+    assert not lockstep(coord.data[DATA_DEVICES], watched)["tplink"]["lockstep"]

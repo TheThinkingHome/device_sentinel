@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_network_page_extras.py, Version: 0.28.8 (2026-11-09)
+# File: tests/test_network_page_extras.py, Version: 0.28.11 (2026-11-10)
 
 """More on a network's page (rules DASH-17, DASH-18).
 
@@ -368,3 +368,18 @@ async def test_noise_statistics_end_at_the_start_of_today(hass: HomeAssistant, m
     await coordinator._noise_daily(["sensor.x"])
     assert seen["end"] == dt_util.start_of_local_day()
     assert extras is not None
+
+
+@pytest.mark.usefixtures("_afternoon")
+async def test_boards_are_not_one_model_on_mixed_firmware(hass: HomeAssistant):
+    """Two unrelated devices that report a bare board's maker and name
+    run their own firmware; that is not one model on two versions (rule
+    DEV-06)."""
+    dryer, entry = _device(hass, "zha", "e1", "Dryer Sensor", "Espressif", "m5stack-atom", "2026.10.1")
+    _device(hass, "zha", "e2", "Furnace Monitor", "Espressif", "m5stack-atom", "2026.9.0", entry)
+    _device(hass, "zha", "e3", "Plug A", "Athom", "Smart Plug V2", "2026.10.1", entry)
+    _device(hass, "zha", "e4", "Plug B", "Athom", "Smart Plug V2", "2026.9.0", entry)
+    coordinator = await setup_coordinator(hass)
+    coordinator._rebuild_registry_view()
+    mixed = coordinator.dashboard_network("zha")["firmware"]["mixed"]
+    assert [(m["maker"], m["model"]) for m in mixed] == [("Athom", "Smart Plug V2")]

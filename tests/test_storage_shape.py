@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.28.3 (2026-11-05)
+# File: test_storage_shape.py, Version: 0.28.11 (2026-11-10)
 
 """The shape check names what does not fit, and last-good follows it
 (rules STOR-04, STOR-05, STOR-06, STOR-07, STOR-09, STOR-12).
@@ -107,10 +107,15 @@ def _clean_storage_files(hass: HomeAssistant):
 
 
 def _plant(hass: HomeAssistant, key: str, body: str) -> None:
+    """Write a file as Home Assistant does: to a temporary name, then
+    swapped in, never over the live name in place. A last-good kept by
+    a hard link shares the live file's contents until the swap (rule
+    STOR-04)."""
     path = os.path.join(hass.config.path(STORAGE_DIR), key)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
+    with open(f"{path}.plant", "w", encoding="utf-8") as handle:
         handle.write(body)
+    os.replace(f"{path}.plant", path)
 
 
 def _last_good(hass: HomeAssistant, key: str) -> Path:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_manifest_dependencies.py, Version: 0.28.7 (2026-11-09)
+# File: tests/test_manifest_dependencies.py, Version: 0.28.11 (2026-11-10)
 
 """The manifest depends on frontend, http, panel_custom and websocket_api,
 loads after esphome, lutron_caseta, mqtt, recorder and zha, and names
@@ -31,7 +31,12 @@ ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs
            # Home Assistant's own statistics, read for a Z-Wave
            # controller's radio noise, and named in after_dependencies
            # (rule DASH-18).
-           "recorder"}
+           "recorder",
+           # Home Assistant's core: its settings for what Assist and the
+           # voice assistants see, to hide the Problem List from them
+           # (rule LIST-14). It is not an integration a manifest names;
+           # hassfest counts it as core.
+           "homeassistant"}
 
 
 def test_the_manifest_declares_nothing_new():

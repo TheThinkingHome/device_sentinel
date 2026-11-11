@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.28.3 (2026-11-05)
+# File: tests/test_model_groups.py, Version: 0.28.11 (2026-11-10)
 
 """Model groups, the backbone (rules DEV-14, DEV-15).
 
@@ -256,6 +256,23 @@ def test_the_model_id_keys_the_group_ahead_of_the_display_name():
     assert [group["model"] for group in section["groups"]] == ["MCCGQ11LM"]
     assert section["groups"][0]["model_name"] == "Door and window sensor"
     assert section["alone"] == 1
+
+
+def test_a_board_or_a_placeholder_is_no_group():
+    """Unrelated ESPHome devices on one bare board, Tasmota's template
+    name and a placeholder share a name, not a product (rule DEV-06)."""
+    identities = {
+        "a": _identity("Espressif", "m5stack-atom"),
+        "b": _identity("Espressif", "m5stack-atom"),
+        "c": _identity("Tasmota", "Generic"),
+        "d": _identity("Tasmota", "Generic"),
+        "e": _identity("Default-Manufacturer", "Default-Model"),
+        "f": _identity("Default-Manufacturer", "Default-Model"),
+        "g": _identity("Acme", "Plug", model_id="Default-Model"),
+        "h": _identity("Acme", "Plug", model_id="Default-Model"),
+    }
+    section = build_model_groups({}, identities, {}, set(), BatteryReportMixin._battery_slope, _never)
+    assert section["groups"] == []
 
 
 def test_every_watched_device_is_accounted_for_once():
