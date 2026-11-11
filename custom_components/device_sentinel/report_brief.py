@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.11 (2026-11-10)
+# File: report_brief.py, Version: 0.28.12 (2026-11-11)
 
 """The daily brief: the one report written for a person.
 
@@ -114,6 +114,7 @@ from .const import (
     SYS_BATTERY_REPLACED,
     SYS_DEVICE_HANDLED,
     SYS_PAIRING_OPEN,
+    SYS_RELOAD,
     SYS_RESTART,
     SYS_SCOPE,
     SYS_SCOPE_SYSTEM,
@@ -495,6 +496,8 @@ class BriefMixin:
         span = row.get(SYS_DURATION)
         held = self._human_span(span) if span else None
         kind = row.get(SYS_KIND)
+        if kind == SYS_RELOAD:
+            return f"Device Sentinel was reloaded at {when}."
         if kind == SYS_RESTART:
             if held:
                 return (
@@ -892,6 +895,8 @@ class BriefMixin:
                 if held
                 else f"{device} back, its {title} connection came back"
             ) + tail
+        if kind == SYS_RELOAD:
+            return "reloaded Device Sentinel"
         if kind == SYS_RESTART:
             # The row's device column already reads "The system" (rule
             # BRIEF-07).

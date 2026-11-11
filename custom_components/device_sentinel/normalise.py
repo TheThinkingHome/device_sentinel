@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.28.10 (2026-11-10)
+# File: normalise.py, Version: 0.28.12 (2026-11-11)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -64,9 +64,15 @@ from .const import (
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_COUNTS,
+    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_RAW_FIRST_DAY,
+    DEV_BATTERY_RAW_CLEARED,
     DEV_FLAP_BACK,
     DEV_FIRMWARE_HISTORY,
     DEV_BATTERY_FORECASTS,
@@ -318,9 +324,15 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_REPLACED_AT: STRING,
     DEV_BATTERY_FIRST_LOW: STRING,
     DEV_BATTERY_REPLACED_PENDING: LEVEL,
+    DEV_BATTERY_DAY_LEVELS: LEVEL_SERIES,
+    DEV_BATTERY_DAY_COUNTS: INT_SERIES,
+    DEV_BATTERY_RANGE_LOWS: LEVEL_SERIES,
+    DEV_BATTERY_RANGE_HIGHS: LEVEL_SERIES,
+    DEV_BATTERY_PENDING_HIGH: LEVEL,
     DEV_BATTERY_COARSE_DROPS: INTEGER,
     DEV_BATTERY_RAW_SCALE: BOOLEAN,
     DEV_BATTERY_RAW_FIRST_DAY: STRING,
+    DEV_BATTERY_RAW_CLEARED: BOOLEAN,
     DEV_FLAP_DROPS: MOMENT_SERIES,
     DEV_FLAP_SINCE: MOMENT,
     DEV_FLAP_BACK: MOMENT,

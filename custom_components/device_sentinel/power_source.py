@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.28.10 (2026-11-10)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.28.12 (2026-11-11)
 
 """What powers each device (rule DEV-06).
 
@@ -129,9 +129,13 @@ PLACEHOLDER_NAMES = frozenset({
 })
 
 # A maker that names the chip, not the product. ESPHome reports a device
-# built on a bare board as made by Espressif, with the board as its model,
-# so a dryer sensor, a furnace monitor and a display share one "model".
+# built on a bare board as made by its chip maker, with the board as its
+# model, so a dryer sensor, a furnace monitor and a display share one
+# "model": Espressif, and for converted Tuya hardware Beken, Realtek and
+# Lightning, and Nordic Semiconductor. Raspberry Pi is left out: its own
+# products report that maker too.
 CHIP_MAKERS = ("espressif",)
+CHIP_MAKER_NAMES = frozenset({"beken", "realtek", "lightning", "nordic semiconductor"})
 
 
 def is_placeholder(value: Any) -> bool:
@@ -147,6 +151,7 @@ def stands_for_none(manufacturer: Any, model: Any) -> bool:
     return (
         is_placeholder(manufacturer) or is_placeholder(model)
         or maker.startswith(CHIP_MAKERS)
+        or maker in CHIP_MAKER_NAMES
     )
 
 

@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.16 (2026-10-31)
+# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.28.12 (2026-11-11)
 
 """Battery Last Replaced, and a person's answer to a detected one (rule BAT-07).
 
-Device Sentinel detects a new cell: a rise held over two readings
-starts the battery history again, so the trend, the days left and the
+Device Sentinel detects a new cell: a rise the next whole day stays
+above starts the battery history again, so the trend, the days left and the
 charts describe the cell in the device (rule BAT-06). A wrong date
 makes all three wrong, so a person can say so:
 

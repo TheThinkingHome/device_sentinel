@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.27.16 (2026-10-31)
+# File: detect_battery.py, Version: 0.28.12 (2026-11-11)
 
 """Battery: the level threshold and what is tracked.
 
@@ -54,11 +54,16 @@ from .report_battery import battery_latched
 from .const import (
     LOGNORMAL_RESTART_BATTERY,
     BATTERY_REPLACED_LANDS,
-    BATTERY_REPLACED_FROM_BELOW,
+    BATTERY_DAY_LEVELS_KEPT,
+    BATTERY_FULL_RISE,
+    BATTERY_RANGE_DAYS,
+    BATTERY_REPLACED_CLEAR,
+    BATTERY_SAMPLE_REPEATS,
     BATTERY_REPLACED_RISE,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_RAW_FIRST_DAY,
+    DEV_BATTERY_RAW_CLEARED,
     DEV_BATTERY_DAILY_PREVIOUS,
     BATTERY_COARSE_CONFIRM,
     BATTERY_COARSE_STEP,
@@ -66,6 +71,11 @@ from .const import (
     BATTERY_STEPS_SMOOTH,
     BATTERY_STEPS_UNKNOWN,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_COUNTS,
+    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_REPLACED_AT,
     SYS_BATTERY_REPLACED,
     SYS_SCOPE_SYSTEM,
@@ -99,7 +109,15 @@ def mark_raw_battery(record: dict[str, Any]) -> bool:
         return False
     record[DEV_BATTERY_RAW_SCALE] = True
     record[DEV_BATTERY_RAW_FIRST_DAY] = None
-    for field in (DEV_BATTERY_DAILY, DEV_BATTERY_DAILY_PREVIOUS):
+    if record.get(DEV_BATTERY_RAW_CLEARED):
+        # Proved again after a clear: everything stored since is in
+        # percent already, so halving it would halve it twice.
+        record[DEV_BATTERY_RAW_CLEARED] = False
+        return True
+    for field in (
+        DEV_BATTERY_DAILY, DEV_BATTERY_DAILY_PREVIOUS, DEV_BATTERY_DAY_LEVELS,
+        DEV_BATTERY_RANGE_LOWS, DEV_BATTERY_RANGE_HIGHS,
+    ):
         series = record.get(field)
         if isinstance(series, list):
             record[field] = [
@@ -108,7 +126,9 @@ def mark_raw_battery(record: dict[str, Any]) -> bool:
                 else v
                 for v in series
             ]
-    for field in (DEV_BATTERY_VALUE, DEV_BATTERY_REPLACED_PENDING):
+    for field in (
+        DEV_BATTERY_VALUE, DEV_BATTERY_REPLACED_PENDING, DEV_BATTERY_PENDING_HIGH,
+    ):
         value = record.get(field)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             record[field] = value / 2.0
@@ -125,6 +145,7 @@ def clear_raw_battery(record: dict[str, Any], why: str) -> bool:
         return False
     record[DEV_BATTERY_RAW_SCALE] = False
     record[DEV_BATTERY_RAW_FIRST_DAY] = None
+    record[DEV_BATTERY_RAW_CLEARED] = True
     LOGGER.info(
         "device_sentinel: the raw battery scale mark was cleared after "
         "%s; the device is measured again",
@@ -194,10 +215,110 @@ def _battery_steps_of(series: tuple[float, ...], stored: int) -> str:
         return BATTERY_STEPS_COARSE
     return BATTERY_STEPS_UNKNOWN
 
+def _level(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _levels_and_counts(record: dict[str, Any]) -> tuple[list[float], list[int]]:
+    levels = record.get(DEV_BATTERY_DAY_LEVELS)
+    counts = record.get(DEV_BATTERY_DAY_COUNTS)
+    if not isinstance(levels, list) or not isinstance(counts, list) or len(levels) != len(counts):
+        # Out of step after a hand edit or a hostile file: start the day again.
+        return [], []
+    kept = [
+        (float(level), count)
+        for level, count in zip(levels, counts, strict=True)
+        if _level(level) and isinstance(count, int) and not isinstance(count, bool) and count > 0
+    ]
+    return [level for level, _ in kept], [count for _, count in kept]
+
+
+def note_battery_sample(record: dict[str, Any], level: Any) -> None:
+    """Note one moment the battery was heard holding this level: its own
+    report, or any time the device spoke while the level stood (rule
+    BAT-06). A value that is not a level, as a binary battery's flag is,
+    is not noted."""
+    if not _level(level):
+        return
+    levels, counts = _levels_and_counts(record)
+    # Whole numbers: at most 101 levels a day, and none dropped.
+    level = float(round(level))
+    if level in levels:
+        counts[levels.index(level)] += 1
+    elif len(levels) < BATTERY_DAY_LEVELS_KEPT:
+        levels.append(level)
+        counts.append(1)
+    record[DEV_BATTERY_DAY_LEVELS] = levels
+    record[DEV_BATTERY_DAY_COUNTS] = counts
+
+
+def battery_day_range(record: dict[str, Any]) -> tuple[float, float] | None:
+    """The day's lowest and highest level, counting only levels the
+    device was heard holding at two moments or more, so a value held for
+    seconds decides nothing; a day with none such counts every level
+    (rule BAT-06)."""
+    levels, counts = _levels_and_counts(record)
+    if not levels:
+        return None
+    held = [level for level, count in zip(levels, counts, strict=True) if count >= BATTERY_SAMPLE_REPEATS]
+    chosen = held or levels
+    return min(chosen), max(chosen)
+
+
+def _ranges(record: dict[str, Any]) -> tuple[list[float], list[float]]:
+    lows = record.get(DEV_BATTERY_RANGE_LOWS)
+    highs = record.get(DEV_BATTERY_RANGE_HIGHS)
+    if not isinstance(lows, list) or not isinstance(highs, list) or len(lows) != len(highs):
+        return [], []
+    if not all(_level(v) for v in (*lows, *highs)):
+        return [], []
+    return [float(v) for v in lows], [float(v) for v in highs]
+
+
+def close_battery_day(record: dict[str, Any]) -> None:
+    """At midnight the day's range joins the last three, and a new day
+    starts with the level the battery holds now (rule BAT-06)."""
+    lows, highs = _ranges(record)
+    day = battery_day_range(record)
+    if day is not None:
+        lows.append(day[0])
+        highs.append(day[1])
+        record[DEV_BATTERY_RANGE_LOWS] = lows[-BATTERY_RANGE_DAYS:]
+        record[DEV_BATTERY_RANGE_HIGHS] = highs[-BATTERY_RANGE_DAYS:]
+    record[DEV_BATTERY_DAY_LEVELS] = []
+    record[DEV_BATTERY_DAY_COUNTS] = []
+    note_battery_sample(record, record.get(DEV_BATTERY_VALUE))
+
+
+def old_cell_high(record: dict[str, Any], level: float) -> float | None:
+    """The old cell's highest level before a rise found at this midnight.
+
+    Read during the roll, before the day that ends now is kept: that day
+    holds the change and both cells, so it is never read. A rise that
+    lands at full is set against the whole
+    day before it, so a cell that collapses and is changed a day later is
+    found. A rise that lands below full, which a new cell never does, is
+    set against the two days before it, so a dip held a whole day, as a
+    lock's low warning can be, is still the old cell's (rule BAT-06)."""
+    _lows, highs = _ranges(record)
+    days = 1 if level >= BATTERY_REPLACED_LANDS else 2
+    before = highs[-days:]
+    return max(before) if before else None
+
+
 class BatteryMixin:
     """Battery: the level threshold and what is tracked."""
 
     def _roll_battery(self, record: dict[str, Any], device_id: str = "") -> None:
+        """The midnight roll: the day's range is kept first, so the roll
+        can judge a rise against the days before it, and a new day starts
+        after (rule BAT-06)."""
+        try:
+            self._roll_battery_day(record, device_id)
+        finally:
+            close_battery_day(record)
+
+    def _roll_battery_day(self, record: dict[str, Any], device_id: str = "") -> None:
         """Append today's battery level to the daily discharge series.
 
         One point per day, sampled here at the rollover: the value,
@@ -256,16 +377,33 @@ class BatteryMixin:
             # and the series keeps growing; the next sample decides
             # (rule BAT-06).
             record[DEV_BATTERY_REPLACED_PENDING] = previous
+            # The old cell's high before the rise: the new cell's next
+            # whole day must stay above it (rule BAT-06).
+            record[DEV_BATTERY_PENDING_HIGH] = old_cell_high(record, level)
             self._note_battery_step(record, previous, level)
             series.append(level)
             del series[:-self.retention_days]
             return
         if pending is not None:
             record[DEV_BATTERY_REPLACED_PENDING] = None
+            old_high = record.get(DEV_BATTERY_PENDING_HIGH)
+            record[DEV_BATTERY_PENDING_HIGH] = None
+            # A new cell stays above the old cell's high all its next
+            # whole day. A dip or a swing comes back only to where the
+            # old cell already read, so its day reaches as low as that
+            # (rule BAT-06). Without a day kept before the rise, as
+            # just after the upgrade, the rise is judged on the midnight
+            # levels alone, as before.
+            next_day = battery_day_range(record)
+            overlaps = (
+                _level(old_high)
+                and next_day is not None
+                and next_day[0] <= float(old_high) + BATTERY_REPLACED_CLEAR
+            )
             # An empty history means the person already gave the day
             # and the history split there: nothing is left to confirm
             # (rule BAT-07).
-            if not series or not self._battery_replaced(pending, level):
+            if not series or overlaps or not self._battery_replaced(pending, level):
                 # The rise did not hold against the reading before
                 # it, so the day it appeared was a bad sample and the
                 # history it would have erased is still the truth.
@@ -283,6 +421,8 @@ class BatteryMixin:
             # being kept with the history it does not belong to or
             # discarded as though it never happened.
             carried = series[-1:]
+            # The last days' ranges are kept: a new cell cannot rise
+            # again past full, and Cancel finds them as they were.
             day = getattr(self, "_folding_day", None) or dt_util.now().date()
             # Today's level is not in the series yet: its newest entry
             # is the day the rise first appeared, the previous fold.
@@ -295,7 +435,12 @@ class BatteryMixin:
             kept_dates: list[Any] = []
             entered = self._battery_answers().get(device_id) if dates else None  # type: ignore[attr-defined]
             same = bool(dates and self._entered_just_before(device_id, dates[-1]))  # type: ignore[attr-defined]
-            if same:
+            # A detection still waiting for a person keeps its saved
+            # history too: replacing it would lose the oldest days for
+            # good, and Cancel could not join them back (rules BAT-06,
+            # BAT-07).
+            waiting = isinstance(entered, dict) and bool(entered.get("waiting"))
+            if same or waiting:
                 kept_previous = list(record.get(DEV_BATTERY_DAILY_PREVIOUS) or [])
                 kept_dates = dates_for(
                     record, FAMILY_BATTERY_PREVIOUS, len(kept_previous),
@@ -410,21 +555,17 @@ class BatteryMixin:
 
     @staticmethod
     def _battery_replaced(previous: float, level: float) -> bool:
-        """Return whether a rise between two days is a new cell.
+        """Return whether a rise between two days may be a new cell.
 
-        Either a rise too large to be anything else, or a crossing
-        from at or below ninety to at or above ninety-five. The
-        second exists because a cell changed at eighty reads a
-        hundred, which the first test misses; its lower bound exists
-        because a cell already near full can drift the last few
-        points on its own (rule BAT-06).
+        Either a rise too large to be anything else, or one that lands
+        at full and gains at least ten: a cell changed at eighty reads a
+        hundred, which the first test misses, and a cell drifting from 92
+        to 96 on a warm day gains too little to be one. The next whole
+        day decides (rule BAT-06).
         """
         if level - previous >= BATTERY_REPLACED_RISE:
             return True
-        return (
-            level >= BATTERY_REPLACED_LANDS
-            and previous <= BATTERY_REPLACED_FROM_BELOW
-        )
+        return level >= BATTERY_REPLACED_LANDS and level - previous >= BATTERY_FULL_RISE
 
     @staticmethod
     def _is_battery(ent: er.RegistryEntry) -> bool:
@@ -544,11 +685,18 @@ class BatteryMixin:
             else:
                 is_low = level <= threshold
 
-        changed = (
-            is_low != was_low
-            or record.get(DEV_BATTERY_VALUE) != level
-        )
+        new_level = record.get(DEV_BATTERY_VALUE) != level
+        changed = is_low != was_low or new_level
         record[DEV_BATTERY_VALUE] = level
+        if new_level:
+            # The battery's own report of a new level is one moment it
+            # was heard holding it; each later moment the device speaks
+            # is another (rule BAT-06).
+            note_battery_sample(record, level)
+            # The report is this minute's moment heard (rule BAT-06).
+            sampled = getattr(self, "_battery_sampled_at", None)
+            if isinstance(sampled, dict):
+                sampled[device_id] = dt_util.utcnow().timestamp()
         if is_low and not was_low and self._in_startup_grace():
             # A battery that reads low for the first time inside the
             # startup window is held, not flagged, because at a restart

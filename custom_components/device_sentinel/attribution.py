@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.28.10 (2026-11-10)
+# File: attribution.py, Version: 0.28.12 (2026-11-11)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -50,6 +50,7 @@ from .const import (
     SYS_KIND,
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
+    SYS_RELOAD,
     SYS_RESTART,
     SYS_SCOPE,
     SYS_STORM_CLOSED,
@@ -216,6 +217,16 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
         kind = row.get(SYS_KIND)
         scope = row.get(SYS_SCOPE) or ""
         when = row.get(SYS_WHEN)
+        if kind == SYS_RELOAD:
+            # A reload ends no outage, which Device Sentinel resumes, but a
+            # pairing window and a burst live only in memory and are never
+            # closed after one, so they end here (rule UP-06).
+            for key, open_window in list(pending.items()):
+                if open_window.kind in (SYS_PAIRING_OPEN, SYS_STORM_OPEN):
+                    open_window.end = when
+                    open_window.inferred_end = True
+                    pending.pop(key)
+            continue
         if kind in (SYS_RESTART, SYS_UNCLEAN_RESTART):
             # Anything still open did not survive this, and the
             # closing was never going to be written. Bounded at the
@@ -353,6 +364,7 @@ _PHRASE = {
     SYS_BROKER_DOWN: "the MQTT broker going down and coming back",
     SYS_UNCLEAN_RESTART: "an unclean restart",
     SYS_RESTART: "a restart",
+    SYS_RELOAD: "a reload",
 }
 
 

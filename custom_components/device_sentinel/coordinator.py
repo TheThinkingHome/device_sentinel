@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.11 (2026-11-10)
+# File: coordinator.py, Version: 0.28.12 (2026-11-11)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -69,6 +69,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
@@ -93,6 +94,7 @@ from .normalise import (
 )
 from .repairs import (
     _english_list,
+    async_clear_corruption_of,
     async_clear_home_assistant_corruption,
     async_evaluate,
     async_raise_restored,
@@ -110,6 +112,7 @@ from .backup import (
     async_diagnose_empty_load,
     async_copy_corrupt_evidence,
     _last_good_holds_devices,
+    kept_beside_a_fresh_start,
 )
 from .rhythm_rules import lognormal_days, slowed_down
 from .daily_dates import (
@@ -135,6 +138,12 @@ from .history_file import fold_line
 from .store import _version_tuple as _store_version_tuple
 from .removed_days import counted_gaps, prune_removed
 from .const import (
+    BROKER_RIDER_DOMAINS,
+    DOMAIN,
+    BROKER_SCOPE,
+    MQTT_CONNECTION_SIGNAL,
+    MQTT_HANDBACK_SECONDS,
+    MQTT_SIGNAL_SLACK_SECONDS,
     CONF_EXCLUDED_INTEGRATIONS,
     ACTIVE_REPORT_SECONDS,
     SET_ASIDE_NOTICES_ONLY,
@@ -165,6 +174,7 @@ from .const import (
     BACKUP_SUFFIX_PREPHASE_C,
     BACKUP_TAKEN_KEY,
     BATTERY_ARMING_DAYS,
+    BATTERY_SAMPLE_SPACING,
     BRIEF_TRIGGER,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_MUTED_DEVICES,
@@ -283,6 +293,7 @@ from .const import (
     SYS_MAINTENANCE_OPEN,
     SYS_OPTIONS_CHANGED,
     SYS_CLOCK_RESET,
+    SYS_RELOAD,
     SYS_RESTART,
     SYS_TRIMMED,
     SYS_UNCLEAN_RESTART,
@@ -300,7 +311,7 @@ from .const import (
     PAIRING_GRACE_SECONDS_DEFAULT,
     WATCH_STOPS_KEPT,
 )
-from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
+from .detect_battery import BatteryMixin, mark_raw_battery, note_battery_sample, raw_battery_history
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
 from .detect_freeze import FreezeMixin
@@ -394,6 +405,11 @@ def _forget_hold_verdicts(record: dict[str, Any]) -> None:
         DEV_BATTERY_LOW, DEV_BATTERY_SINCE, DEV_BATTERY_VALUE,
     ):
         record[field] = fresh[field]
+
+
+# Set in Home Assistant's memory at Device Sentinel's first setup in a
+# run, so a later setup in the same run is known as a reload.
+SETUP_MARK = "device_sentinel_set_up"
 
 
 class DeviceSentinelCoordinator(
@@ -509,6 +525,12 @@ class DeviceSentinelCoordinator(
         self._hand_deleted: set[str] = set()
 
         self._entity_map: dict[str, tuple[str, str | None]] = {}
+        self._stateless_at_start: set[str] = set()
+        # When each device's battery level was last sampled, and the
+        # devices with a sample waiting for their message to finish
+        # (rule BAT-06). Memory only.
+        self._battery_sampled_at: dict[str, float] = {}
+        self._battery_sample_due: set[str] = set()
         # Each watched device's own entities, from the same rebuild, so
         # reading one device's states does not walk every entity in
         # the house (rule GEN-05).
@@ -558,6 +580,10 @@ class DeviceSentinelCoordinator(
         # Whether the live file on disk was last written clean, so
         # the next clean save may rotate it to last-good (rule STOR-04).
         self._rotation_armed: bool = False
+        # A start that began empty beside a last-good copy holding
+        # devices, or a history file: this session never takes their
+        # place (rule STOR-08).
+        self._fresh_beside_kept: bool = False
         # Devices whose registry entry could not be read, warned of once
         # per start so the log is not flooded.
         self._odd_devices: set[str] = set()
@@ -682,6 +708,10 @@ class DeviceSentinelCoordinator(
 
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
+        # When MQTT last lost the broker, and found it again after
+        # (rule UNAV-05).
+        self._mqtt_disconnected_at: float | None = None
+        self._mqtt_reconnected_at: float | None = None
         # Faults waiting out their notification debounce, keyed
         # by (device_id, kind). A hold is cancelled by its own
         # recovery, so anything still here is still true.
@@ -715,8 +745,15 @@ class DeviceSentinelCoordinator(
         # not written again. Memory only: every setup writes once.
         self._card_written: str | None = None
         # The dashboard's change marker and whoever is subscribed to it.
-        self._change_marker = 0
-        self._change_listeners: list[Any] = []
+        # The marker starts from the clock, in milliseconds, so it keeps
+        # rising across restarts and reloads: an open tab waits for a
+        # marker above the one it shows. The subscribers are kept with
+        # Home Assistant, not with this run, so a tab open across a
+        # reload hears the next run's changes (rule DASH-14).
+        self._change_marker = int(time.time() * 1000)
+        self._change_listeners: list[Any] = hass.data.setdefault(
+            f"{DOMAIN}_change_listeners", []
+        )
         self._brief_unsub: Any | None = None
         # Report writes take turns. Each report is saved through a
         # temporary file of a fixed name, so two writes at once would
@@ -803,6 +840,12 @@ class DeviceSentinelCoordinator(
         # No silence is counted from before this: the run's start, or a
         # clock step, which leaves the stamps before it on another time.
         self._heard_floor: float | None = None
+        # When each entry last came back, and when the broker did: a
+        # poller's silence is not counted from before either, since its
+        # devices could not be heard while it, or the broker its devices
+        # ride, was down (rule UP-17).
+        self._entry_back_at: dict[str, float] = {}
+        self._broker_back_at: float | None = None
         self._integration_told: set[str] = set()
         # Entry outages by entry: each one's detail, the one
         # device an entry carries, and whether the open outages in the
@@ -1083,7 +1126,7 @@ class DeviceSentinelCoordinator(
         await self.async_load_answers()
         try:
             loaded = await self._store.async_load()
-        except (HomeAssistantError, ValueError, RecursionError) as err:
+        except (HomeAssistantError, ValueError, KeyError, TypeError, AttributeError, RecursionError, NotImplementedError) as err:
             # RecursionError: a document nested deeper than Python can
             # walk, written by hand or by another tool (rule STOR-08).
             # Restore. The alternative to replacing an unreadable file
@@ -1103,21 +1146,24 @@ class DeviceSentinelCoordinator(
                     TRIM_BACKUP_DIR,
                     stamp or "unstamped",
                 )
-                try:
-                    loaded = await self._store.async_load()
-                except (HomeAssistantError, ValueError) as second:
+                # Read from the disk, never through the Store: Home
+                # Assistant answers a Store from the list of files it
+                # made when it started, so a file put back since can
+                # read as missing, and the start would go on empty
+                # (rule STOR-08).
+                loaded = await self.hass.async_add_executor_job(
+                    read_main_file_raw, self.hass
+                )
+                if loaded is None:
                     # The restored file will not load either, so the
-                    # fault is not the file. Without this the second
-                    # failure would escape uncaught and a person would
-                    # get a traceback instead of a sentence (rule
-                    # STOR-08).
+                    # fault is not the file: a sentence, never a
+                    # traceback (rule STOR-08).
                     LOGGER.error(
                         "Device Sentinel restored %s from its "
-                        "last-good copy and still cannot read it: "
-                        "%s. Nothing further has been changed; copies "
+                        "last-good copy and still cannot read it. "
+                        "Nothing further has been changed; copies "
                         "were written to %s as %s",
                         STORAGE_KEY,
-                        second,
                         TRIM_BACKUP_DIR,
                         stamp or "unstamped",
                     )
@@ -1125,7 +1171,7 @@ class DeviceSentinelCoordinator(
                         f"Device Sentinel restored {STORAGE_KEY} from "
                         f"its last-good copy and still cannot read "
                         f"it. Nothing further has been changed."
-                    ) from second
+                    ) from err
                 self._restored_from = taken
                 self._restore_evidence = stamp
                 self._restore_copied = copied
@@ -1206,7 +1252,16 @@ class DeviceSentinelCoordinator(
                         self.hass, corrupt, stamp
                     )
                 restored, taken = await async_restore_main_file(self.hass)
-                if restored:
+                # Read from the disk, never through the Store, which
+                # answers from the list of files Home Assistant made
+                # when it started: a main file missing then reads as
+                # missing still, and the start would go on empty and
+                # write over the copy it came from (rule STOR-08).
+                fresh = (
+                    await self.hass.async_add_executor_job(read_main_file_raw, self.hass)
+                    if restored else None
+                )
+                if fresh is not None:
                     LOGGER.warning(
                         "Device Sentinel found %s %s, so it was "
                         "replaced from the last-good copy and startup "
@@ -1222,7 +1277,7 @@ class DeviceSentinelCoordinator(
                         TRIM_BACKUP_DIR,
                         stamp or "unstamped",
                     )
-                    loaded = await self._store.async_load()
+                    loaded = fresh
                     self._restored_from = taken
                     self._restore_evidence = stamp
                     self._restore_copied = copied
@@ -1254,6 +1309,26 @@ class DeviceSentinelCoordinator(
                 DATA_SETUP_COUNT: 0,
                 DATA_DEVICES: {},
             }
+            # Beside a copy holding devices, or a history file, an empty
+            # start is not a first install: its saves never rotate over
+            # the copy, copy over it, or remove the history files, so
+            # what the house had is still there (rule STOR-08).
+            self._fresh_beside_kept = await self.hass.async_add_executor_job(
+                kept_beside_a_fresh_start, self.hass
+            )
+            if self._fresh_beside_kept:
+                # Copied aside whatever led here, so the files are kept
+                # past this session: a later start reads a clean main
+                # file and may rotate over them (rules STOR-08, STOR-11).
+                stamp, _copied = await async_copy_evidence(self.hass)
+                LOGGER.error(
+                    "Device Sentinel starts empty beside a last-good copy "
+                    "or history file it could not use. They are left as "
+                    "they are until Device Sentinel restarts, and copies "
+                    "were written to %s as %s",
+                    TRIM_BACKUP_DIR,
+                    stamp or "unstamped (the copy failed)",
+                )
         # The two gates, with the restore retry (rules STOR-05, STOR-09).
         # Gate 1 checks the containers, the load-time steps run, gate
         # 2 checks everything, and a faulty document with a usable
@@ -1460,7 +1535,9 @@ class DeviceSentinelCoordinator(
             # is intact and the merge already handles a missing companion.
             try:
                 hot_payload = await self._clock_store.async_load()
-            except (HomeAssistantError, ValueError) as err:
+                if hot_payload is not None and not isinstance(hot_payload, dict):
+                    raise ValueError("not a clocks document")
+            except (HomeAssistantError, ValueError, KeyError, TypeError, AttributeError, RecursionError, NotImplementedError) as err:
                 LOGGER.warning(
                     "Device Sentinel cannot read %s, so this start uses "
                     "the clocks held in %s instead. Nothing learned is "
@@ -1470,6 +1547,11 @@ class DeviceSentinelCoordinator(
                     err,
                 )
                 hot_payload = None
+            if hot_payload is None:
+                # Home Assistant's own card for a clocks file it set
+                # aside tells a person to restore the whole system; the
+                # clocks rebuild within a day (rules STOR-10, REP-08).
+                async_clear_corruption_of(self.hass, STORAGE_CLOCKS_KEY)
             # A clocks file that holds damage is discarded whole before
             # the merge, never healed (rule STOR-10): it rebuilds itself
             # within a day, so a damaged one is treated exactly like a
@@ -1540,7 +1622,9 @@ class DeviceSentinelCoordinator(
                         # (rule STOR-19).
                         for field, value in fresh.items():
                             if field not in EPOCH_KEPT:
-                                record[field] = value
+                                # Its own copy: one list shared by every
+                                # device would gather each device's days.
+                                record[field] = copy.deepcopy(value)
                         # The gap history was just cleared, so its dates
                         # go with it; the battery and signal histories
                         # survive the wipe with theirs (rule STOR-16).
@@ -1856,7 +1940,7 @@ class DeviceSentinelCoordinator(
                 "device has been watched and were forgotten",
                 capped[0], capped[1],
             )
-        self._orphan_episodes = self._count_orphan_episodes(loaded)
+        self._orphan_episodes = self._count_orphan_episodes(loaded, reloaded=clean_stop)
         converted = self._coerce_taint_reasons(loaded[DATA_DEVICES])
         if converted:
             LOGGER.info(
@@ -1950,6 +2034,12 @@ class DeviceSentinelCoordinator(
         # values has its entities put on watch before the first state
         # is heard (rule WATCH-12).
         self._arm_held_watches()
+        # The entities with no state yet as Device Sentinel starts to
+        # listen: their integration has not finished loading, and the
+        # first value each writes is the value it kept (rule UNAV-05).
+        self._stateless_at_start = {
+            entity_id for entity_id in self._entity_map if self.hass.states.get(entity_id) is None
+        }
         self._unsubs.append(
             self.hass.bus.async_listen(
                 "state_changed",
@@ -1962,6 +2052,15 @@ class DeviceSentinelCoordinator(
                 EVENT_STATE_REPORTED,
                 self._on_state_reported,
                 event_filter=self._event_filter,
+            )
+        )
+        # MQTT's own word on its connection to the broker. When it comes
+        # back, every MQTT entity writes back the value it already held,
+        # with no message from any device; a restart of the broker can
+        # come and go between two minute checks (rule UNAV-05).
+        self._unsubs.append(
+            async_dispatcher_connect(
+                self.hass, MQTT_CONNECTION_SIGNAL, self._on_mqtt_connection
             )
         )
         # A command to a watched device's entity, from a device card,
@@ -2097,8 +2196,12 @@ class DeviceSentinelCoordinator(
         # The house's own record of what happened to it. Written here
         # rather than at load, so a start that failed halfway leaves
         # no claim that the system came back.
+        # The first setup in this Home Assistant process is its start;
+        # a later one is a reload, with Home Assistant running on.
+        reloaded = bool(self.hass.data.get(SETUP_MARK))
+        self.hass.data[SETUP_MARK] = True
         self._record_system_event(
-            SYS_RESTART,
+            SYS_RELOAD if reloaded else SYS_RESTART,
             duration=self._downtime if self._downtime > 0.0 else None,
             when=self._started_at,
         )
@@ -2894,6 +2997,9 @@ class DeviceSentinelCoordinator(
         self._set_aside = set_aside
         self._muted_devices = muted_devices
         self._entity_map = entity_map
+        # An entity removed since the start is no longer waiting for its
+        # integration to load; added again, it is a device paired.
+        self._stateless_at_start &= entity_map.keys()
         self._foreign_entities = foreign_entities
         own_entities: dict[str, list[str]] = {}
         for entity_id, (owner, _) in entity_map.items():
@@ -4047,7 +4153,7 @@ class DeviceSentinelCoordinator(
         old_state = event.data.get("old_state")
         # A held entity reading a different value is the device speaking,
         # whatever came before it (rule WATCH-12).
-        if reading != "spoke" and self._republished(device_id, old_state, was_gone):
+        if reading != "spoke" and self._republished(device_id, old_state, was_gone, entity_id):
             # A value coming back through a restart or an outage is the
             # stack republishing it, not the device speaking (rule
             # UNAV-05). Kept as a reading,
@@ -4066,11 +4172,69 @@ class DeviceSentinelCoordinator(
                 notify_on_change=True,
             )
 
+    @callback
+    def _on_mqtt_connection(self, connected: bool) -> None:
+        """Note when MQTT lost and found the broker (rule UNAV-05)."""
+        now = dt_util.utcnow().timestamp()
+        if connected:
+            self._mqtt_reconnected_at = now
+        else:
+            self._mqtt_disconnected_at = now
+            self._mqtt_reconnected_at = None
+
+    def _mqtt_handing_back(self, device_id: str, old_state: Any, now: float) -> bool:
+        """Whether a device that rides the broker is handing back what
+        it held after MQTT lost the broker (rule UNAV-05).
+
+        Its unavailable began as MQTT lost the broker, and the value
+        comes back before MQTT has said it is connected again, or within
+        the minute after. Each MQTT entity hears MQTT's signal on its own
+        and may write before Device Sentinel hears it, so the disconnect,
+        which every entity's unavailable follows, is what is matched.
+        """
+        domain = self._watched.get(device_id)
+        if domain != BROKER_SCOPE and domain not in BROKER_RIDER_DOMAINS:
+            return False
+        lost = self._mqtt_disconnected_at
+        if lost is None:
+            return False
+        went = getattr(old_state, "last_changed", None)
+        went_at = went.timestamp() if hasattr(went, "timestamp") else None
+        if went_at is None or went_at < lost - MQTT_SIGNAL_SLACK_SECONDS:
+            return False
+        found = self._mqtt_reconnected_at
+        return found is None or 0.0 <= now - found <= MQTT_HANDBACK_SECONDS
+
+    def _bridge_handing_back(self, device_id: str, old_state: Any, now: float) -> float | None:
+        """When the device's Zigbee2MQTT bridge went offline, if the value
+        coming back is the bridge handing back what it kept (rule UNAV-05).
+
+        Its unavailable began as the bridge said it was offline, and the
+        value comes back before the bridge says it is online again, or
+        within the minute after. A restart shorter than a minute is often
+        never seen by a minute check, so this is read from the bridge's
+        own messages, as they arrive.
+        """
+        stack = self._stack_for_device(device_id)
+        reader = self._bridge_readers.get(stack) if stack is not None else None
+        lost = getattr(reader, "went_offline_at", None)
+        if not isinstance(lost, (int, float)) or isinstance(lost, bool):
+            return None
+        went = getattr(old_state, "last_changed", None)
+        went_at = went.timestamp() if hasattr(went, "timestamp") else None
+        if went_at is None or went_at < lost - MQTT_SIGNAL_SLACK_SECONDS:
+            return None
+        back = getattr(reader, "came_online_at", None)
+        if back is None or (isinstance(back, (int, float)) and 0.0 <= now - back <= MQTT_HANDBACK_SECONDS):
+            return float(lost)
+        return None
+
     def _republished(
         self,
         device_id: str,
         old_state: Any,
         was_gone: tuple[float, str] | None = None,
+        entity_id: str | None = None,
     ) -> bool:
         """Whether a value coming back is the stack republishing it (rule UNAV-05).
 
@@ -4085,7 +4249,18 @@ class DeviceSentinelCoordinator(
         had judged unavailable: its stack now saying it is available is
         a genuine recovery (rule UP-06).
         """
-        if old_state is None or old_state.state not in BAD_STATES:
+        # A first state, written as an integration that loads after
+        # Device Sentinel adds its entity, is a value it kept, the same
+        # as one restored over Home Assistant's placeholder (rule UNAV-05).
+        first = old_state is None
+        if first:
+            # Only an entity that had no state as Device Sentinel began
+            # to listen: one removed and added again since is a device
+            # paired, and it speaks.
+            if entity_id not in self._stateless_at_start:
+                return False
+            self._stateless_at_start.discard(entity_id)
+        elif old_state.state not in BAD_STATES:
             return False
         if device_id in self._last_seen_entity:
             return False
@@ -4110,9 +4285,22 @@ class DeviceSentinelCoordinator(
         if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_UNAVAILABLE:
             return False
         now = dt_util.utcnow().timestamp()
-        held = self._held_by_upstream(device_id, now)
-        if not (self._in_startup_grace() or held):
-            return False
+        if first:
+            # Inside the startup grace only: outside it a first state is
+            # a device paired or an entity switched on, and it speaks.
+            # A device judged unavailable is a real return either way,
+            # checked above (rule UP-06).
+            bridge_lost = None
+            handing_back = False
+            held = False
+            if not self._in_startup_grace():
+                return False
+        else:
+            bridge_lost = self._bridge_handing_back(device_id, old_state, now)
+            handing_back = self._mqtt_handing_back(device_id, old_state, now) or bridge_lost is not None
+            held = self._held_by_upstream(device_id, now) or handing_back
+            if not (self._in_startup_grace() or held):
+                return False
         if was_gone is not None and self._unavailable_muted(device_id):
             # Gone as a whole while muted for unavailable, so judged
             # nothing: its return is the recovery an unavailable verdict
@@ -4126,9 +4314,15 @@ class DeviceSentinelCoordinator(
             # Assistant, and the time the system is off is no part of
             # the device's own outage (rule UNAV-05).
             last_alive = getattr(self, "_last_alive", None)
+            # Held by an upstream that is down: from when it went down.
+            # Held otherwise, by a bridge's wait or MQTT's hand-back, or
+            # inside the grace: from the last listening, or the start.
+            upstream = self.upstream_down_since(device_id) if held else None
             began = (
-                self.upstream_down_since(device_id)[1]  # type: ignore[index]
-                if held
+                upstream[1]
+                if upstream is not None
+                else (self._mqtt_disconnected_at or bridge_lost or now)
+                if handing_back
                 else last_alive
                 if isinstance(last_alive, (int, float))
                 else self._grace_until - STARTUP_GRACE_SECONDS
@@ -4271,6 +4465,21 @@ class DeviceSentinelCoordinator(
         return now - stamp <= window
 
     @callback
+    @callback
+    def _sample_battery_held(self, device_id: str) -> None:
+        """Note the battery level a device that spoke holds, at most once
+        a minute (rule BAT-06)."""
+        self._battery_sample_due.discard(device_id)
+        record = self.data.get(DATA_DEVICES, {}).get(device_id)
+        if record is None or self._stopped:
+            return
+        now = dt_util.utcnow().timestamp()
+        last = self._battery_sampled_at.get(device_id)
+        if last is not None and 0.0 <= now - last < BATTERY_SAMPLE_SPACING:
+            return
+        self._battery_sampled_at[device_id] = now
+        note_battery_sample(record, record.get(DEV_BATTERY_VALUE))
+
     def _record_activity(
         self,
         device_id: str,
@@ -4353,6 +4562,14 @@ class DeviceSentinelCoordinator(
             record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
             self._dirty = True
             return
+        # The device spoke: the battery level it holds is still its own,
+        # one more moment it was heard at that level (rule BAT-06). Read
+        # once this message's other entities are written, so a battery
+        # report in the same message is read as its new level, not the
+        # old one.
+        if device_id not in self._battery_sample_due:
+            self._battery_sample_due.add(device_id)
+            self.hass.loop.call_soon(self._sample_battery_held, device_id)
         # When the device itself last spoke, past the protocol clock's
         # word that it did, never moved by a clock step or a restart
         # (_reporting_through_others; rule UNAV-01).

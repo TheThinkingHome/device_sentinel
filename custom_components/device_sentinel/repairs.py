@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.28.11 (2026-11-10)
+# File: repairs.py, Version: 0.28.12 (2026-11-11)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -658,6 +658,25 @@ def async_raise_restored(
 
 
 @callback
+def async_clear_corruption_of(hass: HomeAssistant, key: str) -> int:
+    """Remove Home Assistant's own storage-corruption issues for one of
+    Device Sentinel's own files, once Device Sentinel has put that file
+    back: its advice, to restore the whole system, is wrong then
+    (rule REP-08). Only issues named for that key are touched."""
+    prefixes = tuple({
+        f"storage_corruption_{key}_",
+        f"storage_corruption_{key.replace('-', '_')}_",
+    })
+    registry = ir.async_get(hass)
+    found = [
+        issue_id for (domain, issue_id) in list(registry.issues)
+        if domain == HOMEASSISTANT_DOMAIN and issue_id.startswith(prefixes)
+    ]
+    for issue_id in found:
+        ir.async_delete_issue(hass, HOMEASSISTANT_DOMAIN, issue_id)
+    return len(found)
+
+
 def async_clear_home_assistant_corruption(
     hass: HomeAssistant, corrupt_names: list[str]
 ) -> int:

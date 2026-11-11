@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.28.4 (2026-11-07)
+# File: detect_freeze.py, Version: 0.28.12 (2026-11-11)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -66,6 +66,8 @@ from .const import (
     SYS_BROKER_UP,
     SYS_BROKER_DOWN,
     SYS_INTEGRATION_UP,
+    SYS_CLOCK_RESET,
+    SYS_RELOAD,
     SYS_RESTART,
     SYS_UNCLEAN_RESTART,
     SYS_INTEGRATION_DOWN,
@@ -1384,13 +1386,15 @@ class FreezeMixin:
         back = record.get(DEV_WATCHED_FROM)
         if isinstance(back, (int, float)) and not isinstance(back, bool) and last < back <= now:
             last = float(back)
-        spans: list[tuple[float, float]] = []
-        if (
-            self._downtime > 0.0
-            and self._last_alive is not None
-            and last <= self._last_alive
-        ):
-            spans.append((self._last_alive, self._last_alive + self._downtime))
+        # Every stop of Device Sentinel since the device was last heard,
+        # not only the one before this run: time it was stopped counts
+        # against no device, however many restarts came after (rule
+        # FRZ-10). The current run's own stop is among them.
+        spans: list[tuple[float, float]] = [
+            (max(start, float(last)), end)
+            for start, end in self._stop_spans()
+            if end > last
+        ]
         if device_id is not None:
             spans.extend(self._outage_spans_for(device_id, last, window))
         return float(last), spans
@@ -1608,8 +1612,15 @@ class FreezeMixin:
         if cached is None or cached[0] != key:
             spans: list[tuple[float, float]] = []
             for row in events:
+                if isinstance(row, dict) and row.get(SYS_KIND) == SYS_CLOCK_RESET:
+                    # A stop before the clock was set was measured in the
+                    # old clock, and every device clock was restarted at
+                    # the step, so it has nothing left to cover (rule
+                    # FRZ-21).
+                    spans = []
+                    continue
                 if not isinstance(row, dict) or row.get(SYS_KIND) not in (
-                    SYS_RESTART, SYS_UNCLEAN_RESTART
+                    SYS_RESTART, SYS_UNCLEAN_RESTART, SYS_RELOAD
                 ):
                     continue
                 when, duration = row.get(SYS_WHEN), row.get(SYS_DURATION)

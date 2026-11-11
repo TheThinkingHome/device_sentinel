@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: trim.py, Version: 0.27.10 (2026-10-27)
+# File: trim.py, Version: 0.28.12 (2026-11-11)
 
 """Erasing one device's or one integration's learned history.
 
@@ -46,6 +46,10 @@ from datetime import datetime
 from typing import Any
 
 from .const import (
+    STORAGE_CLOCKS_KEY,
+    STORAGE_CLOCKS_VERSION,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
@@ -95,15 +99,19 @@ def write_backup(
     """
     os.makedirs(directory, exist_ok=True)
     stamp = _stamp(directory, now)
-    for name, payload in (
-        ("storage", storage),
-        ("clocks", clocks),
+    # Each copy is a whole storage document, as Home Assistant writes
+    # one, so a person putting it back over the live file has a file that
+    # loads, not one read as damaged (rule STOR-23).
+    for name, key, version, payload in (
+        ("storage", STORAGE_KEY, STORAGE_VERSION, storage),
+        ("clocks", STORAGE_CLOCKS_KEY, STORAGE_CLOCKS_VERSION, clocks),
     ):
         path = os.path.join(
             directory, f"device_sentinel_{stamp}.{name}.json"
         )
+        document = {"version": version, "minor_version": 1, "key": key, "data": payload}
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, ensure_ascii=False)
+            json.dump(document, handle, indent=2, ensure_ascii=False)
     return stamp
 
 

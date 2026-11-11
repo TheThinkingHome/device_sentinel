@@ -3,12 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.27.10 (2026-10-27)
+# File: button.py, Version: 0.28.12 (2026-11-11)
 
 """Button platform for the Device Sentinel integration.
 
-Two buttons, each touching only Device Sentinel's own state, so any
-user, automation or script may press them.
+Two buttons, each touching only Device Sentinel's own state. An admin
+may press them, and so may an automation that runs on its own; a user
+who is not an admin may not, nor a script that user starts (rule
+CFG-08).
 
 Regenerate Reports rewrites every report on demand, for a person
 mid-investigation who wants them to reflect a fix now rather than at
@@ -19,8 +21,8 @@ hardware, pressed again it ends the declaration early. While the
 window is open, any device that recovers is attributed to the person's
 hands and its silence is not learned (rule FRZ-18).
 
-No button turns on other integrations' entities, because any user,
-automation or script can press a button, and it would turn on entities
+No button turns on other integrations' entities, because an automation
+or a script can press a button, and it would turn on entities
 a person had switched off on purpose. A sensor is switched on one
 device at a time, by an administrator, from the device's page or its
 Recommendations card; the retired-entity sweep removes the three old
@@ -34,6 +36,7 @@ from collections.abc import Awaitable, Callable
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -105,5 +108,13 @@ class DeviceSentinelActionButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Run this button's action."""
+        """Run this button's action, for an admin only: an automation
+        that runs on its own carries no user and still may; a script a
+        person starts acts as that person (rule CFG-08)."""
+        context = self._context
+        user_id = context.user_id if context is not None else None
+        if user_id is not None:
+            user = await self.hass.auth.async_get_user(user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=context)
         await self._action()

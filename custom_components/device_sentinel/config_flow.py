@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.11 (2026-11-10)
+# File: config_flow.py, Version: 0.28.12 (2026-11-11)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -58,6 +58,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .naming import display_name
+from .notifier import notify_platform
 from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
@@ -1820,12 +1821,26 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             # Nor is the persistent notification: a push goes to notify
             # actions, so chosen here it reaches nobody, and the card has
             # its own switch below (rules NOTE-02, NOTE-11).
+            # One saved before stays until a person takes it out, so the
+            # rest of the screen can still be saved: only one added now
+            # is refused (rule NOTE-02).
+            saved_targets = {
+                str(target)
+                for key in (CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS)
+                for target in (self.config_entry.options.get(key) or [])
+            }
             typed_persistent = any(
-                str(target).strip().casefold() in PERSISTENT_TARGETS
-                or str(target).strip().casefold().startswith(f"{PERSISTENT_TARGET}.")
+                (
+                    str(target).strip().casefold() in PERSISTENT_TARGETS
+                    or str(target).strip().casefold().startswith(f"{PERSISTENT_TARGET}.")
+                )
+                and str(target) not in saved_targets
                 for key in (CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS)
                 for target in flat.get(key, [])
             )
+            saved_brief = {
+                str(target) for target in (self.config_entry.options.get(CONF_BRIEF_TARGETS) or [])
+            }
             # What was entered, for the screen to show after a refusal.
             entered = dict(flat)
             high = list(flat.get(CONF_HIGH_PRIORITY_TARGETS, []))
@@ -1848,6 +1863,17 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 # a field inside a section, so the error names the
                 # field and shows above the Daily Brief section.
                 errors["brief"] = "brief_target_is_address"
+            elif any(
+                str(target) not in saved_brief
+                and notify_platform(self.hass, str(target)) == "mobile_app"
+                for target in flat.get(CONF_BRIEF_TARGETS, [])
+            ):
+                # The full brief is for mail or a card: a phone's push
+                # relay will not carry it, and a phone gets the live
+                # pushes. One saved before is skipped at sending, so
+                # the rest of the screen can still be saved
+                # (rule BRIEF-11).
+                errors["brief"] = "brief_target_is_phone"
             elif wanted != REPORT_LINKS_NONE and not _house_url(
                 self.hass, wanted
             ):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.28.11 (2026-11-10)
+# File: history_file.py, Version: 0.28.12 (2026-11-11)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -359,7 +359,7 @@ async def read_copy(hass: HomeAssistant, last_good: bool) -> tuple[Any, str | No
     """
     try:
         data = await _store(hass, last_good).async_load()
-    except (HomeAssistantError, ValueError, OSError) as err:
+    except (HomeAssistantError, ValueError, OSError, KeyError, TypeError, AttributeError, RecursionError, NotImplementedError) as err:
         return None, f"unreadable ({err.__class__.__name__})"
     if data is None:
         return None, "missing"

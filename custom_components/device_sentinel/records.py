@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.28.5 (2026-11-08)
+# File: records.py, Version: 0.28.12 (2026-11-11)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -40,9 +40,15 @@ from .const import (
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_COUNTS,
+    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_RAW_FIRST_DAY,
+    DEV_BATTERY_RAW_CLEARED,
     DEV_FLAP_BACK,
     DEV_FIRMWARE_HISTORY,
     DEV_BATTERY_FORECASTS,
@@ -209,9 +215,15 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_BATTERY_FIRST_LOW: None,
         DEV_BATTERY_EVIDENCE: [],
         DEV_BATTERY_REPLACED_PENDING: None,
+        DEV_BATTERY_DAY_LEVELS: [],
+        DEV_BATTERY_DAY_COUNTS: [],
+        DEV_BATTERY_RANGE_LOWS: [],
+        DEV_BATTERY_RANGE_HIGHS: [],
+        DEV_BATTERY_PENDING_HIGH: None,
         DEV_BATTERY_COARSE_DROPS: 0,
         DEV_BATTERY_RAW_SCALE: False,
         DEV_BATTERY_RAW_FIRST_DAY: None,
+        DEV_BATTERY_RAW_CLEARED: False,
         DEV_FLAP_DROPS: [],
         DEV_FLAP_SINCE: None,
         DEV_FLAP_BACK: None,

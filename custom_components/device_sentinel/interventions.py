@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.11 (2026-11-10)
+# File: interventions.py, Version: 0.28.12 (2026-11-11)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -57,6 +57,7 @@ from .const import (
     SYS_KIND,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
+    SYS_RELOAD,
     SYS_RESTART,
     SYS_SCOPE,
     SYS_WHEN,
@@ -68,6 +69,7 @@ from .const import (
     REPAIR_MOMENT_GRACE,
     BROKER_DOWN,
     BROKER_RUNNING,
+    BROKER_RIDER_DOMAINS,
     BROKER_SCOPE,
     BROKER_TOPIC_UPTIME,
     BROKER_UNKNOWN,
@@ -736,6 +738,7 @@ class InterventionMixin:
                 # Read while the broker still claims its devices.
                 ended = self._upstream_ended(BROKER_LABEL)
                 self._broker_down_at = None
+                self._broker_back_at = now
                 since = stored.pop(BRIDGE_SEEN_SINCE, None)
                 stored.pop(_SEEN_DEVICES, None)
                 stored.pop(_SEEN_WORST, None)
@@ -1074,11 +1077,15 @@ class InterventionMixin:
                 # stopped updating: an outage of its own kind, told and
                 # pushed as any, and closed at the first device heard
                 # (rule UP-17).
-                stalled = self._poller_stalled(entry, now)
                 was_stalled = (
                     parse_detail(self._integration_detail.get(entry_id))[2] == STALLED
                     and entry_id in self._integration_told
                 )
+                # An entry told as down that has loaded again is back,
+                # whatever its devices have said yet: its silence while
+                # down is not a stop (rule UP-17).
+                was_down = entry_id in self._integration_told and not was_stalled
+                stalled = None if was_down else self._poller_stalled(entry, now)
                 if stalled is not None:
                     if entry_id not in self._integration_told:
                         self._entry_down_at[entry_id] = stalled
@@ -1111,6 +1118,16 @@ class InterventionMixin:
                 ):
                     self._integration_back(entry, since, now)
                 continue
+            if (
+                entry is not None
+                and entry.state in _FAILED_SETUP
+                and entry_id in self._integration_told
+                and parse_detail(self._integration_detail.get(entry_id))[2] == STALLED
+            ):
+                # A stop that became a failure is the same outage, from
+                # the same start, now said as what it is: failed, not
+                # stopped updating (rule UP-17).
+                self._restate_outage(entry, FAILED)
             if entry_id not in self._entry_seen_loaded:
                 # Not loaded since Home Assistant started. While the
                 # grace lasts it is still starting (rule UP-04). Once
@@ -1254,12 +1271,21 @@ class InterventionMixin:
                 return chosen
         return own
 
-    def _poller_floor(self) -> float:
+    def _poller_floor(self, entry: Any = None) -> float:
         """No silence is counted from before this run's start, or a clock
-        step in it."""
+        step in it; for an entry, nor from before it last came back, or
+        the broker its devices ride did (rule UP-17)."""
         floor = self._run_start()
         if self._heard_floor is not None:
             floor = max(floor, self._heard_floor)
+        if entry is not None:
+            back = self._entry_back_at.get(entry.entry_id)
+            if back is not None:
+                floor = max(floor, back)
+            if self._broker_back_at is not None and (
+                entry.domain in BROKER_RIDER_DOMAINS or entry.domain == BROKER_SCOPE
+            ):
+                floor = max(floor, self._broker_back_at)
         return floor
 
     def _poller_heard(self, device_id: str) -> float | None:
@@ -1291,6 +1317,13 @@ class InterventionMixin:
             return None
         if self._entry_only_device.get(entry.entry_id):
             return None
+        # The broker down is its own outage, told once: an integration
+        # whose devices ride it, as Tasmota's and MQTT's own do, going
+        # quiet with it is not a second one (rule UP-17).
+        if self._broker_down_at is not None and (
+            entry.domain in BROKER_RIDER_DOMAINS or entry.domain == BROKER_SCOPE
+        ):
+            return None
         gap = self.poller_gap(entry.domain)  # type: ignore[attr-defined]
         if gap is None:
             return None
@@ -1307,7 +1340,7 @@ class InterventionMixin:
         # time Home Assistant was down is not the poller stopping, and its
         # first poll after a restart may be one of its slow ones. The stop
         # is dated from there too, not from before the restart.
-        counted_from = max(float(max(heard)), self._poller_floor())
+        counted_from = max(float(max(heard)), self._poller_floor(entry))
         return counted_from if now - counted_from > threshold else None
 
     def _poller_heard_since(self, entry_id: str, since: float) -> bool:
@@ -1333,6 +1366,23 @@ class InterventionMixin:
             if parse_detail(self._integration_detail.get(entry_id))[2] == STALLED:
                 return True
         return False
+
+    def _restate_outage(self, entry, how: str) -> None:
+        """Say an open outage as another kind, keeping its start: its
+        detail in memory and on its opening row (rule UP-17)."""
+        detail = make_detail(
+            entry.entry_id, self._entry_only_device.get(entry.entry_id), how
+        )
+        self._integration_detail[entry.entry_id] = detail
+        for row in reversed(self.data.get(DATA_SYSTEM_EVENTS) or []):
+            if (
+                isinstance(row, dict)
+                and row.get(SYS_KIND) == SYS_INTEGRATION_DOWN
+                and parse_detail(row.get(SYS_DETAIL))[0] == entry.entry_id
+            ):
+                row[SYS_DETAIL] = detail
+                self._dirty = True
+                break
 
     def _integration_gone(
         self, entry, since: float, behind: int, how: str | None = None
@@ -1433,6 +1483,7 @@ class InterventionMixin:
             return
         domain = entry.domain
         self._upstream_from_start.discard(domain)
+        self._entry_back_at[entry.entry_id] = now
         # A poller that stopped updating returns in one update, all its
         # devices at once, so it holds none of them back afterwards and
         # has no recovering phase (rule UP-17).
@@ -2581,6 +2632,8 @@ class InterventionMixin:
     _integration_resumed: bool
     _broker_reader: Any | None
     _broker_down_at: float | None
+    _broker_back_at: float | None
+    _entry_back_at: dict[str, float]
     _heard_at: dict[str, float]
     _heard_floor: float | None
 
@@ -2892,7 +2945,7 @@ class InterventionMixin:
         rows = self.data.setdefault(DATA_STORM_DAYS, [])
         del rows[:-keep]
 
-    def _storm_explained(self, start: float) -> bool:
+    def _storm_explained(self, start: float, domain: str | None = None) -> bool:
         """Return whether a storm that began at `start` has a cause.
 
         Read from the system events log, which already holds every
@@ -2903,6 +2956,11 @@ class InterventionMixin:
         opener is paired with its own closer by kind and scope, so a
         bridge that came back does not close a broker outage that is
         still open (rule UP-17).
+
+        An integration's own outage still open explains only that
+        integration's storms: one plug's integration down for a week
+        must not keep every other poller's storms out of the tally, or a
+        poller known by its storms would lose its verdict (rule UP-17).
         """
         opens = {
             SYS_BRIDGE_DOWN: SYS_BRIDGE_UP,
@@ -2928,9 +2986,13 @@ class InterventionMixin:
                 open_now[(closes[kind], scope, entry)] = False
                 if start - when <= STORM_EXPLAINED_SECONDS:
                     return True
-            elif kind == SYS_RESTART and start - when <= STORM_EXPLAINED_SECONDS:
+            elif kind in (SYS_RESTART, SYS_RELOAD) and start - when <= STORM_EXPLAINED_SECONDS:
                 return True
-        return any(open_now.values())
+        return any(
+            still
+            for (kind, scope, _entry), still in open_now.items()
+            if kind != SYS_INTEGRATION_DOWN or domain is None or scope == domain
+        )
 
     def _end_storm(
         self, entry_id: str, storm: dict[str, Any], now: float
@@ -2956,7 +3018,7 @@ class InterventionMixin:
             # recovering, and the tally is what the noisy-integration
             # advice reads (rules UP-17, UP-18). The raw row above is kept
             # either way, since the polling verdict needs every burst.
-            if not self._storm_explained(storm["start"]):
+            if not self._storm_explained(storm["start"], domain):
                 self._storm_day.setdefault(
                     self._entry_domain(entry_id), []
                 ).append((now, len(storm["devices"]), duration))

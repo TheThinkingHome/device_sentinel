@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.27.11 (2026-10-28)
+# File: router_ties.py, Version: 0.28.12 (2026-11-11)
 
 """Router ties: which watched devices a router says have left.
 
@@ -144,6 +144,7 @@ from .const import (
     WIFI_FALLEN_UNUSABLE_SECONDS,
     WIFI_HANDBACK_SECONDS,
     WIFI_TIE_RETRY_SECONDS,
+    WIFI_CLAIM_SECONDS,
     WIFI_LOOKBACK_SECONDS,
     WIFI_BURST_SHARE,
     WIFI_RECOVERY_SHARE,
@@ -1724,8 +1725,15 @@ class RouterTiesMixin:
         # not a casualty of it, so its tracker claims nothing: it is
         # judged by its own failure time below, like any other device
         # (rule UP-15).
+        # Only what fails in the outage's first minutes is its casualty.
+        # A device that fails later fails on its own: an outage that
+        # stands for hours, as one declared from trackers switched off
+        # at the wall can, would otherwise hide every failure in the
+        # house behind one row (rule UP-15).
+        until = since + WIFI_CLAIM_SECONDS
         tracker = self._wifi_ties.get(device_id)
-        if tracker is not None and tracker in self._wifi_fallen:
+        fell = self._wifi_fallen.get(tracker) if tracker is not None else None
+        if isinstance(fell, (int, float)) and not isinstance(fell, bool) and fell <= until:
             return WIFI_KEY, since
         # And so is anything else that failed inside the window, tie
         # or no tie. Without this the claim reaches only hardware the
@@ -1734,7 +1742,11 @@ class RouterTiesMixin:
         # (rule UP-15).
         record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
         began = record.get(DEV_FROZEN_SINCE)
-        if began is not None and began >= since:
+        if (
+            isinstance(began, (int, float))
+            and not isinstance(began, bool)
+            and since <= began <= until
+        ):
             return WIFI_KEY, since
         return None
 

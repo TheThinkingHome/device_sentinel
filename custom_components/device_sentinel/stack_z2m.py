@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.28.6 (2026-11-08)
+# File: stack_z2m.py, Version: 0.28.12 (2026-11-11)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -198,6 +198,8 @@ class Z2MBridgeReader:
         # permit_join and its end come from bridge/info. last_heard is
         # the timestamp of the most recent message from either topic.
         self._online: bool | None = None
+        self.went_offline_at: float | None = None
+        self.came_online_at: float | None = None
         self._permit_join: bool = False
         self._permit_join_end: str | None = None
         self._last_heard: str | None = None
@@ -556,7 +558,18 @@ class Z2MBridgeReader:
             data = _load(payload)
             if isinstance(data, dict):
                 text = data.get("state", "")
-        self._online = isinstance(text, str) and text.strip() == "online"
+        online = isinstance(text, str) and text.strip() == "online"
+        # When the bridge last went offline and came back: every device's
+        # entity follows bridge/state, so the values written back in the
+        # minute after are the bridge handing back what it kept, not the
+        # devices speaking (rule UNAV-05).
+        now = dt_util.utcnow().timestamp()
+        if online and self._online is not True:
+            self.came_online_at = now
+        elif not online and self._online is True:
+            self.went_offline_at = now
+            self.came_online_at = None
+        self._online = online
 
     @callback
     def _on_info(self, msg: mqtt.ReceiveMessage) -> None:

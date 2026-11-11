@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_lutron.py, Version: 0.27.10 (2026-10-27)
+# File: study_lutron.py, Version: 0.28.12 (2026-11-11)
 
 """What a Lutron house shows, gathered for Extended Diagnostics.
 
@@ -128,7 +128,6 @@ async def lutron_study(hass: HomeAssistant) -> dict[str, Any]:
         )
         hubs.append({
             "entry_id": entry.entry_id,
-            "title": entry.title,
             "state": str(entry.state),
             "host_known": bool(host),
             "port": LUTRON_PORT,

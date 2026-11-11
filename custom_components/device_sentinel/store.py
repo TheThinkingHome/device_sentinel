@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.28.11 (2026-11-10)
+# File: store.py, Version: 0.28.12 (2026-11-11)
 
 """Storage: the files, the merge, and the unclean restart.
 
@@ -19,7 +19,7 @@ coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 from typing import Any
-from homeassistant.core import Event, callback
+from homeassistant.core import CoreState, Event, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from . import history_file
@@ -29,6 +29,7 @@ from .backup import (
     copy_main_over_last_good,
 )
 from .normalise import check_records, damaged_rows
+from .repairs import async_clear_corruption_of
 from .records import (
     _new_device_record,
     _reset_signal_day,
@@ -37,6 +38,7 @@ from .records import (
 )
 
 from .const import (
+    BACKUP_LAST_GOOD_SUFFIX,
     RETIRED_DEVICE_FIELDS,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
@@ -155,6 +157,7 @@ class StorageMixin:
     _history_writes: int
     _history_body: dict[str, Any]
     _rotation_armed: bool
+    _fresh_beside_kept: bool
 
     @staticmethod
     def _reconcile_records(
@@ -683,7 +686,7 @@ class StorageMixin:
             clean = not check_records(
                 self.data.get(DATA_DEVICES)
             ) and not damaged_rows(self.data)
-        elif self._rotation_armed:
+        elif self._rotation_armed and not self._fresh_beside_kept:
             await async_rotate_last_good(self.hass)
             self._last_good_taken = dt_util.utcnow().timestamp()
         await self._write_main_files(clean=clean and self._rotation_armed)
@@ -716,6 +719,13 @@ class StorageMixin:
         save. An empty older part deletes both history files.
         """
         payload = self._data_to_save()
+        if self._fresh_beside_kept:
+            # An empty start beside history files it could not use never
+            # writes history, which would rotate over them: the main file
+            # is written whole for this session (rule STOR-08).
+            payload.pop(DATA_HISTORY_GENERATION, None)
+            await self._store.async_save(payload)  # type: ignore[attr-defined]
+            return
         view, part = history_file.split(payload)
         stamp = history_file.digest(part)
         if stamp == self._history_digest:  # type: ignore[attr-defined]
@@ -785,7 +795,7 @@ class StorageMixin:
         restored to a copy the history files match, or, when the
         history files were removed, to one that joins nothing.
         """
-        if not clean:
+        if not clean or self._fresh_beside_kept:
             return
         try:
             await self.hass.async_add_executor_job(  # type: ignore[attr-defined]
@@ -918,7 +928,18 @@ class StorageMixin:
                     )
                 else:
                     state["mended"] = "last-good" if which == "live" else "live"
+                    # The copy just written is whole again: Home
+                    # Assistant's card about it is wrong now (rule REP-08).
+                    async_clear_corruption_of(
+                        hass,
+                        f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+                        if which == "live" else STORAGE_HISTORY_KEY,
+                    )
             if which != "live":
+                # Home Assistant's own card for the file it set aside
+                # tells a person to restore the whole system; the file
+                # is back (rule REP-08).
+                async_clear_corruption_of(hass, STORAGE_HISTORY_KEY)
                 LOGGER.warning(
                     "The history file could not be used (%s), so its "
                     "last-good copy of the same generation was joined",
@@ -1297,7 +1318,7 @@ class StorageMixin:
         )
 
     @staticmethod
-    def _count_orphan_episodes(loaded: dict[str, Any]) -> dict[str, Any]:
+    def _count_orphan_episodes(loaded: dict[str, Any], reloaded: bool = False) -> dict[str, Any]:
         """Count episodes with no ending, and report nothing else.
 
         Observation only: a non-zero count is a finding to read rather
@@ -1342,7 +1363,17 @@ class StorageMixin:
             "devices": len({episode.get(EP_DEVICE_ID) for episode in orphans}),
             "oldest_seconds": oldest,
         }
-        if orphans:
+        if orphans and reloaded:
+            # A reload, or an unload, leaves each silence open, and rightly:
+            # the silence goes on. Only a Home Assistant stop closes them,
+            # and it leaves none open, so open ones beside a clean stop are
+            # a reload's, not a lost closing (rules STOR-18, GEN-10).
+            LOGGER.debug(
+                "Episode integrity: %d silence episode(s) open across a reload",
+                len(orphans),
+            )
+            return {"count": 0, "devices": 0, "oldest_seconds": None}
+        elif orphans:
             LOGGER.warning(
                 "Episode integrity: %d silence episode(s) across %d "
                 "device(s) carry no ending, the oldest %s old. A closing "
@@ -1425,9 +1456,30 @@ class StorageMixin:
         # raise, so the save below always follows.
         await self.async_probe_stop()  # type: ignore[attr-defined]
         await self._save_now()
+        # Home Assistant holds every save back while it stops, until its
+        # final write. A container killed before then, as Docker does
+        # ten seconds after it asks, kept a file with no clean-stop
+        # marker, and the next start read an ordinary restart as a power
+        # cut. So the stop's own save is written now, the main file
+        # before the clocks (rules FRZ-20, STOR-02).
+        await self._write_held(self._store)  # type: ignore[attr-defined]
+        await self._write_held(self._clock_store)  # type: ignore[attr-defined]
         # A pencil answer still inside its one-second wait (rule STOR-20):
         # only the unload wrote it, and a restart is not an unload.
         await self.async_flush_answers()  # type: ignore[attr-defined]
+
+    async def _write_held(self, store: Any) -> None:
+        """Write a save Home Assistant is holding for its final write,
+        while it stops (rule FRZ-20)."""
+        if self.hass.state is not CoreState.stopping:
+            return
+        write = getattr(store, "_async_handle_write_data", None)
+        if write is None:
+            return
+        try:
+            await write()
+        except Exception as err:  # noqa: BLE001 - the final write still follows
+            LOGGER.warning("device_sentinel: the stop's save waits for Home Assistant's final write: %s", err)
 
     @property
     def downtime(self) -> float:

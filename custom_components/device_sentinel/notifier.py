@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.28.11 (2026-11-10)
+# File: notifier.py, Version: 0.28.12 (2026-11-11)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -45,7 +45,9 @@ import re
 
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.components import persistent_notification
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
@@ -91,6 +93,25 @@ from .const import (
     TODO_KIND_UNAVAILABLE,
     STACK_DISPLAY_NAMES,
 )
+
+async def async_notify(hass: Any, domain: str, service: str, payload: dict[str, Any]) -> None:
+    """Call a notify action, and once more without `data` where the
+    action refuses it.
+
+    The extra data is for the Companion app (a tag, a silent flag) and
+    for mail (the brief's page). Signal Messenger, Slack and others check
+    `data` against their own short list and refuse the whole message for
+    a key they do not know, so the person would get nothing, and nothing
+    would say why (rule NOTE-02).
+    """
+    try:
+        await hass.services.async_call(domain, service, payload, blocking=True)
+    except (vol.Invalid, ServiceValidationError):
+        if "data" not in payload:
+            raise
+        plain = {key: value for key, value in payload.items() if key != "data"}
+        await hass.services.async_call(domain, service, plain, blocking=True)
+
 
 # A message with this flag set is delivered without a sound. Recoveries
 # use it; faults leave it unset so the device's own system sound plays.
@@ -146,6 +167,96 @@ def _card_text(text: str) -> str:
     break inside a name becomes a space.
     """
     return _CARD_MARKDOWN.sub(r"\\\1", " ".join(str(text).splitlines()))
+
+
+# Telegram reads a message as Markdown unless told otherwise, and refuses
+# one whose underscores or brackets do not pair, as device names often do;
+# its longest message is 4096 characters (rule NOTE-02).
+_TELEGRAM_PLAIN = {"parse_mode": "plain_text"}
+TELEGRAM_LONGEST = 4000
+
+
+def _notify_service(hass: Any, service: str) -> tuple[str, Any] | None:
+    """The legacy notify platform and service object behind one notify
+    action's name, or None."""
+    for platform, services in ((getattr(hass, "data", None) or {}).get("notify_services") or {}).items():
+        for notify_service in services or ():
+            names = {getattr(notify_service, "_service_name", None)}
+            names.update((getattr(notify_service, "registered_targets", None) or {}).keys())
+            if service in names:
+                return str(platform), notify_service
+    return None
+
+
+def notify_platform(hass: Any, target: str) -> str | None:
+    """The integration behind a legacy notify action, such as mobile_app,
+    group, telegram or smtp; None when it cannot be told.
+
+    A group whose members are all of one kind, a group of phones say, is
+    that kind, because each member gets the message as the group sends
+    it (rule NOTE-02)."""
+    domain, _, service = target.partition(".")
+    if domain != "notify" or not service:
+        return None
+    return _platform_of(hass, service, depth=0)
+
+
+def _platform_of(hass: Any, service: str, depth: int) -> str | None:
+    found = _notify_service(hass, service)
+    if found is None:
+        return "mobile_app" if service.startswith("mobile_app_") else None
+    platform, notify_service = found
+    if platform != "group":
+        return platform
+    if depth >= 3:
+        return "group"
+    members = {
+        _platform_of(hass, str(member.get("action") or member.get("service") or ""), depth + 1)
+        for member in (getattr(notify_service, "entities", None) or ())
+        if isinstance(member, dict)
+    }
+    if len(members) == 1 and None not in members:
+        return members.pop()
+    return "group"
+
+
+def fitted_for(hass: Any, target: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """A message as one notify action can take it (rule NOTE-02).
+
+    The Companion app's data (a tag, a silent flag) goes to the Companion
+    app only, without the brief's page, which a phone cannot show. A
+    group of phones only, or of Telegram chats only, is fitted as one of
+    its members. Any other notify group passes data to every member and
+    keeps a member's refusal to itself, so it gets none. Telegram is told
+    the message is plain text, and gets it no longer than it takes.
+    """
+    platform = notify_platform(hass, target)
+    if platform == "mobile_app":
+        # A phone cannot show the brief's page, and the push relay takes
+        # only a few kilobytes: the page is the mail's, not the phone's.
+        data = payload.get("data")
+        if isinstance(data, dict) and "html" in data:
+            rest = {key: value for key, value in data.items() if key != "html"}
+            payload = {key: value for key, value in payload.items() if key != "data"}
+            if rest:
+                payload["data"] = rest
+        return payload
+    if "data" not in payload and platform != "telegram":
+        return payload
+    plain = {key: value for key, value in payload.items() if key != "data"}
+    if platform == "telegram":
+        plain["data"] = dict(_TELEGRAM_PLAIN)
+        data = payload.get("data")
+        if isinstance(data, dict) and data.get("importance") == _ANDROID_SILENT["importance"]:
+            # A recovery is silent on Telegram too (rule NOTE-04).
+            plain["data"]["disable_notification"] = True
+        message = str(plain.get("message") or "")
+        if len(message) > TELEGRAM_LONGEST:
+            plain["message"] = message[: TELEGRAM_LONGEST - 60].rstrip() + "\n\n(The rest is in Home Assistant.)"
+        return plain
+    if platform == "group":
+        return plain
+    return payload
 
 
 def _shown_as_text(target: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -460,8 +571,9 @@ class NotifierMixin:
             if not service:
                 continue
             try:
-                await self.hass.services.async_call(
-                    domain, service, _shown_as_text(target, payload), blocking=True
+                await async_notify(
+                    self.hass, domain, service,
+                    fitted_for(self.hass, target, _shown_as_text(target, payload)),
                 )
             except Exception as err:  # noqa: BLE001 - one bad target
                 LOGGER.warning(
@@ -488,8 +600,9 @@ class NotifierMixin:
                 )
                 continue
             try:
-                await self.hass.services.async_call(
-                    domain, service, _shown_as_text(target, payload), blocking=True
+                await async_notify(
+                    self.hass, domain, service,
+                    fitted_for(self.hass, target, _shown_as_text(target, payload)),
                 )
             except Exception as err:  # noqa: BLE001 - any notify platform error
                 LOGGER.warning(

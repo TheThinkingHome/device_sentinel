@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.11 (2026-11-10)
+# File: const.py, Version: 0.28.12 (2026-11-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -99,6 +99,14 @@ WIFI_DISPLAY_NAME = "WiFi"
 # lists them beneath its own, because the broker failing takes them down
 # too. Tasmota is the one Home Assistant ships that works no other way.
 BROKER_RIDER_DOMAINS = ("tasmota",)
+# MQTT's dispatcher signal for its connection to the broker, and how long
+# after a reconnect a value an MQTT entity writes back is taken as handed
+# back, not heard (rule UNAV-05).
+MQTT_CONNECTION_SIGNAL = "mqtt_connection_state"
+MQTT_HANDBACK_SECONDS = 60.0
+# How long before MQTT's own word an entity may have written unavailable:
+# each entity hears the signal first or after Device Sentinel (rule UNAV-05).
+MQTT_SIGNAL_SLACK_SECONDS = 5.0
 
 # What a stack is called when a person reads it (rule UP-11). The
 # internal key is the domain the stacks module uses; a row saying
@@ -930,6 +938,12 @@ WIFI_FALLEN_UNUSABLE_SECONDS = 2 * 3600.0
 # after the network did.
 WIFI_LOOKBACK_SECONDS = 300.0
 
+# What a Wi-Fi outage claims: a device that fails in its first 15
+# minutes, which covers the 41 seconds to four minutes its devices take
+# to show the outage, with room. A device that fails later fails on its
+# own, however long the outage stands (rule UP-15).
+WIFI_CLAIM_SECONDS = 900.0
+
 # The same window for a bridge (rule UP-08). A bridge claim that ends
 # the instant the bridge comes back orphans devices still rejoining the
 # mesh, as the network window does for Wi-Fi. Three minutes to start,
@@ -973,6 +987,15 @@ RETIRED_DEVICE_FIELDS = frozenset(
         "signal_repeat_count",
         "signal_sum",
         "signal_sum_sq",
+        # Battery day fields from interim builds of this release that no
+        # release wrote (rule BAT-06).
+        "battery_day_high",
+        "battery_day_high2",
+        "battery_day_count",
+        "battery_day_above",
+        "battery_day_before_high",
+        "battery_recent_highs",
+        "battery_recent_starts",
     }
 )
 
@@ -1311,16 +1334,33 @@ SIGNAL_TREND_MIN_DAYS = 21
 # was 11.5 points, a sag under load recovering, so twenty-five is twice
 # that with margin (rule BAT-06).
 BATTERY_REPLACED_RISE = 25.0
-# The other way a replacement looks: a cell that was at or below the
-# second figure and lands at or above the first. A cell at 80 replaced
-# reads 100, a rise of twenty, which the first test misses. The lower
-# bound stops a cell already near full from qualifying by drifting: a
-# cell going 94 to 99.5 on its own starts above ninety, so it is not one.
-# No cell has been seen to cross from at or below ninety to at or above
-# ninety-five naturally. Both figures come from data and stay open to a
-# counterexample (rule BAT-06).
+# The other way a replacement looks: a rise that lands at or above this
+# level, a full cell, and gains BATTERY_FULL_RISE or more. A cell at 80
+# replaced reads 100, a rise of twenty, which the first test misses
+# (rule BAT-06).
 BATTERY_REPLACED_LANDS = 95.0
-BATTERY_REPLACED_FROM_BELOW = 90.0
+# A new cell's first whole day must stay this far above the old cell's
+# high, its lowest level against the highest of the window before the
+# rise (rule BAT-06).
+BATTERY_REPLACED_CLEAR = 2.0
+# A rise that lands at or above BATTERY_REPLACED_LANDS is a candidate
+# when it gains at least this much, so a cell changed at 80 or 85 is
+# found and one drifting from 92 to 96 on a warm day is not (rule BAT-06).
+BATTERY_FULL_RISE = 10.0
+# A level counts toward a day's low or high once the device has been
+# heard holding it at this many moments, so a value held for seconds,
+# as a reconnect can give, decides nothing (rule BAT-06).
+BATTERY_SAMPLE_REPEATS = 2
+# Days of lows and highs kept. A day keeps each whole-number level it
+# was heard at, at most 101, and drops none, so a battery that passes
+# through every level in a day, as a charging one does, keeps its true
+# low and high (rule BAT-06).
+BATTERY_RANGE_DAYS = 3
+BATTERY_DAY_LEVELS_KEPT = 101
+# The device speaking is a moment heard at its level at most once a
+# minute, so one message that changes several entities is one moment
+# (rule BAT-06).
+BATTERY_SAMPLE_SPACING = 60.0
 # On a replacement the daily series starts again at day one. The
 # series it replaces is kept under this key and never read, so the
 # history survives and the trend, the projection and every chart
@@ -1333,6 +1373,20 @@ DEV_BATTERY_REPLACED_AT = "battery_replaced_at"
 # suspected replacement waits for a second sample to confirm it (rule
 # BAT-06). None when nothing is pending.
 DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
+# The levels the battery was heard holding today, each with how many
+# moments it was heard at, from its own reports and every time the
+# device spoke (rule BAT-06).
+DEV_BATTERY_DAY_LEVELS = "battery_day_levels"
+DEV_BATTERY_DAY_COUNTS = "battery_day_counts"
+# Each of the last three days' lowest and highest level, oldest first
+# (rule BAT-06).
+DEV_BATTERY_RANGE_LOWS = "battery_range_lows"
+DEV_BATTERY_RANGE_HIGHS = "battery_range_highs"
+# The old cell's highest level over the window before a suspected
+# replacement, held with it: the new cell is confirmed only when its next
+# whole day stays above it (rule BAT-06). None when nothing is pending,
+# or when no day before was kept.
+DEV_BATTERY_PENDING_HIGH = "battery_pending_high"
 # How many day-to-day falls of BATTERY_COARSE_STEP or more a cell has
 # made since it last showed a smaller change (rule BAT-09). Stored
 # because a cell that reports in 10-point steps may step once a month or
@@ -1356,6 +1410,11 @@ DEV_BATTERY_RAW_SCALE = "battery_raw_scale"
 # The local day of the first reading that would prove the raw scale,
 # as an ISO date, or None. A reading on a different day confirms it.
 DEV_BATTERY_RAW_FIRST_DAY = "battery_raw_first_day"
+# Set when a raw-scale mark is cleared, at a battery change or a firmware
+# update: everything stored since is in percent, since a reading over 100
+# is ignored until the scale is proved again, so proving it again halves
+# nothing (rule BAT-02).
+DEV_BATTERY_RAW_CLEARED = "battery_raw_cleared"
 BATTERY_RAW_PROOF = 110.0
 # The highest reading the raw scale gives; past it a reading is not a
 # battery level on either scale and is ignored (rule BAT-02).
@@ -1674,9 +1733,15 @@ EPOCH_KEPT = (
     DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_PENDING_HIGH,
+    DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_COUNTS,
+    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_RANGE_HIGHS,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_RAW_FIRST_DAY,
+    DEV_BATTERY_RAW_CLEARED,
     DEV_FLAP_DROPS,
     DEV_FLAP_SINCE,
     DEV_FLAP_BACK,
@@ -2671,6 +2736,10 @@ SYS_DETAIL = "detail"
 SYS_DURATION = "duration"
 
 SYS_RESTART = "restart"
+# Device Sentinel reloaded while Home Assistant ran on: from its menu,
+# or turned off and on. Not a restart of the system: it ends no outage
+# and forgets no short drop-out (rule UP-06).
+SYS_RELOAD = "reload"
 # The system clock moved while Device Sentinel ran (rule FRZ-21): the
 # detail says how far and which way, the duration is the size.
 SYS_CLOCK_RESET = "clock_reset"

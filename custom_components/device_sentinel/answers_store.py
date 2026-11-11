@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.28.11 (2026-11-10)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.28.12 (2026-11-11)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -54,9 +54,10 @@ from homeassistant.helpers.storage import Store
 
 from homeassistant.util import dt as dt_util
 
-from .backup import keep_as_last_good
+from .backup import _read_storage_file, keep_as_last_good
 from .const import BACKUP_LAST_GOOD_SUFFIX, LOGGER, TRIM_BACKUP_DIR
 from .power_source import power_words
+from .repairs import async_clear_corruption_of
 
 ANSWERS_STORE_KEY = "device_sentinel.answers"
 ANSWERS_STORE_VERSION = 1
@@ -89,9 +90,10 @@ def _read_last_good(hass: Any, key: str) -> dict[str, Any] | None:
     if os.path.islink(path):
         return None
     try:
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-    except (OSError, ValueError):
+        # Read as Home Assistant reads a storage file, so what is taken in
+        # can always be written back (rule STOR-08).
+        document = _read_storage_file(path)
+    except (OSError, ValueError, RecursionError):
         return None
     data = document.get("data") if isinstance(document, dict) else None
     return data if isinstance(data, dict) else None
@@ -226,6 +228,10 @@ class AnswersMixin:
             payload = await hass.async_add_executor_job(_read_last_good, hass, ANSWERS_STORE_KEY)
             restored = payload is not None
             if restored:
+                # Home Assistant's own card for the file it set aside
+                # tells a person to restore the whole system; the
+                # answers are back (rule REP-08).
+                async_clear_corruption_of(hass, ANSWERS_STORE_KEY)
                 await self._keep_answers_evidence()
                 # A stop between the rename to last-good and the write
                 # leaves no file at all, which is not damage.

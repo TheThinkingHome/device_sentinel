@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.11 (2026-11-10)
+# File: diagnostics.py, Version: 0.28.12 (2026-11-11)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -119,7 +119,22 @@ TO_REDACT = {
 }
 
 
-def _wifi_scan_hidden(scan: Any) -> Any:
+def _network_names(coordinator: Any) -> list[str]:
+    """Every Wi-Fi network the house names or hears, in one order, so
+    each has the same stand-in everywhere in a download (rule STOR-21)."""
+    names: list[str] = []
+    scan = getattr(coordinator, "wifi_scan_diagnostics", None)
+    lists: list[Any] = [coordinator.entry.options.get(CONF_WIFI_NETWORKS)]
+    if isinstance(scan, dict):
+        lists += [scan.get("networks"), scan.get("heard"), scan.get("missing")]
+    for value in lists:
+        for name in value if isinstance(value, (list, tuple, set)) else ():
+            if isinstance(name, str) and name.strip() and name not in names:
+                names.append(name)
+    return names
+
+
+def _wifi_scan_hidden(scan: Any, order: Any = ()) -> Any:
     """The Wi-Fi scan with each network's name replaced by a stand-in,
     the same throughout: the house's own and every neighbour's the host
     hears, which public maps of networks can place (rule STOR-21). What
@@ -127,6 +142,9 @@ def _wifi_scan_hidden(scan: Any) -> Any:
     if not isinstance(scan, dict):
         return scan
     names: dict[str, str] = {}
+    for name in order or ():
+        if isinstance(name, str) and name not in names:
+            names[name] = f"SSID-{len(names) + 1:02d}"
 
     def stand_in(name: Any) -> Any:
         if not isinstance(name, str):
@@ -286,9 +304,17 @@ def _infrastructure(
             for device in dr.async_entries_for_config_entry(
                 device_registry, entry.entry_id
             ):
+                # A router's devices are mostly the house's clients,
+                # named by their hostnames, often a person's ("Janes-
+                # iPhone"): only what the hardware is goes out
+                # (rule STOR-21). A UniFi Wi-Fi network's name is hidden
+                # as a network's.
+                name = device.name_by_user or device.name
+                if domain in ROUTER_DOMAINS and device.model != "UniFi WLAN":
+                    name = f"{domain} device {len(hardware) + 1}"
                 hardware.append(
                     {
-                        "name": device.name_by_user or device.name,
+                        "name": name,
                         "manufacturer": device.manufacturer,
                         "model": device.model,
                         "sw_version": device.sw_version,
@@ -297,7 +323,10 @@ def _infrastructure(
                     }
                 )
         out[domain] = {
-            "entries": [entry.title for entry in entries],
+            # An entry's title is often its host, a broker's or a
+            # router's, which can be a public name or address: each is
+            # its domain and number instead (rule STOR-21).
+            "entries": [f"{domain} entry {n}" for n, _entry in enumerate(entries, 1)],
             "state": [str(entry.state) for entry in entries],
             "devices": hardware[:INFRASTRUCTURE_DEVICE_CAP],
             "device_count": len(hardware),
@@ -371,12 +400,67 @@ _IPV6_CANDIDATE = re.compile(
 )
 
 
-def _redact_addresses(payload: Any) -> Any:
+# How Device Sentinel's own sentences name Wi-Fi networks: quoted.
+_WIFI_WORDS = re.compile(r"\bWi-?Fi\b")
+_STAND_IN = re.compile(r"SSID-\d+")
+_TRACKER = re.compile(r"\bdevice_tracker\.[a-z0-9_]+")
+_QUOTED = re.compile(r"(['\u2018])([^'\u2018\u2019]{1,64})(['\u2019])")
+# Keys whose value is a Wi-Fi network's name, as routers publish it.
+_NETWORK_KEYS = frozenset({"essid", "ssid", "wifi_network", "network_name"})
+# Values that are states and words before they are anyone's network
+# name: a network called "home" is hidden under its key and where it is
+# quoted, never in every tracker state that reads "home".
+_COMMON_WORDS = frozenset({
+    "home", "not_home", "away", "on", "off", "unknown", "unavailable",
+    "none", "true", "false", "wifi", "iot", "guest",
+})
+
+
+def _redact_addresses(payload: Any, networks: Any = ()) -> Any:
     """Return the payload with every MAC address and every home-network
     or web-host IPv4 address replaced; a version that looks like an
-    address is left alone."""
+    address is left alone. Each Wi-Fi network named in `networks`, or
+    under a key that names one, is replaced by a stand-in, the same
+    throughout: a whole value, or a name quoted in a sentence, as the
+    Problem List words a Wi-Fi outage (rule STOR-21)."""
     macs: dict[str, str] = {}
     ips: dict[str, str] = {}
+    ssids: dict[str, str] = {}
+
+    def ssid(name: str) -> str:
+        if name not in ssids:
+            ssids[name] = f"SSID-{len(ssids) + 1:02d}"
+        return ssids[name]
+
+    for name in networks or ():
+        if isinstance(name, str) and name.strip():
+            ssid(name)
+
+    trackers: dict[str, str] = {}
+
+    def tracker(match: re.Match[str]) -> str:
+        whole = match.group(0)
+        if whole not in trackers:
+            trackers[whole] = f"device_tracker.tracker_{len(trackers) + 1:02d}"
+        return trackers[whole]
+
+    def collect(value: Any) -> None:
+        # First pass: every network named anywhere, so a name met as a
+        # whole value before its key is replaced too. UniFi makes a
+        # device of each Wi-Fi network, named after it.
+        if isinstance(value, dict):
+            if value.get("model") == "UniFi WLAN" and isinstance(value.get("name"), str):
+                ssid(value["name"])
+            for key, inner in value.items():
+                if key in _NETWORK_KEYS and isinstance(inner, str) and inner.strip():
+                    ssid(inner)
+                else:
+                    collect(inner)
+        elif isinstance(value, (list, tuple, set)):
+            for inner in value:
+                collect(inner)
+
+    collect(payload)
 
     def stand_in(hex12: str) -> str:
         """Every spelling of one address gets the one stand-in."""
@@ -426,6 +510,26 @@ def _redact_addresses(payload: Any) -> Any:
         return ips[token] + tail
 
     def text(value: str) -> str:
+        if value in ssids and value.casefold() not in _COMMON_WORDS:
+            return ssids[value]
+        # Known names first, whole, so a name holding an apostrophe is
+        # hidden whole before the quoted pass could split it.
+        for name, stand in list(ssids.items()):
+            if name in value:
+                for quote in ("'", '"', "\u2018", "\u201c"):
+                    closing = {"\u2018": "\u2019", "\u201c": "\u201d"}.get(quote, quote)
+                    value = value.replace(f"{quote}{name}{closing}", f"{quote}{stand}{closing}")
+        # A network no longer chosen still named in an old sentence:
+        # in a sentence about Wi-Fi, every quoted name is a network's.
+        if _WIFI_WORDS.search(value):
+            value = _QUOTED.sub(
+                lambda m: m.group(0) if _STAND_IN.fullmatch(m.group(2))
+                else f"{m.group(1)}{ssid(m.group(2))}{m.group(3)}",
+                value,
+            )
+        # A router names a client's tracker after its hostname, often a
+        # person's: each tracker is a stand-in, the same throughout.
+        value = _TRACKER.sub(tracker, value)
         # A web address's user and password, and an email address, are
         # never a fault report's business (rule STOR-21).
         value = _URL_USERINFO.sub("://USER@", value)
@@ -441,7 +545,10 @@ def _redact_addresses(payload: Any) -> Any:
             return text(value)
         if isinstance(value, dict):
             return {
-                (text(k) if isinstance(k, str) else k): walk(v)
+                (text(k) if isinstance(k, str) else k): (
+                    ssid(v) if k in _NETWORK_KEYS and isinstance(v, str) and v.strip()
+                    else walk(v)
+                )
                 for k, v in value.items()
             }
         if isinstance(value, (list, tuple, set)):
@@ -676,7 +783,7 @@ async def async_get_config_entry_diagnostics(
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
-            "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics),
+            "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics, _network_names(coordinator)),
             "study_hardware": list(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),
@@ -864,4 +971,4 @@ async def async_get_config_entry_diagnostics(
         "held_records": coordinator.held_records(),
         "devices": devices,
     }
-    return _redact_addresses(payload)
+    return _redact_addresses(payload, _network_names(coordinator))

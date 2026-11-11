@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_tado.py, Version: 0.28.10 (2026-11-10)
+# File: study_tado.py, Version: 0.28.12 (2026-11-11)
 
 """What a Tado house shows, recorded for Extended Diagnostics.
 
@@ -98,6 +98,12 @@ def _refresh_words(coordinator: Any) -> str:
     return f"{ok}, next {every}, {left_words}"
 
 
+
+def _entry_label(entry: Any) -> str:
+    """The entry by its id, never its title: Tado names an entry after
+    the Tado home, often a family's name or a street (rule STOR-21)."""
+    return f"tado entry {str(entry.entry_id)[-6:]}"
+
 class TadoStudyMixin:
     """The Tado recording, on the study's minute and its file."""
 
@@ -162,7 +168,7 @@ class TadoStudyMixin:
             refresh = _refresh_words(coordinator)
             key = f"refresh|{entry.entry_id}"
             if last.get(key) != refresh:
-                self._tado_line(now, NODE_REFRESH, "", last.get(key, ""), refresh, entry.title)
+                self._tado_line(now, NODE_REFRESH, "", last.get(key, ""), refresh, _entry_label(entry))
                 last[key] = refresh
             for serial, record in sorted(_devices(coordinator).items()):
                 value, stamp = _connection(record)
@@ -211,10 +217,10 @@ class TadoStudyMixin:
         for entry in self._tado_entries():
             coordinator = _coordinator(entry)
             if coordinator is None:
-                found.append({"entry": entry.title, "coordinator": False})
+                found.append({"entry": _entry_label(entry), "coordinator": False})
                 continue
             found.append({
-                "entry": entry.title,
+                "entry": _entry_label(entry),
                 "coordinator": True,
                 "refresh": _refresh_words(coordinator),
                 "devices": {

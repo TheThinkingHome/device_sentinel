@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.28.11 (2026-11-10)
+# File: messenger.py, Version: 0.28.12 (2026-11-11)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .notifier import async_notify, fitted_for, notify_platform
 from .const import (
     BRIEF_TITLE,
     CONF_BRIEF_TARGETS,
@@ -184,12 +185,22 @@ class MessengerMixin:
                         target,
                     )
                     continue
+                if notify_platform(self.hass, target) == "mobile_app":
+                    # The full brief is not sent to a phone: its push
+                    # relay will not carry it, and the phone gets the
+                    # live pushes. One saved before is skipped
+                    # (rule BRIEF-11).
+                    LOGGER.warning(
+                        "Daily brief target %s is a phone and was skipped; "
+                        "the full brief goes to mail or a persistent "
+                        "notification",
+                        target,
+                    )
+                    continue
             try:
-                await self.hass.services.async_call(
-                    domain,
-                    service,
-                    self._brief_payload(target, text),
-                    blocking=True,
+                await async_notify(
+                    self.hass, domain, service,
+                    fitted_for(self.hass, target, self._brief_payload(target, text)),
                 )
             except Exception as err:  # noqa: BLE001
                 # A notify platform can raise anything from a socket
@@ -253,7 +264,13 @@ class MessengerMixin:
                 await self.hass.services.async_call(
                     domain,
                     service,
-                    {"title": RESTORE_NOTICE_TITLE, "message": message},
+                    # Fitted like every push, so Telegram reads the
+                    # folder's underscores as text (rule NOTE-02).
+                    fitted_for(
+                        self.hass,
+                        target,
+                        {"title": RESTORE_NOTICE_TITLE, "message": message},
+                    ),
                     blocking=True,
                     **call,
                 )

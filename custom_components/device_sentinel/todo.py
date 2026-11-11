@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.28.11 (2026-11-10)
+# File: todo.py, Version: 0.28.12 (2026-11-11)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -51,6 +51,8 @@ the list shows age natively.
 
 from __future__ import annotations
 
+import sys
+
 from datetime import datetime
 
 from homeassistant.components.todo import (
@@ -65,6 +67,7 @@ from homeassistant.components.homeassistant.exposed_entities import (
     async_expose_entity,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -83,6 +86,19 @@ from .const import (
     TODO_UID,
 )
 from .coordinator import DeviceSentinelCoordinator
+
+
+def _called_by_assist() -> bool:
+    """Whether Home Assistant's to-do intents are making this call."""
+    frame = sys._getframe(1)
+    for _ in range(12):
+        if frame is None:
+            return False
+        name = frame.f_code.co_filename.replace("\\", "/")
+        if name.endswith("components/todo/intent.py"):
+            return True
+        frame = frame.f_back
+    return False
 
 
 async def async_setup_entry(
@@ -206,6 +222,33 @@ class DeviceSentinelTodoList(TodoListEntity):
             for record in self._coordinator.todo_items
         ]
 
+    async def _refuse_a_non_admin(self) -> None:
+        """Only an admin acts on the Problem List; an automation that
+        runs on its own carries no user and still may. A script a person
+        starts acts as that person (rule LIST-03).
+
+        Ticking an item is the acknowledgment: its pushes stop and it
+        leaves the card and the brief. The dashboard's own acknowledge
+        is admin only, and the list is held to the same rule.
+        """
+        if _called_by_assist():
+            # Assist's to-do intents call in directly, with no user to
+            # check and the context of whatever call came before: a
+            # person who shows the list to Assist lets it read the list
+            # but not tick or delete (rule LIST-03).
+            raise Unauthorized()
+        # Every other way in is Home Assistant's service call, which sets
+        # the entity's context, the caller's, just before it calls in.
+        context = self._context
+        if context is None:
+            return
+        user_id = context.user_id
+        if user_id is None:
+            return
+        user = await self.hass.auth.async_get_user(user_id)
+        if user is None or not user.is_admin:
+            raise Unauthorized(context=context)
+
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Apply a user edit, meaning the check that acknowledges.
 
@@ -220,6 +263,7 @@ class DeviceSentinelTodoList(TodoListEntity):
         # folding None into needs_action here would defeat that guard,
         # and a caller that updates text alone would silently reopen
         # the item.
+        await self._refuse_a_non_admin()
         status: str | None = None
         if item.status is not None:
             status = (
@@ -234,4 +278,5 @@ class DeviceSentinelTodoList(TodoListEntity):
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         """Delete items a user removed by hand."""
+        await self._refuse_a_non_admin()
         await self._coordinator.async_todo_delete(uids)

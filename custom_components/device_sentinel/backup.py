@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.28.11 (2026-11-10)
+# File: backup.py, Version: 0.28.12 (2026-11-11)
 
 """Copies of the storage files: the one-shot copy, last-good, evidence
 copies and the restore.
@@ -20,10 +20,10 @@ read.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
+import stat
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -31,6 +31,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import STORAGE_DIR
 from homeassistant.util import dt as dt_util
+from homeassistant.util.json import json_loads
 
 from .const import (
     BACKUP_LAST_GOOD_SUFFIX,
@@ -46,6 +47,23 @@ from .const import (
 # A stamp as the copies are named, with the suffix a second copy in
 # the same second takes (rule STOR-13).
 _STAMP_SHAPE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{6}(?:_\d+)?")
+
+
+def _read_storage_file(path: Path | str) -> Any:
+    """A storage file's whole document, read as Home Assistant's Store
+    reads one, or ValueError.
+
+    Only a regular file is opened: a pipe or a device at a storage name
+    would hold the read open for ever, and the start with it. Parsed by
+    the same reader as the Store, so a number too big to write back, a
+    NaN or a document nested past its limit is refused here as it would
+    be there, never carried into a session whose every save would then
+    fail (rule STOR-08).
+    """
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        raise ValueError("not a regular file")
+    with open(path, "rb") as handle:
+        return json_loads(handle.read())
 
 
 def _storage_path(hass: HomeAssistant, key: str) -> Path:
@@ -503,9 +521,8 @@ async def async_restore_main_file(
         if not os.path.exists(copy) or os.path.islink(copy):
             return False, None
         try:
-            with open(copy, encoding="utf-8") as handle:
-                json.load(handle)
-        except (OSError, ValueError):
+            _read_storage_file(copy)
+        except (OSError, ValueError, RecursionError):
             # The copy is unreadable too. Say nothing over the live
             # file: a second bad file written over a first is worse
             # than the first alone.
@@ -594,9 +611,8 @@ def _last_good_holds_devices(hass: HomeAssistant) -> bool:
     if copy.is_symlink():
         return False
     try:
-        with open(copy, encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, ValueError):
+        payload = _read_storage_file(copy)
+    except (OSError, ValueError, RecursionError):
         return False
     if not isinstance(payload, dict):
         return False
@@ -605,6 +621,36 @@ def _last_good_holds_devices(hass: HomeAssistant) -> bool:
         return False
     devices = data.get("devices")
     return isinstance(devices, dict) and bool(devices)
+
+
+def kept_beside_a_fresh_start(hass: HomeAssistant) -> bool:
+    """Say whether a start that has to begin empty has files beside it
+    worth keeping: a last-good copy holding devices or one that cannot
+    be read, or a history file or its copy.
+
+    Such a start writes its own new main file, but never takes the
+    copy's place or removes the history files, so what the house had
+    is still there to be put back (rule STOR-08).
+    """
+    if _last_good_holds_devices(hass):
+        return True
+    copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
+    if os.path.lexists(copy):
+        # One that cannot be read may still hold the house; only a copy
+        # that reads whole and holds no devices is nothing to keep.
+        try:
+            payload = _read_storage_file(copy)
+        except (OSError, ValueError, RecursionError):
+            return True
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+            return True
+    return any(
+        os.path.exists(_storage_path(hass, key))
+        for key in (
+            STORAGE_HISTORY_KEY,
+            f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}",
+        )
+    )
 
 
 def _corrupt_siblings(hass: HomeAssistant) -> list[str]:
@@ -705,9 +751,8 @@ def read_main_file_raw(hass: HomeAssistant) -> dict[str, Any] | None:
     """
     path = _storage_path(hass, STORAGE_KEY)
     try:
-        with open(path, encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, ValueError):
+        payload = _read_storage_file(path)
+    except (OSError, ValueError, RecursionError):
         return None
     data = payload.get("data") if isinstance(payload, dict) else None
     return data if isinstance(data, dict) else None
@@ -723,9 +768,8 @@ def read_last_good_raw(hass: HomeAssistant) -> dict[str, Any] | None:
     """
     path = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
     try:
-        with open(path, encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, ValueError):
+        payload = _read_storage_file(path)
+    except (OSError, ValueError, RecursionError):
         return None
     data = payload.get("data") if isinstance(payload, dict) else None
     return data if isinstance(data, dict) else None
