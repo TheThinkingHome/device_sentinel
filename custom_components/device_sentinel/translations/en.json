@@ -263,6 +263,7 @@
       "internal_url_not_set": "Home Assistant has no internal URL, so nothing would be linked. Set one under Settings, System, Network, or choose None.",
       "external_url_not_set": "Home Assistant has no external URL, so nothing would be linked. Set one under Settings, System, Network, or choose None.",
       "priority_target_is_address": "High-Priority Targets and Normal-Priority Targets need a notify action, such as your phone's Companion app, not an email address. Choose them from the list.",
+      "priority_target_is_persistent": "High-Priority Targets and Normal-Priority Targets need a notify action, such as your phone's Companion app. Alerts are not sent to the persistent notification; turn on Create a Persistent Notification below instead.",
       "brief_target_is_address": "Send the Full Brief To needs an email service, not an email address. Set up Home Assistant's SMTP integration, then choose its recipient from the list."
     }
   },
