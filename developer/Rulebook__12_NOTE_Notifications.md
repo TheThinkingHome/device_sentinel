@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -17,6 +17,7 @@ This section covers how Device Sentinel tells people and automations about the P
 **High-priority targets receive each live push as problems appear and clear, at any hour, Quiet Hours included. Normal-priority targets receive each live push except during Quiet Hours.**
 - **The difference:** the tiers differ in Quiet Hours, not in urgency or content.
 - **The Daily Brief:** goes to neither tier. It goes only to Send the Full Brief To (see [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md)).
+- **Not the persistent notification (since 0.28.11):** it is not offered in High-Priority Targets or Normal-Priority Targets, where it reached nobody: a push goes to notify actions, and the card has its own switch ([NOTE-11](#note-11-the-persistent-card)). Home Assistant's `notify.persistent_notification`, which posts to the same place, and any `persistent_notification` action are refused the same way. One saved before still gets its pushes, with each name escaped, since that place shows Markdown. Typed in, it is refused on Submit with "Alerts are not sent to the persistent notification; turn on Create a Persistent Notification below instead.", and nothing is saved. One already saved still shows, so it can be taken out.
 - **A typed email address (since 0.28.10):** a value holding "@" in either list is refused on Submit, with "High-Priority Targets and Normal-Priority Targets need a notify action, such as your phone's Companion app, not an email address." above the section, and nothing is saved. A notify action's name cannot hold "@", so nothing that works is refused. Each alert to an address would be lost, as the brief was ([BRIEF-11](Rulebook__13_BRIEF_Daily_Brief.md)).
 
 *Proof:* [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_settings_screen_text.py`](../tests/test_settings_screen_text.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_settings.py`](../tests/test_settings.py).

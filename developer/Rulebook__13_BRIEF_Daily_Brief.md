@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -142,7 +142,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **No www:** nothing is written under www. At each start a `www/device_sentinel/` folder left from an older release is deleted whole, after its current brief is copied out unless one is already in place.
 - **No dated copies:** none are kept.
 - **Whole files:** each file is written to a temporary name beside it and moved into place, so a reader never meets half a file.
-- **Names:** square brackets, pipes and angle brackets in a name are escaped in the raw files, so a name reads `\[LG\] webOS TV` there. A line break in a name becomes a space.
+- **Names:** square brackets, pipes and angle brackets in a name are escaped in the raw files, so a name reads `\[LG\] webOS TV` there. A name's own backslash is escaped first (since 0.28.11), so a device that names itself with backslashes before its brackets cannot turn them back into a link. The brief sent to Home Assistant's persistent notification, which shows it as Markdown, has every square or angle bracket not already escaped escaped too, so a name in a sentence cannot draw a link or load a picture, through Markdown or the HTML the notification lets through; the brief carries no link of its own. A line break in a name becomes a space.
 
 *Proof:* [`test_www_retired.py`](../tests/test_www_retired.py), [`test_report_thread_race.py`](../tests/test_report_thread_race.py), [`test_hostile_names.py`](../tests/test_hostile_names.py), [`test_reports.py`](../tests/test_reports.py).
 

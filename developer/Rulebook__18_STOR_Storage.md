@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -29,7 +29,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **The history file is written only when its part of storage has changed.**
 - **When it is written:** at each save, the part of storage older than each history's newest 30 entries (and the house's events and signal stress rows older than a line set at each fold) is compared with what was last written. The history file is written only if it differs: at the fold, and after a trim, an exclusion delete or a lowered retention.
-- **The four steps:** the history file is renamed to its last-good copy. The new one is written and read back. The main file is written, recording the history file's generation number. The new history file is copied over its last-good copy.
+- **The four steps:** the history file is kept as its last-good copy, the live file left in place ([STOR-04](#stor-04-last-good-copies)). The new one is written and read back. The main file is written, recording the history file's generation number. The new history file is copied over its last-good copy.
 - **After a clean save:** the new main file is copied over its own last-good, so all four files hold one generation.
 - **At each start:** the load joins the history copy whose generation matches the main file, and a good copy is written over the other where they differ.
 - **A bad file:** a bad live file, or a pair whose generations do not match, restores the last-good set: the main file's last-good joined with the history copy of the same generation.
@@ -41,12 +41,13 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-04 Last-Good Copies
 
 **Last-good is always the latest main file that was clean when written.**
-- **How it is made:** before each clean save of the main file, the live file is renamed to last-good and the new file is put in place by Home Assistant's own safe write.
+- **How it is made (since 0.28.11):** before each clean save of the main file, last-good is made to hold the live file as it is, by a hard link, or a copy where the file system refuses links, put in place under a temporary name; the live file never leaves its place. The new file is then put in place by Home Assistant's own write, a temporary file swapped in, which leaves the link holding the old contents. Before, the live file was renamed to last-good, and while Home Assistant is stopping its Store holds every save back until its final-write stage, so there was no main file from the stop to the final write; a process killed in that time, by Docker's 10 seconds or a stage that timed out, started next with none (a house on Docker, issue #33). The history file's and the answers file's last-good copies are kept the same way.
+- **A file written in place:** a hard link shares its contents with the live file until Home Assistant's next write, so an editor that writes the live file in place changes last-good with it. Device Sentinel itself never writes a stored file in place: its restore copies to a temporary name and swaps it in, a copy goes into a new file only and keeps its source's times, and a keep of a file that is already last-good does nothing, so no temporary name is left behind to be written through.
 - **A clean save:** one whose outgoing file holds no faults. A save that repaired anything, and the first save after a load that needed a restore or repair, leaves last-good alone. So last-good freezes at the latest clean file while the files are not clean.
 - **Empty files:** an empty file is never a clean save over a last-good that holds devices.
 - **The other files:** the clocks file has no last-good copy. The history file's is kept as [STOR-03](#stor-03-the-history-file) says, and the answers file's as [STOR-20](#stor-20-the-answers-file) says.
 
-*Proof:* [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_restore.py`](../tests/test_restore.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_routine_save_checked.py`](../tests/test_routine_save_checked.py).
+*Proof:* [`test_storage_never_missing.py`](../tests/test_storage_never_missing.py), [`test_backup_integrity.py`](../tests/test_backup_integrity.py), [`test_restore.py`](../tests/test_restore.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_routine_save_checked.py`](../tests/test_routine_save_checked.py).
 
 ### STOR-05 The Shape Check at Load
 
@@ -80,6 +81,8 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **A main file that is missing, or that Home Assistant could not parse and set aside as `.corrupt`, is replaced from last-good and the start goes on. Nobody is asked.**
 - **Judged on what is found:** not on an error. An empty load with a last-good that holds devices is a lost file, never a first install, and the `.corrupt` file is copied into trim_backups as evidence.
+- **A document that is not a storage document (since 0.28.11):** one that parses but is not a mapping, or is nested deeper than Python can walk, is answered as an unreadable file: the evidence copied, then the last-good copy, or a first install where the copy cannot be used.
+- **What a missing file means now (since 0.28.11):** the save never moves the main file away ([STOR-04](#stor-04-last-good-copies)), so a missing main file beside a last-good means it was deleted or moved from outside, not that a save was stopped.
 - **Bad copies:** a copy that does not parse, or holds no devices, is never written over the live file. One attempt, no retry.
 - **No usable copy:** an empty load with no usable copy starts as a first install. A file that cannot be read at all, through a disk or permission fault, with no copy that helps, stops setup with a sentence naming the file, saying nothing was changed, and giving the two ways forward.
 - **Repair card:** a restore raises the Restored Its Storage repair card, a warning, and clears Home Assistant's own issue about the unreadable file. A restore that fails leaves that issue standing.
@@ -202,7 +205,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **The diagnostics download carries each device's stored record and the tables, with network addresses hidden.**
 - **The tables:** the to-do list and its additions journal, the house's events, silence episodes, incidents and signal stress rows, the drops and address changes and any address two devices share (since 0.28.0), the history file's state, the answers (the recommendation ticks and the battery replacement dates included), and the count of open episodes.
-- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file, a Wi-Fi device's address and access point included.
+- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file, a Wi-Fi device's address and access point included. Since 0.28.11 an IPv6 address, which carries the house's own prefix, with any IPv4 tail it carries, and an address in 100.64.0.0/10, as a mesh VPN hands out, are hidden too. A version number that falls in that range reads as an address, as one in 10.x already did. Also since 0.28.11: the user and password in a web address (`http://user:pass@host`) and every email address are replaced, and the Wi-Fi networks a house watches and every network its host hears are named by stand-ins, `SSID-01` and on, since public maps of networks can place a house by them.
 - **Not hidden:** version-like numbers and Zigbee IEEE addresses stay. The reports are not redacted.
 - **Reading it:** a download is read beside the live entities, whose version says which build is running.
 

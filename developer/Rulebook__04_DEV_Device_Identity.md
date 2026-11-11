@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -132,6 +132,7 @@ This section covers what a device is called, what kind of device it is, what pow
 
 **Devices of the same maker, model and hardware version form a group, with firmware shown inside it.** Two models of one name on different hardware are different hardware.
 - **Names:** the model id names the group where the device gives one, and the model name is what a person reads.
+- **No product named (since 0.28.11):** a maker or model that stands for none ([DEV-06](#dev-06-what-powers-a-device)), a placeholder or a chip maker with its board as the model, forms no group: unrelated hardware would share one.
 - **No firmware given:** the device stays in its group, shown as "not given".
 - **No hardware version given:** the device joins its model's only given version. Where the model gives several or none, it stands with the others that give none.
 - **Using the data:** a group's data is recorded and shown before anything is judged on it, and the owner decides how each use of it is built.

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook
 
-*Version: rulebook, 9 November 2026, on Device Sentinel 0.28.7.*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11.*
 
 **What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today. Under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings give the reason in plain words, then cite the rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))".
 
@@ -15,7 +15,7 @@
 
 ## Sections
 
-298 rules in all.
+299 rules in all.
 
 | Code | Section | Rules | File |
 |---|---|---|---|
@@ -29,7 +29,7 @@
 | STACK | Stacks | 15 | [`Rulebook__08_STACK_Stacks.md`](Rulebook__08_STACK_Stacks.md) |
 | BAT | Battery | 18 | [`Rulebook__09_BAT_Battery.md`](Rulebook__09_BAT_Battery.md) |
 | SIG | Signal | 17 | [`Rulebook__10_SIG_Signal.md`](Rulebook__10_SIG_Signal.md) |
-| LIST | Problem List | 13 | [`Rulebook__11_LIST_Problem_List.md`](Rulebook__11_LIST_Problem_List.md) |
+| LIST | Problem List | 14 | [`Rulebook__11_LIST_Problem_List.md`](Rulebook__11_LIST_Problem_List.md) |
 | NOTE | Notifications | 12 | [`Rulebook__12_NOTE_Notifications.md`](Rulebook__12_NOTE_Notifications.md) |
 | BRIEF | Daily Brief | 16 | [`Rulebook__13_BRIEF_Daily_Brief.md`](Rulebook__13_BRIEF_Daily_Brief.md) |
 | DASH | Dashboard | 18 | [`Rulebook__14_DASH_Dashboard.md`](Rulebook__14_DASH_Dashboard.md) |

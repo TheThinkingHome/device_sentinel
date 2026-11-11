@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 31 October 2026, on Device Sentinel 0.27.16. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -156,7 +156,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 
 **These are shown or kept for a better forecast later, and nothing is judged on them:**
 - **Lithium.** A battery whose type starts with CR is lithium. Its page says its level holds near full until close to its end while it is not falling, and Battery Trends says it once under Other Cells.
-- **Its model's pace.** A battery's page and Battery Trends row show the slowest and fastest weekly fall of the other devices of the same maker and model that have a weekly fall, as "Others of this model lose 0.8 to 1.6 points a week", when at least two qualify. A device with no weekly fall yet is left out.
+- **Its model's pace.** A battery's page and Battery Trends row show the slowest and fastest weekly fall of the other devices of the same maker and model that have a weekly fall, as "Others of this model lose 0.8 to 1.6 points a week", when at least two qualify. A device with no weekly fall yet is left out, and so is one with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), since 0.28.11.
 - **Voltage, temperature and messages.** At each midnight, each battery device heard that day keeps its battery voltage, its own temperature and its message count, from its own entities only. A voltage outside 0.5 to 15 volts is left out. The rows are kept for the How Much History to Keep setting's days, and Advanced shows the newest day. A battery device whose voltage sensor is switched off is listed on the Battery Voltage Switched Off card (REC).
 
 *Proof:* [`test_battery_lithium.py`](../tests/test_battery_lithium.py), [`test_battery_model_pace.py`](../tests/test_battery_model_pace.py), [`test_battery_evidence.py`](../tests/test_battery_evidence.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py).
@@ -179,7 +179,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **Batteries to Watch:** lists the steady fallers of [BAT-14](#bat-14-warnings).
 - **Falling:** shows the five weeks and the pace a week.
 - **Other Cells:** shows each remaining battery's last four weeks.
-- **By Model:** shows the points a week for each model.
+- **By Model:** shows the points a week for each model. A device with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), is a row of its own, not pooled with unrelated hardware (since 0.28.11), with a type chosen too.
 - **The summary:** splits the batteries that report a level into three parts that add up: falling, at or under the threshold and not falling, and not falling or not yet judged.
 
 *Proof:* [`test_dashboard_trends.py`](../tests/test_dashboard_trends.py), [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_type_filters.js`.

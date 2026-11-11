@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Problem List (LIST)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Problem List is Home Assistant's to-do list of what is wrong with the house's devices. This section covers what an item is, the kinds of problem and their words, acknowledgment, the order, when a problem is announced, what counts as a recovery and how an item leaves. What a push, the persistent card and the bus events do with an item is under [NOTE](Rulebook__12_NOTE_Notifications.md). How each problem is judged is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. An upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md), muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and the Problem List at the head of the dashboard's Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)) is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -124,3 +124,12 @@ The Problem List is Home Assistant's to-do list of what is wrong with the house'
 - **The push:** the push that goes with it carries no time. The moment the upstream went down decides when the push may go, once the outage has settled (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
 
 *Proof:* [`test_entry_outages.py`](../tests/test_entry_outages.py), [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py).
+
+### LIST-14 Hidden From Assist Until a Person Shows It
+
+**The Problem List is hidden from Assist, every conversation agent including an AI one, and the voice assistants, the first time it is set up on 0.28.11 or later. A person who wants Assist to see it turns that on under Settings, Voice assistants, Expose, and the choice is kept.**
+- **Why:** Home Assistant shows a to-do list to Assist by default. An agent could then read the house's problems and mark an item done, which takes it off the card and out of the alerts ([NOTE-08](Rulebook__12_NOTE_Notifications.md#note-08-acknowledgment-silences-people)), on a spoken word or on text a device carries in its name.
+- **Once:** the list's own registry options record that it was hidden, so it is never hidden again after a person shows it. A house that had shown it before 0.28.11 has it hidden once at the upgrade.
+- **When Home Assistant's exposure settings are not loaded:** nothing is marked, and it is tried at the next start.
+
+*Proof:* [`test_problem_list_assist.py`](../tests/test_problem_list_assist.py).
