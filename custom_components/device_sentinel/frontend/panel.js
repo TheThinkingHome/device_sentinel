@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.10 (2026-11-10)
+// File: panel.js, Version: 0.28.11 (2026-11-10)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -3104,7 +3104,8 @@ class DeviceSentinelPanel extends HTMLElement {
       // type chosen.
       const byModel = new Map();
       for (const cell of cells) {
-        const key = `${cell.maker}\u0000${cell.model}`;
+        // A device that names no product stays a row of its own (rule BAT-18).
+        const key = cell.alone ? `\u0001${cell.device_id}` : `${cell.maker}\u0000${cell.model}`;
         if (!byModel.has(key)) byModel.set(key, []);
         byModel.get(key).push(cell);
       }
