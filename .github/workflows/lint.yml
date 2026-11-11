@@ -1,3 +1,4 @@
+# File: .github/workflows/lint.yml, Version: 0.28.11 (2026-11-10)
 name: Lint
 
 # A rule nobody checks is not a rule. The tests, hassfest and HACS
@@ -16,6 +17,14 @@ permissions:
 on:
   push:
   pull_request:
+
+# One run per branch: a new commit cancels the runs of the one before
+# it. An upload through the GitHub page is one commit per batch of
+# files, and only the last commit holds the whole release, so the runs
+# for the others only queued it behind them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ruff:

@@ -1,3 +1,4 @@
+# File: .github/workflows/test.yml, Version: 0.28.11 (2026-11-10)
 name: Tests
 
 
@@ -16,6 +17,14 @@ on:
   # runs at all and there was no way to tell a workflow that failed
   # from one that never fired.
   workflow_dispatch:
+
+# One run per branch: a new commit cancels the runs of the one before
+# it. An upload through the GitHub page is one commit per batch of
+# files, and only the last commit holds the whole release, so the runs
+# for the others only queued it behind them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pytest:
