@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.27.10 (2026-10-27)
+# File: helpers.py, Version: 0.28.12 (2026-11-11)
 
 """Shared test helpers, one version of each.
 
@@ -32,6 +32,29 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DOMAIN = "device_sentinel"
+
+# Set by the real_disk fixture while a test writes real files.
+REAL_DISK_MARK = "device_sentinel_test_real_disk"
+
+
+async def start_storage_as_home_assistant_does(hass: HomeAssistant) -> None:
+    """Start Home Assistant's storage the way a real start does.
+
+    At start Home Assistant lists the files in .storage once, and from
+    then on a Store whose file was not on that list reads as missing
+    without looking at the disk, until something saves through it. The
+    harness never makes the list, so a file put back on disk always
+    read as there, and a restore that read its file back through a
+    Store passed every test while a real start went on empty (rule
+    STOR-08). Called before each start of a test on the real disk.
+    """
+    if not hass.data.get(REAL_DISK_MARK):
+        return
+    from homeassistant.helpers import storage as ha_storage
+
+    manager = ha_storage._StoreManager(hass)
+    hass.data[ha_storage.STORAGE_MANAGER] = manager
+    await manager.async_initialize()
 
 # From Home Assistant 2026.8 a device belongs to exactly one config
 # entry, and asking for a second one is refused. The suite runs on two
@@ -73,6 +96,12 @@ async def setup_entry(
     # registry cooldown. On a real server time passes before anything
     # else happens, so the view catches up here (rule WATCH-11).
     await registry_settled(hass)
+    # The entities a test registers stand for an integration already
+    # loaded when Device Sentinel starts, the common case, so a value a
+    # test writes after setup is a device speaking. The first value of
+    # an integration that loads later is tested through the restart
+    # helpers, which keep this set (rule UNAV-05).
+    entry.runtime_data._stateless_at_start.clear()
     return entry
 
 

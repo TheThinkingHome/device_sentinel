@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery.py, Version: 0.28.12 (2026-11-11)
 
 """Battery detection: the low verdict and the daily recorder
 (rules BAT-01, BAT-02, BAT-03, BAT-06).
@@ -631,8 +631,14 @@ async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
 
 
 def _roll_levels(coord, record, levels):
+    """Each level is held through its day, the device heard at it more
+    than once, and read at midnight."""
+    from custom_components.device_sentinel.detect_battery import note_battery_sample
+
     for level in levels:
         record[DEV_BATTERY_VALUE] = level
+        note_battery_sample(record, level)
+        note_battery_sample(record, level)
         coord._roll_battery(record, "dev-r")
 
 
@@ -693,15 +699,16 @@ async def test_a_drift_up_near_full_is_not_a_replacement(hass: HomeAssistant):
 
 
 async def test_the_crossing_boundaries_are_inclusive(hass: HomeAssistant):
-    """Exactly 90 to exactly 95 is a replacement; 91 to 95 is not."""
+    """Landing at exactly 95 having gained exactly 10 is a replacement;
+    gaining 9 is not (rule BAT-06)."""
     coord = await setup_coordinator(hass)
     crossing = _record()
-    _roll_levels(coord, crossing, [90.0, 95.0, 95.0])
+    _roll_levels(coord, crossing, [85.0, 85.0, 95.0, 95.0])
     assert crossing[DEV_BATTERY_DAILY] == [95.0, 95.0]
 
     drifting = _record()
-    _roll_levels(coord, drifting, [91.0, 95.0, 95.0])
-    assert drifting[DEV_BATTERY_DAILY] == [91.0, 95.0, 95.0]
+    _roll_levels(coord, drifting, [86.0, 86.0, 95.0, 95.0])
+    assert drifting[DEV_BATTERY_DAILY] == [86.0, 86.0, 95.0, 95.0]
 
 
 async def test_a_lone_spike_does_not_erase_a_history(hass: HomeAssistant):

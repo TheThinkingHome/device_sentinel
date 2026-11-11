@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_infrastructure.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_infrastructure.py, Version: 0.28.12 (2026-11-11)
 
 """Diagnostics says what the plumbing is, not only how it behaved
 (rule DEV-16).
@@ -78,7 +78,8 @@ async def test_a_router_integration_is_named_with_its_hardware(
     data = await async_get_config_entry_diagnostics(hass, entry)
 
     block = data["infrastructure"]["fritz"]
-    assert block["entries"] == ["FRITZ!Box 7590"]
+    # The entry's title is a person's wording and is not shown.
+    assert block["entries"] == ["fritz entry 1"]
     assert block["devices"][0]["manufacturer"] == "AVM"
     assert block["devices"][0]["model"] == "FRITZ!Box 7590 AX"
 

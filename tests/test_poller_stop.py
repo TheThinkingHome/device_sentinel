@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_poller_stop.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_poller_stop.py, Version: 0.28.12 (2026-11-11)
 
 """A poller that stops updating is one outage, not one row per device
 (rule UP-17).
@@ -303,3 +303,37 @@ async def test_a_stop_after_a_restart_is_dated_from_the_restart(hass: HomeAssist
     down = _outages(coord, SYS_INTEGRATION_DOWN)
     assert len(down) == 1
     assert down[0]["when"] == coord._run_start()
+
+
+async def test_a_stop_that_becomes_a_failure_is_said_as_one(hass: HomeAssistant, freezer):
+    """The same outage, from the same start, said as what it is now."""
+    source, fleet, coord = await _poller(hass, freezer)
+    last = _silent_since(coord, fleet, 2 * GAP + 60)
+    coord._sample_integrations(dt_util.utcnow().timestamp())
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    coord._sample_integrations(dt_util.utcnow().timestamp())
+    down = _outages(coord, SYS_INTEGRATION_DOWN)
+    assert len(down) == 1
+    assert parse_detail(down[0][SYS_DETAIL])[2] != STALLED
+    assert down[0]["when"] == last
+    assert "stopped updating" not in coord._system_event_sentence(down[0])
+
+
+async def test_an_outage_closes_when_the_poller_loads_again(hass: HomeAssistant, freezer):
+    """A poller that failed to start and loads later is back, before its
+    devices have said anything; its silence while down is no stop."""
+    source, fleet, coord = await _poller(hass, freezer)
+    _silent_since(coord, fleet, 10)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    for _ in range(3):
+        freezer.tick(timedelta(seconds=10 * 60))
+        coord._sample_integrations(dt_util.utcnow().timestamp())
+    assert len(_outages(coord, SYS_INTEGRATION_DOWN)) == 1
+    freezer.tick(timedelta(seconds=40 * 60))
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(dt_util.utcnow().timestamp())
+    assert len(_outages(coord, SYS_INTEGRATION_UP)) == 1
+    # And the next check does not tell a stop dated before the return.
+    freezer.tick(timedelta(seconds=60))
+    coord._sample_integrations(dt_util.utcnow().timestamp())
+    assert len(_outages(coord, SYS_INTEGRATION_DOWN)) == 1

@@ -3,13 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: outage_helpers.py, Version: 0.27.10 (2026-10-27)
+# File: outage_helpers.py, Version: 0.28.12 (2026-11-11)
 
 """Helpers for the outage and unwatched-time tests (rules UNAV-04,
 WATCH-08): a device armed with a dated rhythm, minute walks, reloads
 and restarts.
 """
 from __future__ import annotations
+
+from custom_components.device_sentinel.coordinator import SETUP_MARK
 
 from datetime import timedelta
 
@@ -186,6 +188,8 @@ async def restart(
     if before_setup:
         before_setup()
     taken = [] if keep_states else _take_states(hass)
+    # A new Home Assistant process: the first setup in it is a start.
+    hass.data.pop(SETUP_MARK, None)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     if placeholders and taken:

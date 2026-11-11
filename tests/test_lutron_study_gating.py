@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_lutron_study_gating.py, Version: 0.27.8 (2026-10-27)
+# File: tests/test_lutron_study_gating.py, Version: 0.28.12 (2026-11-11)
 
 """The Lutron study is gathered only behind its own Extended Diagnostics
 switch, opens no connection to the hub, and leaves out an entry the
@@ -61,4 +61,6 @@ async def test_an_ignored_or_disabled_entry_is_left_out(hass: HomeAssistant, fre
     await hass.config_entries.async_set_disabled_by(h.garage.entry_id, ConfigEntryDisabler.USER)
     await hass.async_block_till_done()
     hubs = (await lutron_study(hass))["hubs"]
-    assert [hub["title"] for hub in hubs] == ["Basement"]
+    # The hub's own name stays out of the study (it is a person's
+    # wording); the entry is told apart by its id.
+    assert [hub["entry_id"] for hub in hubs] == [h.basement.entry_id]

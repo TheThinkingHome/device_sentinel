@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_history_file.py, Version: 0.28.12 (2026-11-11)
 
 """The history file: the older part of the learned history, kept apart
 (rules STOR-01, STOR-03).
@@ -16,6 +16,8 @@ steps and the restores are in test_history_file_disk.py.
 """
 
 from __future__ import annotations
+
+from custom_components.device_sentinel.coordinator import SETUP_MARK
 
 import copy
 import json
@@ -46,7 +48,7 @@ from custom_components.device_sentinel.history_file import (
     SIGNAL_SERIES_FIELDS,
 )
 
-from .helpers import register_device, setup_entry
+from .helpers import register_device, setup_entry, start_storage_as_home_assistant_does
 
 # A real moment: the storage check refuses a time before 2020 (rule STOR-07).
 NOW = 1_790_000_000.0
@@ -136,6 +138,9 @@ async def restart_with(hass, entry, edit=None):
     await hass.async_block_till_done()
     if edit is not None:
         edit()
+    await start_storage_as_home_assistant_does(hass)
+    # A new Home Assistant process: the first setup in it is a start.
+    hass.data.pop(SETUP_MARK, None)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry.runtime_data
@@ -315,6 +320,9 @@ async def test_a_trim_from_advanced_erases_the_older_history_at_once(
     copies = [n for n in os.listdir(folder) if n.endswith(".storage.json")]
     with open(os.path.join(folder, sorted(copies)[-1]), encoding="utf-8") as handle:
         backup = json.load(handle)
+    # A whole storage document, so it can be put back as it is.
+    assert backup["key"] == STORAGE_KEY and backup["version"] == 1
+    backup = backup["data"]
     assert DATA_HISTORY_GENERATION not in backup
     assert backup[DATA_DEVICES][target]["daily_max"] == series("daily_max", 40)
     assert await hass.config_entries.async_reload(entry.entry_id)

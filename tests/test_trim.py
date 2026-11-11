@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_trim.py, Version: 0.27.10 (2026-10-27)
+# File: test_trim.py, Version: 0.28.12 (2026-11-11)
 
 """The trim choosers: erasing one device's history on purpose (rule
 CFG-10)."""
@@ -152,6 +152,8 @@ async def test_the_copy_is_written_before_anything_is_deleted(
             )
         )
     )
+    # A whole storage document, so it can be put back as it is.
+    copy = copy["data"]
     # The copy predates the deletion, so it still holds the history
     # that live storage no longer has.
     assert copy[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_P5] == [

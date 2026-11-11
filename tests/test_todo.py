@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.27.10 (2026-10-27)
+# File: test_todo.py, Version: 0.28.12 (2026-11-11)
 
 """The problem list: one item per device, maintained by the sync
 (rules LIST-01, LIST-03, LIST-05, LIST-06, LIST-07, NOTE-12).
@@ -534,6 +534,8 @@ async def test_tick_carries_a_freeze_into_the_list(
     device, eids = _register_device(hass, "t1w", "Tick Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Past the startup grace, where a first value is the device's own.
+    coord._grace_until = 0.0
     hass.states.async_set(eids["plain"], "1")
     await hass.async_block_till_done()
 

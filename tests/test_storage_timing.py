@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_timing.py, Version: 0.27.10 (2026-10-27)
+# File: test_storage_timing.py, Version: 0.28.12 (2026-11-11)
 
 """When a save happens: coalescing, and what forces one (rule STOR-02).
 
@@ -166,6 +166,8 @@ async def test_verdict_flip_saves_immediately(
     device, entity_id = _register(hass, "v1", "Verdict Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Past the startup grace, where a first value is the device's own.
+    coord._grace_until = 0.0
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     record = coord.data["devices"][device.id]

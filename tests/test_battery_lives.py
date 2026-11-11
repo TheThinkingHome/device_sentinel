@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_lives.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_lives.py, Version: 0.28.12 (2026-11-11)
 
 """Each battery replaced leaves a row for the battery that ended
 (rule BAT-08).
@@ -85,7 +85,7 @@ async def test_a_second_battery_starts_on_its_replacement_whatever_was_trimmed(h
     _fold(coord, record, device.id, [99, 98], _start() + timedelta(days=6))
     # Retention trims the new battery's first days.
     del record[DEV_BATTERY_DAILY][:2]
-    _fold(coord, record, device.id, [40, 100, 100], _start() + timedelta(days=8))
+    _fold(coord, record, device.id, [40, 39, 100, 100], _start() + timedelta(days=8))
     lives = _lives(coord)
     assert len(lives) == 2
     assert lives[1][START] == _rise_day() and lives[1][SEEN] is True

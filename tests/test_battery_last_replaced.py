@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_last_replaced.py, Version: 0.27.16 (2026-10-31)
+# File: tests/test_battery_last_replaced.py, Version: 0.28.12 (2026-11-11)
 
 """Battery Last Replaced and a person's answer to a detected one
 (rules BAT-06, BAT-07).
@@ -151,7 +151,7 @@ async def test_cancelling_a_second_detection_keeps_the_first(hass: HomeAssistant
     coord.battery_answer(device.id, "confirm")
     first = coord.battery_replacement_view(device.id)["day"]
     stamp = record[DEV_BATTERY_REPLACED_AT]
-    _fold(coord, record, device.id, [99, 40, 100, 100], _start() + timedelta(days=6))
+    _fold(coord, record, device.id, [50, 40, 100, 100], _start() + timedelta(days=6))
     assert coord.battery_replacement_view(device.id)["waiting"] is True
     coord.battery_answer(device.id, "cancel")
     view = coord.battery_replacement_view(device.id)
@@ -331,8 +331,8 @@ async def test_two_cancels_go_back_through_the_history(hass: HomeAssistant):
     _entry, coord, device, record = await _detected(hass)
     coord.battery_answer(device.id, "confirm")
     first = coord.battery_replacement_view(device.id)["day"]
-    _fold(coord, record, device.id, [99, 40, 100, 100], _start() + timedelta(days=6))
-    _fold(coord, record, device.id, [99, 40, 100, 100], _start() + timedelta(days=10))
+    _fold(coord, record, device.id, [50, 40, 100, 100], _start() + timedelta(days=6))
+    _fold(coord, record, device.id, [50, 40, 100, 100], _start() + timedelta(days=10))
     coord.battery_answer(device.id, "cancel")
     assert coord.battery_replacement_view(device.id)["waiting"] is True
     coord.battery_answer(device.id, "cancel")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_restore.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_restore.py, Version: 0.28.12 (2026-11-11)
 
 """Restore: a main file that cannot be read is restored from its
 last-good copy and told (rules STOR-08, REP-08).
@@ -485,7 +485,15 @@ async def test_a_restored_file_that_still_will_not_load(
         domain=DOMAIN, title="Device Sentinel", data={}, options={}
     )
     entry.add_to_hass(hass)
-    with _failing_main_store(times=99):
+    from unittest.mock import patch
+
+    # The restored file is read back from the disk, not through the
+    # Store (a real start's Store can answer "missing" for it), so the
+    # second failure is the disk read's.
+    with _failing_main_store(times=99), patch(
+        "custom_components.device_sentinel.coordinator.read_main_file_raw",
+        return_value=None,
+    ):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_ERROR

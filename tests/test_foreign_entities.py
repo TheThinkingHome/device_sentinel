@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.27.11 (2026-10-28)
+# File: tests/test_foreign_entities.py, Version: 0.28.12 (2026-11-11)
 
 """Another integration's entity on a device is not the device speaking
 (rules GEN-03, WATCH-02, BAT-01).
@@ -109,6 +109,8 @@ async def test_a_foreign_update_does_not_stamp_the_device(hass: HomeAssistant):
 async def test_a_foreign_update_feeds_no_burst(hass: HomeAssistant):
     device, contact, note = _house(hass)
     coord = await setup_coordinator(hass)
+    # Past the startup grace, where a first value is the device's own.
+    coord._grace_until = 0.0
     fed = []
     real = coord._storm_feed
     coord._storm_feed = lambda *args, **kwargs: fed.append(args) or real(*args, **kwargs)

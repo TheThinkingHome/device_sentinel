@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_non_admin.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_non_admin.py, Version: 0.28.12 (2026-11-11)
 
 """Attacks that must fail: a Home Assistant user who is not an administrator.
 
@@ -157,3 +157,114 @@ async def test_a_non_admin_cannot_put_the_list_back_in_front_of_assist(
     assert reply["success"] is False
     for assistant in KNOWN_ASSISTANTS:
         assert async_should_expose(hass, assistant, entity_id) is False, assistant
+
+
+# ------------------------------------------------ the Problem List is the admin's (rule LIST-03)
+
+
+async def _one_open_item(hass: HomeAssistant):
+    from homeassistant.core import Context  # noqa: F401
+
+    from .test_todo import _freeze, _items, _register_device
+
+    device, eids = _register_device(hass, "nonadmin_ack", "Smoke Alarm Hall")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    items = await _items(hass)
+    assert len(items) == 1
+    return items[0]["uid"], _items
+
+
+async def _call(hass, service, data, user_id):
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+
+    try:
+        await hass.services.async_call(
+            "todo", service, {"entity_id": LIST_ENTITY, **data},
+            blocking=True, context=Context(user_id=user_id),
+        )
+    except Unauthorized:
+        return False
+    return True
+
+
+async def _ordinary_user(hass):
+    group = await hass.auth.async_get_group(GROUP_ID_USER)
+    return MockUser(name="Kid", groups=[group]).add_to_hass(hass)
+
+
+async def test_a_non_admin_cannot_tick_a_problem(hass: HomeAssistant):
+    """Ticking is the acknowledgment, which stops the pushes: refused
+    for a user who is not an admin, and the item stays open."""
+    uid, items = await _one_open_item(hass)
+    user = await _ordinary_user(hass)
+    assert not await _call(hass, "update_item", {"item": uid, "status": "completed"}, user.id)
+    await hass.async_block_till_done()
+    assert (await items(hass))[0]["status"] == "needs_action"
+
+
+async def test_a_non_admin_cannot_delete_a_problem(hass: HomeAssistant):
+    uid, items = await _one_open_item(hass)
+    user = await _ordinary_user(hass)
+    assert not await _call(hass, "remove_item", {"item": [uid]}, user.id)
+
+
+async def test_an_admin_and_an_automation_still_can(hass: HomeAssistant):
+    uid, items = await _one_open_item(hass)
+    from homeassistant.auth.const import GROUP_ID_ADMIN
+
+    admin = MockUser(name="Owner", groups=[await hass.auth.async_get_group(GROUP_ID_ADMIN)]).add_to_hass(hass)
+    assert admin.is_admin
+    assert await _call(hass, "update_item", {"item": uid, "status": "completed"}, admin.id)
+    await hass.async_block_till_done()
+    assert (await items(hass))[0]["status"] == "completed"
+    # An automation or a script carries no user.
+    assert await _call(hass, "update_item", {"item": uid, "status": "needs_action"}, None)
+    await hass.async_block_till_done()
+    assert (await items(hass))[0]["status"] == "needs_action"
+
+
+# ------------------------------------------------ Device Sentinel's buttons are the admin's (rule CFG-08)
+
+
+def _buttons(hass: HomeAssistant) -> list[str]:
+    return [
+        entry.entity_id for entry in er.async_get(hass).entities.values()
+        if entry.platform == DOMAIN and entry.domain == "button" and not entry.disabled_by
+    ]
+
+
+async def test_a_non_admin_cannot_press_a_button(hass: HomeAssistant):
+    """Maintenance Mode sets learning aside; no button is a household
+    user's to press."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+
+    await setup_entry(hass)
+    user = await _ordinary_user(hass)
+    buttons = _buttons(hass)
+    assert buttons
+    for entity_id in buttons:
+        with pytest.raises(Unauthorized):
+            await hass.services.async_call(
+                "button", "press", {"entity_id": entity_id},
+                blocking=True, context=Context(user_id=user.id),
+            )
+
+
+async def test_an_automation_still_presses_one(hass: HomeAssistant):
+    from homeassistant.core import Context
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    maintenance = next(b for b in _buttons(hass) if "maintenance" in b)
+    await hass.services.async_call(
+        "button", "press", {"entity_id": maintenance}, blocking=True, context=Context(),
+    )
+    await hass.async_block_till_done()
+    assert coord._maintenance_until is not None

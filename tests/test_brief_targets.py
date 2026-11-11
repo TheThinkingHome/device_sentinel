@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_targets.py, Version: 0.28.9 (2026-11-10)
+# File: tests/test_brief_targets.py, Version: 0.28.12 (2026-11-11)
 
 """Send the Full Brief To takes a service, never an email address
 (rule BRIEF-11).
@@ -121,10 +121,10 @@ async def test_a_recipient_and_a_notify_action_are_kept(hass: HomeAssistant):
     entry = await setup_entry(hass)
     result = await _open(hass, entry)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], _submit([recipient, "notify.mobile_app_phone"])
+        result["flow_id"], _submit([recipient, "notify.signal_home"])
     )
     assert result["type"] is FlowResultType.MENU
-    assert entry.options[CONF_BRIEF_TARGETS] == [recipient, "notify.mobile_app_phone"]
+    assert entry.options[CONF_BRIEF_TARGETS] == [recipient, "notify.signal_home"]
 
 
 async def test_an_address_already_saved_can_be_removed(hass: HomeAssistant):

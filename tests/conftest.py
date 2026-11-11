@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.28.0 (2026-11-03)
+# File: conftest.py, Version: 0.28.12 (2026-11-11)
 
 """Shared test fixtures: clean report folders, the fleets, and a failure
 on any deprecation Home Assistant reports (rules REL-03, CODE-16).
@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 from homeassistant.helpers import storage as ha_storage
+
+from .helpers import REAL_DISK_MARK
 from pytest_homeassistant_custom_component.common import (
     get_test_config_dir,
 )
@@ -359,9 +361,13 @@ def real_disk(hass):
                 os.remove(os.path.join(directory, name))
 
     _sweep()
+    # Restarts on the real disk start Home Assistant's storage as a real
+    # start does: see helpers.start_storage_as_home_assistant_does.
+    hass.data[REAL_DISK_MARK] = True
     try:
         yield directory
     finally:
+        hass.data.pop(REAL_DISK_MARK, None)
         ha_storage.Store._async_load = mocked_load
         ha_storage.Store._async_write_data = mocked_write
         if mocked_io is not None:

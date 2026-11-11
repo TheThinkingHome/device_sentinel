@@ -2,7 +2,7 @@
 (rule WATCH-03).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_set_aside.py, Version: 0.27.10 (2026-10-27)
+# File: test_set_aside.py, Version: 0.28.12 (2026-11-11)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -191,6 +191,8 @@ async def test_the_gap_that_spans_a_disabling_is_refused(
     coord = await setup_coordinator(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SET_ASIDE_SINCE] = 1000.0
+    # Past the startup grace, where a first value is the device's own.
+    coord._grace_until = 0.0
 
     assert record[DEV_SET_ASIDE_SINCE] is not None
     hass.states.async_set(entity_id, "1")

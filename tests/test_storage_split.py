@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.28.4 (2026-11-07)
+# File: test_storage_split.py, Version: 0.28.12 (2026-11-11)
 
 """The main and clocks files: the shadow, the merge, and the stamps
 (rules STOR-01, STOR-02, STOR-19).
@@ -576,6 +576,8 @@ async def test_storage_roundtrip_with_devices(hass: HomeAssistant, hass_storage)
 
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Past the startup grace, where a first value is the device's own.
+    coord._grace_until = 0.0
     hass.states.async_set(eid, "1")
     await hass.async_block_till_done()
     await coord._store.async_save(coord.data)
