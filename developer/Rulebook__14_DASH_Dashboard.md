@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -138,8 +138,9 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 **A dashboard left open across an update registers nothing new and raises no error.**
 - **When it shows:** once the page knows it runs an older file than the one served, it shows "Device Sentinel was updated. Reload this page to use the new version." with a Reload button. The page learns this from the new copy's word, or from the file the server names in each status reply and change marker.
 - **Motion:** the banner glows three times when it appears, then holds steady. A viewer whose device asks for less motion sees it still.
+- **The change marker (since 0.28.12):** the marker starts from the clock each run, so it keeps rising across restarts, and a tab open across one is offered Refresh at the next change. A tab open across a reload hears the next run's changes.
 
-*Proof:* [`tools/panel_checks/check_stale_tab.js`](../tools/panel_checks/check_stale_tab.js), [`test_dashboard_panel.py`](../tests/test_dashboard_panel.py).
+*Proof:* [`tools/panel_checks/check_stale_tab.js`](../tools/panel_checks/check_stale_tab.js), [`test_dashboard_panel.py`](../tests/test_dashboard_panel.py), [`test_change_marker.py`](../tests/test_change_marker.py).
 
 ### DASH-15 The Footer
 

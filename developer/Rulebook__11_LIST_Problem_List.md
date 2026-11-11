@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Problem List (LIST)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Problem List is Home Assistant's to-do list of what is wrong with the house's devices. This section covers what an item is, the kinds of problem and their words, acknowledgment, the order, when a problem is announced, what counts as a recovery and how an item leaves. What a push, the persistent card and the bus events do with an item is under [NOTE](Rulebook__12_NOTE_Notifications.md). How each problem is judged is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. An upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md), muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and the Problem List at the head of the dashboard's Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)) is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -32,8 +32,9 @@ The Problem List is Home Assistant's to-do list of what is wrong with the house'
 - **Unticking:** reopens the item, and its fault fires on the bus again, marked as a renewal.
 - **Deleting:** deleting an item whose problem still stands is the firmer undo. The item comes back and its fault fires on the bus again.
 - **No phone push for either:** neither is announced on the phone, since the person just acted on the item.
+- **Only an admin (since 0.28.12):** a tick, an untick or a delete from a user who is not an admin is refused, as the dashboard's own acknowledgment is. An automation that runs on its own carries no user and still may. A script a person starts, such as from a button on a wall tablet, acts as that person, so a non-admin's is refused too. Assist, a conversation agent or an AI tool acts with no user to check, so a tick or a delete from them is refused outright: a list a person shows to Assist ([LIST-14](#list-14-hidden-from-assist-until-a-person-shows-it)) can be read there, never ticked or deleted. Home Assistant lets any user operate any entity, so without this a household member's account, or a wall tablet signed in as one, could silence a problem.
 
-*Proof:* [`test_todo.py`](../tests/test_todo.py), [`test_falling_surfaces.py`](../tests/test_falling_surfaces.py).
+*Proof:* [`test_todo.py`](../tests/test_todo.py), [`test_falling_surfaces.py`](../tests/test_falling_surfaces.py), [`test_non_admin.py`](../tests/test_non_admin.py), [`test_problem_list_admin_only.py`](../tests/test_problem_list_admin_only.py).
 
 ### LIST-04 The Order
 

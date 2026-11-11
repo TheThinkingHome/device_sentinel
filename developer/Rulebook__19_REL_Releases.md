@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Releases (REL)
 
-*Version: rulebook, 5 November 2026, on Device Sentinel 0.28.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how a release reaches a house, how much proof it gets before it is tagged, when it counts as stable, and what is written about it: release notes, the README and the wiki. It also covers the Battery Notes library refresh that rides with each Latest. How the code and the tests are written is under [CODE](Rulebook__20_CODE_Code_and_Tests.md). The battery library's use on the device page is under [DEV](Rulebook__04_DEV_Device_Identity.md).
 
@@ -46,9 +46,10 @@ This section covers how a release reaches a house, how much proof it gets before
 - **Grading:** each finding is graded for how likely a person is to see it: Likely, Possible, Rare or Very rare.
 - **Likely or Possible:** the finding keeps the rounds going.
 - **Rare or Very rare:** such as one that needs two clock steps in a row. It is recorded as a known limit and named in the release note, and does not keep the rounds going.
+- **A real Home Assistant (since 0.28.12):** before a Latest, Device Sentinel runs on a real Home Assistant, not the test harness, with a real house's files: a main file missing at start, an upgrade from the oldest release testers still run, a kill in the middle of the stop, and a clean restart. The harness stands in for parts of Home Assistant, and a stand-in that behaves differently hides faults: one hid a restore that started empty.
 - **The last round:** checks everyday use. Days of each test house are run against the previous release, and the attacks of each earlier round are run again.
 
-*Proof:* procedure, not code.
+*Proof:* procedure; `device_sentinel_testdata/real_ha/real_ha_check.sh`.
 
 ### REL-06 Patch Upon Patch Means Stop
 

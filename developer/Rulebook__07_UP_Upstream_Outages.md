@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -76,8 +76,9 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **Reports:** restarts are still matched to events to keep their noise out of reports.
 - **Learning:** a gap across Device Sentinel's own clean stop is learned minus the time it was stopped. An unclean stop learns nothing of the silence before it (see [FRZ](Rulebook__05_FRZ_Freeze.md)).
 - **Maintenance Mode:** a person's declaration, not a restart.
+- **A reload is not a restart (since 0.28.12):** reloading Device Sentinel from its menu, or turning it off and on, while Home Assistant runs on is recorded as a reload, and the brief says "Device Sentinel was reloaded at". It ends no outage, which Device Sentinel resumes, and forgets no short drop-out. A pairing window or a burst of updates still open, which live only in memory, ends at the reload. The time nothing was listening is still taken out of each device's silence. The first setup in a Home Assistant run is the restart.
 
-*Proof:* [`test_restart_handback.py`](../tests/test_restart_handback.py), [`test_bridge_hold.py`](../tests/test_bridge_hold.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_dead_node_recovery.py`](../tests/test_dead_node_recovery.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_polled_device_returns.py`](../tests/test_polled_device_returns.py).
+*Proof:* [`test_restart_handback.py`](../tests/test_restart_handback.py), [`test_bridge_hold.py`](../tests/test_bridge_hold.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_dead_node_recovery.py`](../tests/test_dead_node_recovery.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_polled_device_returns.py`](../tests/test_polled_device_returns.py), [`test_reload_event.py`](../tests/test_reload_event.py), [`test_reload_pairing_window.py`](../tests/test_reload_pairing_window.py).
 
 ### UP-07 Outage Time Is Not a Device's Silence
 
@@ -165,7 +166,8 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 
 ### UP-15 What a Wi-Fi Outage Claims
 
-**A Wi-Fi outage claims each device that failed inside it, for the life of the outage, not only while its own tracker is away.** That is a tied device whose tracker fell in it, and any other device whose failure began at or after its start.
+**A Wi-Fi outage claims each device that failed in its first 15 minutes, for the life of the outage, not only while its own tracker is away.** That is a tied device whose tracker fell by then, and any other device whose failure began between the outage's start and 15 minutes after it.
+- **Later failures (since 0.28.12):** a device that fails later, or whose tracker falls later, is listed on its own, with its own push. An outage can stand for hours: three Wi-Fi devices switched off at the wall read as one, and on a house with no chosen network it stands until they are powered again. Fifteen minutes covers the 41 seconds to four minutes a real outage's devices take to show it.
 - **Radio stacks:** a device a radio stack owns (Zigbee, Z-Wave or Matter) is never claimed. Its own bridge answers for it.
 - **Wired devices:** a wired device is claimed, though a wired tracker never counts toward declaring.
 - **The lookback:** a tied device whose tracker fell in the outage, and whose own failure began no more than five minutes before the outage's start, belongs to the outage. The start is when the first tracker left, or when the network went if the outage was seen from the host's radio. The outage is then dated from the earliest such failure.
@@ -173,7 +175,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **While an outage stands:** a burst device that failed within five minutes before it waits as long as the outage does.
 - **The row:** names the network: "The 'Home' WiFi network became unavailable at 3:01 AM."
 
-*Proof:* [`test_wifi_row.py`](../tests/test_wifi_row.py), [`test_wifi_lookback.py`](../tests/test_wifi_lookback.py), [`test_wifi_burst_hold.py`](../tests/test_wifi_burst_hold.py), [`test_wifi_trace_second.py`](../tests/test_wifi_trace_second.py), [`test_outage_hostile.py`](../tests/test_outage_hostile.py).
+*Proof:* [`test_wifi_row.py`](../tests/test_wifi_row.py), [`test_wifi_lookback.py`](../tests/test_wifi_lookback.py), [`test_wifi_burst_hold.py`](../tests/test_wifi_burst_hold.py), [`test_wifi_trace_second.py`](../tests/test_wifi_trace_second.py), [`test_outage_hostile.py`](../tests/test_outage_hostile.py), [`test_wifi_claim_window.py`](../tests/test_wifi_claim_window.py).
 
 ### UP-16 Ending a Wi-Fi Outage
 
@@ -197,7 +199,9 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **What a poller's storms do:** they are still recorded and counted and its devices still learn, but they write no event and no episode stamp, so they never cut a silence short and are never told.
 - **A poller stops (since 0.28.10):** its entry still loaded, and none of its watched devices heard for twice its usual longest gap, never less than 10 minutes, outside the startup grace. That is an integration outage of a third kind, beside "went down" and "failed to start": "stopped updating". It has everything an outage has: one Problem List row, "Alarm.com stopped updating: 15 devices not heard from", pushed as any outage ([UP-09](#up-09-pushing-an-outage)); the bus pair; the brief, "Alarm.com stopped updating at 12:30 AM, 15 devices." and "Alarm.com was updating again at 2:59 AM, after 2 days and 11 hours."; resuming across a restart; its devices claimed, not listed; and the gap not learned ([FRZ-12](Rulebook__05_FRZ_Freeze.md#frz-12-what-a-completed-gap-teaches)). Since 0.28.11 a stop is judged on the devices found in step, when the poller is known by them and any of them is the entry's, so a device of the entry on a timer of its own, as Alarm.com's cameras are, cannot hide one; and only real reports count, so a clock step, an unclean restart or a device's return, which rewrite a last-report stamp, neither start nor end one. A stop found after a restart is dated from the restart. It ends at the first device heard, with no hand-back, since a poller returns in one update, and only then: a restart's young run, or a verdict dropped, keeps it open, so a restart in the middle of a stop never tells it over and pushes it again. The push at its end says it was updating again, as the brief does. A one-device entry is that device, judged on its own ([UP-05](#up-05-devices-behind-a-down-upstream)).
 - **Keeping storms:** raw storm rows are kept one hour. At the midnight fold each integration that stormed that day keeps one row: the count, and the middle interval, device count and length.
-- **Left out of the tally:** a storm is left out when an upstream outage or a maintenance window was open at its start, or one closed or Home Assistant restarted in the five minutes before.
+- **Left out of the tally:** a storm is left out when an upstream outage or a maintenance window was open at its start, or one closed or Home Assistant restarted in the five minutes before. Since 0.28.12 an integration's own outage still open leaves out only that integration's storms: one plug's integration down for a week no longer keeps every poller's storms out, which could take a poller known by its storms off the list.
+- **A poller that loads again (since 0.28.12):** an entry told as down or failed that loads again is back, before its devices have said anything, and its silence is counted from its return, or from the broker's for one that rides it, so its time down is never told as a second outage. A stop that becomes a failure is said as a failure, from the same start.
+- **The broker's riders (since 0.28.12):** a poller that rides the MQTT broker, MQTT's own devices or Tasmota's, is not told as stopped while the broker is down; the broker's outage is told once.
 
 *Proof:* [`test_poller_verdict.py`](../tests/test_poller_verdict.py), [`test_poller_stop.py`](../tests/test_poller_stop.py), [`test_storm_tally.py`](../tests/test_storm_tally.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_learning_rhythm.py`](../tests/test_learning_rhythm.py), [`test_noisy_integration.py`](../tests/test_noisy_integration.py).
 

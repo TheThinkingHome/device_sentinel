@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -34,7 +34,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **At each start:** the load joins the history copy whose generation matches the main file, and a good copy is written over the other where they differ.
 - **A bad file:** a bad live file, or a pair whose generations do not match, restores the last-good set: the main file's last-good joined with the history copy of the same generation.
 - **No matching copy:** Device Sentinel starts with the main file's 30 days, never doubling a day, and says so as [STOR-12](#stor-12-no-silent-repair) sets out.
-- **Older releases:** there is no rollback below 0.26.2. An older release reads only the main file and runs on 30 days.
+- **Older releases:** there is no rollback below 0.26.2. An older release reads only the main file and runs on 30 days. Going back to a 0.27 release and forward again loses the short drop-out rows and Wi-Fi address rows older than 30 days, which 0.28 keeps in the history file and 0.27 does not know: a device's address comes back at its next sample, with a new "since".
 
 *Proof:* [`test_history_file.py`](../tests/test_history_file.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_history_file_hostile.py`](../tests/test_history_file_hostile.py).
 
@@ -83,13 +83,16 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **Judged on what is found:** not on an error. An empty load with a last-good that holds devices is a lost file, never a first install, and the `.corrupt` file is copied into trim_backups as evidence.
 - **A document that is not a storage document (since 0.28.11):** one that parses but is not a mapping, or is nested deeper than Python can walk, is answered as an unreadable file: the evidence copied, then the last-good copy, or a first install where the copy cannot be used.
 - **What a missing file means now (since 0.28.11):** the save never moves the main file away ([STOR-04](#stor-04-last-good-copies)), so a missing main file beside a last-good means it was deleted or moved from outside, not that a save was stopped.
+- **A document that is not a storage document (since 0.28.12):** a main, clocks or history file that parses but has no storage envelope, holding `null`, a list or the data part alone, or whose version asks for a migration Device Sentinel does not have, is answered as an unreadable file at every read, never a stop: Home Assistant's Store raises a different error for it than the test harness does.
+- **The restored file is read from the disk (since 0.28.12):** never back through Home Assistant's Store. At start Home Assistant lists the files in `.storage` once, and a Store whose file was not on that list reads as missing until something saves through it, so a main file put back from last-good read as missing still, and the start went on empty: its saves wrote over last-good and removed the history files. The test harness never makes that list, so every test passed; a real Home Assistant showed it. The restart tests on the real disk now start storage as Home Assistant does. Every copy Device Sentinel reads itself is read as Home Assistant reads a storage file: only a regular file, never a pipe that would hold the start open, and with Home Assistant's own parser, so a number too big to write back, a NaN or a document nested past its limit is refused as the Store would refuse it.
+- **An empty start never takes the place of what was kept (since 0.28.12):** a start that has to begin empty, beside a last-good copy holding devices or a history file it could not use, saves its own main file but never rotates over the copy, copies over it, or removes the history files in that session, and says so in the log. Nor does it write a history file of its own, however long it runs. They are copied into trim_backups first, so they are kept past that session: a later start reads the new main file as clean and may rotate over them. A last-good that cannot be read counts as kept; only one that reads whole and holds no devices does not.
 - **Bad copies:** a copy that does not parse, or holds no devices, is never written over the live file. One attempt, no retry.
 - **No usable copy:** an empty load with no usable copy starts as a first install. A file that cannot be read at all, through a disk or permission fault, with no copy that helps, stops setup with a sentence naming the file, saying nothing was changed, and giving the two ways forward.
 - **Repair card:** a restore raises the Restored Its Storage repair card, a warning, and clears Home Assistant's own issue about the unreadable file. A restore that fails leaves that issue standing.
 - **Notice:** when the startup grace closes, a notice of the restore goes to the Daily Brief targets and the high-priority targets, at any hour, Quiet Hours or not.
 - **Wording:** the restore is reported as "the last-good backup", with the time lost counted in local midnights crossed, never as a count of events or readings.
 
-*Proof:* [`test_restore.py`](../tests/test_restore.py), [`test_storage_failures.py`](../tests/test_storage_failures.py), [`test_verify_restore.py`](../tests/test_verify_restore.py).
+*Proof:* [`test_restore.py`](../tests/test_restore.py), [`test_storage_failures.py`](../tests/test_storage_failures.py), [`test_verify_restore.py`](../tests/test_verify_restore.py), [`test_storage_restore_real_start.py`](../tests/test_storage_restore_real_start.py), [`test_restore_hostile_layout.py`](../tests/test_restore_hostile_layout.py); `device_sentinel_testdata/real_ha/real_ha_check.sh` on a real Home Assistant.
 
 ### STOR-09 Damage Is Repaired Where It Is Found
 
@@ -105,8 +108,9 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 **A clocks file that cannot be read, or holds a damaged value or a record that is not a record, is set aside whole before the merge, as if it were missing.** It rebuilds within a day.
 - **Two cases keep the file:** a damaged saved outage start is cleared on its own, and that device's next outage starts afresh. And a clocks file only missing a field still merges, since that is how an upgrade adding a clock looks on its first start.
 - **When the clocks are lost:** each device with learned history, or first seen more than 48 hours ago and not stored as never reported, restarts its clock, and the time before counts as unwatched (LIST has what follows). A system event and a Daily Brief sentence say so.
+- **A file Home Assistant set aside (since 0.28.12):** a clocks file that will not parse, or parses but is not a clocks document, is read as missing, and Home Assistant's own card telling a person to restore the whole system is removed, since the clocks rebuild within a day.
 
-*Proof:* [`test_clock_loss.py`](../tests/test_clock_loss.py), [`test_clock_strip.py`](../tests/test_clock_strip.py), [`test_storage_failures.py`](../tests/test_storage_failures.py), [`test_saved_outage_start.py`](../tests/test_saved_outage_start.py).
+*Proof:* [`test_clock_loss.py`](../tests/test_clock_loss.py), [`test_clock_strip.py`](../tests/test_clock_strip.py), [`test_storage_failures.py`](../tests/test_storage_failures.py), [`test_saved_outage_start.py`](../tests/test_saved_outage_start.py), [`test_corruption_cards_other_files.py`](../tests/test_corruption_cards_other_files.py), [`test_storage_envelopes.py`](../tests/test_storage_envelopes.py).
 
 ### STOR-11 Evidence Copies
 
@@ -173,8 +177,9 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **Naming:** the shutdown is named for the stop, rather than any guess at its cause.
 - **Open silence episodes:** at each start, the silence episodes with no ending are counted and reported in the log and the diagnostics. None is closed.
 - **Unclosed house events:** a house event whose closing was never recorded ends at the first restart after it opened, or at the next opening of the same kind and scope, whichever comes first. The brief then says only that it went down, not that it came back.
+- **After a reload (since 0.28.12):** a reload leaves each silence open, because the silence goes on, so episodes still open beside a clean stop are a reload's and are neither warned about nor counted.
 
-*Proof:* [`test_unclean_restart.py`](../tests/test_unclean_restart.py), [`test_journal.py`](../tests/test_journal.py), [`test_attribution.py`](../tests/test_attribution.py).
+*Proof:* [`test_unclean_restart.py`](../tests/test_unclean_restart.py), [`test_journal.py`](../tests/test_journal.py), [`test_attribution.py`](../tests/test_attribution.py), [`test_orphan_episodes_reload.py`](../tests/test_orphan_episodes_reload.py).
 
 ### STOR-19 Upgrades and Older Releases
 
@@ -205,7 +210,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **The diagnostics download carries each device's stored record and the tables, with network addresses hidden.**
 - **The tables:** the to-do list and its additions journal, the house's events, silence episodes, incidents and signal stress rows, the drops and address changes and any address two devices share (since 0.28.0), the history file's state, the answers (the recommendation ticks and the battery replacement dates included), and the count of open episodes.
-- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file, a Wi-Fi device's address and access point included. Since 0.28.11 an IPv6 address, which carries the house's own prefix, with any IPv4 tail it carries, and an address in 100.64.0.0/10, as a mesh VPN hands out, are hidden too. A version number that falls in that range reads as an address, as one in 10.x already did. Also since 0.28.11: the user and password in a web address (`http://user:pass@host`) and every email address are replaced, and the Wi-Fi networks a house watches and every network its host hears are named by stand-ins, `SSID-01` and on, since public maps of networks can place a house by them.
+- **Hidden:** each MAC address keeps its maker's half, and each home-network address becomes a stand-in, the same throughout the file, a Wi-Fi device's address and access point included. Since 0.28.11 an IPv6 address, which carries the house's own prefix, with any IPv4 tail it carries, and an address in 100.64.0.0/10, as a mesh VPN hands out, are hidden too. A version number that falls in that range reads as an address, as one in 10.x already did. Also since 0.28.11: the user and password in a web address (`http://user:pass@host`) and every email address are replaced, and the Wi-Fi networks a house watches and every network its host hears are named by stand-ins, `SSID-01` and on, since public maps of networks can place a house by them. Since 0.28.12 the stand-in is used throughout the file: wherever a network's name is a whole value, a router's `essid` or `ssid` in Extended Diagnostics, or quoted in a sentence, as the Problem List words a Wi-Fi outage. UniFi's Wi-Fi network devices, named after their networks, and a network named only in an old sentence are hidden too. A router's client devices, named by their hostnames, often a person's, go out by their router and a number, and every tracker's entity id, built from the same hostname, by a stand-in, `device_tracker.tracker_01` and on, the same throughout; a network name holding an apostrophe is hidden whole; Tado's entry by its id, since Tado names it after the home. Each integration entry Device Sentinel lists is named by its domain and a number, not its title, which is often its host: a broker's or a router's, sometimes a public name.
 - **Not hidden:** version-like numbers and Zigbee IEEE addresses stay. The reports are not redacted.
 - **Reading it:** a download is read beside the live entities, whose version says which build is running.
 
@@ -218,6 +223,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-23 The Trim and the History File
 
 **A trim from Settings, Advanced erases the device's older history as well as its 30 days, and writes the history file at once. Its copy in trim_backups holds the whole record, older history included, so putting that one copy back restores everything. A device trimmed and found again starts from nothing. No restart brings its old history back.**
+- **A whole storage document (since 0.28.12):** each copy is written as Home Assistant writes a storage file, so put back over the live file as it is, it loads. Before, it held only the data part and was read as damaged.
 
 *Proof:* [`test_trim.py`](../tests/test_trim.py), [`test_history_file.py`](../tests/test_history_file.py).
 

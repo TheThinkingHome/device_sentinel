@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -101,8 +101,9 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **After a clean stop:** a device already silent before the stop carries that silence into the total and is caught at the first sweep after the startup grace ([WATCH-10](Rulebook__02_WATCH_What_Is_Watched.md#watch-10-the-startup-grace)).
 - **After an unclean stop:** only a device already on the Problem List keeps its silence, and each other device starts over ([FRZ-20](#frz-20-clean-and-unclean-stops)).
 - **Upstream outages:** time an upstream was down is taken out the same way (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
+- **Each stop, not only the last (since 0.28.12):** each time Device Sentinel was stopped since a device was last heard is taken out, not only the stop before this run. A clean shutdown of hours followed by a quick second restart no longer counts the first against each device.
 
-*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_shutdown_flush.py`](../tests/test_shutdown_flush.py), [`test_outage_credit.py`](../tests/test_outage_credit.py).
+*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_shutdown_flush.py`](../tests/test_shutdown_flush.py), [`test_outage_credit.py`](../tests/test_outage_credit.py), [`test_earlier_stops_not_silence.py`](../tests/test_earlier_stops_not_silence.py).
 
 ### FRZ-11 A Device's Clock
 
@@ -196,8 +197,9 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **After an unclean stop:** each device not on the Problem List starts its clock again at the new start, and nothing of the silence before the stop is learned. A device already on the list, for any kind of problem, keeps its clock, so a known fault is not forgiven.
 - **Open episodes:** an open silence episode closes at the last moment Device Sentinel was known alive, and the unclean restart is a system event.
 - **After a clean stop:** clocks stand and the stopped time is credited ([FRZ-10](#frz-10-only-watched-silence-counts-against-a-device)).
+- **Written at the stop (since 0.28.12):** Home Assistant holds each save while it stops, until its final write. The stop's own save, with the clean-stop marker, is written at once, the main file before the clocks, so a container killed before the final write, as Docker does ten seconds after asking, still starts next as after a clean stop.
 
-*Proof:* [`test_unclean_restart.py`](../tests/test_unclean_restart.py), [`test_shutdown_flush.py`](../tests/test_shutdown_flush.py).
+*Proof:* [`test_unclean_restart.py`](../tests/test_unclean_restart.py), [`test_shutdown_flush.py`](../tests/test_shutdown_flush.py), [`test_stop_before_final_write.py`](../tests/test_stop_before_final_write.py).
 
 ### FRZ-21 The System Clock Steps
 
@@ -205,6 +207,7 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **Time across a step is unknown:** each device clock and saved outage start restarts at the moment the step is noticed. An outage running across it is not learned. Each verdict stands until the device reports. Credit for downtime before the step is dropped, and each "down for" afterwards counts from the step.
 - **What moves:** moments held in memory, such as the startup grace and Maintenance Mode, move by the step's size. Stored history does not.
 - **The record:** the step is kept as a system event, which the Daily Brief tells. There is no Repair card.
+- **Stops before a step (since 0.28.12):** a restart before the step was measured in the old clock, so it counts against no silence after it, as the downtime credit does not.
 
 *Proof:* [`test_clock_steps.py`](../tests/test_clock_steps.py), [`test_clock_loss.py`](../tests/test_clock_loss.py), [`test_untrusted_gaps.py`](../tests/test_untrusted_gaps.py).
 

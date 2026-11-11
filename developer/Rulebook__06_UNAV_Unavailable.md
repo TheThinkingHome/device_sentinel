@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Unavailable (UNAV)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 When a device is unavailable, when its outage began and ended, how a device that keeps dropping out is told, and how long a recovered device is said to have been down. Frozen and never reported devices, and what an outage does to learning, are under [FRZ](Rulebook__05_FRZ_Freeze.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). A bridge, broker or integration going down is under [UP](Rulebook__07_UP_Upstream_Outages.md), and the mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -46,8 +46,11 @@ When a device is unavailable, when its outage began and ended, how a device that
 ### UNAV-05 A Return Through a Restart
 
 **A value handed back through a stack restart or Home Assistant's start is not the device speaking, whether or not the device is muted. A device muted for unavailable is a real return when its own outage began at least three minutes before the stack's hold began, or before Device Sentinel last listened. The stack's hold is under [UP](Rulebook__07_UP_Upstream_Outages.md).**
+- **A broker that comes back (since 0.28.12):** a value an MQTT or Tasmota entity writes back on its way from an unavailable that began as MQTT lost the broker is handed back, not heard, until a minute after MQTT has found it again. Each MQTT entity hears MQTT's word on its own and may write before Device Sentinel hears it, so the loss, which each entity's unavailable follows, is what is matched. A Mosquitto restart can come and go between two minute checks, and its hand-back would otherwise revive each frozen device with no Last Seen.
+- **A Zigbee2MQTT bridge that restarts (since 0.28.12):** the same holds when Zigbee2MQTT says its bridge is offline and online again: each of its entities follows the bridge's word, and a restart of half a minute can come and go between two minute checks. A value written back on the way from an unavailable that began as the bridge went offline is handed back, not heard, until a minute after the bridge is online again, so a silent device keeps its clock.
+- **A first value at the start (since 0.28.12):** an integration that finishes loading after Device Sentinel adds its entities with the values it kept. Inside the startup grace that first value is handed back, not heard, for an entity that had no value yet when Device Sentinel began to listen, unless the device has a Last Seen clock or its integration asks the device itself, so a device that fell silent before the restart keeps its clock. A device Device Sentinel had judged unavailable is a real return either way. Outside the grace, or for an entity removed and added again, a first value is a device paired or an entity switched on, and it is heard.
 
-*Proof:* [`test_restart_handback.py`](../tests/test_restart_handback.py), [`test_integration_handback.py`](../tests/test_integration_handback.py), [`test_freeze_and_unavailable_mutes.py`](../tests/test_freeze_and_unavailable_mutes.py).
+*Proof:* [`test_restart_handback.py`](../tests/test_restart_handback.py), [`test_integration_handback.py`](../tests/test_integration_handback.py), [`test_freeze_and_unavailable_mutes.py`](../tests/test_freeze_and_unavailable_mutes.py), [`test_broker_reconnect_handback.py`](../tests/test_broker_reconnect_handback.py), [`test_bridge_restart_handback.py`](../tests/test_bridge_restart_handback.py), [`test_start_handback.py`](../tests/test_start_handback.py), [`test_first_state_judged_unavailable.py`](../tests/test_first_state_judged_unavailable.py).
 
 ### UNAV-06 Dropping Out
 

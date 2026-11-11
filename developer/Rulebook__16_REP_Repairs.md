@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Repairs (REP)
 
-*Version: rulebook, 3 November 2026, on Device Sentinel 0.28.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel raises in Home Assistant's Settings, Repairs, and how those cards behave. What is wrong with a device goes on the Problem List (LIST), never here. How storage is checked, repaired and restored is under [STOR](Rulebook__18_STOR_Storage.md). A lost clocks file is in [LIST-12](Rulebook__11_LIST_Problem_List.md#list-12-a-lost-clocks-file). Switched-off sensors are a recommendation under [REC](Rulebook__15_REC_Recommendations.md).
 
@@ -67,5 +67,6 @@ This section covers what Device Sentinel raises in Home Assistant's Settings, Re
 **When Device Sentinel restores its storage from the last-good copy, the Restored Its Storage card says why and what was lost.**
 - **Home Assistant's card:** Home Assistant's own critical card about the same unreadable file tells a person to fix the file by hand or restore the whole system. It is then removed, since its advice is wrong once the file is back.
 - **Limits:** only cards about Device Sentinel's own file are touched. A failed restore leaves Home Assistant's card standing.
+- **The history and answers files (since 0.28.12):** when Device Sentinel puts one of them back from its last-good copy, Home Assistant's card about it is removed too.
 
 *Proof:* [`test_restore.py`](../tests/test_restore.py).

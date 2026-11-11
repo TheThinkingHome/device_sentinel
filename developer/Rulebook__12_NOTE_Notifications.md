@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -19,8 +19,11 @@ This section covers how Device Sentinel tells people and automations about the P
 - **The Daily Brief:** goes to neither tier. It goes only to Send the Full Brief To (see [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md)).
 - **Not the persistent notification (since 0.28.11):** it is not offered in High-Priority Targets or Normal-Priority Targets, where it reached nobody: a push goes to notify actions, and the card has its own switch ([NOTE-11](#note-11-the-persistent-card)). Home Assistant's `notify.persistent_notification`, which posts to the same place, and any `persistent_notification` action are refused the same way. One saved before still gets its pushes, with each name escaped, since that place shows Markdown. Typed in, it is refused on Submit with "Alerts are not sent to the persistent notification; turn on Create a Persistent Notification below instead.", and nothing is saved. One already saved still shows, so it can be taken out.
 - **A typed email address (since 0.28.10):** a value holding "@" in either list is refused on Submit, with "High-Priority Targets and Normal-Priority Targets need a notify action, such as your phone's Companion app, not an email address." above the section, and nothing is saved. A notify action's name cannot hold "@", so nothing that works is refused. Each alert to an address would be lost, as the brief was ([BRIEF-11](Rulebook__13_BRIEF_Daily_Brief.md)).
+- **Actions that refuse extra data (since 0.28.12):** a push carries data for the Companion app and the brief carries its page for mail. Signal Messenger, Slack and others refuse a message with data they do not know, so the person got nothing. Such a message is sent again once without it.
+- **Each kind of action gets what it can use (since 0.28.12):** the Companion app gets its data, without the brief's HTML page. A group of phones only is sent as a phone is, so its pushes keep their tag and stay silent on a recovery, and a group of Telegram chats only as Telegram is. Any other notify group gets the message with no data, because a group hides a member's refusal and the person would get nothing. Telegram gets the message as plain text, so a device name holding "_" or "*" does not break it, and cut to fit Telegram's length limit. The storage-restore notice is fitted the same way.
+- **One saved before (since 0.28.12):** a persistent notification saved in either list before 0.28.11 does not stop the rest of the screen being saved; only a new one is refused.
 
-*Proof:* [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_settings_screen_text.py`](../tests/test_settings_screen_text.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_settings.py`](../tests/test_settings.py).
+*Proof:* [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_settings_screen_text.py`](../tests/test_settings_screen_text.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_settings.py`](../tests/test_settings.py), [`test_notify_platform_data.py`](../tests/test_notify_platform_data.py), [`test_notify_fitted.py`](../tests/test_notify_fitted.py), [`test_notify_group_of_phones.py`](../tests/test_notify_group_of_phones.py), [`test_restore_notice_telegram.py`](../tests/test_restore_notice_telegram.py).
 
 ### NOTE-03 One Push Per Family
 
@@ -35,8 +38,9 @@ This section covers how Device Sentinel tells people and automations about the P
 ### NOTE-04 A Fault Sounds, a Recovery Is Silent
 
 **A fault plays the phone's own notification sound, never a forced one. A recovery, and a later message about an outage already announced, is sent silently, on Android and Apple alike.**
+- **Telegram (since 0.28.12):** a recovery sent to Telegram is sent with Telegram's own silent setting, so it plays no sound there either.
 
-*Proof:* [`test_notifications.py`](../tests/test_notifications.py), [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py).
+*Proof:* [`test_notifications.py`](../tests/test_notifications.py), [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py), [`test_notify_fitted.py`](../tests/test_notify_fitted.py).
 
 ### NOTE-05 A Push Names Three Devices
 

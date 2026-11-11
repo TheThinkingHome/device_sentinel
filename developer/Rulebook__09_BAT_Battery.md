@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -19,6 +19,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **Raw scale:** a device whose battery reads over 110 on two different days is on Zigbee's raw scale of 0 to 200. Its readings are halved, and its stored history is halved once.
 - **How long the mark lasts:** until the next battery change or firmware update, when the device is measured again.
 - **Before it is proved raw:** a reading over 100 is ignored.
+- **Proved again after a clear (since 0.28.12):** after a battery change or a firmware update clears the raw mark, everything stored is in percent, since a reading over 100 is ignored until the scale is proved again. Proving it then halves nothing, where it once halved the history a second time and took the halved days for another new battery, every few days.
 
 *Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_storage_shape.py`](../tests/test_storage_shape.py).
 
@@ -50,12 +51,19 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 
 ### BAT-06 A New Battery Is Detected
 
-**A new battery is a rise of 25 points or more from one day to the next, or a cell at or under 90 percent landing at or over 95.** It counts once the next day's reading confirms it against the level before the rise.
+**A rise is a possible new battery when the level gains 25 points or more from one midnight to the next, or lands at 95 or more having gained 10 or more. It is a new battery when the whole next day stays above the old battery's highest level.**
+- **How the level is sampled (since 0.28.12):** each moment the device is heard is a sample of the battery level it holds: its own battery report, and each time it speaks, such as a motion or a door report, since the level it holds is still its own. Each day keeps each whole-number level heard, at most 101 and none dropped, and how many moments each was heard at. The device speaking counts as a moment at most once a minute, read once the message's other entities are written, so a battery report and a link-quality change in one message are one moment, and the report is read at its new level. The day's low and high count only levels heard at two moments or more, so a value held for seconds, as a reconnect can give, decides nothing. A day with no level heard twice counts all its levels.
+- **The test (since 0.28.12):** the new battery's first whole day must have its low above the old battery's high plus 2. The old battery's high is read from the days before the day of the change, which holds both:
+  - **A rise that lands at full,** 95 or more: the whole day before. A battery that collapses and is changed after a day at its low is found.
+  - **A rise that lands below full,** which a new battery never does: the two days before. A lock's low warning held a whole day, or a dip held over one night, comes back to where the old battery already read, and is refused.
+- **What this refuses:** a lock's low warning held over a night or a day, a coin cell that sags one cold night, a battery that swings with the day's warmth, and a slow drift on a warm day. A swing reads at its old high the day before the rise, so its next day never clears it.
+- **What is left to a person:** a battery that collapses from near full and is changed the very next day reads exactly as a sag does, and is refused. The person can give the day ([BAT-07](#bat-07-battery-last-replaced)). A sag at full held a whole day is taken for a change, and Cancel puts everything back.
+- **Just after the upgrade:** with no day kept before a rise, the rise is judged on the midnight levels alone, as before. Three days fill from empty.
 - **The history:** starts again from the day the rise appeared, so each trend and forecast describes the battery in the device today. The old history is kept, unread.
 - **Raw scale:** a new battery is measured again for the raw scale ([BAT-02](#bat-02-what-counts-as-a-reading)).
-- **The words:** each surface says "replaced or recharged", because one reading a day cannot tell the two apart. The exception is the device page's Battery last replaced row and its card, which [BAT-07](#bat-07-battery-last-replaced) governs.
+- **The words:** each surface says "replaced or recharged", because the level cannot tell the two apart. The exception is the device page's Battery last replaced row and its card, which [BAT-07](#bat-07-battery-last-replaced) governs.
 
-*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
+*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_wording.py`](../tests/test_battery_wording.py), [`test_battery_replacement_rule.py`](../tests/test_battery_replacement_rule.py), [`test_battery_day_fields_hostile.py`](../tests/test_battery_day_fields_hostile.py), [`test_battery_day_level_cap.py`](../tests/test_battery_day_level_cap.py), [`test_battery_stray_counted_twice.py`](../tests/test_battery_stray_counted_twice.py).
 
 ### BAT-07 Battery Last Replaced
 
@@ -66,8 +74,9 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **Older detections:** a replacement detected before 0.26.7 counts as confirmed.
 - **Rechargeable:** a device whose power answer is Rechargeable reads Battery last charged and Confirm Battery Charge.
 - **No replacement yet:** the row reads, for example, "Device first detected August 12, 2026. No battery replacement yet."
+- **Two detections waiting (since 0.28.12):** a second detected replacement while the first still waits for a person adds to the saved history rather than replacing it, so no day is lost and Cancel can join each back.
 
-*Proof:* [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py).
+*Proof:* [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_stacked_detections.py`](../tests/test_battery_stacked_detections.py).
 
 ### BAT-08 Each Battery's Life Is Kept
 

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Settings (CFG)
 
-*Version: rulebook, 4 November 2026, on Device Sentinel 0.28.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How the configuration screens are laid out and worded, what the entities Device Sentinel creates are called and which are switched on, and the Data Trim tool on the Advanced screen. What each setting judges is in its own section (BAT, SIG, FRZ, UNAV, NOTE, MUTE). What the trim does to the stored files is in [STOR](Rulebook__18_STOR_Storage.md).
 
@@ -69,8 +69,9 @@ How the configuration screens are laid out and worded, what the entities Device 
 - **Broker: MQTT:** on where a bridge stack was found and off elsewhere.
 - **Off:** the five problem counts and Devices: Set Aside.
 - **Who decides:** the dashboard never decides a default, and a house already installed keeps the choices it has.
+- **Only an admin presses a button (since 0.28.12):** Maintenance Mode and Regenerate Reports refuse a press from a user who is not an admin, as the dashboard's own commands do. An automation that runs on its own carries no user and still may; a script a person starts acts as that person.
 
-*Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py).
+*Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_non_admin.py`](../tests/test_non_admin.py).
 
 ### CFG-09 Primary or Diagnostic
 
