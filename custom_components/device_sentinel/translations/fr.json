@@ -1,0 +1,375 @@
+{
+  "title": "Device Sentinel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Device Sentinel",
+        "description": "Device Sentinel s'installe avec des réglages par défaut fonctionnels et commence la surveillance immédiatement. La configuration se fait ensuite dans les options."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configuration de Device Sentinel",
+        "description": "Les réglages par défaut de Device Sentinel suffisent pour démarrer. Quand vous commencerez à adapter l'intégration à votre installation, procédez de haut en bas. Si vous voulez recevoir les alertes sur votre téléphone, commencez par Notifications.\n\n**Notifications** : destinataires des alertes, heures calmes et rappel quotidien.\n\n**Exclusions et sourdine** : le matériel que vous ne voulez jamais voir évalué ni signalé, par aucune fonction. Pour faire taire un seul type de rapport pour un appareil, utilisez plutôt la liste de sourdine de la section concernée.\n\n**Batterie faible** : le seuil bas, et la sourdine propre aux batteries.\n\n**Force du signal** : comment l'affaiblissement des liaisons radio est évalué par rapport au plancher propre à chaque appareil.\n\n**Appareils figés et indisponibles** : combien de temps un appareil peut rester silencieux avant d'être déclaré figé, réglé par deux curseurs de délai de grâce, et quels appareils sont en sourdine pour « figé » ou pour « indisponible ».\n\n**WiFi** : les réseaux surveillés pour détecter une panne Wi-Fi.\n\n**Avancé** : stockage et historique, fenêtre de maintenance, ouverture du tableau de bord en mode Simple ou Avancé, et outil de nettoyage des données.\n\n**Diagnostics étendus** : le matériel que vous choisissez d'enregistrer en détail, pour aider à le prendre en charge.\n\n[Toute la documentation sur le wiki de Device Sentinel]({wiki_link})\n\nChaque section est enregistrée quand vous la validez et vous ramène ici. Fermer cette fenêtre conserve tout ce que vous avez déjà validé.",
+        "menu_options": {
+          "notifications": "Notifications et bilan quotidien",
+          "exclusions": "Exclusions et sourdine",
+          "battery": "Batterie faible",
+          "signal": "Force du signal",
+          "freeze": "Appareils figés et indisponibles",
+          "wifi": "WiFi",
+          "advanced": "Avancé",
+          "extended": "Diagnostics étendus"
+        }
+      },
+      "notifications": {
+        "title": "Notifications et bilan quotidien",
+        "description": "Qui est prévenu d'un problème, et quand. [Notifications et bilan quotidien sur le wiki]({wiki_link})",
+        "sections": {
+          "instant": {
+            "name": "Notifications instantanées",
+            "data": {
+              "high_priority_targets": "Destinataires haute priorité",
+              "normal_priority_targets": "Destinataires priorité normale",
+              "persistent_enabled": "Créer une notification persistante"
+            },
+            "data_description": {
+              "high_priority_targets": "Reçoivent toutes les alertes, à toute heure, heures calmes comprises. Le bilan quotidien n'est pas envoyé ici ; il va uniquement à « Envoyer le bilan complet à ».",
+              "normal_priority_targets": "Reçoivent toutes les alertes, sauf pendant les heures calmes. Le bilan quotidien n'est pas envoyé ici ; il va uniquement à « Envoyer le bilan complet à ».",
+              "persistent_enabled": "Affiche une carte unique dans le tableau de bord avec l'état actuel de la maison, regroupé par type."
+            }
+          },
+          "quiet": {
+            "name": "Heures calmes",
+            "data": {
+              "quiet_hours_enabled": "Activer les heures calmes",
+              "quiet_hours_start": "Début",
+              "quiet_hours_end": "Fin"
+            },
+            "data_description": {
+              "quiet_hours_enabled": "Pendant ces heures, les destinataires priorité normale ne reçoivent rien et les destinataires haute priorité reçoivent toujours toutes les alertes. Le bilan quotidien rapporte ce qui s'est passé."
+            }
+          },
+          "brief": {
+            "name": "Bilan quotidien",
+            "data": {
+              "daily_reminder_time": "Heure d'envoi",
+              "daily_reminder_mode": "Fréquence",
+              "brief_document_targets": "Envoyer le bilan complet à",
+              "report_link_address": "Liens dans les rapports"
+            },
+            "data_description": {
+              "daily_reminder_mode": "Le fichier du bilan est écrit dans tous les cas ; ce réglage décide s'il est envoyé.",
+              "report_link_address": "Les noms d'appareils dans le bilan quotidien peuvent devenir des liens vers la page de l'appareil dans le tableau de bord de Device Sentinel. Le bilan est envoyé par e-mail et peut être transféré : un lien emporte donc l'adresse de votre maison avec lui. Choisissez l'adresse utilisée par les liens, ou None pour ne mettre aucun lien. Si les URL interne ou externe ne sont pas définies, vous pouvez les configurer dans les [paramètres réseau](/config/network) de Home Assistant."
+            }
+          }
+        }
+      },
+      "exclusions": {
+        "title": "Exclusions et sourdine",
+        "description": "L'intégration propose deux façons de régler quels appareils elle surveille et comment elle les signale. Exclure supprime ; mettre en sourdine fait seulement taire.\n\n[Exclusions et sourdine sur le wiki]({wiki_link})",
+        "sections": {
+          "exclude": {
+            "name": "Intégrations et appareils à exclure",
+            "description": "Une intégration ou un appareil exclu est entièrement mis à l'écart. Rien n'est appris, aucune donnée n'est conservée, et il n'apparaît jamais dans les rapports ni les notifications. Ce qu'il avait déjà enregistré est supprimé au prochain minuit local : le retirer de la liste avant cette heure le restaure intact. À utiliser quand ce que publie un appareil n'est pas une mesure de votre maison : téléphones qui en sortent, tablettes murales branchées en permanence, sondes qui répondent à chaque interrogation. Un appareil peut aussi être exclu individuellement depuis sa page dans le tableau de bord de Device Sentinel.",
+            "data": {
+              "excluded_integrations": "Intégrations à exclure",
+              "devices_to_exclude": "Appareils à exclure"
+            },
+            "data_description": {
+              "excluded_integrations": "Tous les appareils d'une intégration cochée sont mis à l'écart.",
+              "devices_to_exclude": "Chaque appareil choisi ici est mis à l'écart individuellement, selon les mêmes règles."
+            }
+          },
+          "muting": {
+            "name": "Sourdine globale",
+            "description": "Un élément en sourdine reste surveillé et ses données sont stockées, mais il est tenu hors de la liste des problèmes, des rapports et des alertes. Retirez la sourdine plus tard et l'appareil est de nouveau signalé aussitôt, car son historique est déjà disponible. Les trois listes vont du plus large au plus précis : intégration, étiquette, appareil. Mettez en sourdine à un niveau supérieur et enregistrez : tout ce qu'il couvre disparaît des choix dans les listes en dessous.",
+            "data": {
+              "muted_integrations": "Intégrations en sourdine globale",
+              "muted_labels": "Étiquettes en sourdine globale",
+              "muted_devices": "Appareils en sourdine globale"
+            },
+            "data_description": {
+              "muted_integrations": "Met en sourdine tous les appareils de l'intégration. Ils seront appris et enregistrés, mais n'apparaîtront ni dans la liste des problèmes, ni dans les rapports ou notifications.",
+              "muted_labels": "Tout appareil portant ces étiquettes est mis en sourdine. Une étiquette posée sur une seule entité ne met rien en sourdine. Vous pouvez gérer cette sourdine sans jamais ouvrir cette fenêtre : il suffit d'appliquer l'étiquette sur la page de l'appareil lui-même, et Device Sentinel cesse de le signaler.",
+              "muted_devices": "Applique exactement les mêmes règles de sourdine que les listes ci-dessus, mais appareil par appareil. Ajoutez ici un appareil précis pour le retirer de la liste des problèmes et mettre en sourdine ses rapports et notifications."
+            }
+          }
+        }
+      },
+      "battery": {
+        "title": "Batterie faible",
+        "data": {
+          "low_threshold": "Seuil de batterie faible",
+          "battery_days_till_empty": "Préavis batterie faible (jours)"
+        },
+        "data_description": {
+          "low_threshold": "Une batterie à ce niveau ou en dessous est signalée faible.",
+          "battery_days_till_empty": "Une batterie en baisse fait l'objet d'une alerte ce nombre de jours avant d'atteindre votre seuil bas. Seule une batterie à trois fois le seuil ou moins est évaluée, et sa date est estimée à partir de son propre historique, sous forme de fourchette : une batterie qui baisse de plus en plus vite chaque semaine fait l'objet d'une alerte quand le début de la fourchette tombe dans ce nombre de jours ; une batterie qui baisse à rythme régulier est listée sous Batteries to Watch dans le bilan quotidien et dans Battery Trends. Une batterie qui garde sa charge ne déclenche jamais d'alerte, et une pile déjà sous votre seuil n'est pas signalée deux fois."
+        },
+        "description": "Device Sentinel surveille par défaut chaque batterie qu'il trouve. Le seuil indique quelles piles sont faibles ; les jours de préavis, lesquelles sont sur le point de l'être. Une pile n'est jugée en baisse, avec une estimation du temps restant, qu'à trois fois le seuil ou moins : plus haut, aucune batterie n'a été suivie assez longtemps pour dire quand elle l'atteindra. Une batterie a besoin de quatre semaines de relevés sur les six dernières avant d'être évaluée. Beaucoup d'appareils cessent de fonctionner avant que leur batterie n'atteigne 0 %, le temps restant est donc calculé jusqu'à votre seuil. Une fois qu'une batterie a été faible, son temps restant est calculé jusqu'à épuisement tant que vous ne l'avez pas remplacée, même si elle repasse au-dessus du seuil. Une batterie est signalée quand elle est au niveau du seuil ou en dessous.\n\n[Batterie faible sur le wiki]({wiki_link})",
+        "sections": {
+          "battery_muting": {
+            "name": "Sourdine des batteries",
+            "description": "Mettre une batterie en sourdine ici arrête uniquement les rapports de batterie pour cet appareil ; tout le reste continue d'être surveillé. Les trois listes vont du plus large au plus précis : intégration, étiquette, appareil. Mettez en sourdine à un niveau supérieur et enregistrez : tout ce qu'il couvre disparaît des choix dans les listes en dessous.",
+            "data": {
+              "battery_muted_integrations": "Intégrations en sourdine (batterie)",
+              "battery_muted_labels": "Étiquettes en sourdine (batterie)",
+              "battery_muted_devices": "Appareils en sourdine (batterie)"
+            },
+            "data_description": {
+              "battery_muted_integrations": "Une seule case couvre toutes les batteries de cette intégration (les téléphones sous mobile_app, par exemple).",
+              "battery_muted_labels": "Tout appareil portant l'une de ces étiquettes n'est plus signalé pour batterie faible. Posez l'étiquette sur la page de l'appareil et elle s'applique ici sans ouvrir cette fenêtre.",
+              "battery_muted_devices": "Chaque appareil listé a une batterie suivie. Les appareils cochés sont en sourdine pour les rapports de batterie."
+            }
+          }
+        }
+      },
+      "signal": {
+        "title": "Force du signal",
+        "data": {
+          "badday_drop_lqi": "Baisse « mauvais jour », LQI",
+          "badday_drop_rssi": "Baisse « mauvais jour », RSSI",
+          "badday_sensitivity": "Sensibilité « mauvais jour »",
+          "badday_baseline_days": "Jours d'historique du signal"
+        },
+        "data_description": {
+          "badday_drop_lqi": "Définit la baisse en points LQI nécessaire pour signaler un mauvais jour de signal. Un jour n'est compté mauvais que s'il dépasse à la fois ce seuil et le réglage de sensibilité ci-dessous. Augmentez-le pour signaler moins de jours.",
+          "badday_drop_rssi": "Définit la même baisse en décibels pour les appareils qui mesurent en dBm. Fonctionne exactement comme le curseur LQI ci-dessus.",
+          "badday_sensitivity": "Ajuste la baisse requise selon les variations habituelles de l'appareil, ce qui évite que des capteurs irréguliers soient signalés tous les jours. Un capteur stable dépend des curseurs de baisse ci-dessus. Avec un réglage de 4, un capteur instable qui varie couramment de 10 points doit chuter de 40 points pour déclencher une alerte. Baissez-le pour signaler plus de jours.",
+          "badday_baseline_days": "Ce réglage définit combien de jours passés servent à calculer ce qui est habituel pour un appareil. Le signal du jour est comparé à ce niveau habituel, et une baisse en dessous, selon les réglages ci-dessus, est signalée."
+        },
+        "sections": {
+          "signal_muting": {
+            "name": "Sourdine du signal",
+            "data": {
+              "signal_muted_integrations": "Intégrations en sourdine (signal)",
+              "signal_muted_labels": "Étiquettes en sourdine (signal)",
+              "signal_muted_devices": "Appareils en sourdine (signal)"
+            },
+            "data_description": {
+              "signal_muted_integrations": "Tous les appareils d'une intégration cochée cessent d'être signalés pour le signal.",
+              "signal_muted_labels": "Les appareils portant une étiquette cochée cessent d'être signalés pour le signal.",
+              "signal_muted_devices": "Un appareil coché cesse d'être signalé pour le signal. Il continue d'enregistrer : le réintégrer restaure aussitôt son historique."
+            }
+          }
+        }
+      },
+      "freeze": {
+        "title": "Appareils figés et indisponibles",
+        "data": {
+          "freeze_delta_low": "Delta bas (grâce appareil rapide, minutes)",
+          "freeze_delta_high": "Delta haut (grâce appareil lent, heures)"
+        },
+        "data_description": {
+          "freeze_delta_low": "Le délai de grâce d'un appareil rapide, en minutes : combien de temps il peut rester silencieux au-delà de sa normale avant d'être considéré comme figé.",
+          "freeze_delta_high": "Le délai de grâce d'un appareil lent, en heures. Les deux deltas déterminent toute la courbe entre eux : un appareil intermédiaire se situe entre ces deux valeurs."
+        },
+        "sections": {
+          "freeze_muting": {
+            "name": "Sourdine des appareils figés",
+            "data": {
+              "freeze_muted_integrations": "Intégrations en sourdine (figé)",
+              "freeze_muted_labels": "Étiquettes en sourdine (figé)",
+              "freeze_muted_devices": "Appareils en sourdine (figé)"
+            },
+            "data_description": {
+              "freeze_muted_integrations": "Tous les appareils d'une intégration cochée cessent d'être déclarés figés ou sans remontée.",
+              "freeze_muted_labels": "Les appareils portant une étiquette cochée cessent d'être déclarés figés ou sans remontée. Posez l'étiquette sur la page de l'appareil et elle s'applique ici.",
+              "freeze_muted_devices": "Un appareil coché n'est jamais déclaré figé ou sans remontée. Il conserve son horloge et son rythme : le réintégrer est instantané."
+            }
+          },
+          "unavailable_muting": {
+            "name": "Sourdine des indisponibles",
+            "data": {
+              "unavailable_muted_labels": "Étiquettes en sourdine (indisponible)",
+              "unavailable_muted_devices": "Appareils en sourdine (indisponible)"
+            }
+          }
+        }
+      },
+      "advanced": {
+        "title": "Avancé",
+        "description": "Des réglages que la plupart des gens n'ont jamais besoin de modifier. [Avancé sur le wiki]({wiki_link})",
+        "data": {
+          "dashboard_mode": "Tableau de bord : Simple ou Avancé",
+          "repeat_floor": "Seuil de récidive",
+          "storage_write_minutes": "Intervalle d'écriture du stockage",
+          "history_days": "Durée d'historique conservée",
+          "maintenance_minutes": "Fenêtre de maintenance (minutes)"
+        },
+        "data_description": {
+          "dashboard_mode": "Le mode dans lequel le tableau de bord s'ouvre dans chaque fenêtre. Simple montre ce qui est en panne et quoi faire ; Avancé ajoute les tendances, les graphiques et la configuration. Le sélecteur du tableau de bord le change jusqu'à ce que vous quittiez le tableau de bord.",
+          "repeat_floor": "Nombre d'interruptions inexpliquées en une semaine qui fait apparaître un appareil dans la section Repeat Offenders du bilan quotidien. Une interruption est inexpliquée quand aucun redémarrage, panne, rechargement ou fenêtre d'appairage ne l'explique. Plus bas, les appareils sont cités plus tôt ; plus haut, on attend un schéma plus net.",
+          "storage_write_minutes": "Durée pendant laquelle l'activité courante est gardée en mémoire avant d'être écrite sur le disque. Augmentez-la pour du matériel lent et les box qui écrivent sur une carte SD. Une valeur plus longue risque de faire perdre des données de minuterie en cas de coupure de courant. Les événements sont écrits au moment où ils se produisent, le risque est donc minime.",
+          "history_days": "Nombre de jours d'historique quotidien (batterie, signal, interruptions « indisponible » et « figé ») conservés pour étudier les tendances longues. 30 jours sont nécessaires, mais certaines tendances n'apparaissent que sur des périodes plus longues.",
+          "maintenance_minutes": "Durée pendant laquelle le bouton Mode maintenance indique que vous travaillez sur le matériel. Un appareil qui revient pendant cette fenêtre est considéré comme réparé par vous, et son silence n'est pas appris comme normal."
+        },
+        "sections": {
+          "data_trim": {
+            "name": "Nettoyage des données",
+            "data": {
+              "trim_integrations": "Effacer l'historique d'intégrations",
+              "trim_devices": "Effacer l'historique d'appareils"
+            },
+            "data_description": {
+              "trim_integrations": "Efface l'historique appris de tous les appareils des intégrations sélectionnées.",
+              "trim_devices": "Efface l'historique appris des appareils sélectionnés ici."
+            }
+          }
+        }
+      },
+      "wifi": {
+        "title": "WiFi",
+        "description": "Device Sentinel peut surveiller la disponibilité de votre réseau WiFi et signaler une panne WiFi en un seul décompte des appareils touchés, au lieu de signaler chaque appareil séparément. Pour cela, votre serveur Home Assistant doit disposer d'un adaptateur sans fil correctement connecté à votre réseau. Configurez-le d'abord dans Paramètres, Système, Réseau, puis revenez ici. [WiFi sur le wiki]({wiki_link})",
+        "data": {
+          "wifi_networks": "Vos réseaux WiFi IoT",
+          "wifi_confirm_seconds": "Délai de confirmation"
+        },
+        "data_description": {
+          "wifi_networks": "Les réseaux que vos appareils et capteurs utilisent pour communiquer avec Home Assistant. Device Sentinel ne peut pas savoir quel réseau utilise chacun de vos appareils. Si vous en choisissez plusieurs, dès que l'un d'eux tombe, l'intégration signalera que le WiFi est indisponible. Pour de meilleures performances, il est recommandé d'utiliser un seul réseau pour tous vos appareils.",
+          "wifi_confirm_seconds": "Nombre de secondes d'indisponibilité d'un réseau avant qu'une panne soit signalée. Un routeur qui redémarre la nuit disparaît environ trente secondes."
+        }
+      },
+      "extended": {
+        "title": "Diagnostics étendus",
+        "description": "Device Sentinel ne prend en charge certains matériels qu'après avoir observé leur comportement sur une vraie installation, et personne parmi ceux qui travaillent sur Device Sentinel ne possède un exemplaire de tout. Activer un interrupteur ici ajoute des relevés bruts sur ce matériel à votre téléchargement de diagnostics. Rien n'est transmis. Si vous voulez la prise en charge d'un matériel listé ici, activez cet interrupteur et attendez 48 heures. Ensuite, téléchargez vos diagnostics depuis la page de l'intégration Device Sentinel et ouvrez un ticket avec le fichier de diagnostic joint, en précisant ce que vous aimeriez voir développé. [Diagnostics étendus sur le wiki]({wiki_link})",
+        "data": {
+          "study_hardware": "Matériel à étudier"
+        }
+      }
+    },
+    "error": {
+      "internal_url_not_set": "Home Assistant n'a pas d'URL interne, aucun lien ne serait donc créé. Définissez-en une dans Paramètres, Système, Réseau, ou choisissez None.",
+      "external_url_not_set": "Home Assistant n'a pas d'URL externe, aucun lien ne serait donc créé. Définissez-en une dans Paramètres, Système, Réseau, ou choisissez None."
+    }
+  },
+  "selector": {
+    "reminder_mode": {
+      "options": {
+        "daily": "Chaque jour, avec « tout va bien » si rien à signaler",
+        "overnight": "Seulement s'il y a quelque chose à signaler",
+        "none": "Jamais"
+      }
+    },
+    "dashboard_mode": {
+      "options": {
+        "simple": "Simple",
+        "advanced": "Avancé"
+      }
+    }
+  },
+  "issues": {
+    "notify_target_missing": {
+      "fix_flow": {
+        "step": {
+          "init": {
+            "menu_options": {
+              "confirm": "Les retirer",
+              "ignore": "Ignorer"
+            }
+          }
+        }
+      }
+    },
+    "storage_restored": {
+      "title": "Device Sentinel a restauré son stockage",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel a restauré son stockage",
+            "description": "{reason}\n\n{loss}\n\n{where}\n\nIl n'y a rien à réparer. Le fichier a déjà été remplacé et Device Sentinel fonctionne déjà. Sélectionnez Valider pour effacer cet avis."
+          }
+        }
+      }
+    },
+    "storage_repaired": {
+      "title": "Device Sentinel a réparé son stockage",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel a réparé son stockage",
+            "description": "Des données endommagées ont été trouvées et réparées automatiquement. Ce qui a été réparé : {what}. Emplacement des originaux : {where}. Vous n'avez rien à faire ; appuyer sur Valider enregistre que vous avez lu ce message."
+          }
+        }
+      }
+    },
+    "containers_repaired": {
+      "title": "Device Sentinel a réparé la structure de son stockage",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel a réparé la structure de son stockage",
+            "description": "Une partie du fichier de stockage contenait un mauvais type de valeur, ce qui aurait empêché Device Sentinel de démarrer. Elle a été réparée automatiquement avant toute autre opération. Ce qui a été réparé : {what}. Emplacement des originaux : {where}. Vous n'avez rien à faire ; appuyer sur Valider enregistre que vous avez lu ce message."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "État",
+        "state": {
+          "watching": "Surveillance",
+          "learning": "Apprentissage",
+          "problem": "Problème"
+        }
+      },
+      "devices_watched": {
+        "name": "Appareils : surveillés"
+      },
+      "devices_learned": {
+        "name": "Appareils : appris"
+      },
+      "devices_set_aside": {
+        "name": "Appareils : mis à l'écart"
+      },
+      "signal_rails": {
+        "name": "Signal : en butée"
+      },
+      "signal_weak": {
+        "name": "Signal : faible"
+      },
+      "battery_low": {
+        "name": "Batterie : faible"
+      },
+      "device_frozen": {
+        "name": "Appareil : figé"
+      },
+      "maintenance_ends": {
+        "name": "Maintenance : fin"
+      },
+      "broker": {
+        "name": "Broker : MQTT"
+      },
+      "bridge_wifi": {
+        "name": "Pont : WiFi"
+      },
+      "bridge_zigbee2mqtt": {
+        "name": "Pont : Zigbee2MQTT"
+      },
+      "bridge_zha": {
+        "name": "Pont : ZHA"
+      },
+      "falling_batteries": {
+        "name": "Batterie : en baisse"
+      }
+    },
+    "button": {
+      "regenerate_reports": {
+        "name": "Régénérer les rapports"
+      },
+      "maintenance_mode": {
+        "name": "Mode maintenance"
+      }
+    },
+    "todo": {
+      "problem_list": {
+        "name": "Liste des problèmes"
+      }
+    }
+  }
+}
