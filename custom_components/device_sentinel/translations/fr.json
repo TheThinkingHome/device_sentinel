@@ -62,6 +62,7 @@
             },
             "data_description": {
               "daily_reminder_mode": "Le fichier du bilan est écrit dans tous les cas ; ce réglage décide s'il est envoyé.",
+              "brief_document_targets": "Le service e-mail ou les autres services qui serviront à envoyer le bilan quotidien. Choisissez-les dans la liste. Une adresse e-mail saisie ici ne fonctionnera pas : pour envoyer par e-mail, configurez d'abord l'intégration SMTP de Home Assistant, et ses destinataires apparaîtront dans la liste. [Envoyer le bilan quotidien par e-mail]({email_link})",
               "report_link_address": "Les noms d'appareils dans le bilan quotidien peuvent devenir des liens vers la page de l'appareil dans le tableau de bord de Device Sentinel. Le bilan est envoyé par e-mail et peut être transféré : un lien emporte donc l'adresse de votre maison avec lui. Choisissez l'adresse utilisée par les liens, ou None pour ne mettre aucun lien. Si les URL interne ou externe ne sont pas définies, vous pouvez les configurer dans les [paramètres réseau](/config/network) de Home Assistant."
             }
           }
@@ -129,21 +130,25 @@
       },
       "signal": {
         "title": "Force du signal",
+        "description": "Règle la façon dont l'intégration repère les liaisons radio défaillantes. Un mauvais jour de signal est une baisse mesurée par rapport à la normale récente de l'appareil : un capteur stable et un capteur instable sont donc chacun jugés selon leur propre référence. [Force du signal sur le wiki]({wiki_link})",
         "data": {
           "badday_drop_lqi": "Baisse « mauvais jour », LQI",
           "badday_drop_rssi": "Baisse « mauvais jour », RSSI",
           "badday_sensitivity": "Sensibilité « mauvais jour »",
-          "badday_baseline_days": "Jours d'historique du signal"
+          "badday_baseline_days": "Jours d'historique du signal",
+          "short_drop_limit": "Limite de micro-coupure (minutes)"
         },
         "data_description": {
           "badday_drop_lqi": "Définit la baisse en points LQI nécessaire pour signaler un mauvais jour de signal. Un jour n'est compté mauvais que s'il dépasse à la fois ce seuil et le réglage de sensibilité ci-dessous. Augmentez-le pour signaler moins de jours.",
           "badday_drop_rssi": "Définit la même baisse en décibels pour les appareils qui mesurent en dBm. Fonctionne exactement comme le curseur LQI ci-dessus.",
           "badday_sensitivity": "Ajuste la baisse requise selon les variations habituelles de l'appareil, ce qui évite que des capteurs irréguliers soient signalés tous les jours. Un capteur stable dépend des curseurs de baisse ci-dessus. Avec un réglage de 4, un capteur instable qui varie couramment de 10 points doit chuter de 40 points pour déclencher une alerte. Baissez-le pour signaler plus de jours.",
-          "badday_baseline_days": "Ce réglage définit combien de jours passés servent à calculer ce qui est habituel pour un appareil. Le signal du jour est comparé à ce niveau habituel, et une baisse en dessous, selon les réglages ci-dessus, est signalée."
+          "badday_baseline_days": "Ce réglage définit combien de jours passés servent à calculer ce qui est habituel pour un appareil. Le signal du jour est comparé à ce niveau habituel, et une baisse en dessous, selon les réglages ci-dessus, est signalée.",
+          "short_drop_limit": "Un appareil qui devient indisponible puis revient de lui-même en moins de ce nombre de minutes a fait une micro-coupure. Deux en 12 heures l'ajoutent à la liste des problèmes comme problème de signal. Tant qu'un appareil fait des micro-coupures, une coupure plus longue que cette limite est signalée comme indisponible. Un appareil qui remonte souvent des données peut avoir sa propre limite, plus courte. Baissez-la pour être prévenu plus tôt d'une panne ; augmentez-la si les micro-coupures d'un appareil sont encore signalées comme indisponibles."
         },
         "sections": {
           "signal_muting": {
             "name": "Sourdine du signal",
+            "description": "Les appareils exclus des rapports de signal, micro-coupures comprises. Le signal continue d'être enregistré pour tout ce qui figure ici : réintégrer un appareil restaure donc son historique aussitôt. Les trois listes vont du plus large au plus précis : intégration, étiquette, appareil. Mettez en sourdine à un niveau supérieur et enregistrez : tout ce qu'il couvre disparaît des choix dans les listes en dessous.",
             "data": {
               "signal_muted_integrations": "Intégrations en sourdine (signal)",
               "signal_muted_labels": "Étiquettes en sourdine (signal)",
@@ -159,6 +164,7 @@
       },
       "freeze": {
         "title": "Appareils figés et indisponibles",
+        "description": "Combien de temps un appareil peut rester silencieux avant d'être déclaré figé, et quels appareils sont en sourdine pour « figé » ou pour « indisponible ». Chaque appareil est jugé selon son propre rythme appris : vous ne réglez pas un délai unique, mais le délai de grâce ajouté à la normale de chaque appareil. Delta bas est le délai de grâce d'un appareil rapide, delta haut celui d'un appareil lent, et la courbe entre les deux est déterminée par ces deux valeurs. Augmentez delta bas si un appareil bavard est signalé trop tôt ; baissez delta haut si un appareil lent doit être repéré plus vite. [Appareils figés et indisponibles sur le wiki]({wiki_link})",
         "data": {
           "freeze_delta_low": "Delta bas (grâce appareil rapide, minutes)",
           "freeze_delta_high": "Delta haut (grâce appareil lent, heures)"
@@ -170,6 +176,7 @@
         "sections": {
           "freeze_muting": {
             "name": "Sourdine des appareils figés",
+            "description": "Les appareils qui ne sont jamais déclarés figés ou sans remontée. Device Sentinel signale quand même un appareil mis en sourdine ici s'il devient indisponible ; pour l'éviter, utilisez « Sourdine des indisponibles » ci-dessous. Chacun conserve son horloge et son rythme appris : le réintégrer est donc instantané. Les trois listes vont du plus large au plus précis : intégration, étiquette, appareil. Mettez en sourdine à un niveau supérieur et enregistrez : tout ce qu'il couvre disparaît des choix dans les listes en dessous.",
             "data": {
               "freeze_muted_integrations": "Intégrations en sourdine (figé)",
               "freeze_muted_labels": "Étiquettes en sourdine (figé)",
@@ -183,9 +190,14 @@
           },
           "unavailable_muting": {
             "name": "Sourdine des indisponibles",
+            "description": "Les appareils qui ne sont jamais déclarés indisponibles. À utiliser pour un appareil qui devient indisponible volontairement, comme une télé éteinte à la prise. Device Sentinel signale quand même un appareil mis en sourdine ici s'il est figé ou ne remonte jamais de données ; pour l'éviter, utilisez « Sourdine des appareils figés » ci-dessus. Les deux listes vont du plus large au plus précis : étiquette, appareil. Mettez en sourdine par étiquette et enregistrez : les appareils concernés disparaissent des choix dans la liste en dessous. La liste des appareils est la même que celle que règle le bouton Mute unavailable sur la page d'un appareil.",
             "data": {
               "unavailable_muted_labels": "Étiquettes en sourdine (indisponible)",
               "unavailable_muted_devices": "Appareils en sourdine (indisponible)"
+            },
+            "data_description": {
+              "unavailable_muted_labels": "Les appareils portant une étiquette cochée cessent d'être déclarés indisponibles. Posez l'étiquette sur la page de l'appareil et elle s'applique ici.",
+              "unavailable_muted_devices": "Un appareil coché n'est jamais déclaré indisponible. Il conserve son horloge et son rythme : le réintégrer est instantané."
             }
           }
         }
@@ -210,6 +222,7 @@
         "sections": {
           "data_trim": {
             "name": "Nettoyage des données",
+            "description": "Utilisez cet outil quand l'assistance le demande, ou quand des données corrompues exigent un nouveau départ. Enregistrer cet écran efface les statistiques, épisodes de silence, incidents et entrées de la liste des problèmes de tout ce que vous sélectionnez ci-dessous. Par précaution, le système écrit une sauvegarde dans config/device_sentinel/trim_backups avant d'effacer quoi que ce soit, et chaque sauvegarde est supprimée au bout de 30 jours, sauf la plus récente. Les appareils eux-mêmes ne sont pas touchés. Ils réapparaissent en quelques secondes pour apprendre une nouvelle référence, en conservant toutes les exclusions et sourdines existantes. Les deux champs de sélection se vident après exécution pour éviter un double effacement accidentel.",
             "data": {
               "trim_integrations": "Effacer l'historique d'intégrations",
               "trim_devices": "Effacer l'historique d'appareils"
@@ -238,12 +251,19 @@
         "description": "Device Sentinel ne prend en charge certains matériels qu'après avoir observé leur comportement sur une vraie installation, et personne parmi ceux qui travaillent sur Device Sentinel ne possède un exemplaire de tout. Activer un interrupteur ici ajoute des relevés bruts sur ce matériel à votre téléchargement de diagnostics. Rien n'est transmis. Si vous voulez la prise en charge d'un matériel listé ici, activez cet interrupteur et attendez 48 heures. Ensuite, téléchargez vos diagnostics depuis la page de l'intégration Device Sentinel et ouvrez un ticket avec le fichier de diagnostic joint, en précisant ce que vous aimeriez voir développé. [Diagnostics étendus sur le wiki]({wiki_link})",
         "data": {
           "study_hardware": "Matériel à étudier"
+        },
+        "data_description": {
+          "study_hardware": "Seul le matériel présent sur votre installation apparaît ici, et seulement là où la prise en charge est en cours de développement. Problem Sensors and Polling apparaît sur toutes les installations : il enregistre les capteurs de problème de chaque appareil et les intégrations qui mettent à jour tous leurs appareils d'un coup. Votre choix ne change rien au fonctionnement de Device Sentinel."
         }
       }
     },
     "error": {
       "internal_url_not_set": "Home Assistant n'a pas d'URL interne, aucun lien ne serait donc créé. Définissez-en une dans Paramètres, Système, Réseau, ou choisissez None.",
-      "external_url_not_set": "Home Assistant n'a pas d'URL externe, aucun lien ne serait donc créé. Définissez-en une dans Paramètres, Système, Réseau, ou choisissez None."
+      "external_url_not_set": "Home Assistant n'a pas d'URL externe, aucun lien ne serait donc créé. Définissez-en une dans Paramètres, Système, Réseau, ou choisissez None.",
+      "priority_target_is_address": "Les destinataires haute priorité et priorité normale doivent être une action de notification, comme l'application Companion de votre téléphone, et non une adresse e-mail. Choisissez-les dans la liste.",
+      "priority_target_is_persistent": "Les destinataires haute priorité et priorité normale doivent être une action de notification, comme l'application Companion de votre téléphone. Les alertes ne sont pas envoyées à la notification persistante ; activez plutôt « Créer une notification persistante » ci-dessous.",
+      "brief_target_is_address": "« Envoyer le bilan complet à » nécessite un service e-mail, et non une adresse e-mail. Configurez l'intégration SMTP de Home Assistant, puis choisissez son destinataire dans la liste.",
+      "brief_target_is_phone": "Le bilan complet est envoyé par e-mail ou dans une notification persistante, pas sur un téléphone, qui ne peut pas l'afficher. Votre téléphone reçoit les alertes en direct via les destinataires haute priorité et priorité normale."
     }
   },
   "selector": {
@@ -263,13 +283,20 @@
   },
   "issues": {
     "notify_target_missing": {
+      "title": "Un destinataire de notification de Device Sentinel n'existe pas",
       "fix_flow": {
         "step": {
           "init": {
+            "title": "Retirer les destinataires de notification inexistants",
+            "description": "{count} {targets} de notification dans les paramètres de Device Sentinel désignent un service que Home Assistant ne possède pas : {detail}.\n\nLes notifications envoyées à ces destinataires échouent et sont inscrites dans le journal, sans que Device Sentinel s'en aperçoive. Cela signifie généralement qu'une application compagnon a été supprimée ou renommée, ou qu'une adresse e-mail a été saisie à la place d'un service. Choisissez un service dans la liste de Notifications et bilan quotidien.\n\n« Les retirer » les enlève des paramètres de Device Sentinel sans toucher aux autres destinataires. S'il ne vous en reste aucun, définissez-en un nouveau dans Notifications et bilan quotidien. « Ignorer » masque cette carte jusqu'à ce que vous choisissiez d'afficher à nouveau les problèmes ignorés.",
             "menu_options": {
               "confirm": "Les retirer",
               "ignore": "Ignorer"
             }
+          },
+          "confirm": {
+            "title": "Retirer les destinataires de notification inexistants",
+            "description": "{count} {targets} de notification dans les paramètres de Device Sentinel désignent un service que Home Assistant ne possède pas : {detail}.\n\nLes notifications envoyées à ces destinataires échouent et sont inscrites dans le journal, sans que Device Sentinel s'en aperçoive. Cela signifie généralement qu'une application compagnon a été supprimée ou renommée, ou qu'une adresse e-mail a été saisie à la place d'un service. Choisissez un service dans la liste de Notifications et bilan quotidien.\n\n« Les retirer » les enlève des paramètres de Device Sentinel sans toucher aux autres destinataires. S'il ne vous en reste aucun, définissez-en un nouveau dans Notifications et bilan quotidien. « Ignorer » masque cette carte jusqu'à ce que vous choisissiez d'afficher à nouveau les problèmes ignorés."
           }
         }
       }
@@ -306,6 +333,10 @@
           }
         }
       }
+    },
+    "shared_address": {
+      "title": "Deux appareils partagent la même adresse réseau",
+      "description": "{detail}. Deux appareils qui répondent à la même adresse donnent l'impression que l'un ou l'autre a cessé de fonctionner. Pour corriger cela, réservez une adresse pour chaque appareil dans les réglages DHCP de votre routeur, afin que le routeur attribue à chacun la sienne. Cette carte disparaît d'elle-même dès que chaque appareil a sa propre adresse."
     }
   },
   "entity": {
