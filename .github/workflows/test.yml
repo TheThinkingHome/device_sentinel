@@ -1,4 +1,4 @@
-# File: .github/workflows/test.yml, Version: 0.28.11 (2026-11-10)
+# File: .github/workflows/test.yml, Version: 0.28.13 (2026-11-13)
 name: Tests
 
 
@@ -54,5 +54,10 @@ jobs:
         run: pip install -r ${{ matrix.requirements }}
       # A test that hangs fails by name after two minutes rather than
       # holding the job until GitHub's own six-hour limit.
+      # respx is left out: from Home Assistant 2026.11 its harness must
+      # load before anything imports httpx, and pytest loads plugins in
+      # the order they sit on the runner's disk, so a runner that loaded
+      # respx first stopped the 2026.11 job before any test ran. No test
+      # uses respx.
       - name: Run the suite
-        run: python -m pytest tests/ -q --timeout=120
+        run: python -m pytest tests/ -q --timeout=120 -p no:respx
