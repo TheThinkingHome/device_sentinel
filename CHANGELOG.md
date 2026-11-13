@@ -2,9 +2,9 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
-## [0.28.7](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.7), November 9, 2026
+## [0.28.13](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.13), November 14, 2026
 
-A new Networks tab shows each network your devices report through, Zigbee2MQTT, ZHA, Z-Wave, Matter, Wi-Fi, the MQTT broker and hubs, and each network's own page lists its devices, outages, firmware and the sensors to turn on. A network that goes down at the same time night after night is told in one sentence, and you can mark it as expected. A device that drops out for a few minutes and comes back is counted as a short drop-out instead of being reported unavailable, under a limit you can set. Wi-Fi devices show their address and access point, and two devices holding one address are flagged. Previous and Next on a device's page stay in the list you came from.
+A device that keeps dropping out and coming back goes on the Problem List as a signal problem, and automations that matched `flapping` must match `short_drop_outs`. A new Networks tab shows each network and its own page, and a network that goes down at the same time each night can be marked as expected. The Devices tab lists all the devices Device Sentinel found, replacing the Classification tab, and the Problem List sits at the top of the Daily Brief. Cloud integrations that poll, such as Alarm.com and Tado, are one problem when the cloud stops updating, and recommendations are set one model at a time. Storage survives a Docker stop, a battery that dips for a night is no longer taken for a new one, only an admin can tick a Problem List item, and notification targets take a service, never a typed address. Setup and settings are in French, thanks to TOM (@Tomti06, [issue #24](https://github.com/TheThinkingHome/device_sentinel/issues/24)).
 
 Co-authored with Tim Plas (@tplas).
 
