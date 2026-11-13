@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.28.12 (2026-11-11)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.28.13 (2026-11-13)
 
 """What powers each device (rule DEV-06).
 
@@ -459,6 +459,10 @@ class PowerMixin:
         The owner's entries are read with the answers file."""
         hass = self.hass  # type: ignore[attr-defined]
         self._power_library = await hass.async_add_executor_job(load_library)
+        # The setting labels the brief names a changed setting by come
+        # from strings.json. Read here, on a worker thread, so the Brief
+        # tab never reads the file on the event loop.
+        await hass.async_add_executor_job(self._option_labels)  # type: ignore[attr-defined]
 
     def _power_reset(self) -> None:
         self._power_entries = {}
