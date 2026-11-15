@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.29.1 (2026-11-14)
+# File: config_flow.py, Version: 0.29.2 (2026-11-15)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -2171,13 +2171,13 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         An integration not on this system keeps what was stored for it,
         so a change made before it was removed comes back with it.
         """
-        from .restart_values import CACHED_VALUE_INTEGRATIONS
+        from .restart_values import CACHED_VALUE_INTEGRATIONS, stored_domains
 
         coordinator = self.config_entry.runtime_data
         offered = {row["domain"] for row in coordinator.restart_settings_rows()}
         options = self.config_entry.options
-        added = {d for d in options.get(CONF_CACHED_ADDED) or [] if isinstance(d, str)}
-        removed = {d for d in options.get(CONF_CACHED_REMOVED) or [] if isinstance(d, str)}
+        added = stored_domains(options, CONF_CACHED_ADDED)
+        removed = stored_domains(options, CONF_CACHED_REMOVED)
         ours = set(CACHED_VALUE_INTEGRATIONS)
         for domain in offered:
             on = domain in ticked

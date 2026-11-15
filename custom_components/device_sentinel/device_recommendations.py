@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.1 (2026-11-14)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.2 (2026-11-15)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -62,6 +62,8 @@ KIND_NODE_STATUS_OFF = "node_status_off"
 # A battery device's own voltage sensor, all switched off, listed only
 # for a device with a battery reading.
 KIND_VOLTAGE_OFF = "voltage_off"
+# Models with devices behind on firmware, one row a model (rule REC-12).
+KIND_FIRMWARE = "firmware"
 
 # The switched-off cards and the kind of sensor each one turns on
 # (rule REC-05).
@@ -86,10 +88,12 @@ KIND_SHARED_ADDRESS = "shared_address"
 # a working device or misses a dead one.
 KIND_RESTART_LIVE = "restart_live"
 KIND_RESTART_CACHED = "restart_cached"
+# A device behind on firmware is in Simple too: a firmware update
+# changes how the device works (rule REC-09).
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
     KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF, KIND_SHARED_ADDRESS,
-    KIND_RESTART_LIVE, KIND_RESTART_CACHED,
+    KIND_RESTART_LIVE, KIND_RESTART_CACHED, KIND_FIRMWARE,
 })
 
 
@@ -396,6 +400,23 @@ class DeviceRecommendationsMixin:
             if listed:
                 listed.sort(key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
                 cards.append({"kind": kind, "title": title, "body": "", "devices": listed})
+        # Models with devices behind on firmware, one row a model, opened
+        # to the devices that are behind (rule REC-12). In the brief,
+        # because a device behind is something to put right.
+        firmware = self.firmware_rows()  # type: ignore[attr-defined]
+        if firmware:
+            cards.append({
+                "kind": KIND_FIRMWARE,
+                "title": "Firmware Updates",
+                "body": "",
+                "devices": [
+                    {**row, "area": None} for row in firmware
+                ],
+                "brief_words": lambda n: (
+                    f"{_count(n, 'model has', 'models have')} devices that need a firmware "
+                    "update. See them on the Recommendations tab."
+                ),
+            })
         # Last: a missing or mixed type. The type decides a Matter
         # device's freeze rule (rule STACK-06); for any other it changes
         # no judgment.
@@ -485,7 +506,7 @@ class DeviceRecommendationsMixin:
             card["active"] = active
             card["simple"] = kind in SIMPLE_CARDS
             words = card.pop("brief_words", None)
-            if words is not None:
+            if callable(words):
                 card["brief"] = words(active) if active else None
         return cards
 

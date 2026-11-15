@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/restart_values.py, Version: 0.29.1 (2026-11-14)
+# File: custom_components/device_sentinel/restart_values.py, Version: 0.29.2 (2026-11-15)
 
 """Integrations and models that report cached values after a restart
 (rule WATCH-12).
@@ -32,8 +32,13 @@ offered to the person on the device's page:
   never have been back. Its button sets its model to report cached
   values.
 
-The starting list is in docs/TRUSTED_INTEGRATIONS.md, with the reason
-for each integration checked; a test keeps the two in step.
+Device Sentinel also ships a short list of makes and models known to
+report cached values in integrations that otherwise report live. A
+person's own setting on a device page comes first.
+
+The starting lists are in docs/TRUSTED_INTEGRATIONS.md and
+docs/UNTRUSTED_DEVICES.md, with the reason for each integration and
+model checked; a test keeps the files and the code in step.
 """
 
 from __future__ import annotations
@@ -56,7 +61,7 @@ from .const import (
     FREEZE_CATEGORY_UNKNOWN,
     LOGGER,
 )
-from .power_source import is_model_key
+from .power_source import is_model_key, model_key
 from .stacks import last_heard as stack_last_heard
 
 # The integrations that report cached values after a restart, as a
@@ -75,7 +80,64 @@ CACHED_VALUE_INTEGRATIONS = frozenset({
     # answers, whatever the device is doing.
     "unifi", "tado", "august", "yale", "ring", "blink", "withings",
     "tronity", "trmnl", "alarmdotcom",
+    # One-way radio receivers whose entities restore and
+    # never go unavailable, and Bluetooth scales that are always shown
+    # available because they sleep between weighings.
+    "rfxtrx", "enocean", "leaone", "okok_scale", "eufylife_ble", "acaia",
 })
+# The makes and models that report cached values in integrations that
+# otherwise report live (rule WATCH-12): manufacturer, model and model
+# ID exactly as each integration writes them, so they match the model
+# key a device page sets. Each is here because the integration's code
+# or its library marks it as a device that sleeps and is shown with its
+# restored values; docs/UNTRUSTED_DEVICES.md gives the reason for each,
+# how sure we are, and every model checked and left off. A person's own
+# setting on the device page comes first.
+CACHED_VALUE_MODEL_NAMES: tuple[tuple[str, str, str], ...] = (
+    # Shelly's first generation that sleeps; the second generation has a
+    # Last Seen sensor and is judged by it.
+    ("Shelly", "Shelly H&T", "SHHT-1"),
+    ("Shelly", "Shelly Door/Window", "SHDW-1"),
+    ("Shelly", "Shelly Door/Window 2", "SHDW-2"),
+    ("Shelly", "Shelly Flood", "SHWT-1"),
+    ("Shelly", "Shelly Smoke", "SHSM-01"),
+    ("Shelly", "Shelly Smoke 2", "SHSM-02"),
+    # Govee Bluetooth models its library marks as sleepy.
+    ("Govee", "H5121", ""),
+    ("Govee", "H5122", ""),
+    ("Govee", "H5123", ""),
+    ("Govee", "H5124", ""),
+    ("Govee", "H5125", ""),
+    ("Govee", "H5126", ""),
+    ("Govee", "H5127", ""),
+    ("Govee", "H5130", ""),
+    # Xiaomi Bluetooth models its library marks as sleepy.
+    ("Xiaomi", "CGH1", ""),
+    ("Linptech", "ES3", ""),
+    ("Xiaomi", "MC-COMM", ""),
+    ("Linptech", "ES5BB", ""),
+    ("Linptech", "PS1BB", ""),
+    ("Xiaomi", "JTYJGD03MI", ""),
+    ("Xiaomi", "MCCGQ02HL", ""),
+    ("Xiaomi", "MS1BB(MI)", ""),
+    ("Xiaomi", "RTCGQ02LM", ""),
+    ("Xiaomi", "MMC-W505", ""),
+    ("Xiaomi", "RS1BB(MI)", ""),
+    ("Xiaomi", "SJWS02LM", ""),
+    ("Xiaomi", "XMOSB01XS", ""),
+    ("Xiaomi", "MJTZC01YM", ""),
+    ("Xiaomi", "MJTZC02YM", ""),
+    ("Xiaomi", "MJTZC03YM", ""),
+    ("Xiaomi", "HS1BB(MI)", ""),
+    ("Xiaomi", "XMPIRO2SXS", ""),
+    ("Xiaomi", "XMPIRO2GSXS", ""),
+    ("Xiaomi", "M2456B1", ""),
+    ("Xiaomi", "M2457B1", ""),
+    ("Xiaomi", "zhiee.flood.sj01", ""),
+)
+CACHED_VALUE_MODELS = frozenset(
+    key for key in (model_key(*names) for names in CACHED_VALUE_MODEL_NAMES) if key
+)
 # Judged by last seen whatever the lists say. ZHA is found by its
 # stack's own clock; Z-Wave JS has a Last Seen sensor on every node,
 # switched off as it ships, and Device Sentinel asks for it on the Last
@@ -151,6 +213,17 @@ def _case_ok(row: Any) -> bool:
     )
 
 
+def stored_domains(options: Any, key: str) -> set[str]:
+    """The integrations a person added to or removed from the list, as
+    stored in the settings. Anything but a list of names, as a settings
+    entry edited by hand can hold, reads as none, so the list is still
+    read."""
+    value = options.get(key) if hasattr(options, "get") else None
+    if not isinstance(value, (list, tuple)):
+        return set()
+    return {d for d in value if isinstance(d, str)}
+
+
 def restarts_in(moments: list[float]) -> int:
     """How many restarts a set of watch moments spans."""
     count = 0
@@ -173,8 +246,8 @@ class RestartValuesMixin:
         changes are saved apart from ours, so an integration added to
         ours in a later release still reaches them."""
         options = self.entry.options  # type: ignore[attr-defined]
-        added = {d for d in options.get(CONF_CACHED_ADDED) or [] if isinstance(d, str)}
-        removed = {d for d in options.get(CONF_CACHED_REMOVED) or [] if isinstance(d, str)}
+        added = stored_domains(options, CONF_CACHED_ADDED)
+        removed = stored_domains(options, CONF_CACHED_REMOVED)
         return (set(CACHED_VALUE_INTEGRATIONS) | added) - removed - LAST_SEEN_BY_RULE
 
     def _restart_scope(self, device_id: str) -> bool:
@@ -199,12 +272,15 @@ class RestartValuesMixin:
 
     def _reports_cached(self, device_id: str) -> bool:
         """Whether this device's values after a restart are taken as
-        cached: its model's own setting first, then its integration's."""
+        cached: the setting a person gave its model first, then Device
+        Sentinel's list of models, then its integration's."""
         if not self._restart_scope(device_id):
             return False
-        _key, mode = self._restart_model(device_id)
+        key, mode = self._restart_model(device_id)
         if mode is not None:
             return bool(mode == RESTART_MODE_CACHED)
+        if key in CACHED_VALUE_MODELS:
+            return True
         return self._watched.get(device_id) in self.cached_integrations()  # type: ignore[attr-defined]
 
     # --------------------------------------------------------- the answers
@@ -486,12 +562,19 @@ class RestartValuesMixin:
         model = self._model_words(device_id) if key else ""
         title = self._integration_title(domain)  # type: ignore[attr-defined]
         listed = domain in self.cached_integrations()
+        model_listed = key in CACHED_VALUE_MODELS
         if mode == RESTART_MODE_LIVE:
             words = f"All {model} devices will be reported back as their values return after a restart."
         elif mode == RESTART_MODE_CACHED:
             words = (
                 f"All {model} devices will be reported back only when one of their "
                 "values changes after a restart."
+            )
+        elif model_listed:
+            words = (
+                f"Device Sentinel lists {model} devices as reporting cached values after "
+                "a restart, so this device is reported back only when one of its values "
+                "changes."
             )
         elif listed:
             words = (
@@ -566,6 +649,9 @@ class RestartValuesMixin:
             "name": "After a restart",
             "integration": title,
             "listed": listed,
+            # The first choice goes back to Device Sentinel's own setting,
+            # which for a model on its list is not its integration's.
+            "same_label": "Device Sentinel's Setting" if model_listed else f"Same as {title}",
             # A device that names no make and model follows its integration.
             "can_set": key is not None,
             "mode": mode,
@@ -597,7 +683,11 @@ class RestartValuesMixin:
         said = {
             RESTART_MODE_LIVE: f"{model} set to report live after a restart",
             RESTART_MODE_CACHED: f"{model} set to report cached values after a restart",
-            None: f"{model} set back to its integration's setting after a restart",
+            None: (
+                f"{model} set back to Device Sentinel's setting after a restart"
+                if key in CACHED_VALUE_MODELS
+                else f"{model} set back to its integration's setting after a restart"
+            ),
         }[mode]
         self._page_done(device_id, said)  # type: ignore[attr-defined]
 
@@ -775,7 +865,10 @@ class RestartValuesMixin:
         registry_models: dict[str, dict[str, list[str]]] = {}
         domains: set[str] = set()
         for device_id, domain in self._watched.items():  # type: ignore[attr-defined]
-            if domain in LAST_SEEN_BY_RULE:
+            # Only an integration with a device the list can apply to is
+            # offered: ticking one whose devices all have a Last Seen
+            # would change nothing.
+            if not self._restart_scope(device_id):
                 continue
             domains.add(domain)
             key, mode = self._restart_model(device_id)
@@ -785,8 +878,7 @@ class RestartValuesMixin:
                 if model not in names:
                     names.append(model)
         options = self.entry.options  # type: ignore[attr-defined]
-        added = {d for d in options.get(CONF_CACHED_ADDED) or [] if isinstance(d, str)}
-        domains |= added - LAST_SEEN_BY_RULE
+        domains |= stored_domains(options, CONF_CACHED_ADDED) - LAST_SEEN_BY_RULE
         rows = []
         for domain in domains:
             title = self._integration_title(domain)  # type: ignore[attr-defined]
@@ -819,9 +911,13 @@ class RestartValuesMixin:
         cases = [row for row in (data.get(CASES) if isinstance(data, dict) else None) or [] if _case_ok(row)]
         return {
             "integrations": sorted(self.cached_integrations()),
-            "added": sorted(d for d in options.get(CONF_CACHED_ADDED) or [] if isinstance(d, str)),
-            "removed": sorted(d for d in options.get(CONF_CACHED_REMOVED) or [] if isinstance(d, str)),
+            "added": sorted(stored_domains(options, CONF_CACHED_ADDED)),
+            "removed": sorted(stored_domains(options, CONF_CACHED_REMOVED)),
             "models": {key: dict(entry) for key, entry in self._restart_models.items()},
+            "listed_models_present": sorted({
+                key for d in self._watched  # type: ignore[attr-defined]
+                if (key := self._power_key(d)) in CACHED_VALUE_MODELS  # type: ignore[attr-defined]
+            }),
             "devices_in_scope": len([d for d in self._watched if self._restart_scope(d)]),  # type: ignore[attr-defined]
             "devices_reporting_cached": len([d for d in self._watched if self._reports_cached(d)]),  # type: ignore[attr-defined]
             "cases": [

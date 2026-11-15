@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.0 (2026-11-14)
+# File: dashboard.py, Version: 0.29.2 (2026-11-15)
 
 """What the dashboard reads from the coordinator.
 
@@ -115,6 +115,7 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_LOW,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
@@ -2373,6 +2374,9 @@ class TrendsViewMixin:
                 # hungriest model first.
                 "rate": -(battery_month_drop(series) or 0.0) / 3,
                 "type": type_of(device_id),
+                # Under four weeks heard, its rate reads "learning"
+                # (rule BAT-19).
+                "learning": battery_heard_days(series) < BATTERY_FIT_MIN_DAYS,
             }
             groups.setdefault((*key, device_id if alone else ""), []).append(cell)
             # "alone" tells the page to keep this cell a row of its own
@@ -2393,6 +2397,7 @@ class TrendsViewMixin:
                 "lowest": lowest["level"],
                 "lowest_name": lowest["name"],
                 "lowest_id": lowest["device_id"],
+                "learning": all(cell["learning"] for cell in cells),
                 # Each type its cells have and how many, most first;
                 # "" for cells with no type.
                 "types": sorted(kinds.items(), key=lambda item: (-item[1], item[0])),
@@ -2464,12 +2469,42 @@ class TrendsViewMixin:
             "threshold": self.low_threshold,
             # The level a cell is judged falling at or under (rule BAT-10).
             "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
+            "learning": self._battery_learning(),
         }
+
+    def _battery_learning(self) -> dict[str, Any] | None:
+        """While no battery has four weeks heard, the box at the top of
+        Battery Trends: the day the first forecast can come, how far the
+        house has got, and how many batteries are marked low now
+        (rule BAT-19). None once one battery has its four
+        weeks, or when no battery reports a level."""
+        most = -1
+        low_now = 0
+        for device_id, record in self.watched_records():
+            if device_id in self._muted_devices or self._battery_muted(device_id):
+                continue
+            level = record.get(DEV_BATTERY_VALUE)
+            if not isinstance(level, (int, float)) or isinstance(level, bool) or float(level) > BATTERY_READABLE_MAX:
+                continue
+            heard = battery_heard_days(record.get(DEV_BATTERY_DAILY) or [])
+            if heard >= BATTERY_FIT_MIN_DAYS:
+                return None
+            most = max(most, heard)
+            # Marked low, as the Problem List and the headline count it.
+            if record.get(DEV_BATTERY_LOW):
+                low_now += 1
+        if most < 0:
+            return None
+        start = dt_util.now().date() + timedelta(days=BATTERY_FIT_MIN_DAYS - most)
+        return {"day": most, "need": BATTERY_FIT_MIN_DAYS, "start": start.isoformat(), "low_now": low_now}
 
     def signal_trends(self) -> dict[str, Any]:
         """The signal fleet: where each link sits against its own normal,
         and the days several devices had a bad one together."""
         devices = []
+        # A device with a signal and fewer days than a trend needs: listed
+        # under Still Learning with the day its trend starts (rule SIG-18).
+        learning = []
         scales: dict[str, int] = {}
         bad_by_day: dict[str, int] = {}
         today = dt_util.now().date()
@@ -2481,6 +2516,16 @@ class TrendsViewMixin:
                 if isinstance(value, (int, float))
             ]
             if len(daily) < SIGNAL_TREND_MIN_DAYS:
+                now_value = record.get(DEV_SIGNAL_VALUE)
+                if daily or (isinstance(now_value, (int, float)) and not isinstance(now_value, bool)):
+                    learning.append({
+                        "device_id": device_id,
+                        "name": self._device_name(device_id),
+                        "scale": record.get(DEV_SIGNAL_SCALE) or "unknown",
+                        "now": now_value,
+                        "days": len(daily),
+                        "from": (today + timedelta(days=SIGNAL_TREND_MIN_DAYS - len(daily))).isoformat(),
+                    })
                 continue
             older = daily[:-7] or daily[-7:]
             now = _middle(daily[-7:])
@@ -2542,9 +2587,12 @@ class TrendsViewMixin:
                 "days": len(daily),
             })
         devices.sort(key=lambda row: (row["spreads"] if row["spreads"] is not None else 0))
+        learning.sort(key=lambda row: (-row["days"], str(row["name"]).casefold(), row["device_id"]))
         unsteady = sum(1 for row in devices if row["bad_days"])
         return {
             "devices": devices,
+            "learning": learning,
+            "need": SIGNAL_TREND_MIN_DAYS,
             "scales": scales,
             "bad_days": sorted(
                 ({"day": day, "devices": count} for day, count in bad_by_day.items() if count > 1),
