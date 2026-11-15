@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.28.10 (2026-11-10)
+# File: tests/test_recommendations.py, Version: 0.29.0 (2026-11-14)
 
 """The brief's Recommendations section and the device cards (rules
 REC-02, REC-04, REC-10).
@@ -158,22 +158,25 @@ async def test_a_router_integration_still_excluded_is_not_said(hass: HomeAssista
     assert not any("the tplink_router integration" in line for line in lines)
 
 
-async def test_the_worst_comes_first(hass: HomeAssistant):
+async def test_a_poller_is_a_note_not_a_recommendation(hass: HomeAssistant):
+    """A poller's line recommends nothing, so it is a note on its
+    integration's row and page instead (rule UP-18)."""
     coord = await setup_coordinator(
         hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.old_phone"]}
     )
     coord.data[DATA_STORM_DAYS] = _noisy(["poller"])
     lines = coord._recommendation_items()
-    missing = next(i for i, line in enumerate(lines) if "notify.old_phone" in line)
-    noisy = next(i for i, line in enumerate(lines) if line.startswith("poller updates all its devices at once"))
-    assert missing < noisy
+    assert any("notify.old_phone" in line for line in lines)
+    assert not any("updates all its devices at once" in line for line in lines)
+    assert coord.poller_notes()["poller"].startswith("poller updates all its devices at once")
 
 
 async def test_every_line_shows(hass: HomeAssistant):
     """No cap. Nothing is dismissed, so a cap would hide every line below
     it for as long as those above it stood (rule REC-02)."""
-    coord = await setup_coordinator(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.gone"]})
-    coord.data[DATA_STORM_DAYS] = _noisy([f"poller{n}" for n in range(6)])
+    coord = await setup_coordinator(
+        hass, {CONF_HIGH_PRIORITY_TARGETS: [f"notify.gone{n}" for n in range(7)]}
+    )
     lines = coord._recommendations_section()
     body = [
         line for line in lines
@@ -181,7 +184,7 @@ async def test_every_line_shows(hass: HomeAssistant):
     ]
     assert len(body) == 7
     assert not any(line.startswith("And ") for line in body)
-    assert body[-1].startswith("poller5 updates all its devices at once")
+    assert "notify.gone6" in body[-1]
 
 
 async def test_the_written_brief_carries_the_section(hass: HomeAssistant):
@@ -265,9 +268,10 @@ async def test_the_library_is_data(hass: HomeAssistant):
 
 
 # ------------------------------------------- Wi-Fi coverage absent
-# A machine with a wireless adapter and no network named for it, and
-# no router ties to see an outage another way, detects no Wi-Fi outage
-# at all, and nothing says so.
+# A machine with a wireless adapter and no network named for it is asked
+# to name one, whether or not router ties can infer an outage: the scan
+# hears an outage directly, and ties can mistake switched-off devices
+# for one (rule REC-02).
 
 
 async def _with_adapter(hass, monkeypatch, interfaces, options=None):
@@ -285,7 +289,7 @@ async def _with_adapter(hass, monkeypatch, interfaces, options=None):
 def _wifi_lines(coord):
     return [
         line for line in coord._recommendation_items()
-        if line.startswith("Wi-Fi network not set")
+        if line.startswith("Your server is equipped with a Wi-Fi adapter")
     ]
 
 
@@ -306,10 +310,29 @@ async def test_a_chosen_network_is_coverage(hass: HomeAssistant, monkeypatch):
     assert _wifi_lines(coord) == []
 
 
-async def test_router_ties_are_coverage(hass: HomeAssistant, monkeypatch):
+async def test_router_ties_still_ask_for_the_network(hass: HomeAssistant, monkeypatch):
     coord = await _with_adapter(hass, monkeypatch, [{"interface": "wlan0"}])
     coord._wifi_ties = {"device_tracker.phone": "device"}
-    assert _wifi_lines(coord) == []
+    lines = _wifi_lines(coord)
+    assert len(lines) == 1
+    assert "instead of deducing outages from devices dropping off your router" in lines[0]
+
+
+async def test_the_network_question_shows_in_simple(hass: HomeAssistant, monkeypatch):
+    coord = await _with_adapter(hass, monkeypatch, [{"interface": "wlan0"}])
+    rows = [row for row in coord._recommendation_entries() if row["key"] == "wifi_network"]
+    assert len(rows) == 1 and rows[0]["simple"] is True
+
+
+async def test_an_adapter_turned_off_says_so(hass: HomeAssistant, monkeypatch):
+    coord = await _with_adapter(hass, monkeypatch, [{"interface": "wlan0", "enabled": False}])
+    lines = _wifi_lines(coord)
+    assert len(lines) == 1 and "turn it on first" in lines[0]
+
+
+async def test_an_adapter_turned_on_says_nothing_of_it(hass: HomeAssistant, monkeypatch):
+    coord = await _with_adapter(hass, monkeypatch, [{"interface": "wlan0", "enabled": True}])
+    assert "turn it on" not in _wifi_lines(coord)[0]
 
 
 async def test_no_adapter_says_nothing(hass: HomeAssistant, monkeypatch):
