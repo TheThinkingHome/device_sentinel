@@ -4,6 +4,8 @@ After Home Assistant restarts, some integrations show a device's cached values b
 
 An integration marked "Reports cached values" is ticked by default under Integrations That Report Cached Values in settings. You can tick or untick any integration there, and set a single make and model on its device page.
 
+In an integration marked "Some models only", the makes and models known to report cached values are listed in [Untrusted Devices](UNTRUSTED_DEVICES.md). Device Sentinel treats each of those as reporting cached values unless you set it otherwise on its device page.
+
 A device with a Last Seen sensor is not affected by this list. Device Sentinel judges it by when it was last seen. That covers Zigbee2MQTT, ZHA and Z-Wave JS devices.
 
 How to read the table:
@@ -15,6 +17,7 @@ How to read the table:
 
 | Integration | Verdict | Why | Evidence | Checked |
 |---|---|---|---|---|
+| Acaia (`acaia`) | Reports cached values | Coffee scales. A sensor with a restored value stays available after a restart, whether or not the scale is on. | Code | 15 Nov 2026 |
 | Alarm.com (`alarmdotcom`) | Reports cached values | A sensor stays available while the Alarm.com cloud answers, with its last state. | Seen running, Nov 2026 | 14 Nov 2026 |
 | Alexa Devices (`alexa_devices`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | Android Debug Bridge (`androidtv`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
@@ -35,8 +38,10 @@ How to read the table:
 | ecobee (`ecobee`) | Not settled | Thermostats show as unavailable when offline. The code doesn't show what the cloud sends for a remote sensor that is gone. Treated as reporting live. | Code | 14 Nov 2026 |
 | Ecovacs (`ecovacs`) | Reports live | A robot shows no values until it reports. | Code | 14 Nov 2026 |
 | Ecowitt (`ecowitt`) | Reports live | A reading shows as unavailable until the gateway sends it, and again 5 minutes after it stops. | Code | 14 Nov 2026 |
+| EnOcean (`enocean`) | Reports cached values | Sensors restore their last values after a restart, and no entity ever goes unavailable. | Code | 15 Nov 2026 |
 | Enphase Envoy (`enphase_envoy`) | Some models only | An Envoy that can't be reached shows as unavailable. Inverters and batteries show the Envoy's last values for them; each has a Last Reported sensor. | Code | 14 Nov 2026 |
 | ESPHome (`esphome`) | Some models only | Most devices are unavailable until they connect. Devices built with deep sleep show their stored values as current. | Code | 14 Nov 2026 |
+| EufyLife (`eufylife_ble`) | Reports cached values | Bluetooth scales. The weight sensor is always shown available, with its restored value, because the scale sleeps between weighings. | Code | 15 Nov 2026 |
 | EZVIZ (`ezviz`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | Freebox (`freebox`) | Some models only | The router itself reports live. Freebox Home sensors, covers and cameras show the router's last values for them. | Code | 14 Nov 2026 |
 | Frigate (`frigate`) | Reports live | A camera that stops sending video shows as unavailable. | Code | 14 Nov 2026 |
@@ -62,6 +67,7 @@ How to read the table:
 | iRobot Roomba (`roomba`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | KNX (`knx`) | Reports cached values | Sensors, switches and covers restore their last state, and a device is unavailable only when the whole KNX connection is down. | Code | 14 Nov 2026 |
 | Kodi (`kodi`) | Reports live | A TV that can't be reached shows as off, never its last values. | Code | 14 Nov 2026 |
+| LeaOne (`leaone`) | Reports cached values | Bluetooth scales. Every sensor is always shown available, because the scale sleeps between weighings. | Code | 15 Nov 2026 |
 | LG ThinQ (`lg_thinq`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | LG webOS TV (`webostv`) | Reports live | A TV that can't be reached shows as off, never its last values. | Code | 14 Nov 2026 |
 | LIFX (`lifx`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
@@ -83,6 +89,7 @@ How to read the table:
 | Nmap Tracker (`nmap_tracker`) | Reports live | A device not found by the first scan shows as away. | Code | 14 Nov 2026 |
 | OctoPrint (`octoprint`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Octopus Energy (`octopus_energy`) | Reports cached values | Its sensors restore their last values at a restart and keep them when the cloud can't be read. | Code | 14 Nov 2026 |
+| OKOK Scale (`okok_scale`) | Reports cached values | Bluetooth scales. Every sensor is always shown available, because the scale sleeps between weighings. | Code | 15 Nov 2026 |
 | ONVIF (`onvif`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Oral-B (`oralb`) | Reports cached values | A toothbrush is always shown as available, with its restored values, because it sleeps. | Code | 14 Nov 2026 |
 | Overkiz (`overkiz`) | Reports live | Its hub says when a device can't be reached, and the device then shows as unavailable. | Code | 14 Nov 2026 |
@@ -91,13 +98,14 @@ How to read the table:
 | Ping (`ping`) | Reports live | Each check pings the device, so one that can't be reached shows as disconnected. | Code | 14 Nov 2026 |
 | Rachio (`rachio`) | Some models only | Hose timers show as unavailable when offline. A controller's zones and schedules stay available with the cloud's last state. | Code | 14 Nov 2026 |
 | Reolink (`reolink`) | Reports live | A camera that can't be reached shows as unavailable, on its own or behind a recorder or hub. | Code | 14 Nov 2026 |
+| RFXCOM RFXtrx (`rfxtrx`) | Reports cached values | One-way radio devices. Every entity restores its last state after a restart and never goes unavailable. | Code | 15 Nov 2026 |
 | Ring (`ring`) | Reports cached values | A doorbell or camera that is offline stays available with the cloud's last battery and Wi-Fi values. | Code and library | 14 Nov 2026 |
 | Roborock (`roborock`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Roku (`roku`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Samsung Smart TV (`samsungtv`) | Reports live | A TV that can't be reached shows as off, never its last values. | Code | 14 Nov 2026 |
 | Scrypted (`scrypted`) | Some models only | Devices that report whether they are online show as unavailable when offline. The others show the last values Scrypted has. | Code | 14 Nov 2026 |
 | Sensibo (`sensibo`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
-| Shelly (`shelly`) | Some models only | Mains devices that can't be reached show as unavailable. First-generation battery devices that sleep (H&T, Flood, Door/Window, TRV) show their restored values. Newer sleeping devices have a Last Seen sensor. | Code | 14 Nov 2026 |
+| Shelly (`shelly`) | Some models only | Mains devices that can't be reached show as unavailable. First-generation battery devices that sleep (H&T, Flood, Door/Window, Smoke) show their restored values. Motion, Motion 2 and the Valve stay connected and report live, and newer sleeping devices have a Last Seen sensor. | Code | 15 Nov 2026 |
 | SmartThings (`smartthings`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | SMLIGHT SLZB (`smlight`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | SolarEdge (`solaredge`) | Not settled | The code doesn't show what the cloud sends once an inverter stops reporting. Treated as reporting live. | Code | 14 Nov 2026 |
@@ -124,6 +132,7 @@ How to read the table:
 | WiZ (`wiz`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | WLED (`wled`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Xbox (`xbox`) | Reports live | A console that is off shows as off, from the cloud's status for it. | Code | 14 Nov 2026 |
+| Xiaomi BLE (`xiaomi_ble`) | Some models only | Most devices show as unavailable until heard. Models the library marks as sleepy, such as door, motion and leak sensors, show their restored values. | Code and library | 15 Nov 2026 |
 | Yale (`yale`) | Reports cached values | The lock follows its bridge, but the battery and operator sensors show their last values and stay available. | Code and library | 14 Nov 2026 |
 | Yeelight (`yeelight`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Z-Wave JS (`zwave_js`) | Judged by last seen | Every Z-Wave device has a Last Seen sensor. It ships switched off, and Device Sentinel asks for it on the Last Seen Sensor Switched Off card. | Code | 14 Nov 2026 |
