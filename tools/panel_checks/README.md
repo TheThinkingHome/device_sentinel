@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.28.11 (2026-11-10) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.29.1 (2026-11-14) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -28,6 +28,7 @@ written rather than what it proves).
 | Every tab | `check_simple_dashboard.js` | 57 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its device page with Not Set to set an unanswered Type or Power, a set value in grey, no Labels row and a label's mute pointing to Advanced, no Rename, no Trimmed Maximum button, no turn-on buttons and no Firmware row, its battery chart with the time left, and no Mute by label anywhere; Device ID kept in Simple while the Model ID and address rows are Advanced's, and no note at the foot of the page |
 | Recommendations | `check_recommendations.js` | 54 | the opening line and its count, which agrees with the tab and the button and reads Nothing to recommend right now at zero, the Slow Reporting Devices card, the switched-off cards' Turn on chips, Battery Voltage Switched Off among them, each saying it was pressed on the tab, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick, and the area, name and model type set in each card's rows |
 | Recommendations | `check_recommendation_models.js` | 11 | the cards whose answer covers a model, one row per model: the maker and model with its device count, one chooser and one tick for them all, its devices listed when opened, a device with no model on its own row, and the title counting models and devices |
+| A device's page, Recommendations | `check_after_a_restart.js` | 34 | how a device's model is read after a restart: the After a restart row with its three choices, the one in use highlighted and a device with no model unable to set it, the notes Back after a restart? and Frozen since a restart? with their counts and buttons, It's Back alone and with the model set, the row and note in Simple, and the two Recommendations cards with one row a model, the button that sets it and where it was pressed |
 | Recommendations | `check_exclusion_card.js` | 18 | the card that recommends excluding a newly seen integration, and Send to Battery Notes after a type is saved from the Power Not Set card |
 | Devices | `check_classification_sources.js` | 19 | the gear, the date beside "As of", the Devices tab's Watched, Excluded and Set aside chips with each one's STANDING, Classification's old address opening Set aside, and Simple without Set aside |
 | Devices | `check_integration_names.js` | 4 | the INTEGRATION column shows and sorts by the integration's name, its link keeping the id |
@@ -65,7 +66,7 @@ written rather than what it proves).
 | Signal | `check_signal_trends.js` | 8 | Signal Trends' rows add up: THIS WEEK, BEFORE THIS WEEK and CHANGE, the caption's fixed wording, and no "+0" or "-0.0" |
 | Signal | `check_signal_chart.js` | 10 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart, above the plot area and clear of every line |
 
-1243 checks in 53 files, as of 10 November 2026 (0.28.11).
+1277 checks in 54 files, as of 14 November 2026 (0.29.1).
 
 ## Running Them
 
