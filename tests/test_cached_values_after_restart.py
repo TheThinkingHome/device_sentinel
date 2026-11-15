@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_cached_values_after_restart.py, Version: 0.29.1 (2026-11-14)
+# File: tests/test_cached_values_after_restart.py, Version: 0.29.2 (2026-11-15)
 
 """Integrations and models that report cached values after a restart
 (rule WATCH-12).
@@ -205,13 +205,14 @@ async def test_a_working_device_off_the_list_moves_its_clock_at_a_start(
 
 @pytest.mark.shipped_cached_list
 async def test_the_shipped_list_and_what_is_never_on_it(hass: HomeAssistant, freezer):
-    """The seventeen on the list as it ships. ZHA and Z-Wave JS are
+    """The twenty-three on the list as it ships. ZHA and Z-Wave JS are
     judged by last seen whatever a person ticks, and MQTT is not ours to
     put on."""
     assert CACHED_VALUE_INTEGRATIONS == {
         "oralb", "mobile_app", "knx", "octopus_energy", "modbus", "lutron_caseta",
         "lightwave_smart", "unifi", "tado", "august", "yale", "ring", "blink",
         "withings", "tronity", "trmnl", "alarmdotcom",
+        "rfxtrx", "enocean", "leaone", "okok_scale", "eufylife_ble", "acaia",
     }
     freezer.move_to(PIN)
     wave, wave_eids = device_on(hass, "zwave_js", "node", kinds=("light",))
