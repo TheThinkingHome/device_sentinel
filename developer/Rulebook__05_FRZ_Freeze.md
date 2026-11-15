@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -109,8 +109,8 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 
 **Where a device has a last-contact entity (a Last Seen), its value is the device's clock for each report. The clock never moves backwards: the later of the stored and reported times wins.**
 - **Not the device speaking:** a value a stack hands back from a cache, a bridge restoring the values of the devices behind it, or Home Assistant's restart is not the device speaking. It neither moves the clock nor ends a frozen verdict, for any device and any stack, muted or not.
-- **Two exceptions:** in each, the return is a real return (see [UNAV](Rulebook__06_UNAV_Unavailable.md)). A device Device Sentinel had judged unavailable, muted or not, recovers when its stack says it is available. A device muted for unavailable whose own outage began at least three minutes before the stack's hold began, or before Device Sentinel last listened, recovers the same way.
-- **Fetched readings:** a reading the integration fetches from the device itself when it connects is the device answering, for the integrations whose source shows they fetch (HomeKit Device and ESPHome).
+- **Two exceptions:** in each, the return is a real return (see [UNAV](Rulebook__06_UNAV_Unavailable.md)). A device Device Sentinel had judged unavailable, muted or not, recovers when its stack says it is available, unless it is on the list of integrations and models that report cached values and came back across a restart or a reload with the values it had ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)). A device muted for unavailable whose own outage began at least three minutes before the stack's hold began, or before Device Sentinel last listened, recovers the same way.
+- **Taken at its word (since 0.29.1):** a device with no last seen that is not on the list of integrations and models that report cached values is taken at its word: its value after a restart or a reconnect is the device answering ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)).
 
 *Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_recovery_one_way.py`](../tests/test_recovery_one_way.py), [`test_restart_handback.py`](../tests/test_restart_handback.py), [`test_own_platform.py`](../tests/test_own_platform.py).
 

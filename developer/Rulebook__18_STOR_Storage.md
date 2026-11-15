@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -198,6 +198,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **When it is written:** when one of these is given or changed, besides the repair and the move below.
 - **Last-good:** the previous file is kept as its last-good copy before each write, except after a start that restored it, repaired it or read it damaged, so last-good stays the latest clean file. It is restored from at start when the file cannot be read.
 - **Repairs:** before any repair of it, a copy goes to trim_backups dated the day it is made. An answer left out, a table that cannot be read, a restore and an empty start each record a storage event the brief shows, and the repair is written back once.
+- **After a restart (since 0.29.1):** the models a person set to report live or to report cached values after a restart ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)) are kept here, by model, written only once one is set. A release before 0.29.1 that saves the file leaves them out. The cases counted for those settings (still listed with values back, back then frozen unchanged, each It's Back) are kept in the main file under their own key, trimmed by How Much History to Keep, and ignored by an earlier release.
 - **Excluded or set aside:** excluding or setting a device aside keeps its power and type answers.
 - **Removed from Home Assistant:** the device keeps its power and type answers with its held record for 30 days, and they return if the device does. The fold after 30 days deletes them (see [WATCH](Rulebook__02_WATCH_What_Is_Watched.md)). An excluded device removed from Home Assistant loses them at once.
 - **Ticks:** a tick is forgotten at the first midnight after its device leaves its card or its line is gone, so excluding, setting aside or removing a device drops its ticks.

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -70,8 +70,8 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 **Home Assistant's restart, and a broker, bridge, coordinator, integration or network going down and coming back, is no act on a device. It earns no credit for the device's recovery, on any stack.** Through the outage, the startup grace and the rejoin window, each device keeps its state.
 - **A working device:** stays working until its own window says otherwise.
 - **A frozen device:** stays frozen. A value a stack hands back from its cache on the return is not the device speaking.
-- **What counts as the device:** a reading the integration fetches from the device itself is the device answering. That covers HomeKit Device and ESPHome, and the pollers of a printer, a NAS or a UPS that restore nothing ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)). Z-Wave's dead to alive and ZHA's own Last Seen are read as the device too (see [STACK](Rulebook__08_STACK_Stacks.md)).
-- **An unavailable device:** stays unavailable while its stack says so, and recovers when its stack says it is available.
+- **What counts as the device (since 0.29.1):** a value from a device with no last seen that is not on the list of integrations and models that report cached values is the device answering ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)). Z-Wave's dead to alive and ZHA's own Last Seen are read as the device too (see [STACK](Rulebook__08_STACK_Stacks.md)).
+- **An unavailable device:** stays unavailable while its stack says so, and recovers when its stack says it is available. One on the list that comes back across a restart or a reload with the values it had waits for a changed value, or for a person's It's Back ([WATCH-12](Rulebook__02_WATCH_What_Is_Watched.md#watch-12-a-value-handed-back-at-a-start)).
 - **Muted for unavailable:** a device whose own outage began at least three minutes before the hold, or before Device Sentinel last listened, is a real return.
 - **Reports:** restarts are still matched to events to keep their noise out of reports.
 - **Learning:** a gap across Device Sentinel's own clean stop is learned minus the time it was stopped. An unclean stop learns nothing of the silence before it (see [FRZ](Rulebook__05_FRZ_Freeze.md)).
