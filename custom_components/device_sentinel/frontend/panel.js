@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.1 (2026-11-14)
+// File: panel.js, Version: 0.29.2 (2026-11-15)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -79,6 +79,12 @@ const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel
   "device_sentinel/device_area", "device_sentinel/device_new_area", "device_sentinel/device_rename"]);
 // The hover on a ticked acknowledgment, wherever it sits (rule REC-07).
 const ACK_HOVER = "Acknowledged. Press to take it back.";
+// What a Zigbee2MQTT row on the firmware card asks for (rule REC-12):
+// Zigbee2MQTT finds a model's update on one device at a time, so a check
+// of every device finds the rest.
+const FIRMWARE_Z2M_WORDS = ", select OTA, tick the box that selects all devices and press Check selected. "
+  + "Zigbee2MQTT finds updates one device at a time, so checking them all finds the update on "
+  + "every device of this model. Each one then offers its update.";
 // Where a "Not Set" was set from, by tab, so the brief says so
 // (rule BRIEF-07).
 const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab",
@@ -663,6 +669,14 @@ const STYLE = `
   .devstatus { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
     flex-direction: column; gap: 8px; }
   .statusline { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  /* A trend tab still learning (rules BAT-19, SIG-18). */
+  .learnbox { border: 1px solid var(--primary-color, #03a9f4); border-radius: 12px; padding: 16px 20px; margin: 0 0 18px;
+    background: rgba(3, 169, 244, 0.07); }
+  .learntitle { font-size: 18px; margin-bottom: 8px; }
+  .learnbar { margin: 14px 0 4px; max-width: 640px; }
+  .learnbar .statusline { color: var(--secondary-text-color); margin-bottom: 6px; }
+  .learntrack { height: 10px; border-radius: 5px; background: var(--divider-color, #333); overflow: hidden; }
+  .learntrack > div { height: 10px; border-radius: 5px; background: var(--primary-color, #03a9f4); }
   .bar { height: 10px; border-radius: 5px; background: var(--divider-color); overflow: hidden; }
   .bar > div { height: 100%; }
   .readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
@@ -1827,6 +1841,10 @@ class DeviceSentinelPanel extends HTMLElement {
           } }, row.button)),
           el("span", { class: "small muted" }, row.under));
       }
+      // A model with devices behind on firmware (rule REC-12): what is
+      // behind, the devices to open in Home Assistant, where the update
+      // is installed, and for Zigbee2MQTT how to have every device checked.
+      if (card.kind === "firmware") action = this._recFirmware(row);
       if (card.kind === "slow") {
         action = el("button", { class: "chip", type: "button", onclick: async () => {
           try { await this._call({ type: "device_sentinel/device_mute", device_id: row.device_id, kind: "freeze", on: true, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
@@ -1838,7 +1856,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // chooser does that (rule DASH-04).
         el("td", { class: "small" }, card.kind === "area" ? el("span", { class: "muted" }, NOT_SET)
           // A row for a model has no area of its own.
-          : card.kind.startsWith("restart_") ? null
+          : card.kind.startsWith("restart_") || card.kind === "firmware" ? null
           : this._areaWords(row.area, row.device_id)),
         el("td", {}, el("div", { class: "actrow" }, action, note)),
         // A battery replacement is answered, not ticked (rule REC-07).
@@ -1852,10 +1870,36 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", {}, unticked ? `${card.title} (${unticked})` : card.title),
       card.body ? el("p", {}, card.body) : null,
       this._recDetails(card.kind, open,
-        el("summary", {}, card.kind.startsWith("restart_")
+        el("summary", {}, card.kind.startsWith("restart_") || card.kind === "firmware"
           ? `Show the ${card.devices.length} ${card.devices.length === 1 ? "model" : "models"}`
           : `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
         el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...rows)))));
+  }
+
+  // The firmware card's row (rule REC-12). Each device behind opens its
+  // Home Assistant device page, where the update entity's Install button
+  // is. Zigbee2MQTT finds updates a device at a time, so its rows say how
+  // to have it check them all, with a link to its dashboard where one is
+  // in the sidebar.
+  _recFirmware(row) {
+    const devices = (row.behind || []).map((item) => el("li", {},
+      el("a", { href: `/config/devices/device/${encodeURIComponent(item.device_id)}` }, item.name),
+      item.installed ? el("span", { class: "small muted" }, ` ${item.installed}`) : null));
+    let z2m = null;
+    if (row.zigbee2mqtt) {
+      // The same lookup the network page uses for the app's link.
+      const found = this._networkApp("z2m");
+      const where = found
+        ? el("a", { href: found[1] }, "Open the Zigbee2MQTT dashboard")
+        : "Open the Zigbee2MQTT dashboard";
+      z2m = el("span", { class: "small" }, where, FIRMWARE_Z2M_WORDS);
+    }
+    return el("div", { class: "actcol" },
+      el("span", {}, row.text),
+      el("details", {}, el("summary", { class: "small" },
+        `Show the ${devices.length} ${devices.length === 1 ? "device" : "devices"} to update`),
+        el("ul", { class: "small" }, ...devices)),
+      z2m);
   }
 
   // A card whose answer covers a model, one row per model (rules DEV-06,
@@ -3134,6 +3178,7 @@ class DeviceSentinelPanel extends HTMLElement {
         return { maker: group[0].maker, model: group[0].model, cells: group.length,
           rate: middle(group.map((c) => c.rate)), typical: middle(group.map((c) => c.level)),
           lowest: lowest.level, lowest_name: lowest.name, lowest_id: lowest.device_id,
+          learning: group.every((c) => c.learning),
           types: [[group[0].type || "", group.length]] };
       }).sort((a, b) => a.rate - b.rate || b.cells - a.cells);
     }
@@ -3144,7 +3189,22 @@ class DeviceSentinelPanel extends HTMLElement {
     // The total counted from the same cells as its parts (rule BAT-18):
     // a new cell, or one just replaced, is in both or neither.
     const cellCount = falling.length + lowOnly + steadyAll.length;
-    const summary = el("p", { style: "margin:0;line-height:1.5" },
+    // While no battery has four weeks heard, a box says when forecasts
+    // start, and the headline says only what is known (rule BAT-19).
+    const learn = page.learning;
+    const atOrUnder = low.length;
+    const learnBox = learn ? this._learningBox(
+      "Battery forecasts start on ", learn.start,
+      ["Device Sentinel needs four weeks of readings to tell a battery that is falling from one that only "
+        + "wobbles, and to forecast its time left. Until then each level is shown as it is read, and a "
+        + `battery at or under your threshold of ${page.threshold}% is reported from the first day: `,
+      el("strong", {}, learn.low_now === 0 ? "none are now" : learn.low_now === 1 ? "1 is now" : `${learn.low_now} are now`), "."],
+      learn.day, learn.need) : null;
+    const summary = learn ? el("p", { style: "margin:0;line-height:1.5" },
+      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under your `
+      + `threshold of ${page.threshold}%, ${cellCount - atOrUnder} above it. ${noBattery} watched `
+      + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all.`)
+    : el("p", { style: "margin:0;line-height:1.5" },
       `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, `
       + (lowOnly ? `${lowOnly} at or under your threshold of ${page.threshold}% and not falling, ` : "")
       + `${steadyAll.length} not falling or not yet judged. ${noBattery} watched `
@@ -3195,7 +3255,9 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, `${row.maker} ${row.model}`),
         el("td", {}, typeCell(row)),
         el("td", { class: "num" }, String(row.cells)),
-        el("td", { class: "num", style: row.rate <= -1 ? "color:var(--error-color, #db4437)" : "" }, perWeek(row.rate)),
+        // Under four weeks heard, a rate says nothing yet (rule BAT-19).
+        row.learning ? el("td", { class: "num muted" }, "learning")
+          : el("td", { class: "num", style: row.rate <= -1 ? "color:var(--error-color, #db4437)" : "" }, perWeek(row.rate)),
         ...(fewer ? [] : [
           el("td", { class: "num" }, pct(row.typical)),
           el("td", { class: "num" }, pct(row.lowest)),
@@ -3306,7 +3368,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const cellTotal = modelRows.reduce((sum, row) => sum + row.cells, 0);
     // Empty parts are left out before the page is filled: the browser
     // writes a missing one as the word "null", and two read "nullnull".
-    this._pane.replaceChildren(...[summary,
+    this._pane.replaceChildren(...[learnBox, summary,
       el("div", { class: "actrow" }, this._typePicker(types, chosen, pick)),
       this._typeShowing(chosen, pick),
       el("h3", { class: "section" }, "The Bank"), bank,
@@ -3506,11 +3568,49 @@ class DeviceSentinelPanel extends HTMLElement {
             el("td", {}, row.since ? moment(row.since) : ""),
             el("td", { class: "num" }, row.signal === null || row.signal === undefined ? "" : String(Math.round(row.signal))))))))
       : el("p", { class: "muted", style: "margin:0" }, "No device has short drop-outs.");
-    this._pane.replaceChildren(summary,
+    // Devices with a signal and too few days for a trend (rule SIG-18):
+    // the day each one's trend starts. Until one device has its days,
+    // the tab is a box saying when, the drop-outs, and this list.
+    const learning = page.learning || [];
+    const need = page.need || 21;
+    const signalWords = (row) => {
+      if (row.now === null || row.now === undefined) return "";
+      const label = { lqi: "LQI", rssi: "RSSI" }[row.scale] || "";
+      const value = Math.round(row.now);
+      return `${label} ${value < 0 ? `\u2212${-value}` : value}`.trim();
+    };
+    const stillLearning = learning.length ? [
+      el("h3", { class: "section" }, "Still Learning ",
+        el("span", { class: "small" }, `${learning.length} ${learning.length === 1 ? "device" : "devices"}`)),
+      el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", { class: "num" }, "SIGNAL TODAY"),
+          el("th", { class: "num" }, "DAYS RECORDED"), el("th", { class: "num" }, "TREND FROM"))),
+        el("tbody", {}, ...learning.map((row) => el("tr", {},
+          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+          el("td", { class: "num" }, signalWords(row)),
+          el("td", { class: "num" }, String(row.days)),
+          el("td", { class: "num" }, this._learningDay(row.from, "short"))))))),
+    ] : [];
+    const dropParts = [
       el("h3", { class: "section" }, "Devices With Short Drop-Outs"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "A device that went unavailable and came back on its own, each time within its Short Drop-Out Limit, twice in 12 hours. It stays listed until 12 hours pass with none. Check its signal and the router it connects through."),
-      dropping,
+      dropping];
+    if (!page.devices.length && learning.length) {
+      const most = Math.max(...learning.map((row) => row.days));
+      const start = learning.reduce((a, b) => (b.from < a.from ? b : a)).from;
+      this._pane.replaceChildren(
+        this._learningBox("Signal trends start on ", start,
+          [el("strong", {}, `${learning.length} ${learning.length === 1 ? "device reports" : "devices report"} a signal.`),
+            ` Device Sentinel needs ${need} days of readings from each device to learn its own normal, so a weakening `
+            + "link can be told apart from an ordinary bad day. Until then each device's signal is shown on its own "
+            + "page, and short drop-outs are reported from the first day."],
+          most, need),
+        ...dropParts, ...stillLearning);
+      return;
+    }
+    this._pane.replaceChildren(summary,
+      ...dropParts,
       el("h3", { class: "section" }, "Days Several Devices Had a Bad Day"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "One device having a bad day is its own business. Several on the same day usually means something happened to the mesh or the house."),
@@ -3524,7 +3624,29 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", { class: "section" }, "Devices With Unsteady Signals ", el("span", { class: "small" }, `${unsteady.length} shown`)),
       table(unsteady),
       el("h3", { class: "section" }, "Devices With Steady Signals ", el("span", { class: "small" }, `${steady.length} shown`)),
-      table(steady));
+      table(steady), ...stillLearning);
+  }
+
+  // A day from the server, written as the month and the day.
+  _learningDay(iso, size = "long") {
+    const [y, m, d] = String(iso || "").split("-").map(Number);
+    if (!y || !m || !d) return "";
+    return new Date(y, m - 1, d).toLocaleDateString([], { month: size, day: "numeric" });
+  }
+
+  // The box at the top of a trend tab while it is still learning
+  // (rules BAT-19, SIG-18): when the trends start, why there is a wait,
+  // what works already, and how far along the house is.
+  _learningBox(title, startIso, body, day, need) {
+    const done = Math.max(0, Math.min(day, need));
+    const left = need - done;
+    return el("div", { class: "learnbox" },
+      el("div", { class: "learntitle" }, title, el("strong", {}, this._learningDay(startIso))),
+      el("div", { style: "line-height:1.5" }, ...body),
+      el("div", { class: "learnbar" },
+        el("div", { class: "statusline small" }, el("span", {}, `Day ${done} of ${need}`),
+          el("span", {}, `${left} ${left === 1 ? "day" : "days"} to go`)),
+        el("div", { class: "learntrack" }, el("div", { style: `width:${Math.round((done / need) * 100)}%` }))));
   }
 
   // Each Devices chip keeps its own Area, Label and Type choices, so going
@@ -4543,7 +4665,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }, words);
     return el("div", { class: "actcol" },
       el("div", { class: "actrow" },
-        choice("same", `Same as ${r.integration}`),
+        choice("same", r.same_label || `Same as ${r.integration}`),
         choice("live", "Reports live"),
         choice("cached", "Reports cached values")),
       el("span", { class: "small" }, r.words),
