@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.27.10 (2026-10-27)
+# File: wifi.py, Version: 0.29.0 (2026-11-14)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -139,11 +139,16 @@ class WifiScanMixin:
         write (rule REC-02).
         """
         self._wifi_adapter_unused = None
+        self._wifi_adapter_off = False
         if self.wifi_networks:
             return
         found = await wireless_interfaces(self.hass)
         if found:
             self._wifi_adapter_unused = found[0].get("interface") or "wireless"
+            # The Supervisor says whether the interface is switched on.
+            # Only a plain False reads as off: a field it leaves out
+            # says nothing (rule REC-02).
+            self._wifi_adapter_off = found[0].get("enabled") is False
 
     @property
     def wifi_scan_down_at(self) -> float | None:

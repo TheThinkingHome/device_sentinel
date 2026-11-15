@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.28.11 (2026-11-10)
+# File: reports.py, Version: 0.29.0 (2026-11-14)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -353,7 +353,10 @@ class ReportWritingMixin(
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(temporary)
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-            with os.fdopen(os.open(temporary, flags, 0o644), "w", encoding="utf-8") as handle:
+            # Owner only: the reports name the house's devices and when
+            # they failed, and nothing else on the host needs to read
+            # them (rule CODE-10).
+            with os.fdopen(os.open(temporary, flags, 0o600), "w", encoding="utf-8") as handle:
                 handle.write(text)
             os.replace(temporary, path)
         except OSError:

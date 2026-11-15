@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.28.12 (2026-11-11)
+# File: router_ties.py, Version: 0.29.0 (2026-11-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -481,6 +481,13 @@ class RouterTiesMixin:
 
         ties: dict[str, str] = {}
         for device_id in self._watched:
+            # A device the person muted for unavailable, or for
+            # everything, is one the person chose not to hear about going
+            # offline, so it cannot raise a Wi-Fi outage either: a
+            # fixture of Wi-Fi bulbs on a wall switch, muted, no
+            # longer reads as the network going down (rule UP-12).
+            if device_id in self._muted_devices or self._unavailable_muted(device_id):  # type: ignore[attr-defined]
+                continue
             device = devices.async_get(device_id)
             if device is None:
                 continue

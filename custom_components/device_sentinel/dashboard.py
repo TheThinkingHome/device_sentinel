@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.28.11 (2026-11-10)
+# File: dashboard.py, Version: 0.29.0 (2026-11-14)
 
 """What the dashboard reads from the coordinator.
 
@@ -737,6 +737,17 @@ class IntegrationViewMixin:
         settled |= {key.split(":", 1)[1] for key in ticked if key.startswith(("noisy:", "offer:"))}
         return settled
 
+    def poller_notes(self) -> dict[str, str]:
+        """What Device Sentinel can and cannot see through each polling
+        integration, by domain: a note on its row of the Integrations
+        tab and on its own page, never a recommendation, since there is
+        nothing to act on (rule UP-18)."""
+        return {
+            key.split(":", 1)[1]: text
+            for key, text in self._noisy_integration_entries()  # type: ignore[attr-defined]
+            if key.startswith("noisy:")
+        }
+
     def _noisy_domains(self) -> set[str]:
         return {
             key.split(":", 1)[1]
@@ -800,7 +811,8 @@ class IntegrationViewMixin:
             )
         }
         excluded = self.excluded_integrations
-        noisy = self._noisy_domains()
+        notes = self.poller_notes()
+        noisy = set(notes)
         trouble = self._integration_trouble()
         settled = self._exclusion_settled()
         for domain, count in domains.items():
@@ -822,6 +834,7 @@ class IntegrationViewMixin:
                 ),
                 "trouble": trouble.get(domain, {}),
                 "down_since": down["went_down"] if down else None,
+                "note": notes.get(domain),
             })
         # An integration with no hardware owns no row above; it is
         # listed so a person can see it and why its entities are not
@@ -922,6 +935,9 @@ class IntegrationViewMixin:
             # the page is opened, so its five buttons are lit as they are
             # (rule MUTE-03).
             "excluded": domain in self.excluded_integrations,
+            # A polling integration's note: what Device Sentinel can and
+            # cannot see through it (rule UP-18).
+            "note": self.poller_notes().get(domain),
             # Whether any of its devices still has the history the
             # midnight after an exclusion deletes, so the page offers to
             # keep it only while there is something to keep (rule MUTE-03).

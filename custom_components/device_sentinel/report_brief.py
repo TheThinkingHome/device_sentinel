@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.28.12 (2026-11-11)
+# File: report_brief.py, Version: 0.29.0 (2026-11-14)
 
 """The daily brief: the one report written for a person.
 
@@ -1273,16 +1273,26 @@ class BriefMixin:
                 f"Links in Reports on {screen}."
             ))
         items += self._family_muted_entries()
+        # Asked of every house whose server has a wireless adapter and
+        # no chosen network, router ties or not: the scan hears an
+        # outage directly, where ties only infer one from devices
+        # leaving the router, and three switched-off bulbs can look
+        # like that (rule REC-02).
         adapter = getattr(self, "_wifi_adapter_unused", None)
-        if adapter and not self.wifi_capable:
-            items.append(("wifi_network",
-                f"Wi-Fi network not set in Device Sentinel's WiFi "
-                f"settings: this machine is equipped with a wireless "
-                f"adapter ({adapter}) and no network is chosen for it to "
-                f"listen for. Naming your network on the WiFi screen "
-                f"enables Device Sentinel to detect a wireless network "
-                f"outage."
-            ))
+        if adapter:
+            line = (
+                f"Your server is equipped with a Wi-Fi adapter ({adapter}), "
+                f"but no Wi-Fi network is chosen. Choose your network under "
+                f"WiFi in settings, and Device Sentinel will be able to "
+                f"detect Wi-Fi outages directly instead of deducing outages "
+                f"from devices dropping off your router."
+            )
+            if getattr(self, "_wifi_adapter_off", False):
+                line += (
+                    " The adapter is turned off: turn it on first, under "
+                    "Settings, System, Network."
+                )
+            items.append(("wifi_network", line))
         # Switched-off sensors are on the Recommendations tab, one card
         # per kind (rule REC-05).
         for reader in list(getattr(self, "_bridge_readers", {}).values()):
@@ -1300,10 +1310,13 @@ class BriefMixin:
         offers = self._exclusion_offer_entries()
         items += [(key, text) for key, text, _extra in offers]
         items += self._router_watched_entries()
-        items += self._noisy_integration_entries()
+        # A poller's line recommends nothing, so it is a note on its
+        # integration's page and row, not a recommendation (rule UP-18).
         # An integration recommended for exclusion is shown in Simple
         # too, with its devices and an Exclude button (rule MUTE-02).
-        simple = ("target:", "no_target", "muted:", "offer:")
+        # Choosing the Wi-Fi network is how Device Sentinel hears a Wi-Fi
+        # outage at all, so it is asked in Simple too (rule REC-09).
+        simple = ("target:", "no_target", "muted:", "offer:", "wifi_network")
         extras = {key: extra for key, _text, extra in offers}
         return [
             {"key": key, "text": text, "simple": key.startswith(simple), **extras.get(key, {})}

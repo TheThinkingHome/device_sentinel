@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.28.12 (2026-11-11)
+# File: interventions.py, Version: 0.29.0 (2026-11-14)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -3127,6 +3127,11 @@ class InterventionMixin:
         # this close announces, so the bus keeps their order
         # (rule WATCH-10).
         self._release_held_recoveries()
+        # Faults a restart or reload left held wait out the rest of
+        # their hold, and recoveries that fell inside the grace reach
+        # the phone (rules NOTE-06, NOTE-03).
+        self._rearm_held_faults()  # type: ignore[attr-defined]
+        self._send_grace_recoveries()  # type: ignore[attr-defined]
         # Each dropping-out item the upgrade removed gets its closing
         # event (rule SIG-17).
         for device_id, name in getattr(self, "_dropping_out_retired", None) or []:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.28.12 (2026-11-11)
+# File: notifier.py, Version: 0.29.0 (2026-11-14)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -47,6 +47,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import persistent_notification
+from homeassistant.core import callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
@@ -275,6 +276,9 @@ class NotifierMixin:
     summaries the list properties expose, and it sends. It owns no
     detection and no list state; it is a reader that speaks.
     """
+
+    # Set in the coordinator's constructor (rule NOTE-03).
+    _grace_recoveries: dict[str, str]
 
     def _high_priority_targets(self) -> list[str]:
         """Return the configured high-priority targets, cleaned."""
@@ -611,6 +615,16 @@ class NotifierMixin:
                     err,
                 )
 
+    @callback
+    def _send_grace_recoveries(self) -> None:
+        """Send each family's recovery that fell inside the startup
+        grace, now it has closed (rule NOTE-03)."""
+        held, self._grace_recoveries = self._grace_recoveries, {}
+        if held:
+            self.hass.async_create_task(
+                self.async_fire_events([(family, line, True) for family, line in held.items()])
+            )
+
     async def async_fire_events(
         self, events: list[tuple[str, str, bool]]
     ) -> None:
@@ -632,7 +646,13 @@ class NotifierMixin:
             # Nothing is pushed inside the startup grace, for any
             # reason, a change to a device already on the list included
             # (rule NOTE-03). The list and the card carry what is true
-            # when the window shuts.
+            # when the window shuts. A recovery is kept, one line per
+            # family, and sent when the window shuts, so the phone's
+            # last message does not go on claiming a problem that
+            # cleared.
+            for family, line, recovery in events:
+                if recovery:
+                    self._grace_recoveries[family] = line
             LOGGER.debug(
                 "Device Sentinel: %d event(s) fell inside the startup "
                 "grace and were not pushed",

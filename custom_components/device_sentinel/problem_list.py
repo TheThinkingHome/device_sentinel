@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.28.10 (2026-11-10)
+# File: problem_list.py, Version: 0.29.0 (2026-11-14)
 
 """The problem list: the single memory every channel renders.
 
@@ -129,6 +129,11 @@ _RECOVERY_LINE = {
     TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
 }
 
+# The faults held for their notification debounce when the file was
+# saved, each as [device_id, kind, family, line, release_at] (rule NOTE-06).
+DATA_HELD_FAULTS = "held_faults"
+
+
 class ProblemListMixin:
     """The problem list: the single memory every channel renders."""
 
@@ -136,6 +141,8 @@ class ProblemListMixin:
     _parked: dict[str, float]
     _park_timer: Callable[[], None] | None
     _matured_in_park: dict[tuple[str, str], tuple[str, str]]
+    # Each held fault as stored (rule NOTE-06).
+    _held_fault_rows: dict[tuple[str, str], list[Any]]
 
 
     def _todo_tag_of(self, device_id: str) -> str:
@@ -1146,6 +1153,14 @@ class ProblemListMixin:
             if cancel is not None:
                 cancel()
                 return
+            # A fault a restart left held, not yet armed again, was never
+            # sent either, so its recovery is no news; dropping the row
+            # here also stops it being armed at the grace close
+            # (rules NOTE-06, NOTE-03).
+            waiting = getattr(self, "_held_fault_waiting", {})
+            if waiting.pop(key, None) is not None:
+                self._store_held_faults()
+                return
             if self._matured_in_park.pop(key, None) is not None:
                 # Its fault matured while it waited its minute and was
                 # never sent, so its recovery is no news (rule LIST-06).
@@ -1171,6 +1186,63 @@ class ProblemListMixin:
         self._held_events[key] = async_call_later(
             self.hass, delay, _release
         )
+        self._held_fault_rows[key] = [
+            device_id, kind, family, line, dt_util.utcnow().timestamp() + delay,
+        ]
+        self._store_held_faults()
+
+    def _store_held_faults(self) -> None:
+        """Keep the faults still held in the stored file (rule NOTE-06)."""
+        self._held_fault_rows = {
+            key: row for key, row in self._held_fault_rows.items() if key in self._held_events
+        }
+        # Restored at the start and not yet armed: kept until the grace
+        # closes, so a second restart inside it loses nothing.
+        waiting = getattr(self, "_held_fault_waiting", {})
+        rows = [list(row) for row in self._held_fault_rows.values()] + [
+            list(row) for key, row in waiting.items() if key not in self._held_fault_rows
+        ]
+        if rows:
+            self.data[DATA_HELD_FAULTS] = rows
+        else:
+            self.data.pop(DATA_HELD_FAULTS, None)
+        self._dirty = True
+
+    def _restore_held_faults(self) -> None:
+        """Take back, at a start, the faults a restart or reload left
+        held, to be armed again when this run's grace closes. Anything
+        not shaped as stored is dropped (rules NOTE-06, STOR-07)."""
+        stored = self.data.get(DATA_HELD_FAULTS)
+        self._held_fault_waiting: dict[tuple[str, str], list[Any]] = {}
+        for row in stored if isinstance(stored, list) else []:
+            if (
+                isinstance(row, list) and len(row) == 5
+                and all(isinstance(v, str) for v in row[:4])
+                and isinstance(row[4], (int, float)) and not isinstance(row[4], bool)
+                and math.isfinite(row[4])
+            ):
+                self._held_fault_waiting[(row[0], row[1])] = list(row)
+        if self._held_fault_waiting:
+            self.data[DATA_HELD_FAULTS] = [list(row) for row in self._held_fault_waiting.values()]
+        else:
+            self.data.pop(DATA_HELD_FAULTS, None)
+
+    def _rearm_held_faults(self) -> None:
+        """At grace close, hold each restored fault for what was left of
+        its wait, or send it now if that has passed (rule NOTE-06)."""
+        rows, self._held_fault_waiting = getattr(self, "_held_fault_waiting", {}), {}
+        now = dt_util.utcnow().timestamp()
+        for key, (device_id, kind, family, line, release_at) in rows.items():
+            if key in self._held_events or not self._still_on_the_list(device_id, kind):
+                continue
+
+            @callback
+            def _release(_now: Any, key: tuple[str, str] = key, family: str = family, line: str = line) -> None:
+                self._release_held_event(key, family, line)
+
+            self._held_events[key] = async_call_later(self.hass, max(0.0, release_at - now), _release)
+            self._held_fault_rows[key] = [device_id, kind, family, line, release_at]
+        self._store_held_faults()
 
     def _dispatch_notifications(self) -> None:
         """Fire the buffered family events and refresh the card.
@@ -2053,6 +2125,7 @@ class ProblemListMixin:
         when the problem started rather than when it was sent.
         """
         self._held_events.pop(key, None)
+        self._store_held_faults()
         device_id, kind = key
         if device_id in self._parked:
             if self._todo_status_of(device_id) == "completed":

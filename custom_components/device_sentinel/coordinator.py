@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.28.12 (2026-11-11)
+# File: coordinator.py, Version: 0.29.0 (2026-11-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -716,6 +716,14 @@ class DeviceSentinelCoordinator(
         # by (device_id, kind). A hold is cancelled by its own
         # recovery, so anything still here is still true.
         self._held_events: dict[tuple[str, str], Any] = {}
+        # Each held fault as stored, so a restart or reload inside its
+        # hold still sends it when the next grace closes (rule NOTE-06):
+        # key -> [device_id, kind, family, line, release_at].
+        self._held_fault_rows: dict[tuple[str, str], list[Any]] = {}
+        # The last recovery line of each family that fell inside the
+        # startup grace, sent when it closes so the phone's summary is
+        # not left claiming a problem that cleared (rule NOTE-03).
+        self._grace_recoveries: dict[str, str] = {}
         # Items whose last problem cleared, kept on the list for a
         # minute before they leave (rule LIST-06): when it cleared, and
         # the timer that comes back to retire them.
@@ -882,6 +890,7 @@ class DeviceSentinelCoordinator(
         # A wireless adapter nothing is watching with, read before
         # each report write for the brief's recommendations.
         self._wifi_adapter_unused: str | None = None
+        self._wifi_adapter_off = False
         self._wifi_device_of: dict[str, str] = {}
         self._wifi_not_home: dict[str, float] = {}
         self._wifi_burst: list[float] = []
@@ -2030,6 +2039,7 @@ class DeviceSentinelCoordinator(
         # still waits would otherwise write the stored list with only
         # itself, and the earlier ones would be lost (rule WATCH-10).
         self._restore_held_recoveries()
+        self._restore_held_faults()
         # This start is a restart or a reload: each device with held
         # values has its entities put on watch before the first state
         # is heard (rule WATCH-12).
