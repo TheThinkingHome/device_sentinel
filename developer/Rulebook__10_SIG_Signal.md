@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 8 November 2026, on Device Sentinel 0.28.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 
@@ -146,3 +146,12 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 - **The upgrade:** a dropping-out item standing at the upgrade to 0.28.1 is removed with no recovery push, and one `device_sentinel_withdrawn` event, kind "flapping", reason "replaced", is fired when the startup grace closes. Short drops count from the next drop. Past dropping-out incidents read as short drop-outs.
 
 *Proof:* [`test_short_drop_outs.py`](../tests/test_short_drop_outs.py), [`test_freeze_and_unavailable_mutes.py`](../tests/test_freeze_and_unavailable_mutes.py), [`test_problem_words.py`](../tests/test_problem_words.py), [`tools/panel_checks/check_short_drop_outs.js`](../tools/panel_checks/check_short_drop_outs.js).
+
+### SIG-18 Signal Trends While Learning
+
+**A device with a signal and fewer than 21 days of readings is listed under Still Learning with the day its trend starts (since 0.29.2).**
+- **Still Learning:** DEVICE, SIGNAL TODAY ("LQI 112", "RSSI −58"), DAYS RECORDED and TREND FROM, most days first. It is under the regular page while some devices are still counting.
+- **Before any device has its days:** the tab opens with a box, "Signal trends start on November 27", then "85 devices report a signal. Device Sentinel needs 21 days of readings from each device to learn its own normal, so a weakening link can be told apart from an ordinary bad day. Until then each device's signal is shown on its own page, and short drop-outs are reported from the first day.", and a bar, "Day 7 of 21" and "14 days to go". Below it: Devices With Short Drop-Outs and Still Learning.
+- **Muted for signal:** a device muted for signal or for everything is not listed, as on the regular page.
+
+*Proof:* [`test_learning_screens.py`](../tests/test_learning_screens.py), [`tools/panel_checks/check_learning_screens.js`](../tools/panel_checks/check_learning_screens.js).

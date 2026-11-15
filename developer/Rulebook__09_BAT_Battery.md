@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -192,3 +192,13 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **The summary:** splits the batteries that report a level into three parts that add up: falling, at or under the threshold and not falling, and not falling or not yet judged.
 
 *Proof:* [`test_dashboard_trends.py`](../tests/test_dashboard_trends.py), [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_type_filters.js`.
+
+### BAT-19 Battery Trends While Learning
+
+**While no battery has four weeks heard, Battery Trends opens with a box saying when forecasts start (since 0.29.2).**
+- **The box:** "Battery forecasts start on December 4", then "Device Sentinel needs four weeks of readings to tell a battery that is falling from one that only wobbles, and to forecast its time left. Until then each level is shown as it is read, and a battery at or under your threshold of 15% is reported from the first day: 2 are now." ("1 is now", "none are now"), and a bar, "Day 7 of 28" and "21 days to go". The count is of batteries marked low, as the Problem List and the headline count them. The day counted is the most days any battery has been heard; the start is today plus the days still to go. A battery heard only every other day gets there too, more slowly.
+- **The headline:** "54 batteries report a level: 2 at or under your threshold of 15%, 52 above it. 51 watched devices report no battery at all."
+- **By Model:** a model whose batteries all have under four weeks heard reads "learning" for its rate.
+- **It ends:** the box and the headline go once one battery has its four weeks, and with no battery reporting a level there is no box.
+
+*Proof:* [`test_learning_screens.py`](../tests/test_learning_screens.py), [`tools/panel_checks/check_learning_screens.js`](../tools/panel_checks/check_learning_screens.js).

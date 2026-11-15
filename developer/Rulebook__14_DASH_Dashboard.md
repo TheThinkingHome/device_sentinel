@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -33,6 +33,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-04 What Simple Shows
 
 **Simple shows six tabs: Daily Brief, Battery Trends, Integrations, Networks, Devices and Recommendations.** Which recommendations Simple shows is in [REC](Rulebook__15_REC_Recommendations.md).
+- **What goes in Simple (James, 15 November 2026, 10:30):** if it affects how Device Sentinel or the device works, it goes in both Simple and Advanced. If it is cosmetic, or only makes the dashboard better to use (adding battery types, adding types, anything that makes navigating the dashboard easier), it is Advanced only, because it is not used in Simple.
 - **Tab left off:** Signal Trends. It still opens from its own address, and no page in Simple links to it.
 - **Battery Trends in Simple:** it leaves out the TYPICAL LEVEL, LOWEST CELL and WHICH ONE columns, the weekly levels under Falling, DAYS RECORDED, STEPS and MODEL, A WEEK under Other Cells, and the Not a Percentage list. Advanced's At or Under the Threshold adds 4 WEEKS.
 - **Battery Trends' tables:** they share one scale, so DEVICE, TYPE and LEVEL stand in the same place in each. A table with few columns ends short of the edge.
