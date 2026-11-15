@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.28.12 (2026-11-11)
+# File: conftest.py, Version: 0.29.1 (2026-11-14)
 
 """Shared test fixtures: clean report folders, the fleets, and a failure
 on any deprecation Home Assistant reports (rules REL-03, CODE-16).
@@ -53,6 +53,10 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "real_frontend: set up Home Assistant's real frontend and panel_custom"
     )
+    config.addinivalue_line(
+        "markers",
+        "shipped_cached_list: read the list of integrations that report cached values as it ships",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +76,32 @@ def frontend_loaded(request):
     hass = request.getfixturevalue("hass") if "hass" in request.fixturenames else None
     if hass is not None:
         hass.config.components.update({"frontend", "panel_custom"})
+    yield
+
+
+# ------------------------------- the made-up integration reports cached values
+
+@pytest.fixture(autouse=True)
+def test_integration_reports_cached_values(request, monkeypatch):
+    """Put the suite's made-up integration, "test", on the list of
+    integrations that report cached values after a restart (rule
+    WATCH-12).
+
+    The tests of a value handed back at a start were written with a
+    device on "test", and they stay tests of a device on the list. A
+    device off the list is tested on its own made-up integration, and a
+    test marked `shipped_cached_list` reads the list as it ships.
+    """
+    if request.node.get_closest_marker("shipped_cached_list") is not None:
+        yield
+        return
+    from custom_components.device_sentinel import restart_values
+
+    monkeypatch.setattr(
+        restart_values,
+        "CACHED_VALUE_INTEGRATIONS",
+        frozenset(restart_values.CACHED_VALUE_INTEGRATIONS | {"test"}),
+    )
     yield
 
 

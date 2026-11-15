@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_boot_handback.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_boot_handback.py, Version: 0.29.1 (2026-11-14)
 
 """A value handed back at a start is not the device speaking
 (rule WATCH-12).
@@ -318,9 +318,10 @@ async def test_a_normal_run_is_unchanged(hass: HomeAssistant, freezer):
 
 
 async def test_exempt_devices_hold_nothing(hass: HomeAssistant, freezer, monkeypatch):
-    """A device with a Last Seen clock, a ZHA device whose radio keeps its
-    own clock (rule STACK-04) and an ESPHome device never store held
-    values."""
+    """A device with a Last Seen clock and a ZHA device whose radio keeps
+    its own clock (rule STACK-04) never store held values. An ESPHome
+    device, off the list of integrations that report cached values,
+    keeps its values to compare a return with, and is never watched."""
     from custom_components.device_sentinel import stack_zha
 
     monkeypatch.setattr(stack_zha, "last_heard", lambda _hass, _device: 1791700000.5)
@@ -343,8 +344,12 @@ async def test_exempt_devices_hold_nothing(hass: HomeAssistant, freezer, monkeyp
     assert rec(coord, plain.id)[DEV_HELD_VALUES] == {
         er.async_get(hass).async_get(plain_eid).id: "on"
     }
-    for device in (seen, zigbee, esp):
+    for device in (seen, zigbee):
         assert rec(coord, device.id)[DEV_HELD_VALUES] is None, device.name
+    assert rec(coord, esp.id)[DEV_HELD_VALUES]
+    assert coord._reports_cached(plain.id)
+    for device in (seen, zigbee, esp):
+        assert not coord._reports_cached(device.id), device.name
 
 
 async def test_timestamp_and_duration_sensors_never_vote(hass: HomeAssistant, freezer):

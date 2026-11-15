@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_bridge_restart_between_checks.py, Version: 0.29.0 (2026-11-15)
+# File: tests/test_bridge_restart_between_checks.py, Version: 0.29.1 (2026-11-15)
 
 """A Zigbee2MQTT restart that falls between two minute checks.
 

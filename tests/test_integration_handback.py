@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_handback.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_integration_handback.py, Version: 0.29.1 (2026-11-14)
 
 """An integration coming back gives its devices time to rejoin
 (rules UP-08, UNAV-05).
@@ -165,7 +165,7 @@ async def test_the_return_records_the_worst_moment(
 # ----------------- an integration outage holds frozen devices
 
 
-def _pair(hass, n=2, domain="shelly"):
+def _pair(hass, n=2, domain="test"):
     source = MockConfigEntry(domain=domain, title=domain)
     source.add_to_hass(hass)
     source.mock_state(hass, ConfigEntryState.LOADED)

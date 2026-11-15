@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_polled_device_returns.py, Version: 0.27.11 (2026-10-28)
+# File: tests/test_polled_device_returns.py, Version: 0.29.1 (2026-11-14)
 
 """A device whose integration polls it answers for itself (rules
 WATCH-12, UP-06).
@@ -77,8 +77,14 @@ async def test_a_device_asked_as_it_connects_is_back(hass: HomeAssistant, freeze
 
 
 async def test_a_value_pushed_back_unchanged_is_not_the_device(hass: HomeAssistant, freezer):
-    """An integration that pushes what it kept hands the old value back."""
-    assert await _power_cut(hass, freezer, "cloudpush") == "unavailable"
+    """An integration on the list of those that report cached values
+    hands the old value back; one that is not is taken at its word
+    (rule WATCH-12)."""
+    assert await _power_cut(hass, freezer, "test") == "unavailable"
+
+
+async def test_a_value_back_unchanged_off_the_list_is_the_device(hass: HomeAssistant, freezer):
+    assert await _power_cut(hass, freezer, "cloudpush") is None
 
 
 async def test_a_poller_that_restores_its_last_value_is_not_taken_at_its_word(hass: HomeAssistant, freezer):
