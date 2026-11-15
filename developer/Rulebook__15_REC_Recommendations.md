@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -19,7 +19,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 
 **A written recommendation is about the house's setup rather than one device.** It stands until its condition is gone.
 - **How a line reads:** it opens with its condition, a colon, then what it costs and where to change it.
-- **The lines, worst first:** all lines show. A notification target that no longer exists, no target set at all, a Links in Reports address Home Assistant no longer holds, a detection family muted or excluded for all the devices it judges, a wireless adapter with no network chosen and no router ties, Zigbee2MQTT availability switched off, a router integration watched again with no card of its own, and a polling integration worth excluding.
+- **The lines, worst first:** all lines show. A notification target that no longer exists, no target set at all, a Links in Reports address Home Assistant no longer holds, a detection family muted or excluded for all the devices it judges, a wireless adapter with no network chosen (router ties or not, since 0.29.0: the scan hears an outage directly, where ties infer one from devices leaving the router; an adapter switched off is said), Zigbee2MQTT availability switched off, a router integration watched again with no card of its own, and a polling integration worth excluding.
 - **Integrations to exclude:** each integration Device Sentinel recommends excluding has a card of its own instead ([REC-03](#rec-03-integrations-worth-excluding)).
 - **Dismissing a line:** each line can be ticked Acknowledged ([REC-07](#rec-07-acknowledged)). Nothing else dismisses it.
 
@@ -97,7 +97,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-09 What Simple Shows
 
 **Simple shows what Device Sentinel needs to work at its best, and nothing extra.** All other cards and lines are Advanced only.
-- **In Simple:** Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing a Network Address, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
+- **In Simple:** Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing a Network Address, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), the Wi-Fi adapter with no network chosen (since 0.29.0: how Device Sentinel hears a Wi-Fi outage at all), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
 - **Why the sensor cards:** Simple's device page offers no sensor to turn on, so each such sensor has its card here.
 
 *Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js).

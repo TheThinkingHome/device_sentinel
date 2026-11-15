@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Code and Tests (CODE)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel's code is written and checked: the code standard, comments and the rule IDs they cite, the header on each file, the linters and the type checker, and how tests are written, pinned and fed. How a release is proven and shipped is under [REL](Rulebook__19_REL_Releases.md); how stored files are checked is under [STOR](Rulebook__18_STOR_Storage.md).
 
@@ -79,6 +79,7 @@ This section covers how Device Sentinel's code is written and checked: the code 
 
 - **Since 0.28.11:** the brief sent to the persistent notification escapes its square and angle brackets, and the shared-address repair card escapes each name, as the state card does. Both are shown as Markdown. A push to `notify.persistent_notification` and the brief sent there are escaped the same way.
 - **Files written beside others (since 0.28.11):** a report's temporary file and the probe file are opened so that a link left at their name is refused, never written through, as the storage copies are ([STOR-04](Rulebook__18_STOR_Storage.md#stor-04-last-good-copies)). A last-good copy that is a symbolic link is never read or restored from.
+- **Owner only (since 0.29.0):** the report files and the probe file are created readable and writable by their owner alone (mode 600), as the storage copies are. They name the house's devices and when they failed, and nothing else on the host needs them. A probe file an earlier release made readable to all is narrowed at its next write.
 
 *Proof:* [`test_hostile_names.py`](../tests/test_hostile_names.py), [`test_device_labels.py`](../tests/test_device_labels.py), [`test_wifi_addresses.py`](../tests/test_wifi_addresses.py).
 

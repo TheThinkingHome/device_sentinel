@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -140,6 +140,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **The Confirmation Delay:** when its last access point goes missing, the outage waits the Confirmation Delay (60 seconds by default). If one returns inside it, nothing is said. If not, the outage is declared and dated from when it went.
 - **From router trackers:** where no network is chosen and router trackers are tied to watched devices, a burst declares instead. Three tied trackers, or a tenth of the tied set if that is more, going from home to not_home inside 60 seconds starts a 60-second hold. The outage is declared if as many are still gone at its end, dated from the first fall.
 - **What does not count:** a tracker going unavailable is the router failing and does not count. Nothing counts during the startup grace.
+- **Muted devices (since 0.29.0):** a device muted for unavailable, or for everything, is not tied, so it never counts toward declaring. Wi-Fi devices switched at the wall, muted, cannot read as the network going down.
 - **Neither:** a house with neither a chosen network nor tied trackers has no Wi-Fi outage and pays nothing for it.
 
 *Proof:* [`test_wifi_scan.py`](../tests/test_wifi_scan.py), [`test_wifi_declaration.py`](../tests/test_wifi_declaration.py), [`test_wifi_declaration_fleet.py`](../tests/test_wifi_declaration_fleet.py), [`test_wifi_outage.py`](../tests/test_wifi_outage.py).
