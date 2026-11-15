@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.29.0 (2026-11-14)
+# File: problem_list.py, Version: 0.29.1 (2026-11-14)
 
 """The problem list: the single memory every channel renders.
 
@@ -1148,6 +1148,15 @@ class ProblemListMixin:
             # 12%" (rule NOTE-10).
             said = self._battery_phrase(device_id, False)  # type: ignore[attr-defined]
         line = self._event_line(kind, name, when, recovery, left, said)
+        confirmed = (
+            self.confirming(device_id)  # type: ignore[attr-defined]
+            if recovery and NOTIFY_KIND_FAMILY.get(kind, "freeze") == "freeze"
+            else None
+        )
+        if confirmed is not None:
+            # A person pressed It's Back: the push says who said the
+            # device was working (rule WATCH-12).
+            line = f"At {when}, {name} was {confirmed}."
         if recovery:
             cancel = self._held_events.pop(key, None)
             if cancel is not None:
@@ -1467,6 +1476,8 @@ class ProblemListMixin:
                 # device pass the bound (rule BRIEF-05).
                 self._recovery_cause(device_id, opened or 0.0),
             )
+        # A person's confirmation has now been told (rule WATCH-12).
+        self.confirmed_told(device_id)  # type: ignore[attr-defined]
 
     def _down_for(
         self, device_id: str, kind: str, opened: float | None, now: float

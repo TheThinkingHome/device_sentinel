@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.27.10 (2026-10-27)
+# File: events.py, Version: 0.29.1 (2026-11-14)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -61,6 +61,7 @@ from .const import (
     UNASSIGNED_AREA,
 )
 from .normalise import SPAN_HIGHEST
+from .restart_values import is_confirmed_cause
 
 
 # Recoveries held inside the startup grace, kept in the stored file so
@@ -121,7 +122,8 @@ def resolved_by(cause: str | None) -> str:
     self-recovery must not be told self when the truth is that nobody
     knows.
     """
-    if cause in RECOVERY_CAUSES_INTERVENTION:
+    if cause in RECOVERY_CAUSES_INTERVENTION or is_confirmed_cause(cause):
+        # A person's own act, It's Back included (rule WATCH-12).
         return RECOVERY_BY_INTERVENTION
     if cause in RECOVERY_CAUSES_SELF or cause in RECOVERY_CAUSES_RESTART:
         return RECOVERY_BY_SELF

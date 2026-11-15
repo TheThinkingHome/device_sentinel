@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.28.4 (2026-11-07)
+# File: journal.py, Version: 0.29.1 (2026-11-14)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -770,6 +770,11 @@ class JournalMixin:
         carry a cause; a battery or a rail recovering has no lever to
         name.
         """
+        # A person who pressed It's Back said the device was working:
+        # their word is the cause (rule WATCH-12).
+        confirmed = self.confirming(device_id)  # type: ignore[attr-defined]
+        if confirmed is not None:
+            return confirmed
         # A person's pairing window open at the return is credited here
         # as the brief credits it, from the same attribution, so the
         # automation event and the stored record agree with the brief

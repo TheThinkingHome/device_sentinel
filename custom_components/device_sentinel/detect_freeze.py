@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.28.12 (2026-11-11)
+# File: detect_freeze.py, Version: 0.29.1 (2026-11-14)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -1172,9 +1172,14 @@ class FreezeMixin:
         # start, in this same immediate save, and forgotten when it ends,
         # a mute taking it away included (rule WATCH-12).
         if category is None:
+            # A return across a restart with the values it had is
+            # remembered before they are forgotten (rule WATCH-12).
+            self._restart_note_return(device_id, record)  # type: ignore[attr-defined]
             self._release_values(device_id, record)  # type: ignore[attr-defined]
         elif current is None:
             self._hold_values(device_id, record)  # type: ignore[attr-defined]
+        if category is not None:
+            self._restart_note_listed(device_id, category)  # type: ignore[attr-defined]
         if category is None:
             record[DEV_FROZEN_SINCE] = None
         elif current is None:
@@ -1237,6 +1242,8 @@ class FreezeMixin:
         moment a frozen device speaks, it leaves the report. Its held
         values and its watch end with it (rule WATCH-12).
         """
+        if record.get(DEV_FROZEN_CATEGORY) is not None:
+            self._restart_note_return(device_id, record)  # type: ignore[attr-defined]
         self._release_values(device_id, record)  # type: ignore[attr-defined]
         if record.get(DEV_FROZEN_CATEGORY) is not None:
             if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:

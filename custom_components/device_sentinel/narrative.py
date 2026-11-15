@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.28.1 (2026-11-03)
+# File: narrative.py, Version: 0.29.1 (2026-11-14)
 
 """How to say what happened: the composer.
 
@@ -31,6 +31,7 @@ from datetime import datetime
 
 from homeassistant.util import dt as dt_util
 
+from .restart_values import CONFIRMED_ON_DASHBOARD, confirmed_by, is_confirmed_cause
 from .battery_level import level_text
 from .const import (
     RECOVERY_CAUSE_PAIRING,
@@ -334,7 +335,7 @@ class NarrativeMixin:
         says plainly that nobody saw the recovery (rule BRIEF-01).
         """
         cause = row.get(INC_CAUSE)
-        if cause == RECOVERY_CAUSE_UNOBSERVED:
+        if cause == RECOVERY_CAUSE_UNOBSERVED or is_confirmed_cause(cause):
             return f", {cause}"
         if cause in RECOVERY_CAUSES_RESTART:
             # Stored by an older release: a restart or an outage
@@ -418,6 +419,8 @@ class NarrativeMixin:
         event = row[INC_EVENT]
         if event == INCIDENT_ACTION:
             return self._action_sentence(name, row.get(INC_CAUSE), when)
+        if event == INCIDENT_RESOLVED and is_confirmed_cause(row.get(INC_CAUSE)):
+            return self._confirmed_sentence(row)
         if event == INCIDENT_RESOLVED:
             span = self._human_span(row.get(INC_DURATION))
             tail = self._recovery_tail(row)
@@ -430,6 +433,22 @@ class NarrativeMixin:
         if kind == TODO_KIND_NEVER_REPORTED:
             return f"{name} has never reported since it was discovered."
         return f"{self._opening_clause(row)}."
+
+    def _confirmed_sentence(self, row: dict[str, Any]) -> str:
+        """A recovery a person confirmed with It's Back, as its own
+        sentence: who said the device was working, when, and how long
+        it had been listed (rule WATCH-12)."""
+        name = self._told_name(row)
+        when = self._clock(row[INC_WHEN])
+        who = confirmed_by(row[INC_CAUSE])
+        after = (
+            ""
+            if row.get(INC_DURATION) is None
+            else f", after {self._human_span(row.get(INC_DURATION))} listed as down"
+        )
+        if who:
+            return f"At {when}, {who} confirmed {name} was working{after}."
+        return f"At {when}, {name} was confirmed working {CONFIRMED_ON_DASHBOARD}{after}."
 
     def _action_sentence(
         self, name: str, cause: str | None, when: str
@@ -500,6 +519,10 @@ class NarrativeMixin:
                 f"{self._told_name(opened)} deleted from the list at {when}, "
                 "and re-added because the problem is still there."
             )
+        if is_confirmed_cause(resolved.get(INC_CAUSE)):
+            # A person said it was working: told as that, in its own
+            # sentence, whatever else was open at the time (rule WATCH-12).
+            return f"{self._opening_clause(opened)}. {self._confirmed_sentence(resolved)}"
         tail = (
             f", revived by {clause}"
             if clause

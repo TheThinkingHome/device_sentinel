@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.28.12 (2026-11-11)
+# File: diagnostics.py, Version: 0.29.1 (2026-11-14)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -867,6 +867,9 @@ async def async_get_config_entry_diagnostics(
         # Sentinel does not watch, in one place, so an excluded
         # device's answers can be seen before it is watched again.
         "answers": coordinator.answers_diagnostics(),
+        # The integrations and models taken as reporting cached values
+        # after a restart, and each case counted (rule WATCH-12).
+        "restart_values": coordinator.restart_diagnostics(),
         # One piece of hardware shown as several devices: each group of
         # registry devices found to be one device, and each copy set
         # aside with the device it is watched through (rule WATCH-06).

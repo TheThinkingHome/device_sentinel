@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.28.10 (2026-11-10)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.1 (2026-11-14)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -81,9 +81,15 @@ KIND_BATTERY_CONFIRM = "battery_confirm"
 # Two devices holding one network address at once (rule UP-19): in
 # Simple too, because it makes a working device look dead.
 KIND_SHARED_ADDRESS = "shared_address"
+# A model that may report live, or may report cached values, after a
+# restart (rule WATCH-12): in Simple too, because a wrong setting lists
+# a working device or misses a dead one.
+KIND_RESTART_LIVE = "restart_live"
+KIND_RESTART_CACHED = "restart_cached"
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
     KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF, KIND_SHARED_ADDRESS,
+    KIND_RESTART_LIVE, KIND_RESTART_CACHED,
 })
 
 
@@ -370,6 +376,26 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": rows(slow),
             })
+        # A model whose devices were marked back by a person, or were
+        # reported back at a restart and then listed frozen unchanged,
+        # often enough to offer its setting (rule WATCH-12). One row a
+        # model, set from the row.
+        found = self.restart_recommendations()  # type: ignore[attr-defined]
+        for kind, mode, title in (
+            (KIND_RESTART_LIVE, "live", "Models That May Report Live"),
+            (KIND_RESTART_CACHED, "cached", "Models That May Report Cached Values"),
+        ):
+            listed = [
+                {
+                    "device_id": row["device_id"], "name": row["model"], "area": None,
+                    "text": row["text"], "button": row["button"], "under": row["under"],
+                    "mode": mode,
+                }
+                for row in found if row["card"] == mode
+            ]
+            if listed:
+                listed.sort(key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
+                cards.append({"kind": kind, "title": title, "body": "", "devices": listed})
         # Last: a missing or mixed type. The type decides a Matter
         # device's freeze rule (rule STACK-06); for any other it changes
         # no judgment.

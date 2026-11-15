@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.28.10 (2026-11-10)
+# File: study.py, Version: 0.29.1 (2026-11-14)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -90,6 +90,7 @@ from .const import (
     PROBE_WHEN,
     STUDIABLE,
     TADO_KEY,
+    SONOS_KEY,
     WATCH_KEY,
     STUDY_SHAPE_CAP,
 )
@@ -540,6 +541,14 @@ class StudyMixin:
                 self._probe_failure(TADO_KEY, err)
         else:
             self._tado_clear()  # type: ignore[attr-defined]
+        # Sonos likewise, from what its integration holds (rule STACK-11).
+        if SONOS_KEY in studied:
+            try:
+                self._sonos_tick(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(SONOS_KEY, err)
+        else:
+            self._sonos_clear()  # type: ignore[attr-defined]
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
             self._probe_since.clear()
@@ -1088,6 +1097,11 @@ class StudyMixin:
                 self._tado_fold(now)  # type: ignore[attr-defined]
             except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
                 self._probe_failure(TADO_KEY, err)
+        if SONOS_KEY in studied:
+            try:
+                self._sonos_fold(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(SONOS_KEY, err)
         self._probe_flush()
 
     # -------------------------------------------- Hue and SmartThings
@@ -1187,7 +1201,18 @@ class StudyMixin:
                 {"tado": self._tado_download()}
                 if TADO_KEY in self.studied else {}
             ),
+            **(
+                {"sonos": self._sonos_download()}
+                if SONOS_KEY in self.studied else {}
+            ),
         }
+
+    def _sonos_download(self) -> dict[str, Any]:
+        """Sonos for the download, or what stopped it (rule STACK-11)."""
+        try:
+            return self.sonos_diagnostics()  # type: ignore[attr-defined, no-any-return]
+        except Exception as err:  # noqa: BLE001 - the download must still arrive
+            return {"unreadable": f"{type(err).__name__}: {err}"}
 
     def _tado_download(self) -> dict[str, Any]:
         """Tado for the download, or what stopped it (rule STACK-11)."""

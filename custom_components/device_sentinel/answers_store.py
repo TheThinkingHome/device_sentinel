@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.28.12 (2026-11-11)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.1 (2026-11-14)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -18,7 +18,8 @@ The file:
      "types": {"models": {...}, "devices": {...}},
      "acknowledged": {"devices": {card: {device: bool}},
                       "lines": {key: bool}},
-     "battery": {device: {"day": "YYYY-MM-DD", "how": "confirmed"}}}
+     "battery": {device: {"day": "YYYY-MM-DD", "how": "confirmed"}},
+     "restart": {"models": {model: {"mode": "live" or "cached", "set": time}}}}
 
 The acknowledgments of the Recommendations tab live here too, because
 a person's own tick is an answer (rule REC-07); so does a battery
@@ -204,6 +205,7 @@ class AnswersMixin:
         self._answers_lock = asyncio.Lock()
         self._power_reset()  # type: ignore[attr-defined]
         self._type_reset()  # type: ignore[attr-defined]
+        self._restart_reset()  # type: ignore[attr-defined]
         self._recommendation_acks: dict[str, Any] = {"devices": {}, "lines": {}}
         self._battery_replacement_answers: dict[str, dict[str, Any]] = {}
         # Sentences for the events log, recorded once the session has
@@ -279,6 +281,9 @@ class AnswersMixin:
         dropped += self._type_read(types if isinstance(types, dict) else {})  # type: ignore[attr-defined]
         dropped += self._acks_read(payload.get("acknowledged"))  # type: ignore[attr-defined]
         dropped += self._battery_answers_read(payload.get("battery"))  # type: ignore[attr-defined]
+        # The models set to report live or cached values after a restart
+        # (rule WATCH-12).
+        dropped += self._restart_read(payload.get("restart"))  # type: ignore[attr-defined]
         await self._note_dropped(dropped)
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
@@ -474,6 +479,11 @@ class AnswersMixin:
         battery = self._battery_answers_payload()  # type: ignore[attr-defined]
         if battery:
             payload["battery"] = battery
+        # The models a person set on a device page for how they report
+        # after a restart (rule WATCH-12), likewise only once one is set.
+        restart = self._restart_payload()  # type: ignore[attr-defined]
+        if restart["models"]:
+            payload["restart"] = restart
         return payload
 
     def _answers_count(self, part: str) -> int:
@@ -558,6 +568,7 @@ class AnswersMixin:
             # person gave or confirmed.
             "acknowledged": self._acks_payload(),  # type: ignore[attr-defined]
             "battery": self._battery_answers_payload(),  # type: ignore[attr-defined]
+            "restart_models": len(self._restart_models),  # type: ignore[attr-defined]
         }
 
     def answers_held(self) -> list[dict[str, Any]]:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.28.9 (2026-11-10)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.1 (2026-11-14)
 
 """Acting from the device page (rule DASH-09).
 
@@ -225,6 +225,8 @@ class DeviceActionsMixin:
             "signal_off": self.switched_off(device_id, "signal") is not None,
             "mutes": self.page_mutes(device_id),
             "excluded": self.page_excluded(device_id),
+            # The After a restart row and its notes (rule WATCH-12).
+            "restart": self.page_restart(device_id),  # type: ignore[attr-defined]
         }
 
     def page_excluded(self, device_id: str) -> dict[str, bool]:

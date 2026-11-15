@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.28.10 (2026-11-10)
+# File: dashboard_api.py, Version: 0.29.1 (2026-11-14)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -128,6 +128,8 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_battery)
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_exclude)
+    websocket_api.async_register_command(hass, ws_device_restart)
+    websocket_api.async_register_command(hass, ws_device_confirm_back)
     websocket_api.async_register_command(hass, ws_integration_exclude)
     websocket_api.async_register_command(hass, ws_integration_mute)
     websocket_api.async_register_command(hass, ws_device_power)
@@ -916,6 +918,59 @@ def ws_device_mute(
     _page_act(
         hass, connection, msg,
         lambda c: c.page_set_mute(msg["device_id"], msg["kind"], msg["on"], msg["source"]),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_restart",
+        vol.Required("device_id"): str,
+        # "live", "cached", or "same" for its integration's setting.
+        vol.Required("mode"): vol.In(["same", "live", "cached"]),
+        vol.Optional("source", default="device_page"): vol.In(["device_page", "recommendations"]),
+    }
+)
+@callback
+def ws_device_restart(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Set how the device's model is read after a restart (rule WATCH-12)."""
+    mode = None if msg["mode"] == "same" else msg["mode"]
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_from(
+            msg["source"], lambda: c.page_set_restart(msg["device_id"], mode)
+        ),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_confirm_back",
+        vol.Required("device_id"): str,
+        # Also set its model to report live.
+        vol.Optional("live", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_device_confirm_back(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """It's Back: a person says the device is working (rule WATCH-12).
+
+    The Home Assistant user who pressed it is named in the alert and
+    the Daily Brief; a press with no user is told as made on the
+    dashboard.
+    """
+    who = None
+    user = connection.user
+    if user is not None and not user.system_generated and user.name:
+        who = str(user.name)
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_confirm_back(msg["device_id"], who, msg["live"]),
     )
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.28.12 (2026-11-11)
+# File: const.py, Version: 0.29.1 (2026-11-14)
 
 """Constants for the Device Sentinel integration."""
 
@@ -235,6 +235,9 @@ MAINTENANCE_MINUTES_STEP = 5
 # happened to follow a command, the same safe direction pairing takes.
 COMMANDED_RECOVERY_SECONDS = 60.0
 LEARNED_COMMANDED = "no (commanded)"
+# A person pressed It's Back: their word that the device was working is
+# not the device's own rhythm, so the gap is not learned (rule WATCH-12).
+LEARNED_CONFIRMED = "no (confirmed)"
 
 # A device whose wait in use is longer than this is slow to judge for
 # freeze: it reports on a person's habits rather than a rhythm, so a
@@ -2412,6 +2415,9 @@ STUDIABLE = {
     # A cloud poller, recorded from Home Assistant's own data and never
     # from tado (rule STACK-11).
     "tado": "Tado",
+    # Read from what Home Assistant's Sonos integration holds; no
+    # speaker is asked anything (rule STACK-11).
+    "sonos": "Sonos",
     # Not a stack: every problem sensor, and which integrations update
     # in lockstep, recorded on any house (rule STACK-14).
     "problem_polling": "Problem Sensors and Polling",
@@ -2422,6 +2428,8 @@ STUDY_ALWAYS_OFFERED = {"problem_polling"}
 WATCH_KEY = "problem_polling"
 # The Tado recording's key (rule STACK-11).
 TADO_KEY = "tado"
+# The Sonos recording's key (rule STACK-11).
+SONOS_KEY = "sonos"
 # Lockstep: an integration with at least this many devices measurable
 # over this many days, of which at least this share keep each day's
 # longest gap within this tolerance of the integration's median that
@@ -2644,27 +2652,13 @@ RECOVERY_CAUSE_PAIRING = "pairing window"
 RECOVERY_CAUSES_INTERVENTION = frozenset(
     {"handled at the device", RECOVERY_CAUSE_PAIRING}
 )
-# Integrations whose reading after a restart or a reconnect is fetched
-# from the device itself, so it is the device answering (rule FRZ-11).
-# Each is here only because its source shows it: HomeKit Device polls
-# every characteristic from the accessory when it connects
-# (homekit_controller/connection.py, async_setup), and an ESPHome device
-# sends its current states when its connection opens (esphome/manager.py,
-# on_connect). ZHA restores each entity's last state from Home
-# Assistant's store, Zigbee2MQTT's broker hands back retained messages,
-# and Matter and Z-Wave serve their own caches, so none of those is here.
-# Any integration not listed gets the literal reading: a value it
-# restores is not the device speaking (rule UNAV-05).
-FETCHING_INTEGRATIONS = frozenset({
-    "homekit_controller", "esphome",
-    # Integrations that poll a printer, a NAS or a UPS on the local
-    # network and restore nothing at a start, each checked in Home
-    # Assistant's source: what they show after a restart is the device
-    # answering (rule WATCH-12). A poller that restores its last value,
-    # as Modbus does, or reads a hub's cache, as FRITZ!Box DECT does, is
-    # left off.
-    "brother", "ipp", "nut", "apcupsd", "synology_dsm", "qnap", "glances",
-})
+# Which integrations report cached values after a restart is kept in
+# restart_values.py (CACHED_VALUE_INTEGRATIONS), with the person's own
+# ticks and unticks saved here, apart from ours (rule WATCH-12). The
+# first is the settings screen's field, never stored.
+CONF_CACHED_INTEGRATIONS = "cached_integrations"
+CONF_CACHED_ADDED = "cached_integrations_added"
+CONF_CACHED_REMOVED = "cached_integrations_removed"
 # The restart and outage causes still stored on older incidents,
 # recognized so they are told plainly rather than credited (rule UP-06).
 RECOVERY_CAUSES_RESTART = frozenset(

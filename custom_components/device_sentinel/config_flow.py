@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.28.12 (2026-11-11)
+# File: config_flow.py, Version: 0.29.1 (2026-11-14)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -71,6 +71,9 @@ from .const import (
     REPORT_LINKS_INTERNAL,
     REPORT_LINKS_NONE,
     CONF_STUDY_HARDWARE,
+    CONF_CACHED_ADDED,
+    CONF_CACHED_INTEGRATIONS,
+    CONF_CACHED_REMOVED,
     STUDIABLE,
     STUDY_ALWAYS_OFFERED,
     CONF_WIFI_CONFIRM_SECONDS,
@@ -2160,6 +2163,32 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             ),
         )
 
+    def _cached_changes(self, ticked: set[str]) -> dict[str, list[str]]:
+        """The person's ticks as changes to our list (rule WATCH-12).
+
+        Only the integrations the screen offered are judged: one of
+        ours left unticked is removed, one of theirs ticked is added.
+        An integration not on this system keeps what was stored for it,
+        so a change made before it was removed comes back with it.
+        """
+        from .restart_values import CACHED_VALUE_INTEGRATIONS
+
+        coordinator = self.config_entry.runtime_data
+        offered = {row["domain"] for row in coordinator.restart_settings_rows()}
+        options = self.config_entry.options
+        added = {d for d in options.get(CONF_CACHED_ADDED) or [] if isinstance(d, str)}
+        removed = {d for d in options.get(CONF_CACHED_REMOVED) or [] if isinstance(d, str)}
+        ours = set(CACHED_VALUE_INTEGRATIONS)
+        for domain in offered:
+            on = domain in ticked
+            if domain in ours:
+                added.discard(domain)
+                (removed.discard if on else removed.add)(domain)
+            else:
+                removed.discard(domain)
+                (added.add if on else added.discard)(domain)
+        return {CONF_CACHED_ADDED: sorted(added), CONF_CACHED_REMOVED: sorted(removed)}
+
     async def async_step_advanced(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -2184,8 +2213,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     flat.update(value)
                 else:
                     flat[key] = value
+            # The ticked integrations are stored as the person's changes
+            # to our list, never the list itself, so an integration we
+            # add in a later release still reaches them (rule WATCH-12).
+            ticked = flat.pop(CONF_CACHED_INTEGRATIONS, None)
+            if ticked is not None:
+                flat.update(self._cached_changes(set(ticked)))
             return await self._save_and_return(flat)
         options = self.config_entry.options
+        cached_rows = self.config_entry.runtime_data.restart_settings_rows()
+        cached_now = self.config_entry.runtime_data.cached_integrations()
         # The trim pickers offer everything the integration knows,
         # unfiltered, and are shown empty every time: they name what
         # to erase on this save, not a setting the entry holds
@@ -2287,6 +2324,29 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             step=MAINTENANCE_MINUTES_STEP,
                             unit_of_measurement="min",
                             mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    # The integrations that report cached values after
+                    # a restart (rule WATCH-12): those on this system,
+                    # ours ticked, each naming the models set on their
+                    # device pages.
+                    vol.Optional(
+                        CONF_CACHED_INTEGRATIONS,
+                        default=sorted(
+                            row["domain"] for row in cached_rows
+                            if row["domain"] in cached_now
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=row["domain"], label=row["label"]
+                                )
+                                for row in cached_rows
+                            ],
+                            multiple=True,
+                            custom_value=False,
+                            mode=selector.SelectSelectorMode.LIST,
                         )
                     ),
                     # Optional rather than required: a save that

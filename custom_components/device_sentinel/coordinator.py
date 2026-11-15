@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.0 (2026-11-14)
+# File: coordinator.py, Version: 0.29.1 (2026-11-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -158,7 +158,6 @@ from .const import (
     SLOWDOWN_DAYS,
     DAILY_SERIES_FIELDS,
     COMMANDED_RECOVERY_SECONDS,
-    FETCHING_INTEGRATIONS,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     DEFAULT_RETENTION_DAYS,
@@ -252,6 +251,7 @@ from .const import (
     INC_CAUSE,
     LEARNED_DISABLED,
     LEARNED_COMMANDED,
+    LEARNED_CONFIRMED,
     LEARNED_MAINTENANCE,
     LEARNED_HANDLED,
     LEARNED_DOWNTIME_OUT,
@@ -325,6 +325,7 @@ from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
 from .study_tado import TadoStudyMixin
+from .study_sonos import SonosStudyMixin
 from .study_watch import WatchStudyMixin
 from .wifi import WifiScanMixin
 from .dashboard import (
@@ -368,6 +369,7 @@ from .status_readings import (
 )
 from .stacks import reader_for_domain
 from .stacks import last_heard as stack_last_heard
+from .restart_values import RESTORES_BEHIND_ITS_CLOCK, RestartValuesMixin
 from .store import StorageMixin, _watched_seconds
 
 
@@ -413,6 +415,7 @@ SETUP_MARK = "device_sentinel_set_up"
 
 
 class DeviceSentinelCoordinator(
+    RestartValuesMixin,
     PollerMixin,
     HubMixin,
     DeviceActionsMixin,
@@ -444,6 +447,7 @@ class DeviceSentinelCoordinator(
     StudyMixin,
     WatchStudyMixin,
     TadoStudyMixin,
+    SonosStudyMixin,
     DashboardMixin,
     IntegrationViewMixin,
     NetworksMixin,
@@ -827,6 +831,14 @@ class DeviceSentinelCoordinator(
         self._unheld_own: set[str] = set()
         self._last_good: dict[str, str] = {}
         self._on_watch: dict[str, set[str]] = {}
+        # When each watch began, the restarts counted from them, and the
+        # devices already counted this time down (rule WATCH-12).
+        self._restart_arms: dict[str, float] = {}
+        self._restart_noted: set[tuple[str, float | None]] = set()
+        self._setup_moment: float = dt_util.utcnow().timestamp()
+        self._return_watch: dict[str, float] = {}
+        self._confirming: dict[str, str | None] = {}
+        self._confirmed: dict[str, tuple[str | None, float]] = {}
         # The devices set aside at the last registry rebuild, so a
         # return and a new stretch are each seen once, as they happen
         # (rule WATCH-08). None before the first rebuild, which reads
@@ -3466,30 +3478,12 @@ class DeviceSentinelCoordinator(
         """Whether this device keeps its last good values while a
         verdict stands (rule WATCH-12).
 
-        Not a device with a Last Seen entity, which is the stack's own
-        record of hearing it; not one whose stack keeps that clock for
-        it, as ZHA does, asked of the stack itself so this file names
-        none; and not one on an integration that fetches its readings
-        from the device, whose reading is the device answering. A stack
-        clock that cannot be read leaves the device judged as one
-        without (rule STACK-04).
+        Every device the cached-values list can apply to: one with no
+        Last Seen entity and no stack clock, Z-Wave JS apart. The values
+        are what a return after a restart is compared with, on the list
+        or off it.
         """
-        domain = self._watched.get(device_id)
-        return (
-            domain is not None
-            and device_id not in self._last_seen_entity
-            and not self._fetches_readings(domain)
-            and stack_last_heard(self.hass, domain, device_id) is None
-        )
-
-    @staticmethod
-    def _fetches_readings(domain: str | None) -> bool:
-        """Whether the integration asks the device for each reading:
-        ESPHome and HomeKit Device as they connect, and the pollers of a
-        printer, a NAS or a UPS that restore nothing. What it shows
-        after a restart is the device answering, not a value handed
-        back (rules WATCH-12, UP-06)."""
-        return domain in FETCHING_INTEGRATIONS
+        return self._restart_scope(device_id)
 
     def _held_entities(self, device_id: str) -> dict[str, str]:
         """The device's entities that can hold a value, each with its
@@ -3543,6 +3537,8 @@ class DeviceSentinelCoordinator(
         or the device has spoken, or it is no longer watched (rule
         WATCH-12)."""
         self._on_watch.pop(device_id, None)
+        self._restart_arms.pop(device_id, None)
+        self._return_watch.pop(device_id, None)
         if record.get(DEV_HELD_VALUES) is not None:
             record[DEV_HELD_VALUES] = None
             self._dirty = True
@@ -3550,8 +3546,17 @@ class DeviceSentinelCoordinator(
     def _arm_held_watches(self) -> None:
         """Put each held entity on watch at setup, which follows a
         restart or a reload (rule WATCH-12). Held values with no verdict
-        behind them, or on a device that no longer keeps them, go."""
+        behind them, or on a device that no longer keeps them, go.
+
+        Only a device taken as reporting cached values is watched. One
+        that is not is taken at its word, and the restart is remembered
+        so its return with the same values can be told later.
+        """
         self._on_watch = {}
+        self._restart_arms = {}
+        self._restart_noted = set()
+        self._setup_moment = dt_util.utcnow().timestamp()
+        self._restart_load()
         records = self.data.get(DATA_DEVICES) or {}
         for device_id, record in records.items():
             if not isinstance(record, dict) or record.get(DEV_HELD_VALUES) is None:
@@ -3561,6 +3566,9 @@ class DeviceSentinelCoordinator(
                 continue
             if record.get(DEV_FROZEN_CATEGORY) is None or not self._holds_values(device_id):
                 self._release_values(device_id, record)
+                continue
+            if not self._reports_cached(device_id):
+                self._restart_watch_return(device_id, record)
                 continue
             entities = {
                 entity_id: key
@@ -3580,6 +3588,7 @@ class DeviceSentinelCoordinator(
                 continue
             if entities:
                 self._on_watch[device_id] = set(entities.values())
+                self._restart_arms[device_id] = self._setup_moment
 
     def _arm_entity_watch(self, entity_id: str) -> None:
         """Put one entity on watch when it is removed, or Home Assistant
@@ -3594,8 +3603,13 @@ class DeviceSentinelCoordinator(
         if not isinstance(record, dict) or record.get(DEV_FROZEN_CATEGORY) is None:
             return
         held = record.get(DEV_HELD_VALUES)
-        if isinstance(held, dict) and key in held and self._holds_values(device_id):
-            self._on_watch.setdefault(device_id, set()).add(key)
+        if not (isinstance(held, dict) and key in held and self._holds_values(device_id)):
+            return
+        if not self._reports_cached(device_id):
+            self._restart_watch_return(device_id, record)
+            return
+        self._on_watch.setdefault(device_id, set()).add(key)
+        self._restart_arms.setdefault(device_id, dt_util.utcnow().timestamp())
 
     @staticmethod
     def _same_value(held: str, state: str) -> bool:
@@ -4125,7 +4139,9 @@ class DeviceSentinelCoordinator(
         # speaking (rule WATCH-12).
         reading = self._read_on_watch(device_id, entity_id, new_state.state)
         self._note_good(entity_id, new_state.state)
+        self._restart_return_spoke(device_id, entity_id, new_state.state)
         if reading == "cache":
+            self._restart_note_pending(device_id)
             if new_state.state not in BAD_STATES:
                 self._record_activity(
                     device_id, entry_id, entity_id, new_state.state, foreign=True
@@ -4192,6 +4208,11 @@ class DeviceSentinelCoordinator(
             self._mqtt_disconnected_at = now
             self._mqtt_reconnected_at = None
 
+    def _rides_broker(self, device_id: str) -> bool:
+        """Whether the device's values come through the MQTT broker."""
+        domain = self._watched.get(device_id)
+        return domain == BROKER_SCOPE or domain in BROKER_RIDER_DOMAINS
+
     def _mqtt_handing_back(self, device_id: str, old_state: Any, now: float) -> bool:
         """Whether a device that rides the broker is handing back what
         it held after MQTT lost the broker (rule UNAV-05).
@@ -4253,9 +4274,9 @@ class DeviceSentinelCoordinator(
         Home Assistant's own restart. Three devices are exempt. One with
         a last-seen clock: its clock is the stack's own record of
         hearing it, so a restored old time cannot move it and a new one
-        is the device speaking (rule FRZ-11). One on an integration that
-        fetches its readings from the device itself, polling it or asking
-        as it connects, whose reading is the device answering. And one Device Sentinel
+        is the device speaking (rule FRZ-11). One that is not on the list
+        of integrations and models that report cached values, which is
+        taken at its word (rule WATCH-12). And one Device Sentinel
         had judged unavailable: its stack now saying it is available is
         a genuine recovery (rule UP-06).
         """
@@ -4274,10 +4295,20 @@ class DeviceSentinelCoordinator(
             return False
         if device_id in self._last_seen_entity:
             return False
-        if self._fetches_readings(self._watched.get(device_id)):
-            # Fetched from the device, not restored from a cache: the
-            # device answering (rule UP-06).
-            return False
+        # Not on the list of integrations and models that report cached
+        # values, and with no stack clock: taken at its word, the device
+        # answering (rules WATCH-12, UP-06). One thing still stands for
+        # it, read below: a value written back while its MQTT broker or
+        # its Zigbee2MQTT bridge is down or just back is the broker's
+        # retained copy, known from the broker's own word (rule UNAV-05).
+        # A ZHA device whose stack clock cannot be read this once is not
+        # taken at its word either: ZHA restores each entity's last state
+        # from Home Assistant's store (rule STACK-04).
+        at_its_word = (
+            not self._reports_cached(device_id)
+            and self._watched.get(device_id) not in RESTORES_BEHIND_ITS_CLOCK
+            and stack_last_heard(self.hass, self._watched.get(device_id), device_id) is None
+        )
         record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
         # The stack's own Last Seen clock, as ZHA keeps (rule STACK-04):
         # a value is the device speaking only if the radio has heard it
@@ -4303,12 +4334,16 @@ class DeviceSentinelCoordinator(
             bridge_lost = None
             handing_back = False
             held = False
-            if not self._in_startup_grace():
+            if at_its_word or not self._in_startup_grace():
                 return False
         else:
             bridge_lost = self._bridge_handing_back(device_id, old_state, now)
             handing_back = self._mqtt_handing_back(device_id, old_state, now) or bridge_lost is not None
             held = self._held_by_upstream(device_id, now) or handing_back
+            if at_its_word and not (handing_back or (held and self._rides_broker(device_id))):
+                # Only the broker's and the bridge's own copies are
+                # still told from the device (rule UNAV-05).
+                return False
             if not (self._in_startup_grace() or held):
                 return False
         if was_gone is not None and self._unavailable_muted(device_id):
@@ -4766,6 +4801,13 @@ class DeviceSentinelCoordinator(
                 "gap discarded as a commanded recovery",
                 device_id,
             )
+        if device_id in self._confirming and learned in ("yes", LEARNED_DOWNTIME_OUT):
+            # No report at all: a person pressed It's Back. The silence
+            # up to the press is not a gap the device made, so it is not
+            # learned (rule WATCH-12).
+            learned = LEARNED_CONFIRMED
+            if learned_gap is not None:
+                self._retract_today_max(record, learned_gap, today_before)
         self._close_episode(device_id, stamp, learned, taint_seconds)
 
         record[DEV_LAST_ACTIVITY] = stamp
@@ -6157,6 +6199,9 @@ class DeviceSentinelCoordinator(
         # (rule STACK-09).
         self._sample_hubs(dt_util.utcnow().timestamp())
         self._judge_all_devices()
+        # A device on the list found still listed with its values back
+        # is counted (rule WATCH-12).
+        self.restart_sweep()
         self._wifi_backdate()
         self._note_upstream_peaks()
         # The sync follows the sweep every tick, so a freeze the
@@ -6637,6 +6682,9 @@ class DeviceSentinelCoordinator(
         )
         self._schedule_brief()
         self._evaluate_all_batteries()
+        # An integration unticked from those that report cached values:
+        # its devices leave their watch (rule WATCH-12).
+        self.restart_settle()
         # A device muted here leaves the down list at once
         # (frozen_devices_list and the held kinds read the mutes), so
         # the sync deletes its items now. Its verdict clears on the next
