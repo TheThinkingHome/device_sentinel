@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.28.11 (2026-11-10)
+// File: panel.js, Version: 0.29.0 (2026-11-14)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2113,7 +2113,10 @@ class DeviceSentinelPanel extends HTMLElement {
           // What Device Sentinel recommends, under the name (rule MUTE-02).
           row.recommended
             ? el("div", { class: "recommended" }, "Recommended: ", el("strong", {}, "Exclude"), `, ${row.recommended}`)
-            : null),
+            : null,
+          // A polling integration's note, under the name: what Device
+          // Sentinel can and cannot see through it (rule UP-18).
+          row.note ? el("div", { class: "small", style: "margin-top:2px;line-height:1.4" }, row.note) : null),
         el("td", {}, owns(row) ? this._integrationButtons(row) : null),
         simple ? null : el("td", { class: "num" }, row.set_aside ? String(row.set_aside) : ""),
         simple ? null : el("td", { class: "num" }, row.outages ? String(row.outages) : ""),
@@ -2249,7 +2252,9 @@ class DeviceSentinelPanel extends HTMLElement {
     const head = el("div", { class: "pagehead" },
       el("div", {},
         el("h2", {}, page.name, " ", el("span", { class: "small" }, page.domain)),
-        el("div", { class: "muted" }, standingLine)),
+        el("div", { class: "muted" }, standingLine),
+        // A polling integration's note (rule UP-18).
+        page.note ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" }, page.note) : null),
       el("div", { class: "links" },
         this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(page.domain)}`),
         this._link("Device Sentinel settings", SETTINGS_PATH)));
