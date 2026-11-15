@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_after_a_restart.js, Version: 0.29.1 (2026-11-14)
+// File: tools/panel_checks/check_after_a_restart.js, Version: 0.29.2 (2026-11-15)
 // Panel checks: how a device's model is read after a restart (rule
 // WATCH-12). The After a restart row with its three choices, the two
 // notes with their counts and buttons, and the two Recommendations
@@ -144,6 +144,14 @@ const pressed = (cell) => (cell ? [...cell.querySelectorAll('button[aria-pressed
   await click(buttonIn(cell, "Same as Shelly"));
   acts = sent(calls, "device_restart");
   check("Same as goes back to the integration's setting", acts.length === 1 && acts[0].mode === "same", acts);
+  // A model on Device Sentinel's own list: its first choice goes back
+  // to Device Sentinel's setting, not the integration's (rule WATCH-12).
+  ({ root, calls } = await open({}, withRow({ listed: false, same_label: "Device Sentinel's Setting",
+    words: "Device Sentinel lists Shelly H&T devices as reporting cached values after a restart, so this device is reported back only when one of its values changes." })));
+  cell = rowCell(root, "After a restart");
+  check("a listed model's first choice is Device Sentinel's Setting", JSON.stringify(buttons(cell)) === JSON.stringify(["Device Sentinel's Setting", "Reports live", "Reports cached values"]), buttons(cell));
+  check("it is the one highlighted", JSON.stringify(pressed(cell)) === JSON.stringify(["Device Sentinel's Setting"]), pressed(cell));
+  check("its sentence names Device Sentinel's list", cell.textContent.includes("Device Sentinel lists Shelly H&T devices as reporting cached values"), cell.textContent);
   ({ root, calls } = await open({}, withRow({ can_set: false })));
   cell = rowCell(root, "After a restart");
   await click(buttonIn(cell, "Reports cached values"));
