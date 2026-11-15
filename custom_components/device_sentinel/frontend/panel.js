@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.0 (2026-11-14)
+// File: panel.js, Version: 0.29.1 (2026-11-14)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -58,7 +58,7 @@ const BATTERY_STEP_WORDS = { Smooth: "small steps", Coarse: "steps of 5% or more
 const LEARNED_WORDS = {
   yes: "Yes", "yes (downtime out)": "Yes, less Device Sentinel's own stops", "yes (truncated)": "Yes, up to the intervention",
   "no (pairing)": "No, re-paired", "no (maintenance)": "No, maintenance", "no (disabled)": "No, it was set aside",
-  "no (handled)": "No, handled by hand", "no (commanded)": "No, a command woke it", "no (unavailable)": "No, it was unavailable",
+  "no (handled)": "No, handled by hand", "no (commanded)": "No, a command woke it", "no (confirmed)": "No, marked back by hand", "no (unavailable)": "No, it was unavailable",
   "no (unknown)": "No, it read unknown", "no (bridge down)": "No, its bridge was down",
   "no (upstream down)": "No, its integration or network was down", "no (clock jump)": "No, the clock jumped",
   "no (unclean shutdown)": "No, Home Assistant stopped unexpectedly",
@@ -1816,6 +1816,17 @@ class DeviceSentinelPanel extends HTMLElement {
       // A device slow to judge for freeze (rule REC-06): the
       // same mute its device page offers, in the list. The device
       // leaves the card once muted.
+      // A model that may report live, or cached values, after a restart
+      // (rule WATCH-12): what was seen, the button that sets the model,
+      // and what the setting does.
+      if (card.kind === "restart_live" || card.kind === "restart_cached") {
+        action = el("div", { class: "actcol" },
+          el("span", {}, row.text),
+          el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: async () => {
+            try { await this._call({ type: "device_sentinel/device_restart", device_id: row.device_id, mode: row.mode, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
+          } }, row.button)),
+          el("span", { class: "small muted" }, row.under));
+      }
       if (card.kind === "slow") {
         action = el("button", { class: "chip", type: "button", onclick: async () => {
           try { await this._call({ type: "device_sentinel/device_mute", device_id: row.device_id, kind: "freeze", on: true, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
@@ -1826,6 +1837,8 @@ class DeviceSentinelPanel extends HTMLElement {
         // The area, or "Not Set" to set it; on the area card the row's own
         // chooser does that (rule DASH-04).
         el("td", { class: "small" }, card.kind === "area" ? el("span", { class: "muted" }, NOT_SET)
+          // A row for a model has no area of its own.
+          : card.kind.startsWith("restart_") ? null
           : this._areaWords(row.area, row.device_id)),
         el("td", {}, el("div", { class: "actrow" }, action, note)),
         // A battery replacement is answered, not ticked (rule REC-07).
@@ -1837,9 +1850,11 @@ class DeviceSentinelPanel extends HTMLElement {
       // The rows not yet ticked, as the tab and the button count them
       // (rule REC-08); no number once every row is ticked.
       el("h3", {}, unticked ? `${card.title} (${unticked})` : card.title),
-      el("p", {}, card.body),
+      card.body ? el("p", {}, card.body) : null,
       this._recDetails(card.kind, open,
-        el("summary", {}, `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
+        el("summary", {}, card.kind.startsWith("restart_")
+          ? `Show the ${card.devices.length} ${card.devices.length === 1 ? "model" : "models"}`
+          : `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
         el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...rows)))));
   }
 
@@ -4513,6 +4528,48 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
+  // How the device's model is read after a restart (rule WATCH-12):
+  // its integration's setting, or the model's own, the one in use
+  // highlighted, with the sentence for it underneath.
+  _restartCell(who) {
+    const r = who.actions.restart;
+    const act = (mode) => this._deviceAct({ type: "device_sentinel/device_restart", device_id: who.device_id, mode }, "restart");
+    const current = r.mode || "same";
+    const choice = (mode, words) => el("button", {
+      class: current === mode ? "chip on" : "chip", type: "button",
+      "aria-pressed": current === mode ? "true" : "false",
+      ...(r.can_set ? {} : { "aria-disabled": "true", disabled: "" }),
+      onclick: () => { if (r.can_set && current !== mode) act(mode); },
+    }, words);
+    return el("div", { class: "actcol" },
+      el("div", { class: "actrow" },
+        choice("same", `Same as ${r.integration}`),
+        choice("live", "Reports live"),
+        choice("cached", "Reports cached values")),
+      el("span", { class: "small" }, r.words),
+      this._actNote("restart"));
+  }
+
+  // The note for a device whose reading after a restart may be wrong,
+  // with how often it has happened and what a person can do (rule
+  // WATCH-12).
+  _restartNoteCell(who) {
+    const note = who.actions.restart.note;
+    const act = (button) => {
+      if (button.action === "cached") {
+        return this._deviceAct({ type: "device_sentinel/device_restart", device_id: who.device_id, mode: "cached" }, "restartnote");
+      }
+      return this._deviceAct({ type: "device_sentinel/device_confirm_back", device_id: who.device_id, live: button.action === "back_live" }, "restartnote");
+    };
+    return el("div", { class: "actcol" },
+      el("span", {}, note.text),
+      el("span", { class: "small" }, note.count),
+      ...note.buttons.map((button) => el("div", { class: "actcol" },
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(button) }, button.label)),
+        el("span", { class: "small muted" }, button.under))),
+      this._actNote("restartnote"));
+  }
+
   _paintDevicePage() {
     const page = this._page;
     this._pane.classList.add("devpage");
@@ -4812,6 +4869,10 @@ class DeviceSentinelPanel extends HTMLElement {
       // Simple hides Exclude this device (rule MUTE-03); an exclusion already
       // made still shows, with its way back.
       ...(acts && (!simple || exclusion.here || exclusion.integration) ? [["Excluded", this._excludedCell(who)]] : []),
+      // How its model is read after a restart, and the note when that
+      // reading may be wrong, in Simple too (rule WATCH-12).
+      ...(acts && acts.restart && acts.restart.note ? [[acts.restart.note.name, this._restartNoteCell(who)]] : []),
+      ...(acts && acts.restart ? [[acts.restart.name, this._restartCell(who)]] : []),
     ];
     // A group left with no rows under it is not drawn either.
     const ungrouped = new Set();
