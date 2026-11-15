@@ -79,7 +79,7 @@ You don't need to write code to help. Device Sentinel learns from real houses.
 - **Your opinion:** run Device Sentinel for a week or two, then open an issue titled "Review" and tell me what worked and what didn't.
 - **Code:** read [CONTRIBUTING.md](CONTRIBUTING.md) first. Device Sentinel's rules are in the [`developer`](developer/Main__Rulebook.md) folder, and the code refers to them by name.
 
-The hardware that has already run on real houses is listed in [TESTED_HARDWARE.md](docs/TESTED_HARDWARE.md). The integrations checked for how they report after a restart are listed in [TRUSTED_INTEGRATIONS.md](docs/TRUSTED_INTEGRATIONS.md).
+The hardware that has already run on real houses is listed in [TESTED_HARDWARE.md](docs/TESTED_HARDWARE.md). The integrations checked for how they report after a restart are listed in [TRUSTED_INTEGRATIONS.md](docs/TRUSTED_INTEGRATIONS.md), and the makes and models in [UNTRUSTED_DEVICES.md](docs/UNTRUSTED_DEVICES.md).
 
 ## Integration Status
 
