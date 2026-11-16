@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.3 (2026-11-15)
+// File: panel.js, Version: 0.29.4 (2026-11-16)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -98,6 +98,68 @@ const levelNumber = (v) => {
   return Number.isInteger(tenth) ? String(Math.abs(tenth) === 0 ? 0 : tenth) : tenth.toFixed(1);
 };
 const levelText = (v) => (typeof v === "number" && Number.isFinite(v) ? `${levelNumber(v)}%` : "");
+// The battery's smoothed line (rule BAT-17): a local straight-line fit
+// at each kept day, each neighbour weighted by its distance, fifteen
+// days either side. Simple's chart and Advanced's long views draw the
+// same line. Points are [index, level], index in days.
+const smoothBattery = (points) => points.map(([i]) => {
+  let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (const [j, v] of points) {
+    const d = Math.abs(j - i) / 15;
+    if (d >= 1) continue;
+    const w = (1 - d * d * d) ** 3;
+    sw += w; sx += w * j; sy += w * v; sxx += w * j * j; sxy += w * j * v;
+  }
+  const den = sw * sxx - sx * sx;
+  const b = Math.abs(den) < 1e-9 ? 0 : (sw * sxy - sx * sy) / den;
+  const a = (sy - b * sx) / sw;
+  return [i, a + b * i];
+});
+// The kept days split where a smoothed line must not run across
+// (rule BAT-17): a gap of more than three days with no reading, which
+// a line would bridge as if it were data, and a rise of 15 points or
+// more from one day to the next, which is a new battery, not the old
+// one's trend. Each stretch is smoothed on its own.
+const batteryStretches = (points) => {
+  const stretches = [];
+  let run = [];
+  for (const point of points) {
+    const last = run[run.length - 1];
+    if (last && (point[0] - last[0] > 4 || point[1] - last[1] >= 15)) {
+      stretches.push(run);
+      run = [];
+    }
+    run.push(point);
+  }
+  if (run.length) stretches.push(run);
+  return stretches;
+};
+// The usual bounce around the smoothed line (rule BAT-17): at each day,
+// the 10th to the 90th percentile of the readings' distance from the
+// line, weighted the same way, fifteen days either side. Returns
+// [index, low, high].
+const bounceBand = (points, smooth) => {
+  const fit = new Map(smooth);
+  const away = points.map(([j, v]) => [j, v - fit.get(j)]);
+  const quantile = (pairs, p) => {
+    const sorted = pairs.slice().sort((a, b) => a[0] - b[0]);
+    const total = sorted.reduce((sum, [, w]) => sum + w, 0);
+    let seen = 0;
+    for (const [r, w] of sorted) {
+      seen += w;
+      if (seen >= p * total) return r;
+    }
+    return sorted[sorted.length - 1][0];
+  };
+  return smooth.map(([i, centre]) => {
+    const near = [];
+    for (const [j, r] of away) {
+      const d = Math.abs(j - i) / 15;
+      if (d < 1) near.push([r, (1 - d * d * d) ** 3]);
+    }
+    return [i, centre + quantile(near, 0.1), centre + quantile(near, 0.9)];
+  });
+};
 // A lithium cell's level holds near full until its end (rule BAT-16): said
 // whenever the cell is not falling, so a steady reading is not taken
 // for a healthy one.
@@ -2068,7 +2130,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // DASH-10). The device leaves the card once no other device shares
   // its name.
   _recRename(row, refresh, fail) {
-    const input = el("input", { class: "actinput", type: "text", "aria-label": `A new name for ${row.name}`, value: row.name || "" });
+    const input = el("input", { class: "actinput", type: "text", "aria-label": `A new name for ${row.name}`, value: row.own_name || row.name || "" });
     const ask = el("span", { class: "actrow" });
     const send = async (confirm) => {
       ask.replaceChildren();
@@ -4117,7 +4179,7 @@ class DeviceSentinelPanel extends HTMLElement {
     if (!e || e.row !== "name") {
       return el("div", { class: "actcol" }, el("div", { class: "actrow" }, el("span", {}, who.name),
         this._editMark("Rename", () => {
-          this._devEdit = { device: who.device_id, row: "name", value: acts.name_by_user || who.name };
+          this._devEdit = { device: who.device_id, row: "name", value: acts.name_by_user || acts.integration_name || who.name };
           this._paintDevicePage();
         })), this._actNote("name"));
     }
@@ -4457,6 +4519,8 @@ class DeviceSentinelPanel extends HTMLElement {
       const openArea = () => { this._areaClearAsk = null; this._openPicker(who, "area"); };
       return el("div", { class: "actcol" }, el("div", { class: "actrow" },
         who.area ? el("span", {}, who.area) : el("button", { class: "linkbtn", type: "button", onclick: openArea }, NOT_SET),
+        // A child device in its parent's area says so (rule DEV-18).
+        who.area && acts.area_from && !acts.area_id ? el("span", { class: "muted" }, `, from ${acts.area_from}`) : null,
         this._editMark("Change area", openArea)), this._actNote("area"));
     }
     const choose = (area_id) => this._deviceAct(
@@ -4469,7 +4533,9 @@ class DeviceSentinelPanel extends HTMLElement {
       el("input", { type: "radio", name: "ds-area",
         ...((asking ? id === null : (acts.area_id || null) === id) ? { checked: "" } : {}),
         onchange: () => {
-          if (id === null && acts.area_id) {
+          // A child device's first choice puts it in its parent's area,
+          // which takes it out of no area, so it does not ask (rule DEV-18).
+          if (id === null && acts.area_id && !acts.area_from) {
             this._areaClearAsk = who.device_id;
             this._paintDevicePage();
             return;
@@ -4487,7 +4553,11 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" },
       el("fieldset", { style: "border:none;margin:0;padding:0" },
         el("legend", { class: "muted", style: "padding:0 0 4px" }, "Area"),
-        option(null, "No area"), ask, ...this._choices.areas.map((a) => option(a.id, a.name))),
+        // A child device with no area of its own is in its parent's, so
+        // its "No area" keeps that, and choosing an area gives it one of
+        // its own (rule DEV-18).
+        option(null, acts.area_from ? `Same as ${acts.area_from}${acts.area_from_area ? ` (${acts.area_from_area})` : ""}` : "No area"), ask,
+        ...this._choices.areas.map((a) => option(a.id, a.name))),
       this._newNameRow("New area", "Create and move here",
         (name) => this._deviceAct({ type: "device_sentinel/device_new_area", device_id: who.device_id, name }, "area")),
       el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
@@ -5264,15 +5334,30 @@ class DeviceSentinelPanel extends HTMLElement {
     ahead = Math.min(ahead, 3 * 365);
     // A little room after the last day drawn, so the far end's empty
     // day is not drawn on the chart's edge.
-    const total = Math.max(1, n + ahead + (ahead > 0 ? Math.max(2, Math.round(ahead / 20)) : 0));
+    // Today sits at slot n, one past the last kept day, so the slots
+    // run to n even when no fall is drawn: otherwise today's line, its
+    // dot and its label fall past the right edge (rule BAT-17).
+    const total = Math.max(1, n + 1 + ahead + (ahead > 0 ? Math.max(2, Math.round(ahead / 20)) : 2));
     const left = 44;
     const right = 1090;
     const x = (i) => left + (i / Math.max(1, total - 1)) * (right - left);
-    const y = (v) => 190 - (Math.max(0, Math.min(100, v)) / 100) * 170;
+    // The scale fits what is drawn (rule BAT-17): from empty to the
+    // highest kept day, today's reading, the start of the fall or the
+    // low line, rounded up to the next 20% so its four steps read as
+    // whole numbers, and a battery between 30% and empty fills the
+    // chart rather than its bottom third.
+    const tallest = Math.max(
+      ...daily.filter((v) => typeof v === "number" && Number.isFinite(v)),
+      level !== null ? level : 0,
+      proj && typeof proj.start === "number" ? proj.start : 0,
+      typeof battery.threshold === "number" ? battery.threshold : 0,
+    );
+    const top = Math.min(100, Math.max(20, Math.ceil(tallest / 20) * 20));
+    const y = (v) => 190 - (Math.max(0, Math.min(top, v)) / top) * 170;
     const g = svg("svg", { viewBox: "0 0 1100 220", role: "img", "aria-label": "Battery level, with its expected fall" });
-    for (const v of [0, 25, 50, 75, 100]) {
+    for (const v of [0, top / 4, top / 2, (3 * top) / 4, top]) {
       g.append(svg("line", { x1: left, y1: y(v), x2: right, y2: y(v), stroke: "var(--divider-color)" }),
-        svg("text", { x: 38, y: y(v) + 4, class: "axis", "text-anchor": "end" }, `${v}%`));
+        svg("text", { x: 38, y: y(v) + 4, class: "axis", "text-anchor": "end" }, `${levelNumber(v)}%`));
     }
     // Month ticks across history and future, today at slot n.
     const today = new Date();
@@ -5291,34 +5376,33 @@ class DeviceSentinelPanel extends HTMLElement {
     for (const [i, v] of points) {
       g.append(svg("circle", { cx: x(i), cy: y(v), r: 2.2, fill: "var(--primary-color, #03a9f4)", "fill-opacity": 0.28 }));
     }
-    const smooth = points.map(([i]) => {
-      let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
-      for (const [j, v] of points) {
-        const d = Math.abs(j - i) / 15;
-        if (d >= 1) continue;
-        const w = (1 - d * d * d) ** 3;
-        sw += w; sx += w * j; sy += w * v; sxx += w * j * j; sxy += w * j * v;
-      }
-      const den = sw * sxx - sx * sx;
-      const b = Math.abs(den) < 1e-9 ? 0 : (sw * sxy - sx * sy) / den;
-      const a = (sy - b * sx) / sw;
-      return [i, a + b * i];
-    });
+    // One smoothed line for each stretch, so it never runs across a new
+    // battery or a gap in the readings (rule BAT-17).
+    const lines = batteryStretches(points).map((stretch) => smoothBattery(stretch));
     // Where the expected fall begins: the fit's value today when there is
     // a range, since the time left starts there (rule BAT-13), or else
-    // today's reading. The history runs into it, and today's reading is
-    // a dot of its own (rule BAT-17).
+    // today's reading. The newest stretch runs into it, and today's
+    // reading is a dot of its own (rule BAT-17).
     const from = proj && typeof proj.start === "number" ? proj.start : level;
-    if (level !== null && n > 0) {
-      g.append(svg("circle", { class: "todaydot", cx: x(n), cy: y(level), r: 2.2, fill: "var(--primary-color, #03a9f4)", "fill-opacity": 0.28 }));
+    if (from !== null && n > 0) {
+      // Joined to today only where the newest stretch reaches it: not
+      // across days with no reading, nor up to a battery put in today
+      // (rule BAT-17).
+      const newest = lines.length ? lines[lines.length - 1] : null;
+      const last = newest ? newest[newest.length - 1] : null;
+      const joins = last && n - last[0] <= 4 && from - last[1] < 15;
+      if (joins) newest.push([n, from]);
     }
-    if (from !== null && n > 0) smooth.push([n, from]);
-    if (smooth.length > 1) {
+    for (const smooth of lines) {
+      if (smooth.length < 2) continue;
       g.append(svg("polyline", { fill: "none", stroke: "var(--primary-color, #03a9f4)", "stroke-width": 2.4,
         points: smooth.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
     }
     g.append(svg("line", { x1: x(n), y1: 20, x2: x(n), y2: 190, stroke: "var(--secondary-text-color)", "stroke-opacity": 0.6 }),
-      svg("text", { x: x(n) + 4, y: 32, class: "axis" }, "today"));
+      // Right of the line, or left of it where the line is near the right
+      // edge, as when no fall is drawn and the history is long (rule BAT-17).
+      svg("text", { x: x(n) + 35 > right + 10 ? x(n) - 4 : x(n) + 4, y: 32, class: "axis",
+        "text-anchor": x(n) + 35 > right + 10 ? "end" : "start" }, "today"));
     let lowest = points.length ? Math.min(...points.map(([, v]) => v)) : 100;
     // Each zero falls on its own day, said under the axis (rule BAT-17).
     const zeroes = [];
@@ -5390,6 +5474,18 @@ class DeviceSentinelPanel extends HTMLElement {
         svg("text", { x: left + 6, y: y(threshold) - 4, class: "axis", fill: "var(--error-color, #db4437)" },
           `low battery ${threshold}%`));
     }
+    // Today's reading, drawn last so it sits on the lines: solid and
+    // ringed, with its level beside it, so how far it sits from the
+    // line the fall starts from can be seen (rule BAT-17).
+    if (level !== null && n > 0) {
+      g.append(svg("circle", { class: "todaydot", cx: x(n), cy: y(level), r: 4.5,
+        fill: "var(--primary-color, #03a9f4)", stroke: "#fff", "stroke-width": 1.6 }),
+      // Left of the dot, or right of it where the history is too short
+      // to hold the words.
+      svg("text", { class: "axis todaylabel", x: x(n) - 8 < left + 80 ? x(n) + 8 : x(n) - 8,
+        y: Math.min(186, y(level) + 18), "text-anchor": x(n) - 8 < left + 80 ? "start" : "end" },
+        `today ${levelText(level)}`));
+    }
     // Simple says why the fall stops at the threshold (rule BAT-13); Advanced
     // says it in the sentence above its table.
     const why = future === "simple" && floor > 0 ? " Many devices stop working before their battery reaches 0%." : "";
@@ -5441,7 +5537,9 @@ class DeviceSentinelPanel extends HTMLElement {
       const back = Math.round((end - noon) / 86400000);
       if (back < 0 || back >= days) return null;
       const centre = x(back) + ((start.getHours() + start.getMinutes() / 60) / 24 - 0.5) * step;
-      return { back, o, x: centre, w: Math.max(3, (o.minutes / 1440) * step) };
+      // At least 1.5 wide so a short outage still shows, and no wider,
+      // so a month of restarts does not bar the chart (rule BAT-17).
+      return { back, o, x: centre, w: Math.max(1.5, (o.minutes / 1440) * step) };
     }).filter(Boolean);
     const outagesOn = (back) => bands.filter((b) => b.back === back).map((b) =>
       `${b.o.what} down ${b.o.minutes < 90 ? `${b.o.minutes}m` : span(b.o.minutes * 60)}${b.o.worst != null ? `, ${b.o.worst} of ${b.o.devices} devices went down` : ""}${b.o.maintenance ? " (during maintenance)" : ""}`);
@@ -5502,7 +5600,7 @@ class DeviceSentinelPanel extends HTMLElement {
       const g = svg("svg", { viewBox: "0 0 1100 220", role: "img", "aria-label": label });
       for (const b of bands) {
         g.append(svg("rect", { x: b.x, y: 20, width: b.w, height: 170,
-          fill: "var(--info-color, #4f7cac)", "fill-opacity": b.o.maintenance ? 0.2 : 0.45 }));
+          fill: "var(--info-color, #4f7cac)", "fill-opacity": b.o.maintenance ? 0.15 : 0.3 }));
       }
       for (const [v, text] of labels) {
         g.append(svg("line", { x1: 44, y1: y(v), x2: 1090, y2: y(v), stroke: "var(--divider-color)" }),
@@ -5546,8 +5644,9 @@ class DeviceSentinelPanel extends HTMLElement {
       }
     };
     const LOGNORMAL_COLOUR = "#2a78d6";
-    const key = (colour, text, dashed, dot, ring) => el("span", {},
-      ring ? el("span", { class: "swatch", style: `width:8px;height:8px;border-radius:5px;border:1px solid ${colour};background:none` })
+    const key = (colour, text, dashed, dot, ring, band) => el("span", {},
+      band ? el("span", { class: "swatch", style: `height:10px;background:${band};border-top:1.5px solid ${colour}` })
+        : ring ? el("span", { class: "swatch", style: `width:8px;height:8px;border-radius:5px;border:1px solid ${colour};background:none` })
         : dot ? el("span", { class: "swatch", style: `width:10px;height:10px;border-radius:5px;background:${colour}` })
         : el("span", { class: "swatch", style: `border-top:2px ${dashed ? "dashed" : "solid"} ${colour}` }), text);
     const card = (title, note, ...body) => el("div", { class: "chart" },
@@ -5583,7 +5682,32 @@ class DeviceSentinelPanel extends HTMLElement {
         svg("text", { x: 1086, y: bat.y(b.threshold) - 5, class: "axis", "text-anchor": "end", fill: "var(--error-color, #db4437)" },
           `your threshold, ${b.threshold}%`));
       }
-      bat.g.append(svg("path", { d: pathOf(battery, bat.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
+      // At 90 days and longer, the usual bounce as a shaded band, under
+      // the daily level, around the smoothed line Simple draws, so the
+      // trend reads through the day-to-day swing (rule BAT-17).
+      let smoothed = null;
+      if (days >= 90) {
+        const kept = battery.map((v, i) => [i, v])
+          .filter(([i, v]) => typeof v === "number" && Number.isFinite(v) && battery.length - 1 - i < days);
+        const at = (i) => x(battery.length - 1 - i);
+        const inside = (v) => bat.y(Math.max(lowAxis, Math.min(highB, v)));
+        smoothed = [];
+        for (const stretch of batteryStretches(kept)) {
+          if (stretch.length < 3) continue;
+          const smooth = smoothBattery(stretch);
+          const band = bounceBand(stretch, smooth);
+          bat.g.append(svg("polygon", { class: "bounceband", fill: "var(--primary-text-color)", "fill-opacity": 0.12,
+            points: band.map(([i, lo]) => `${at(i).toFixed(1)},${inside(lo).toFixed(1)}`)
+              .concat(band.slice().reverse().map(([i, , hi]) => `${at(i).toFixed(1)},${inside(hi).toFixed(1)}`)).join(" ") }));
+          smoothed.push(smooth.map(([i, v]) => `${at(i).toFixed(1)},${inside(v).toFixed(1)}`).join(" "));
+        }
+        if (!smoothed.length) smoothed = null;
+      }
+      bat.g.append(svg("path", { d: pathOf(battery, bat.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.5, "stroke-linejoin": "round" }));
+      for (const points of smoothed || []) {
+        bat.g.append(svg("polyline", { class: "smoothline", points, fill: "none",
+          stroke: "var(--primary-text-color)", "stroke-opacity": 0.9, "stroke-width": 1.2 }));
+      }
       // The last five weeks' average levels, in orange over the daily
       // line, and the fitted line on a falling cell, drawn only at 30
       // and 14 days: those are the weeks the table and the falling rule
@@ -5591,6 +5715,10 @@ class DeviceSentinelPanel extends HTMLElement {
       // Counted back from the newest day, as the rules count them; a
       // week partly off the left edge is cut there (rule BAT-11).
       const legend = [key("var(--primary-color)", "Daily level")];
+      if (smoothed) {
+        legend.push(key("var(--primary-text-color)", "Smoothed"),
+          key("var(--primary-text-color)", "Usual bounce", false, false, false, "rgba(127, 127, 127, 0.25)"));
+      }
       const WEEK = "#E8A33D";
       if (days <= 30) {
         let drawn = 0;
@@ -5602,9 +5730,9 @@ class DeviceSentinelPanel extends HTMLElement {
           const avg = week.reduce((a, v) => a + v, 0) / 7;
           const startAgo = Math.min(endAgo + 6, days - 1);
           bat.g.append(svg("line", { x1: x(startAgo), y1: bat.y(avg), x2: x(endAgo), y2: bat.y(avg),
-            stroke: WEEK, "stroke-width": 5, "stroke-linecap": "round" }),
-          svg("text", { x: (x(startAgo) + x(endAgo)) / 2, y: bat.y(avg) - 9, class: "axis", "text-anchor": "middle",
-            fill: "#b86e00", "font-weight": 700, "paint-order": "stroke", stroke: "var(--card-background-color, #fff)", "stroke-width": 4 },
+            stroke: WEEK, "stroke-width": 3, "stroke-linecap": "butt" }),
+          svg("text", { x: (x(startAgo) + x(endAgo)) / 2, y: bat.y(avg) - 7, class: "axis", "text-anchor": "middle",
+            fill: WEEK, "font-weight": 600, "paint-order": "stroke", stroke: "var(--card-background-color, #fff)", "stroke-width": 3 },
           avg.toFixed(1)));
           drawn += 1;
         }
@@ -5627,7 +5755,7 @@ class DeviceSentinelPanel extends HTMLElement {
           }
           if (points.length >= 2) {
             bat.g.append(svg("polyline", { points: points.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
-              fill: "none", stroke: colour, "stroke-width": 2, "stroke-dasharray": "7 5" }));
+              fill: "none", stroke: colour, "stroke-width": 1.3, "stroke-dasharray": "6 5" }));
             legend.push(key(colour, "Falling at an even pace.", true));
           }
         }
@@ -5936,9 +6064,9 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { style: "display:flex;flex-direction:column;gap:16px" },
       el("h3", { class: "section" }, "History"), buttons, readout, batteryCard, signalCard, rhythmCard,
       el("div", { class: "legend" },
-        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.45" }),
+        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.3" }),
           "an outage on this device's path (its bridge, broker or integration), not caused by a restart"),
-        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.2" }),
+        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.15" }),
           "the same, during maintenance")),
       toggle, table);
   }
