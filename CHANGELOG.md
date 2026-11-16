@@ -1,6 +1,6 @@
 # Changelog
 
-Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
+Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases from 0.27 on are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
 ## [0.28.13](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.13), November 15, 2026
 
@@ -68,9 +68,17 @@ Device Sentinel's data file is smaller and is checked in full each night. Repair
 
 Exclude and Mute mean different things: excluding stops watching and discards the history, muting hides alerts while Device Sentinel keeps watching. The signal report asks whether a device suddenly got worse, with settings that define a bad day. A Data Trim tool removes the history of a device or integration that recorded bad data, and the settings screens were rebuilt for houses with hundreds of devices.
 
+## [0.16.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.16.20), August 22, 2026
+
+Device Sentinel raises its own faults in Home Assistant's Repairs panel, names the devices that keep failing for no clear reason, and reports a weak signal by whether a device got worse. Exclude stops watching a device and mute silences it, and a restart or a jittery sensor no longer fills your phone with alerts.
+
 ## [0.16.3](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.16.3), August 20, 2026
 
 Device Sentinel starts reliably and stays up through the morning report.
+
+## [0.15.9](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.15.9), August 19, 2026
+
+Your automations can react to a fault, a recovery or an acknowledgment through events, and the name of each kind of problem is fixed for them. In Short tells only what was unusual.
 
 ## [0.15.7](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.15.7), August 18, 2026
 
@@ -84,9 +92,17 @@ Mobile App, Fully Kiosk, Spook and Ping are no longer watched by default, since 
 
 A broker or bridge outage is reported as one fault, announced once, instead of one fault for each device behind it. Disabled devices are set aside without losing what they learned.
 
+## [0.13.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.13.11), August 14, 2026
+
+A bridge or broker outage is one row on the Problem List and one message, with how many devices it holds down. Devices Home Assistant has disabled are no longer watched.
+
 ## [0.13.0](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.13.0), August 12, 2026
 
 Freeze detection and battery watching became stable. Signal reporting starts working properly, judging strong and weak links fairly on both signal scales.
+
+## [0.12.21](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.12.21), August 12, 2026
+
+Each judgment shows how much history stands behind it, and the signal line is aimed at the weak end of the scale, so a strong link is no longer counted as weak.
 
 ## [0.12.16](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.12.16), August 8, 2026
 
