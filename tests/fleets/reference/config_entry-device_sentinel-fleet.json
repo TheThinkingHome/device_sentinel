@@ -173,7 +173,7 @@
     "name": "Device 001"
    },
    "02fa000000000000000000000000003a": {
-    "name": "Device 112"
+    "name": "Device 113"
    },
    "02fa000000000000000000000000003b": {
     "name": "Device 049"
@@ -366,7 +366,7 @@
    "quiet_hours_enabled": true,
    "quiet_hours_end": "07:00:00",
    "quiet_hours_start": "22:00:00",
-   "repeat_floor": 2.0,
+   "repeat_floor": 3.0,
    "report_link_address": "none",
    "short_drop_limit": 30,
    "signal_muted_devices": [],
@@ -381,9 +381,7 @@
    "unavailable_muted_devices": [],
    "unavailable_muted_labels": [],
    "wifi_confirm_seconds": 45.0,
-   "wifi_networks": [
-    "network_1"
-   ]
+   "wifi_networks": "**REDACTED**"
   }
  }
 }
