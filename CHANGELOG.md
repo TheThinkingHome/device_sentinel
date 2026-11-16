@@ -1,6 +1,6 @@
 # Changelog
 
-Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases from 0.27 on are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
+Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases from 0.28 on are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
 ## [0.28.13](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.13), November 15, 2026
 
