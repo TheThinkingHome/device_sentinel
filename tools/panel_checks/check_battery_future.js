@@ -1,6 +1,11 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.29.3 (2026-11-15)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.29.4 (2026-11-16)
 // Panel checks: the device page's Future view (rules BAT-13, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
+// The Future chart's scale fits what it draws (rule BAT-17): read its
+// top from the highest axis label, so each check places a level as the
+// chart does.
+const topOf = (root) => Math.max(...[...root.querySelectorAll(".futurechart text.axis")]
+  .map((t) => t.textContent).filter((w) => /^[0-9.]+%$/.test(w)).map((w) => Number(w.slice(0, -1))));
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
@@ -97,13 +102,25 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
     && a.root.querySelectorAll(".futurechart polyline").length === 3, a.root.querySelectorAll(".futurechart polyline").length);
   check("every kept day as a light dot", a.root.querySelectorAll(".futurechart circle:not(.todaydot)").length === DOOR.length);
   check("today's reading as a dot of its own", a.root.querySelectorAll(".futurechart circle.todaydot").length === 1);
+  // The dot stands out and the scale fits what is drawn (rule BAT-17).
+  const todayDot = a.root.querySelector(".futurechart circle.todaydot");
+  check("the dot is solid and ringed", todayDot.getAttribute("r") === "4.5" && todayDot.getAttribute("stroke") === "#fff"
+    && !todayDot.hasAttribute("fill-opacity"));
+  check("drawn last, over the lines", todayDot.ownerSVGElement.querySelector("polyline.futureline")
+    .compareDocumentPosition(todayDot) & 4);
+  check("labelled with today's reading", text(a.root).includes("today 16.5%"));
+  check("the scale fits the history, not 0 to 100%", topOf(a.root) < 100 && topOf(a.root) % 20 === 0, topOf(a.root));
+  check("the highest kept day still fits under the top", (() => {
+    const ys = [...a.root.querySelectorAll(".futurechart circle:not(.todaydot)")].map((c) => Number(c.getAttribute("cy")));
+    return ys.length > 0 && Math.min(...ys) >= 20 - 0.01;
+  })());
   check("the low battery line, since the range reaches it", lowLine(a.root));
   check("the range in words", text(a.root).includes("Expected empty in about 4 to 5 weeks."));
   // Today's line on the Future chart (rule BAT-17).
   const today = a.root.querySelector(".futurechart line[stroke='var(--secondary-text-color)']");
   const history = [...a.root.querySelectorAll(".futurechart polyline")].find((l) => !l.classList.contains("futureline"));
   const lastPoint = history.getAttribute("points").split(" ").pop().split(",").map(Number);
-  const yOf = (v) => 190 - (v / 100) * 170;
+  const yOf = (v) => 190 - (v / topOf(a.root)) * 170;
   check("the history runs to today's reading", Math.abs(lastPoint[0] - Number(today.getAttribute("x1"))) < 0.2
     && Math.abs(lastPoint[1] - yOf(16.5)) < 0.2, lastPoint);
   const lines = [...a.root.querySelectorAll(".futurechart polyline.futureline")];
@@ -144,7 +161,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   button(t.root, "Future").click();
   await settle();
   const lowLines = [...t.root.querySelectorAll(".futurechart polyline.futureline")];
-  const atLow = (l) => l.getAttribute("points").split(" ").filter((pt) => Math.abs(Number(pt.split(",")[1]) - yOf(15)) < 0.05).length;
+  const atLow = (l) => l.getAttribute("points").split(" ").filter((pt) => Math.abs(Number(pt.split(",")[1]) - (190 - (15 / topOf(t.root)) * 170)) < 0.05).length;
   check("each line stops at the threshold, not at empty", lowLines.length === 2 && lowLines.every((l) => atLow(l) === 1)
     && lowLines.every((l) => floor(l) === 0), lowLines.map(atLow));
   check("the words say the threshold", text(t.root).includes("Expected to reach 15% in about 4 to 5 weeks."));
@@ -204,7 +221,7 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   const f = await open(`${PREFIX}/device/${DEVICE}`, fitted);
   button(f.root, "Future").click();
   await settle();
-  const yAt = (v) => 190 - (v / 100) * 170;
+  const yAt = (v) => 190 - (v / topOf(f.root)) * 170;
   const fHistory = [...f.root.querySelectorAll(".futurechart polyline")].find((l) => !l.classList.contains("futureline"));
   const fLast = fHistory.getAttribute("points").split(" ").pop().split(",").map(Number);
   check("the history runs to the fit's value today", Math.abs(fLast[1] - yAt(18.4)) < 0.2, fLast);
@@ -218,6 +235,41 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   const c = await open(`${PREFIX}/device/${DEVICE}`, flat);
   check("no Future button", !button(c.root, "Future"));
 
+
+  console.log("No fall drawn: today stays inside the chart (rule BAT-17)");
+  // Past the limit nothing is drawn ahead, and today is still at its slot.
+  const far = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    projection: { ...DOOR_PROJECTION, near: 400, far: 500, centre: 500 }, left: "about a year", left_soon: false });
+  const p = await open(`${PREFIX}/device/${DEVICE}`, far);
+  button(p.root, "Future").click();
+  await settle();
+  const pDot = p.root.querySelector(".futurechart circle.todaydot");
+  const pToday = p.root.querySelector(".futurechart line[stroke='var(--secondary-text-color)']");
+  check("today's dot inside the chart", !!pDot && Number(pDot.getAttribute("cx")) + 4.5 <= 1100, pDot && pDot.getAttribute("cx"));
+  check("today's line inside the chart", !!pToday && Number(pToday.getAttribute("x1")) <= 1095, pToday && pToday.getAttribute("x1"));
+
+  console.log("Days with no reading before today: the line does not bridge them (rule BAT-17)");
+  const quiet = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    daily: DOOR.slice(0, -10).concat(Array(10).fill(null)) });
+  const q = await open(`${PREFIX}/device/${DEVICE}`, quiet);
+  button(q.root, "Future").click();
+  await settle();
+  const qLines = [...q.root.querySelectorAll(".futurechart polyline")].filter((l) => !l.classList.contains("futureline"));
+  const qToday = Number(q.root.querySelector(".futurechart circle.todaydot").getAttribute("cx"));
+  const qEnd = Math.max(...qLines.map((l) => Number(l.getAttribute("points").split(" ").pop().split(",")[0])));
+  check("the smoothed line stops at the last day heard", qEnd < qToday - 20, [qEnd, qToday]);
+
+  console.log("A long history with no fall drawn: the word today stays inside (rule BAT-17)");
+  const longDays = Array.from({ length: 360 }, (_, i) => 90 - i * 0.01);
+  const lp = await open(`${PREFIX}/device/${DEVICE}`, withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    daily: longDays, now: 86.4, projection: { ...DOOR_PROJECTION, start: 86.4, near: 4000, far: 5000, centre: 5000 },
+    left: "over a year", left_soon: false }));
+  button(lp.root, "Future").click();
+  await settle();
+  const word = [...lp.root.querySelectorAll(".futurechart text.axis")].find((t) => t.textContent === "today");
+  const wx = Number(word.getAttribute("x"));
+  check("anchored to end inside the chart", word.getAttribute("text-anchor") === "end" && wx <= 1100 && wx > 1000,
+    [wx, word.getAttribute("text-anchor")]);
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

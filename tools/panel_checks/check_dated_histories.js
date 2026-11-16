@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_dated_histories.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_dated_histories.js, Version: 0.29.4 (2026-11-16)
 // Panel checks: dated daily histories, where a skipped day breaks a line (rule STOR-16).
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -99,7 +99,7 @@ const runs = (el) => {
   const mainLine = (card, width) => [...card.querySelectorAll("polyline, path")].find(
     (p) => p.getAttribute("stroke") === "var(--primary-color)" && p.getAttribute("stroke-width") === width);
   const battery = byTitle("Battery");
-  const bLine = battery && mainLine(battery, "2.2");
+  const bLine = battery && mainLine(battery, "1.5");
   check("Battery: the daily line breaks at the days with no reading", runs(bLine) === 2, bLine && (bLine.getAttribute("d") || bLine.getAttribute("points")));
   const signal = byTitle("Signal");
   const sLine = signal && mainLine(signal, "2.2");

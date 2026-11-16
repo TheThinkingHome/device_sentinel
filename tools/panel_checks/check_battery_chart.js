@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_battery_chart.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_battery_chart.js, Version: 0.29.4 (2026-11-16)
 // Panel checks: the weekly bars in orange and the fitted line, drawn only
 // at 30 and 14 days.
 // The fitted line is drawn for a cell falling at an even pace only: an
 // accelerating cell is judged on a curve (rules BAT-12, BAT-17).
+// At 90 days and longer, the smoothed line over the daily level with the
+// usual bounce shaded around it, and thinner lines throughout (BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_chart.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -116,7 +118,7 @@ const range = async (root, label) => {
   await settle();
 };
 const bars = (root) => [...root.querySelectorAll("svg line")].filter((l) => l.getAttribute("stroke") === "#E8A33D");
-const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) => p.getAttribute("stroke-dasharray") === "7 5");
+const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) => p.getAttribute("stroke-dasharray") === "6 5");
 const even = {
   device: (page) => {
     page.battery = {
@@ -130,6 +132,24 @@ const even = {
     return page;
   },
 };
+
+// A recorded door sensor's 128 days, falling from 32% to 10%.
+const DOOR = [32,32.5,31.5,32.5,32.5,31.5,31,32,32.5,31.5,21.5,30,28,23.5,22,21,12,23.5,24,23.5,24.5,24.5,25,25,24.5,23,24.5,25,24.5,25,25,25,25,25,25,25,25,24.5,24,24.5,24.5,24,24.5,24.5,24.5,24,24,24,24.5,24,23.5,23,23,23,22.5,23,23.5,23,23,23,22,23,22,23.5,22.5,23.5,23,22,22.5,23,21,21.5,22.5,21.5,21,21,20.5,20.5,20,19.5,19,19,17,19.5,19,17,17.5,15,15,18,18,17.5,16.5,17,15,14.5,15.5,14.5,18,16.5,16,11,15,14,13,14,13.5,15,16.5,14.5,14,12,12.5,13,12.5,10.5,13,11,13,12,11];
+const door = {
+  device: (page) => {
+    page.battery = {
+      daily: DOOR, now: 10, threshold: 15, readable: true,
+      weeks: [16.79, 15.86, 13.79, 13.93, 11.86], reading: "falling",
+      fit: { pace: 1.25, line: [[41, 18.79], [0, 11.47]] },
+      sentence: "Falling about 1.3 points a week, at a steady pace.",
+      falling: true, left: "about 7 to 9 weeks", left_soon: false,
+    };
+    return page;
+  },
+};
+const smoothLine = (root) => root.querySelectorAll("svg polyline.smoothline").length;
+const bounce = (root) => root.querySelectorAll("svg polygon.bounceband").length;
+const daily = (root) => [...root.querySelectorAll("svg path")].find((p) => p.getAttribute("stroke") === "var(--primary-color)");
 
 (async () => {
   console.log("A cell that sped up, at each range");
@@ -164,6 +184,48 @@ const even = {
   check("weekly bars, and no fitted line", bars(calm.root).length >= 4 && fitted(calm.root).length === 0
     && ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"), bars(calm.root).length);
 
+
+  console.log("A long history: the smoothed line and the usual bounce (rule BAT-17)");
+  const d = await open(`${PREFIX}/device/${DEVICE}`, door);
+  check("at all 128 days: the smoothed line and the band", smoothLine(d.root) === 1 && bounce(d.root) === 1);
+  check("named in the legend", text(d.root).includes("Smoothed") && text(d.root).includes("Usual bounce"));
+  check("the band sits under the daily line, the smoothed line over it", (() => {
+    const svgEl = d.root.querySelector("svg polygon.bounceband").ownerSVGElement;
+    const kids = [...svgEl.children];
+    return kids.indexOf(d.root.querySelector("svg polygon.bounceband")) < kids.indexOf(daily(d.root))
+      && kids.indexOf(daily(d.root)) < kids.indexOf(d.root.querySelector("svg polyline.smoothline"));
+  })());
+  check("the smoothed line is thinner than the daily line", Number(d.root.querySelector("svg polyline.smoothline").getAttribute("stroke-width"))
+    < Number(daily(d.root).getAttribute("stroke-width")));
+  check("the daily line is 1.5 wide", daily(d.root).getAttribute("stroke-width") === "1.5");
+  check("the band stays inside the chart", (() => {
+    const ys = d.root.querySelector("svg polygon.bounceband").getAttribute("points").split(" ").map((p) => Number(p.split(",")[1]));
+    return Math.min(...ys) >= 20 - 0.01 && Math.max(...ys) <= 190 + 0.01;
+  })());
+  await range(d.root, "90 Days");
+  check("at 90 days: both", smoothLine(d.root) === 1 && bounce(d.root) === 1);
+  await range(d.root, "30 Days");
+  check("at 30 days: neither", smoothLine(d.root) === 0 && bounce(d.root) === 0 && !text(d.root).includes("Usual bounce"));
+  check("the weekly bars 3 wide and squared", bars(d.root).length > 0
+    && bars(d.root).every((b) => b.getAttribute("stroke-width") === "3" && b.getAttribute("stroke-linecap") === "butt"));
+  await range(d.root, "14 Days");
+  check("at 14 days: neither", smoothLine(d.root) === 0 && bounce(d.root) === 0);
+
+  console.log("A new battery and a gap: the line and band break there (rule BAT-17)");
+  // 100 days falling 40% to 5%, a new battery at 100%, and three weeks
+  // with a five-day gap in them.
+  const swapped = Array.from({ length: 100 }, (_, i) => 40 - (35 * i) / 99)
+    .concat(Array.from({ length: 21 }, (_, i) => (i >= 8 && i < 13 ? null : 100 - i * 0.2)));
+  const r = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
+    page.battery = { ...door.device(JSON.parse(JSON.stringify(page))).battery, daily: swapped, now: 96 };
+    return page;
+  } });
+  check("three stretches: before, after and past the gap", smoothLine(r.root) === 3 && bounce(r.root) === 3,
+    [smoothLine(r.root), bounce(r.root)]);
+  const highest = (el) => Math.min(...el.getAttribute("points").split(" ").map((p) => Number(p.split(",")[1])));
+  const before = r.root.querySelectorAll("svg polygon.bounceband")[0];
+  const yFor = (v) => { const ax = [...r.root.querySelectorAll("svg text.axis")].map((t) => t.textContent).filter((w) => /^[0-9.]+%$/.test(w)).map((w) => Number(w.slice(0, -1))); const lo = Math.min(...ax), hi = Math.max(...ax); return 190 - ((v - lo) / (hi - lo)) * 170; };
+  check("the old battery's band never climbs towards the new one", highest(before) > yFor(45), [highest(before), yFor(45)]);
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();
