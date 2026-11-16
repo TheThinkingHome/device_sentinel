@@ -65,7 +65,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Stitched silences:** a silence the restarts only segmented is told as one silence, with its true start and span. A device is stitched when something in the window claimed a recovery and the device still holds a standing verdict that began before the window's earliest interruption, frozen, unavailable and unknown judged together as one pile. The rows behind the stitched silence leave Last 24 Hours.
 - **Never reported:** a device that has never reported keeps its own sentence.
 
-*Proof:* [`test_brief_wording.py`](../tests/test_brief_wording.py), [`test_brief_stitching.py`](../tests/test_brief_stitching.py), [`test_flapping.py`](../tests/test_flapping.py).
+*Proof:* [`test_brief_wording.py`](../tests/test_brief_wording.py), [`test_brief_stitching.py`](../tests/test_brief_stitching.py), [`test_short_drop_outs.py`](../tests/test_short_drop_outs.py).
 
 ### BRIEF-07 Last 24 Hours
 
@@ -157,7 +157,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Rhythms:** beside it, TRIMMED and LOG-NORMAL give the two rhythms, and RULE IN USE names the shorter one.
 - **SIGNAL:** the lowest of the 30 days is bold at its first appearance, and each bad signal day is struck, the lowest day included (see [SIG](Rulebook__10_SIG_Signal.md)).
 
-*Proof:* [`test_reports.py`](../tests/test_reports.py), [`test_flapping.py`](../tests/test_flapping.py).
+*Proof:* [`test_reports.py`](../tests/test_reports.py), [`test_short_drop_outs.py`](../tests/test_short_drop_outs.py).
 
 ### BRIEF-16 The Silence Episodes File
 
