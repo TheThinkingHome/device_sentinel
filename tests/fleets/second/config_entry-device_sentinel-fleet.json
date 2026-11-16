@@ -121,9 +121,6 @@
    "03fa0000000000000000000000000028": {
     "name": "Device 252"
    },
-   "03fa0000000000000000000000000029": {
-    "name": "Device 182"
-   },
    "03fa000000000000000000000000002a": {
     "name": "Device 183"
    },
@@ -392,19 +389,19 @@
     "name": "Device 131"
    },
    "03fa0000000000000000000000000091": {
-    "name": "Device 281"
+    "name": "Device 289"
    },
    "03fa0000000000000000000000000092": {
-    "name": "Device 282"
+    "name": "Device 290"
    },
    "03fa0000000000000000000000000093": {
-    "name": "Device 283"
+    "name": "Device 291"
    },
    "03fa0000000000000000000000000094": {
     "name": "Device 116"
    },
    "03fa0000000000000000000000000095": {
-    "name": "Device 284"
+    "name": "Device 292"
    },
    "03fa0000000000000000000000000096": {
     "name": "Device 111"
@@ -566,7 +563,7 @@
     "name": "Device 082"
    },
    "03fa00000000000000000000000000d2": {
-    "name": "Device 286"
+    "name": "Device 293"
    },
    "03fa00000000000000000000000000d3": {
     "name": "Device 064"
@@ -610,38 +607,17 @@
    "03fa00000000000000000000000000e2": {
     "name": "Device 238"
    },
-   "03fa00000000000000000000000000e3": {
-    "name": "Device 239"
-   },
-   "03fa00000000000000000000000000e4": {
-    "name": "Device 240"
-   },
-   "03fa00000000000000000000000000e5": {
-    "name": "Device 081"
-   },
-   "03fa00000000000000000000000000e6": {
-    "name": "Device 241"
-   },
-   "03fa00000000000000000000000000e7": {
-    "name": "Device 242"
-   },
    "03fa00000000000000000000000000e9": {
     "name": "Device 144"
-   },
-   "03fa00000000000000000000000000ea": {
-    "name": "Device 287"
    },
    "03fa00000000000000000000000000eb": {
     "name": "Device 145"
    },
-   "03fa00000000000000000000000000ec": {
-    "name": "Device 288"
-   },
    "03fa00000000000000000000000000ed": {
-    "name": "Device 287"
+    "name": "Device 294"
    },
    "03fa00000000000000000000000000ee": {
-    "name": "Device 288"
+    "name": "Device 295"
    },
    "03fa00000000000000000000000000ef": {
     "name": "Device 274"
@@ -651,9 +627,6 @@
    },
    "03fa00000000000000000000000000f1": {
     "name": "Device 280"
-   },
-   "03fa00000000000000000000000000f2": {
-    "name": "Device 247"
    },
    "03fa00000000000000000000000000f3": {
     "name": "Device 248"
@@ -670,9 +643,6 @@
    "03fa00000000000000000000000000dc": {
     "name": "Device 264"
    },
-   "03fa0000000000000000000000000106": {
-    "name": "Device 263"
-   },
    "03fa0000000000000000000000000107": {
     "name": "Device 275"
    },
@@ -684,12 +654,6 @@
    },
    "03fa000000000000000000000000010f": {
     "name": "Device 279"
-   },
-   "03fa0000000000000000000000000110": {
-    "name": "Device 088"
-   },
-   "03fa0000000000000000000000000111": {
-    "name": "Device 090"
    }
   },
   "entry_options": {
@@ -721,7 +685,8 @@
     "03fa000000000000000000000000008d",
     "03fa000000000000000000000000008e",
     "03fa0000000000000000000000000079",
-    "03fa000000000000000000000000007a"
+    "03fa000000000000000000000000007a",
+    "03fa0000000000000000000000000029"
    ],
    "excluded_integrations": [
     "alexa_media",
@@ -738,7 +703,20 @@
     "thermal_comfort",
     "tile",
     "unifi",
-    "hair"
+    "hair",
+    "broadsniff",
+    "bluesight",
+    "cerberus_wan",
+    "device_sentinel",
+    "filesize",
+    "hassio",
+    "homekit",
+    "marketplace",
+    "met",
+    "ookla_speedtest",
+    "sun",
+    "systemmonitor",
+    "ticker"
    ],
    "freeze_muted_devices": [
     "03fa00000000000000000000000000af",
@@ -765,7 +743,6 @@
     "03fa000000000000000000000000006b",
     "03fa0000000000000000000000000081",
     "03fa00000000000000000000000000c2",
-    "03fa0000000000000000000000000029",
     "03fa0000000000000000000000000087"
    ],
    "muted_integrations": [],
@@ -782,23 +759,19 @@
    "quiet_hours_start": "22:00:00",
    "repeat_floor": 2.0,
    "report_link_address": "internal",
-   "signal_muted_devices": [
-    "03fa000000000000000000000000004f"
-   ],
+   "signal_muted_devices": [],
    "signal_muted_integrations": [],
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
    "study_hardware": [
-    "Z-Wave",
-    "Matter"
+    "Matter",
+    "Problem Sensors and Polling"
    ],
    "trim_devices": [],
    "trim_integrations": [],
    "unavailable_muted_devices": [],
    "wifi_confirm_seconds": 60.0,
-   "wifi_networks": [
-    "network_1"
-   ]
+   "wifi_networks": "**REDACTED**"
   }
  }
 }
