@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.2 (2026-11-15)
+// File: panel.js, Version: 0.29.3 (2026-11-15)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -3178,7 +3178,7 @@ class DeviceSentinelPanel extends HTMLElement {
         return { maker: group[0].maker, model: group[0].model, cells: group.length,
           rate: middle(group.map((c) => c.rate)), typical: middle(group.map((c) => c.level)),
           lowest: lowest.level, lowest_name: lowest.name, lowest_id: lowest.device_id,
-          learning: group.every((c) => c.learning),
+          learning: group.every((c) => c.learning), alone: !!group[0].alone,
           types: [[group[0].type || "", group.length]] };
       }).sort((a, b) => a.rate - b.rate || b.cells - a.cells);
     }
@@ -3252,7 +3252,10 @@ class DeviceSentinelPanel extends HTMLElement {
           this._sortHead(this._modelSort, "LOWEST CELL", "lowest", again, "num"),
           el("th", {}, "WHICH ONE")]))),
       el("tbody", {}, ...models.map((row) => el("tr", {},
-        el("td", {}, `${row.maker} ${row.model}`),
+        // A device that names no product is a row of its own: it is
+        // named, as WHICH ONE is not shown in Simple (rule BAT-18).
+        el("td", {}, `${row.maker} ${row.model}`, ...(row.alone
+          ? [" (", this._link(row.lowest_name, this._devicePath(row.lowest_id)), ")"] : [])),
         el("td", {}, typeCell(row)),
         el("td", { class: "num" }, String(row.cells)),
         // Under four weeks heard, a rate says nothing yet (rule BAT-19).
@@ -5301,9 +5304,15 @@ class DeviceSentinelPanel extends HTMLElement {
       const a = (sy - b * sx) / sw;
       return [i, a + b * i];
     });
-    // The history runs into today: today's reading is the line's last
-    // point, where the expected fall begins (rule BAT-17).
-    if (level !== null && n > 0) smooth.push([n, level]);
+    // Where the expected fall begins: the fit's value today when there is
+    // a range, since the time left starts there (rule BAT-13), or else
+    // today's reading. The history runs into it, and today's reading is
+    // a dot of its own (rule BAT-17).
+    const from = proj && typeof proj.start === "number" ? proj.start : level;
+    if (level !== null && n > 0) {
+      g.append(svg("circle", { class: "todaydot", cx: x(n), cy: y(level), r: 2.2, fill: "var(--primary-color, #03a9f4)", "fill-opacity": 0.28 }));
+    }
+    if (from !== null && n > 0) smooth.push([n, from]);
     if (smooth.length > 1) {
       g.append(svg("polyline", { fill: "none", stroke: "var(--primary-color, #03a9f4)", "stroke-width": 2.4,
         points: smooth.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
@@ -5317,11 +5326,11 @@ class DeviceSentinelPanel extends HTMLElement {
     // left reaches (rule BAT-13), or empty for a cell already under it.
     const floor = proj && typeof proj.target === "number" && proj.target > 0 ? proj.target : 0;
     if (ahead > 0) {
-      const path = (p) => (d) => level + p[0] * d + p[1] * d * d;
+      const path = (p) => (d) => from + p[0] * d + p[1] * d * d;
       // Each end drawn until it reaches its floor, and no further: the two
       // lines never run together along it (rule BAT-17).
       const run = (fn) => {
-        const line = [[n, level]];
+        const line = [[n, from]];
         for (let d = 1; d <= ahead; d += 1) {
           const v = fn(d);
           if (v <= floor) {
