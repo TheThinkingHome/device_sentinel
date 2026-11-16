@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.29.1 (2026-11-14)
+# File: events.py, Version: 0.29.4 (2026-11-16)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -62,6 +62,7 @@ from .const import (
 )
 from .normalise import SPAN_HIGHEST
 from .restart_values import is_confirmed_cause
+from .device_fields import area_name_of
 
 
 # Recoveries held inside the startup grace, kept in the stored file so
@@ -147,14 +148,10 @@ class EventMixin:
         reports say Unassigned. An automation tests for the word rather
         than for a null.
         """
-        registry = dr.async_get(self.hass)
-        device = registry.async_get(device_id)
-        if device is None or device.area_id is None:
-            return UNASSIGNED_AREA
-        from homeassistant.helpers import area_registry as ar
-
-        area = ar.async_get(self.hass).async_get_area(device.area_id)
-        return area.name if area is not None else UNASSIGNED_AREA
+        device = dr.async_get(self.hass).async_get(device_id)
+        # A child device with no area of its own is in its parent's
+        # (rule DEV-18).
+        return (area_name_of(self.hass, device) if device is not None else None) or UNASSIGNED_AREA
 
     @callback
     def fire_fault(

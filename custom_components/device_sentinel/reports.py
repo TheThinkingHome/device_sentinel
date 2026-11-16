@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.29.0 (2026-11-14)
+# File: reports.py, Version: 0.29.4 (2026-11-16)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -64,6 +64,8 @@ from .report_battery import BatteryReportMixin
 from .report_brief import BriefMixin
 from .report_signal import SignalReportMixin
 from .report_maintainer import MaintainerReportMixin
+from .device_fields import area_name_of
+from .naming import area_is_said
 
 
 class ReportWritingMixin(
@@ -171,13 +173,10 @@ class ReportWritingMixin(
         Shown in brackets beside a device's name in the brief's and the
         reports' tables, so a reader sees where to go (rule BRIEF-13).
         """
-        from homeassistant.helpers import area_registry as ar
-
         device = dr.async_get(self.hass).async_get(device_id)
-        if not device or not device.area_id:
-            return ""
-        area = ar.async_get(self.hass).async_get_area(device.area_id)
-        return area.name if area else ""
+        # A child device with no area of its own is in its parent's
+        # (rule DEV-18).
+        return (area_name_of(self.hass, device) if device else None) or ""
 
 
     def _report_link(self, path: str) -> str | None:
@@ -285,6 +284,11 @@ class ReportWritingMixin(
             # two brackets in a row read as afterthoughts.
             return cell
         room = self._device_area(device_id)
+        if room and area_is_said(name or "", room):
+            # A name that already holds its room, "Kitchen light" in the
+            # Kitchen, written before Home Assistant had areas, is not
+            # told it twice (rule BRIEF-13).
+            return cell
         # A device in no area says so, briefly: a reader who sees an
         # area beside every other name should not be left wondering
         # whether this one was looked up at all. In the word the bus

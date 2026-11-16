@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.2 (2026-11-15)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.4 (2026-11-16)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -37,7 +37,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 
 from .const import (
@@ -48,6 +47,8 @@ from .const import (
     RECOMMENDATION_LIBRARY,
     SLOW_REPORTER_SECONDS,
 )
+from .device_fields import area_name_of
+from .naming import devices_sharing_a_name
 
 KIND_POWER = "power"
 KIND_AREA = "area"
@@ -159,17 +160,23 @@ class DeviceRecommendationsMixin:
         """Each kind that applies, with its devices in name order."""
         hass = self.hass  # type: ignore[attr-defined]
         devices = dr.async_get(hass)
-        areas = ar.async_get(hass)
         watched = [d for d in self._watched if devices.async_get(d) is not None]  # type: ignore[attr-defined]
 
         def area_of(device_id: str) -> str | None:
+            # The area Home Assistant places it in, a child device's
+            # parent's when it has none of its own (rule DEV-18).
             entry = devices.async_get(device_id)
-            area = areas.async_get_area(entry.area_id) if entry and entry.area_id else None
-            return area.name if area else None
+            return area_name_of(hass, entry) if entry is not None else None
+
+        def own_name(device_id: str) -> str:
+            # What a rename box starts from: the device's own name, never
+            # the parent's put before it (rule DEV-18).
+            entry = devices.async_get(device_id)
+            return str((entry.name_by_user or entry.name or "") if entry is not None else "")
 
         def rows(ids: list[str]) -> list[dict[str, Any]]:
             listed = [
-                {"device_id": d, "name": self._device_name(d), "area": area_of(d)}  # type: ignore[attr-defined]
+                {"device_id": d, "name": self._device_name(d), "area": area_of(d), "own_name": own_name(d)}  # type: ignore[attr-defined]
                 for d in ids
             ]
             return sorted(listed, key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
@@ -308,11 +315,6 @@ class DeviceRecommendationsMixin:
                     "them from the Recommendations tab."
                 ),
             })
-        by_name: dict[str, list[str]] = {}
-        for device_id in watched:
-            name = str(self._device_name(device_id) or "").strip().casefold()  # type: ignore[attr-defined]
-            if name:
-                by_name.setdefault(name, []).append(device_id)
         # Devices holding one network address at once, each row naming the
         # address it shares (rule UP-19).
         shared_ips = self.shared_addresses()  # type: ignore[attr-defined]
@@ -338,21 +340,30 @@ class DeviceRecommendationsMixin:
                     "router's DHCP settings."
                 ),
             })
-        shared = [d for ids in by_name.values() if len(ids) > 1 for d in ids]
+        # Devices of one name are told apart by their areas, as Home
+        # Assistant names them: only a device sharing its name and its
+        # area with another, or one with no area, is listed (rule REC-04).
+        shared = devices_sharing_a_name({
+            d: (str(self._device_name(d) or ""), area_of(d))  # type: ignore[attr-defined]
+            for d in watched
+        })
         if shared:
             cards.append({
                 "kind": KIND_NAMES,
                 "title": "Devices Sharing A Name",
                 "body": (
-                    f"{_count(len(shared), 'device shares', 'devices share')} a name with "
-                    "another. In the Daily Brief and in notifications they cannot be told "
-                    "apart. Rename each one here."
+                    f"{_count(len(shared), 'device has', 'devices have')} the same name as "
+                    "another device in the same area, or no area to tell "
+                    f"{'it' if len(shared) == 1 else 'them'} apart. In notifications and "
+                    "the Daily Brief they cannot be told apart. Give each its own name "
+                    "here, or set the area where it reads Not Set."
                 ),
                 "devices": rows(shared),
                 "brief_words": lambda n: (
-                    f"{_count(n, 'device shares', 'devices share')} a name with "
-                    "another, so they cannot be told apart in this brief or in "
-                    "notifications. Rename them from the Recommendations tab."
+                    f"{_count(n, 'device has', 'devices have')} the same name as another "
+                    "device in the same area, or no area, so they cannot be told apart in "
+                    "this brief or in notifications. Rename them, or set their areas, from "
+                    "the Recommendations tab."
                 ),
             })
         # A device slow to judge for freeze: its wait in use is over

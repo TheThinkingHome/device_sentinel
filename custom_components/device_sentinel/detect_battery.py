@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.29.3 (2026-11-15)
+# File: detect_battery.py, Version: 0.29.4 (2026-11-16)
 
 """Battery: the level threshold and what is tracked.
 
@@ -103,6 +103,7 @@ from .const import (
 )
 from .records import BAD_STATES, SERIES_MEMO_SIZE, restart_lognormal, series_key
 from .normalise import day_range_row_ok
+from .device_fields import area_name_of
 
 # A day range's row: [day, lowest level, highest level, lowest voltage,
 # highest voltage] (rules BAT-06, BAT-16).
@@ -873,7 +874,6 @@ class BatteryMixin:
         (rule LIST-02).
         """
         dev_reg = dr.async_get(self.hass)
-        area_reg_names: dict[str, str] = {}
         rows: list[dict[str, Any]] = []
         for device_id, (entity_id, is_binary) in (
             self._battery_entity.items()
@@ -892,18 +892,9 @@ class BatteryMixin:
             device = dev_reg.async_get(device_id)
             # Named by the ladder, never the raw id (rule DEV-01).
             device_name = self._device_name(device_id)
-            area_name = "Unassigned"
-            if device and device.area_id:
-                if device.area_id not in area_reg_names:
-                    from homeassistant.helpers import area_registry as ar
-
-                    area = ar.async_get(self.hass).async_get_area(
-                        device.area_id
-                    )
-                    area_reg_names[device.area_id] = (
-                        area.name if area else device.area_id
-                    )
-                area_name = area_reg_names[device.area_id]
+            # The area Home Assistant places it in, a child device's
+            # parent's when it has none of its own (rule DEV-18).
+            area_name = (area_name_of(self.hass, device) if device else None) or "Unassigned"
             state = self.hass.states.get(entity_id)
             since = record.get(DEV_BATTERY_SINCE)
             since_dt = dt_util.parse_datetime(since) if since else None

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.3 (2026-11-15)
+# File: coordinator.py, Version: 0.29.4 (2026-11-16)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2699,7 +2699,7 @@ class DeviceSentinelCoordinator(
             entry_id = self._primary_entry(device)
             if entry_id is not None:
                 entry_of[device.id] = entry_id
-            name = display_name(device, domain, device.id)
+            name = display_name(device, domain, device.id, dev_reg)
             owning_domains.add(domain)
             # Which coordinator stacks the house runs, read from the
             # same walk. Which device proves which stack is each stack
@@ -6164,7 +6164,7 @@ class DeviceSentinelCoordinator(
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
         domain = self._primary_domain(device) if device is not None else None  # type: ignore[arg-type]
-        return display_name(device, domain, device_id)
+        return display_name(device, domain, device_id, registry)
 
     @property
     def episode_share(self) -> float:

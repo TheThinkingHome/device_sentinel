@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.3 (2026-11-15)
+# File: dashboard.py, Version: 0.29.4 (2026-11-16)
 
 """What the dashboard reads from the coordinator.
 
@@ -24,7 +24,6 @@ from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import callback
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
@@ -194,7 +193,7 @@ from .escalation import fold, withdrawals_once
 from .networks import problem_groups
 from .outage_detail import STALLED, pair_key, parse_detail
 from .report_brief import REPEAT_PARAGRAPH
-from .device_fields import device_field
+from .device_fields import area_name_of, device_field
 from .power_source import stands_for_none
 
 
@@ -544,7 +543,6 @@ class IntegrationViewMixin:
     def _rider_devices(self, domain: str) -> list[dict[str, Any]]:
         """The watched devices an integration with no hardware adds
         entities to, each with its area and those entities."""
-        areas = ar.async_get(self.hass)
         devices = dr.async_get(self.hass)
         listed = []
         for device_id, by_platform in self._foreign_ids.items():
@@ -552,15 +550,11 @@ class IntegrationViewMixin:
             if not entities or device_id not in self._watched:
                 continue
             device = devices.async_get(device_id)
-            area = (
-                areas.async_get_area(device.area_id)
-                if device is not None and device.area_id
-                else None
-            )
+            area_name = area_name_of(self.hass, device)
             listed.append({
                 "device_id": device_id,
                 "name": self._device_name(device_id),
-                "area": area.name if area else None,
+                "area": area_name,
                 "entities": sorted(entities),
             })
         listed.sort(key=lambda row: str(row["name"]).lower())
@@ -1471,10 +1465,7 @@ class DeviceViewMixin:
         device = dr.async_get(self.hass).async_get(device_id)
         if device is None:
             return {"area": None, "labels": []}
-        area = None
-        if device.area_id:
-            entry = ar.async_get(self.hass).async_get_area(device.area_id)
-            area = entry.name if entry else None
+        area = area_name_of(self.hass, device)
         labels_reg = lr.async_get(self.hass)
         labels = sorted(
             (
@@ -1540,10 +1531,7 @@ class DeviceViewMixin:
             # Removed from Home Assistant, its record held in case it
             # comes back: there is no device to show (rule WATCH-07).
             return None
-        area_name = None
-        if device is not None and device.area_id:
-            area = ar.async_get(self.hass).async_get_area(device.area_id)
-            area_name = area.name if area else None
+        area_name = area_name_of(self.hass, device) if device is not None else None
         domain = self._watched.get(device_id) or (
             self._set_aside.get(device_id) or (None, None, None)
         )[1]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.29.1 (2026-11-14)
+# File: problem_list.py, Version: 0.29.4 (2026-11-16)
 
 """The problem list: the single memory every channel renders.
 
@@ -1147,6 +1147,9 @@ class ProblemListMixin:
             # crossed the threshold on <date>. Its current level is
             # 12%" (rule NOTE-10).
             said = self._battery_phrase(device_id, False)  # type: ignore[attr-defined]
+        # The phone says where the device is, so two of one name in two
+        # rooms read apart (rule NOTE-13).
+        name = self._with_area(device_id, name)  # type: ignore[attr-defined]
         line = self._event_line(kind, name, when, recovery, left, said)
         confirmed = (
             self.confirming(device_id)  # type: ignore[attr-defined]

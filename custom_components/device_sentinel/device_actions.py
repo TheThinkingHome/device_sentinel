@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.1 (2026-11-14)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.4 (2026-11-16)
 
 """Acting from the device page (rule DASH-09).
 
@@ -59,6 +59,8 @@ from .const import (
     SYS_INTEGRATIONS_TAB,
     SYS_RECOMMENDATIONS_TAB,
 )
+from .device_fields import area_name_of, child_devices, parent_device, parent_name_part, update_device
+from .naming import cannot_be_told_apart, composed_name, display_name, with_parent, without_parent
 
 # What a "Turn it on" switches on, as the brief's row names it
 # (rule DASH-09). Last Seen and the Z-Wave status are apart, each with
@@ -213,8 +215,20 @@ class DeviceActionsMixin:
                 "meaning": self.label_meaning(label_id),
             })
         shown.sort(key=lambda item: item["name"].casefold())
+        # A child device's "No area" puts it in its parent's area, so the
+        # page names the parent and that area, whether the child is in it
+        # now or has an area of its own (rule DEV-18).
+        registry = dr.async_get(self.hass)
+        parent = parent_device(registry, device)
+        area_from = (
+            (parent.name_by_user or parent.name or None)
+            if parent is not None and getattr(parent, "area_id", None)
+            else None
+        )
         return {
             "area_id": device.area_id,
+            "area_from": area_from,
+            "area_from_area": area_name_of(self.hass, parent) if area_from else None,
             "name_by_user": device.name_by_user,
             "integration_name": device.name,
             "labels": shown,
@@ -340,22 +354,36 @@ class DeviceActionsMixin:
         return entry is not None and entry.disabled_by is not None
 
     def _name_in_use(self, device_id: str, name: str) -> NameInUse | None:
-        """Another device already showing this name, ignoring capitals."""
-        wanted = name.strip().casefold()
-        areas = ar.async_get(self.hass)
+        """Another device this one could not be told apart from under the
+        name: the same name, without regard to capitals, in the same
+        area, or either with no area (rule REC-04). A device of the same
+        name in an area of its own is told apart by it, as Home Assistant
+        tells them apart."""
         registry = dr.async_get(self.hass)
+        device = registry.async_get(device_id)
+        # A child device is shown after its parent, so its new name is
+        # compared whole, as it will be shown (rule DEV-18).
+        wanted = with_parent(name.strip(), parent_name_part(registry, device))
+        here = area_name_of(self.hass, device)
         seen: set[str] = {device_id}
-        # Every device, walked per config entry as the rest of the code
-        # walks them: reading the registry as a mapping is deprecated.
+        # Every device and child device, walked per config entry as the
+        # rest of the code walks them: reading the registry as a mapping
+        # is deprecated.
         for config_entry in self.hass.config_entries.async_entries():
-            for other in dr.async_entries_for_config_entry(registry, config_entry.entry_id):
+            for other in (
+                *dr.async_entries_for_config_entry(registry, config_entry.entry_id),
+                *child_devices(registry, config_entry.entry_id),
+            ):
                 if other.id in seen:
                     continue
                 seen.add(other.id)
-                shown = other.name_by_user or other.name or ""
-                if shown.strip().casefold() == wanted:
-                    area = areas.async_get_area(other.area_id) if other.area_id else None
-                    return NameInUse(shown, area.name if area else None)
+                # Compared whole, never cut to the length a surface shows.
+                shown = composed_name(other, registry) or display_name(other, None, other.id, registry)
+                there = area_name_of(self.hass, other)
+                # Either way round: a device with no area left beside a
+                # same-named one could no longer be told apart from it.
+                if cannot_be_told_apart(wanted, here, shown, there) or cannot_be_told_apart(shown, there, wanted, here):
+                    return NameInUse(shown, there)
         return None
 
     # ------------------------------------------------------------ acting
@@ -406,12 +434,16 @@ class DeviceActionsMixin:
             # registry, and from there the brief and notifications. The
             # same refusal as the Power row's own words (rule DEV-05).
             raise ValueError("That text holds characters that cannot be shown.")
+        if wanted is not None:
+            # A child device keeps its own name; Home Assistant adds its
+            # parent's (rule DEV-18).
+            wanted = without_parent(wanted, parent_name_part(dr.async_get(self.hass), device)) or wanted
         shown = wanted or device.name or ""
         if not confirm and shown:
             clash = self._name_in_use(device_id, shown)
             if clash is not None:
                 raise clash
-        dr.async_get(self.hass).async_update_device(device_id, name_by_user=wanted)
+        update_device(self.hass, device_id, name_by_user=wanted)
         self._page_done(
             device_id,
             f"renamed {shown}" if wanted else f"name reset to {shown}",
@@ -422,8 +454,14 @@ class DeviceActionsMixin:
         area = ar.async_get(self.hass).async_get_area(area_id) if area_id else None
         if area_id and area is None:
             raise ValueError("Home Assistant has no such area")
-        dr.async_get(self.hass).async_update_device(device_id, area_id=area_id or None)
-        self._page_done(device_id, f"moved to {area.name}" if area else "area removed")
+        update_device(self.hass, device_id, area_id=area_id or None)
+        if area is None:
+            # A child device with no area is in its parent's, and the
+            # brief says so rather than "area removed" (rule DEV-18).
+            inherited = area_name_of(self.hass, self._device(device_id))
+            self._page_done(device_id, f"set to its parent's area, {inherited}" if inherited else "area removed")
+            return
+        self._page_done(device_id, f"moved to {area.name}")
 
     @staticmethod
     def _new_registry_name(name: str | None) -> str:
@@ -451,7 +489,7 @@ class DeviceActionsMixin:
         areas = ar.async_get(self.hass)
         held = areas.async_get_area_by_name(wanted)
         area = held if held is not None else areas.async_create(wanted)
-        dr.async_get(self.hass).async_update_device(device_id, area_id=area.id)
+        update_device(self.hass, device_id, area_id=area.id)
         self._page_done(device_id, f"moved to {area.name}{'' if held else ', a new area'}")
 
     def page_new_label(self, device_id: str, name: str | None) -> None:
@@ -465,9 +503,7 @@ class DeviceActionsMixin:
         labels_reg = lr.async_get(self.hass)
         held = labels_reg.async_get_label_by_name(wanted)
         label = held if held is not None else labels_reg.async_create(wanted)
-        dr.async_get(self.hass).async_update_device(
-            device_id, labels=set(device.labels or ()) | {label.label_id}
-        )
+        update_device(self.hass, device_id, labels=set(device.labels or ()) | {label.label_id})
         self._page_done(device_id, f"label {label.name} added{'' if held else ', a new label'}")
 
     def page_label(self, device_id: str, label_id: str, add: bool) -> None:
@@ -480,7 +516,7 @@ class DeviceActionsMixin:
             labels.add(label_id)
         else:
             labels.discard(label_id)
-        dr.async_get(self.hass).async_update_device(device_id, labels=labels)
+        update_device(self.hass, device_id, labels=labels)
         self._page_done(device_id, f"label {label.name} {'added' if add else 'removed'}")
 
     def page_turn_on(self, device_id: str, kind: str) -> int:

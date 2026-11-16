@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: device_fields.py, Version: 0.27.10 (2026-10-27)
+# File: device_fields.py, Version: 0.29.4 (2026-11-16)
 
 """Child devices, and the fields only an ordinary device carries.
 
@@ -86,3 +86,73 @@ def child_devices(registry: dr.DeviceRegistry, entry_id: str) -> list[Any]:
     if _CHILD_ENTRIES_FOR_CONFIG_ENTRY is None:
         return []
     return list(_CHILD_ENTRIES_FOR_CONFIG_ENTRY(registry, entry_id))
+
+
+def parent_device(registry: dr.DeviceRegistry, device: Any) -> Any:
+    """The ordinary device a child device belongs to, or None."""
+    if not is_child_device(device):
+        return None
+    parent_id = getattr(device, "parent_device_id", None)
+    return registry.async_get(parent_id) if parent_id else None
+
+
+def effective_area_id(registry: dr.DeviceRegistry, device: Any) -> str | None:
+    """The area a device is in, as Home Assistant places it (rule DEV-18).
+
+    A device's own area; for a child device with none of its own, its
+    parent's. Home Assistant 2026.11 reads a child's area the same way
+    (`async_get_effective_area_id`), and its dashboard shows the child
+    in the parent's room.
+    """
+    if device is None:
+        return None
+    own = getattr(device, "area_id", None)
+    if own:
+        return str(own)
+    parent = parent_device(registry, device)
+    area = getattr(parent, "area_id", None) if parent is not None else None
+    return str(area) if area else None
+
+
+def parent_name_part(registry: dr.DeviceRegistry, device: Any) -> str | None:
+    """The parent's name a child device is shown with, or None (rule DEV-18).
+
+    Home Assistant puts the parent device's name before a child's when
+    the child has no area of its own, so "Socket 1" reads "Power strip
+    Socket 1"; a child in an area of its own is named alone.
+    """
+    if device is None or getattr(device, "area_id", None):
+        return None
+    parent = parent_device(registry, device)
+    if parent is None:
+        return None
+    for value in (getattr(parent, "name_by_user", None), getattr(parent, "name", None)):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def area_name_of(hass: Any, device: Any) -> str | None:
+    """The name of the area a device is in, its parent's for a child
+    device with none of its own, or None (rule DEV-18)."""
+    from homeassistant.helpers import area_registry as ar
+
+    area_id = effective_area_id(dr.async_get(hass), device)
+    if not area_id:
+        return None
+    area = ar.async_get(hass).async_get_area(area_id)
+    return area.name if area is not None else None
+
+
+def update_device(hass: Any, device_id: str, **changes: Any) -> None:
+    """Write a name, an area or labels to a device or a child device.
+
+    Home Assistant refuses `async_update_device` for a child device and
+    takes `async_update_child_device` instead, with the same fields
+    (rule DEV-18). Before child devices existed there is only the one.
+    """
+    registry = dr.async_get(hass)
+    if is_child_device(registry.async_get(device_id)):
+        registry.async_update_child_device(device_id, **changes)  # type: ignore[attr-defined]
+    else:
+        registry.async_update_device(device_id, **changes)

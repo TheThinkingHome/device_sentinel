@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.29.0 (2026-11-14)
+# File: notifier.py, Version: 0.29.4 (2026-11-16)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -94,6 +94,9 @@ from .const import (
     TODO_KIND_UNAVAILABLE,
     STACK_DISPLAY_NAMES,
 )
+from homeassistant.helpers import device_registry as dr
+from .device_fields import area_name_of
+from .naming import with_area
 
 async def async_notify(hass: Any, domain: str, service: str, payload: dict[str, Any]) -> None:
     """Call a notify action, and once more without `data` where the
@@ -335,6 +338,22 @@ class NotifierMixin:
             parts.append(f"and {rest} more device{'s' if rest != 1 else ''}")
         return ", ".join(parts) + "." if parts else "All clear."
 
+    def _with_area(self, device_id: str | None, name: Any) -> str:
+        """A device's name as a phone message says it: with its area in
+        brackets, so two devices of one name in two rooms read apart, as
+        Home Assistant tells them apart (rule NOTE-13)."""
+        text = str(name or "")
+        if not device_id:
+            return text
+        try:
+            device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]
+            area = area_name_of(self.hass, device) if device is not None else None  # type: ignore[attr-defined]
+        except (AttributeError, KeyError):
+            # No registry to read, as in a bare summary: the name alone,
+            # never a card or a push lost over a room.
+            return text
+        return with_area(text, area)
+
     def _family_summary(self, family: str) -> str:
         """Return a one-line current-state summary for a family.
 
@@ -404,7 +423,7 @@ class NotifierMixin:
                 if row.get("device_id") in acknowledged:
                     continue
                 level = row.get("level")
-                name = row.get("name") or row.get("device_id")
+                name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 if level is not None:
                     rows[_key(row, len(rows))] = (
                         _rank(TODO_KIND_LOW_BATTERY), _since(row),
@@ -419,7 +438,7 @@ class NotifierMixin:
             for row in self.battery_falling_list:
                 if row.get("device_id") in acknowledged:
                     continue
-                name = row.get("name") or row.get("device_id")
+                name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 left = row.get("until") or (f"empty in {row['left']}" if row.get("left") else None)
                 clause = left or "running down"
                 key = _key(row, len(rows))
@@ -441,7 +460,7 @@ class NotifierMixin:
             for row in self.signal_problem_list:
                 if row.get("device_id") in acknowledged:
                     continue
-                name = row.get("name") or row.get("device_id")
+                name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 kind = row.get("kind") or SIGNAL_ROW_LOW
                 entries.append((
                     _rank(TODO_KIND_RAILED_SIGNAL), _since(row),
@@ -452,7 +471,7 @@ class NotifierMixin:
             for row in self.flapping_list:
                 if row.get("device_id") in acknowledged:
                     continue
-                name = row.get("name") or row.get("device_id")
+                name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 words = (
                     f"has {self.flap_words(row['device_id'])}"  # type: ignore[attr-defined]
                     if row.get("device_id") else _SUMMARY_WORD[TODO_KIND_FLAPPING]
@@ -463,7 +482,7 @@ class NotifierMixin:
             for row in down_rows:
                 if row.get("device_id") in acknowledged:
                     continue
-                name = row.get("name") or row.get("device_id")
+                name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 kind = row.get("category") or "down"
                 # A hub says what the Problem List says: "hub down, 2
                 # devices that it controls" (rule STACK-10).
