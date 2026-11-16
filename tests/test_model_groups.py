@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_model_groups.py, Version: 0.29.4 (2026-11-16)
 
 """Model groups, the backbone (rules DEV-14, DEV-15).
 
@@ -356,6 +356,7 @@ def _fleet_inputs(path):
         fleet_param("second", "device_sentinel_storage.json", id="second"),
         fleet_param("fourth", "device_sentinel_storage.json", id="fourth"),
         fleet_param("fifth", "device_sentinel.storage", id="fifth"),
+        fleet_param("sixth", "device_sentinel.storage", id="sixth"),
     ],
 )
 def test_the_section_on_each_house(path):

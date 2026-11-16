@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_answers.py, Version: 0.28.3 (2026-11-05)
+# File: tests/test_fleet_answers.py, Version: 0.29.4 (2026-11-16)
 
 """Real houses' answers files through the Power and Type rows
 (rules DEV-06, STOR-20).
@@ -46,6 +46,7 @@ HOUSES = [
     fleet_param("reference", "device_sentinel.answers", id="reference"),
     fleet_param("second", "device_sentinel_answers.json", id="second"),
     fleet_param("fifth", "device_sentinel.answers", id="fifth"),
+    fleet_param("sixth", "device_sentinel.answers", id="sixth"),
 ]
 
 

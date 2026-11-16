@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_forward_outage_shape.py, Version: 0.28.3 (2026-11-05)
+# File: tests/test_forward_outage_shape.py, Version: 0.29.4 (2026-11-16)
 
 """Forward simulation of the stored outage shape on both captured
 houses (rules UP-11, BRIEF-05).
@@ -50,6 +50,7 @@ FLEETS = {
     "second": fleet_path("second", "device_sentinel_storage.json"),
     "fourth": fleet_path("fourth", "device_sentinel_storage.json"),
     "fifth": fleet_path("fifth", "device_sentinel.storage"),
+    "sixth": fleet_path("sixth", "device_sentinel.storage"),
 }
 _UPS = (SYS_WIFI_UP, SYS_BRIDGE_UP, SYS_INTEGRATION_UP)
 
@@ -86,7 +87,7 @@ def _synthesize(data):
     return data
 
 
-@pytest.mark.parametrize("fleet", ["reference", "second", "fourth", "fifth"])
+@pytest.mark.parametrize("fleet", ["reference", "second", "fourth", "fifth", "sixth"])
 async def test_the_new_shape_renders_on_the_fleet(
     hass: HomeAssistant, tmp_path, fleet
 ):

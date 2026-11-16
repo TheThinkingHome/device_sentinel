@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_invariants.py, Version: 0.28.3 (2026-11-05)
+# File: tests/test_fleet_invariants.py, Version: 0.29.4 (2026-11-16)
 
 """The retire path, the verdict lifecycle, the grace rules and the
 incident log stay consistent, and every report still renders (rules
@@ -92,6 +92,7 @@ JAMES_LIVE = fleet_path("reference", "device_sentinel.storage")
 TIM_LIVE = fleet_path("second", "device_sentinel_storage.json")
 FOURTH_LIVE = fleet_path("fourth", "device_sentinel_storage.json")
 FIFTH_LIVE = fleet_path("fifth", "device_sentinel.storage")
+SIXTH_LIVE = fleet_path("sixth", "device_sentinel.storage")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",
@@ -434,6 +435,18 @@ async def test_the_fifth_fleet_renders_every_page(
     """The same, on a house of cloud hubs: Alarm.com polled in lockstep,
     SmartThings, Tuya listed twice, Hue, ZHA and ESPHome."""
     carried, pages = await _render_fleet(hass, FIFTH_LIVE)
+    assert carried > 100, carried
+    _check_pages(pages)
+
+
+@pytest.mark.skipif(not SIXTH_LIVE.exists(), reason=FLEET_ABSENT)
+async def test_the_sixth_fleet_renders_every_page(
+    hass: HomeAssistant,
+):
+    """The same, on a house in Docker with a cloud-pushed lighting
+    system of over a hundred devices, a cloud thermostat that polls, and
+    Shelly and Matter, built from its diagnostics download."""
+    carried, pages = await _render_fleet(hass, SIXTH_LIVE)
     assert carried > 100, carried
     _check_pages(pages)
 

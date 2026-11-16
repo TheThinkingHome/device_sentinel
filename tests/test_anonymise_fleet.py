@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_anonymise_fleet.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_anonymise_fleet.py, Version: 0.29.4 (2026-11-16)
 
 """The anonymizer, the power file and the answers file (rule CODE-17).
 
@@ -254,3 +254,29 @@ def test_a_removed_device_keeps_no_real_name(tmp_path: Path):
     text = (tmp_path / "out" / "reference" / "device_sentinel.storage").read_text(encoding="utf-8")
     assert "Dave" not in text
 
+
+
+def test_a_device_address_and_its_access_point_are_replaced(tmp_path: Path):
+    """The table of address changes holds each Wi-Fi device's network
+    address and the access point it joined, a house's own network and
+    hardware addresses, so both become stand-ins of the same kind, the
+    same stand-in for the same address."""
+    tool = _tool()
+    raw = tmp_path / "raw"
+    _house(raw)
+    storage = raw / "reference" / "device_sentinel.storage"
+    data = json.loads(storage.read_text(encoding="utf-8"))
+    data["data"]["address_changes"] = [
+        {"device_id": DEVICE, "when": 1793746538.0, "ip": "192.0.2.58", "ap": "aa:bb:cc:dd:ee:01"},
+        {"device_id": DEVICE, "when": 1793746600.0, "ip": "192.0.2.58", "ap": None},
+    ]
+    storage.write_text(json.dumps(data))
+    key = tmp_path / "key.json"
+    assert tool.main([str(raw), str(tmp_path / "out"), "--key", str(key)]) == 0
+    out = json.loads((tmp_path / "out" / "reference" / "device_sentinel.storage").read_text(encoding="utf-8"))
+    rows = out["data"]["address_changes"]
+    assert "192.0.2.58" not in json.dumps(out) and "aa:bb:cc:dd:ee:01" not in json.dumps(out)
+    assert rows[0]["ip"] == rows[1]["ip"]
+    assert rows[0]["ip"].count(".") == 3
+    assert rows[0]["ap"].count(":") == 5
+    assert rows[1]["ap"] is None
