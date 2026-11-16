@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.29.1 (2026-11-14)
+# File: diagnostics.py, Version: 0.29.3 (2026-11-15)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -328,6 +328,14 @@ def _infrastructure(
             # its domain and number instead (rule STOR-21).
             "entries": [f"{domain} entry {n}" for n, _entry in enumerate(entries, 1)],
             "state": [str(entry.state) for entry in entries],
+            # How each entry came to be, and whether it is switched off: an
+            # ignored discovery is an entry too, never loaded, and reads as
+            # one here rather than as a second integration that failed.
+            "source": [str(entry.source) for entry in entries],
+            "disabled_by": [
+                str(entry.disabled_by.value) if entry.disabled_by is not None else None
+                for entry in entries
+            ],
             "devices": hardware[:INFRASTRUCTURE_DEVICE_CAP],
             "device_count": len(hardware),
         }

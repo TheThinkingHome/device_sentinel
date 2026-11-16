@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.2 (2026-11-15)
+# File: coordinator.py, Version: 0.29.3 (2026-11-15)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -311,7 +311,14 @@ from .const import (
     PAIRING_GRACE_SECONDS_DEFAULT,
     WATCH_STOPS_KEPT,
 )
-from .detect_battery import BatteryMixin, mark_raw_battery, note_battery_sample, raw_battery_history
+from .detect_battery import (
+    BatteryMixin,
+    mark_raw_battery,
+    note_battery_sample,
+    note_battery_volts,
+    raw_battery_history,
+    ranges_from_old_lists,
+)
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
 from .detect_freeze import FreezeMixin
@@ -1699,6 +1706,26 @@ class DeviceSentinelCoordinator(
             # them.
             loaded.pop("pre_split_backup_taken", None)
             loaded.pop("phase_b_backup_taken", None)
+            # The three-day battery lows and highs an older release kept
+            # become dated day ranges before the reconciler removes them:
+            # the newest is the day of the last midnight before the file
+            # was saved (rules BAT-06, STOR-19).
+            saved = loaded.get(DATA_SAVED_AT)
+            saved_day = (
+                dt_util.as_local(dt_util.utc_from_timestamp(float(saved))).date()
+                if isinstance(saved, (int, float)) and not isinstance(saved, bool) and math.isfinite(saved)
+                else dt_util.now().date()
+            )
+            made = sum(
+                1 for record in loaded[DATA_DEVICES].values()
+                if isinstance(record, dict) and ranges_from_old_lists(record, saved_day - timedelta(days=1))
+            )
+            if made:
+                LOGGER.info(
+                    "Storage upgrade: the last three days' battery lows and "
+                    "highs of %d device(s) kept as dated day ranges",
+                    made,
+                )
             # Before the reconciler, which is the last moment the legacy
             # signal accumulators exist: it removes the retired fields,
             # these among them (RETIRED_DEVICE_FIELDS, rule STOR-19).
@@ -4520,12 +4547,25 @@ class DeviceSentinelCoordinator(
         record = self.data.get(DATA_DEVICES, {}).get(device_id)
         if record is None or self._stopped:
             return
+        # The voltage at every moment the device speaks, read once this
+        # message's entities are written, so a voltage that came with a
+        # battery report is its new one. The minute's spacing below is
+        # for the level's moments, which count; a voltage only widens the
+        # day's lowest and highest (rule BAT-16).
+        self._note_battery_volts(device_id, record)
         now = dt_util.utcnow().timestamp()
         last = self._battery_sampled_at.get(device_id)
         if last is not None and 0.0 <= now - last < BATTERY_SAMPLE_SPACING:
             return
         self._battery_sampled_at[device_id] = now
         note_battery_sample(record, record.get(DEV_BATTERY_VALUE))
+
+    @callback
+    def _note_battery_volts(self, device_id: str, record: dict[str, Any]) -> None:
+        """The battery voltage a battery device that spoke holds, for the
+        day's lowest and highest (rule BAT-16)."""
+        if device_id in self._battery_entity:
+            note_battery_volts(record, self.battery_voltage_now(device_id))
 
     def _record_activity(
         self,

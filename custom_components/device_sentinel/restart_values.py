@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/restart_values.py, Version: 0.29.2 (2026-11-15)
+# File: custom_components/device_sentinel/restart_values.py, Version: 0.29.3 (2026-11-15)
 
 """Integrations and models that report cached values after a restart
 (rule WATCH-12).
@@ -84,6 +84,14 @@ CACHED_VALUE_INTEGRATIONS = frozenset({
     # never go unavailable, and Bluetooth scales that are always shown
     # available because they sleep between weighings.
     "rfxtrx", "enocean", "leaone", "okok_scale", "eufylife_ble", "acaia",
+    # A hub or cloud whose devices stay available with its last values:
+    # Danfoss Link rooms, Drayton Wiser devices, Easee chargers and
+    # Navimow mowers; and a printer whose saved values are shown while it
+    # can't be reached.
+    "danfoss_link", "wiser", "easee", "navimow", "navimower", "snmp_printer",
+    # Values handed back at a start: Node-RED's sensors resend their last
+    # state, and FlightRadar24's restore theirs.
+    "nodered", "flightradar24",
 })
 # The makes and models that report cached values in integrations that
 # otherwise report live (rule WATCH-12): manufacturer, model and model

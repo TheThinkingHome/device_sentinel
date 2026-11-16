@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.29.1 (2026-11-14)
+# File: const.py, Version: 0.29.3 (2026-11-15)
 
 """Constants for the Device Sentinel integration."""
 
@@ -999,6 +999,9 @@ RETIRED_DEVICE_FIELDS = frozenset(
         "battery_day_before_high",
         "battery_recent_highs",
         "battery_recent_starts",
+        # Made into the dated day ranges (rule BAT-06).
+        "battery_range_lows",
+        "battery_range_highs",
     }
 )
 
@@ -1354,10 +1357,11 @@ BATTERY_FULL_RISE = 10.0
 # heard holding it at this many moments, so a value held for seconds,
 # as a reconnect can give, decides nothing (rule BAT-06).
 BATTERY_SAMPLE_REPEATS = 2
-# Days of lows and highs kept. A day keeps each whole-number level it
-# was heard at, at most 101, and drops none, so a battery that passes
-# through every level in a day, as a charging one does, keeps its true
-# low and high (rule BAT-06).
+# Days of lows and highs the replacement rule reads, the newest kept
+# rows. A day keeps each whole-number level it was heard at, at most
+# 101, and drops none, so a battery that passes through every level in
+# a day, as a charging one does, keeps its true low and high (rule
+# BAT-06).
 BATTERY_RANGE_DAYS = 3
 BATTERY_DAY_LEVELS_KEPT = 101
 # The device speaking is a moment heard at its level at most once a
@@ -1381,8 +1385,16 @@ DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
 # device spoke (rule BAT-06).
 DEV_BATTERY_DAY_LEVELS = "battery_day_levels"
 DEV_BATTERY_DAY_COUNTS = "battery_day_counts"
-# Each of the last three days' lowest and highest level, oldest first
-# (rule BAT-06).
+# The lowest and highest battery voltage heard today, from the device's
+# own entities, None until one is heard (rule BAT-16).
+DEV_BATTERY_VOLTS_TODAY_LOW = "battery_volts_today_low"
+DEV_BATTERY_VOLTS_TODAY_HIGH = "battery_volts_today_high"
+# Each day's lowest and highest level and voltage, one row a day the
+# device was heard, oldest first, kept for How Much History to Keep
+# (rules BAT-06, BAT-16). The replacement rule reads the newest rows.
+DEV_BATTERY_DAY_RANGES = "battery_day_ranges"
+# The three-day lows and highs the day ranges replaced. Read once at
+# load, made into dated rows, and removed (rule STOR-19).
 DEV_BATTERY_RANGE_LOWS = "battery_range_lows"
 DEV_BATTERY_RANGE_HIGHS = "battery_range_highs"
 # The old cell's highest level over the window before a suspected
@@ -1739,8 +1751,9 @@ EPOCH_KEPT = (
     DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_DAY_LEVELS,
     DEV_BATTERY_DAY_COUNTS,
-    DEV_BATTERY_RANGE_LOWS,
-    DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
+    DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_RAW_FIRST_DAY,
@@ -1825,6 +1838,14 @@ CLOCK_FIELDS = (
     # each routine save: kept only in the main file, a start already cleared
     # could come back after a power cut (rule UNAV-04).
     DEV_DOWN_SINCE,
+    # The battery levels and voltages heard today change at each moment
+    # the device speaks: kept only in the main file, a power cut would
+    # lose the day's samples back to the last cold save (rules STOR-15,
+    # BAT-06).
+    DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_COUNTS,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
+    DEV_BATTERY_VOLTS_TODAY_HIGH,
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"

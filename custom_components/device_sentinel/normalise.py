@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.28.12 (2026-11-11)
+# File: normalise.py, Version: 0.29.3 (2026-11-15)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -66,8 +66,9 @@ from .const import (
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_DAY_LEVELS,
     DEV_BATTERY_DAY_COUNTS,
-    DEV_BATTERY_RANGE_LOWS,
-    DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
+    DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
@@ -269,6 +270,8 @@ HELD_VALUES = "None or a mapping of entity registry ids to held values"
 VERSION_HISTORY = "list of [version, first seen] pairs"
 FORECAST_LOG = "list of battery forecast rows"
 EVIDENCE_LOG = "list of battery evidence rows"
+DAY_RANGE_LOG = "list of battery day ranges"
+VOLTS = "a battery voltage or None"
 LIVES_LOG = "list of battery lives"
 # A Wi-Fi outage still open (rule UP-04).
 WIFI_OUTAGE = "a stored Wi-Fi outage"
@@ -326,8 +329,9 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_REPLACED_PENDING: LEVEL,
     DEV_BATTERY_DAY_LEVELS: LEVEL_SERIES,
     DEV_BATTERY_DAY_COUNTS: INT_SERIES,
-    DEV_BATTERY_RANGE_LOWS: LEVEL_SERIES,
-    DEV_BATTERY_RANGE_HIGHS: LEVEL_SERIES,
+    DEV_BATTERY_VOLTS_TODAY_LOW: VOLTS,
+    DEV_BATTERY_VOLTS_TODAY_HIGH: VOLTS,
+    DEV_BATTERY_DAY_RANGES: DAY_RANGE_LOG,
     DEV_BATTERY_PENDING_HIGH: LEVEL,
     DEV_BATTERY_COARSE_DROPS: INTEGER,
     DEV_BATTERY_RAW_SCALE: BOOLEAN,
@@ -422,6 +426,22 @@ def _evidence_row_ok(row: Any) -> bool:
         and (temperature is None or (_is_number(temperature) and -100 <= temperature <= 150))
         and (events is None or (isinstance(events, int) and not isinstance(events, bool) and 0 <= events <= COUNT_HIGHEST))
     )
+
+
+def day_range_row_ok(row: Any) -> bool:
+    """One day's battery range (rules BAT-06, BAT-16): a day, the lowest
+    and highest level, then the lowest and highest voltage, each pair
+    None where the day had none, and never a low above its high."""
+    if not isinstance(row, list) or len(row) != 5:
+        return False
+    day, low, high, volts_low, volts_high = row
+
+    def pair(a: Any, b: Any, top: float) -> bool:
+        if a is None or b is None:
+            return a is None and b is None
+        return _is_number(a) and _is_number(b) and 0 <= a <= b <= top
+
+    return _is_day(day) and pair(low, high, LEVEL_HIGHEST) and pair(volts_low, volts_high, 50.0)
 
 
 def _life_row_ok(row: Any) -> bool:
@@ -533,6 +553,8 @@ _RANGED: dict[str, tuple[float, float, bool]] = {
     LEVEL: (LEVEL_LOWEST, LEVEL_HIGHEST, True),
     READING: (READING_LOWEST, READING_HIGHEST, True),
     NONNEGATIVE: (0.0, MAGNITUDE_HIGHEST, True),
+    # As the evidence rows hold a voltage (rule BAT-16).
+    VOLTS: (0.0, 50.0, True),
 }
 # Each ranged series: (lowest, highest, None elements allowed).
 _RANGED_SERIES: dict[str, tuple[float, float, bool]] = {
@@ -675,6 +697,12 @@ def _fault(kind: str, value: Any) -> str | None:
         if not isinstance(value, list):
             return _describe(value)
         bad = [row for row in value if not _evidence_row_ok(row)]
+        return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
+    if kind == DAY_RANGE_LOG:
+        # [day, low, high, volts low, volts high] (rules BAT-06, BAT-16).
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [row for row in value if not day_range_row_ok(row)]
         return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
     if kind == WIFI_OUTAGE:
         return None if wifi_outage_ok(value) else _describe(value)

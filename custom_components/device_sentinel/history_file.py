@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.28.12 (2026-11-11)
+# File: history_file.py, Version: 0.29.3 (2026-11-15)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -64,6 +64,7 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_EVIDENCE,
     DEV_DAILY_MAX,
     DEV_SIGNAL_ALT,
@@ -81,7 +82,7 @@ from .const import (
     SYS_WHEN,
 )
 from .backup import keep_as_last_good
-from .normalise import damaged_rows, series_fault
+from .normalise import EXPECTED, damaged_rows, day_range_row_ok, series_fault
 
 # The daily signal series, on the record and in its second scale.
 SIGNAL_SERIES_FIELDS = (
@@ -114,6 +115,11 @@ ROW_TABLES = (
 H_GENERATION = "generation"
 H_LINE = "line"
 H_DEVICES = "devices"
+# Each device's older battery day ranges (rules BAT-06, BAT-16), under a
+# key of their own rather than in the device map: a release that does not
+# know them reads the rest of the file and leaves them out, where a field
+# it does not know in the device map makes it refuse the whole file.
+H_DAY_RANGES = "battery_day_ranges"
 
 LAST_GOOD = f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
 
@@ -166,6 +172,7 @@ def split(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     view = dict(data)
     older_devices: dict[str, Any] = {}
+    older_ranges: dict[str, Any] = {}
     devices = data.get(DATA_DEVICES)
     if isinstance(devices, dict):
         view_devices: dict[str, Any] = {}
@@ -192,13 +199,20 @@ def split(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
                 if alt_older:
                     kept[DEV_SIGNAL_ALT] = {**alt, **alt_kept}
                     older[DEV_SIGNAL_ALT] = alt_older
-            if older:
+            newest, cut = _cut_series(record.get(DEV_BATTERY_DAY_RANGES))
+            if cut is not None:
+                kept[DEV_BATTERY_DAY_RANGES] = newest
+                older_ranges[device_id] = cut
+            if older or cut is not None:
                 view_devices[device_id] = {**record, **kept}
-                older_devices[device_id] = older
             else:
                 view_devices[device_id] = record
+            if older:
+                older_devices[device_id] = older
         view[DATA_DEVICES] = view_devices
     part: dict[str, Any] = {H_DEVICES: older_devices}
+    if older_ranges:
+        part[H_DAY_RANGES] = older_ranges
     line = data.get(DATA_HISTORY_LINE)
     for table, field in ROW_TABLES:
         rows = data.get(table)
@@ -211,7 +225,7 @@ def split(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
 
 def is_empty(part: dict[str, Any]) -> bool:
     """Say whether a history part holds nothing at all."""
-    return not part.get(H_DEVICES) and not any(
+    return not part.get(H_DEVICES) and not part.get(H_DAY_RANGES) and not any(
         part.get(table) for table, _field in ROW_TABLES
     )
 
@@ -267,12 +281,26 @@ def check_payload(payload: Any) -> str | None:
                         return f"{device_id}: {field}.{alt_field} {why}"
                 continue
             if field not in SERIES_FIELDS:
-                return f"{device_id}: {field} is not a daily series"
+                if field in EXPECTED:
+                    # A field this release keeps on the record, never in
+                    # the history file: the copy was altered.
+                    return f"{device_id}: {field} is not a daily series"
+                # A series a newer release added: never joined here, so it
+                # cannot bring damage in, and refusing the file for it would
+                # lose every older history on a return to this release.
+                continue
             if not isinstance(values, list):
                 return f"{device_id}: {field} is not a list"
             why = series_fault(field, values)
             if why is not None:
                 return f"{device_id}: {field} {why}"
+    ranges = payload.get(H_DAY_RANGES)
+    if ranges is not None:
+        if not isinstance(ranges, dict):
+            return f"{H_DAY_RANGES} is not a map"
+        for device_id, rows in ranges.items():
+            if not isinstance(rows, list) or not all(day_range_row_ok(row) for row in rows):
+                return f"{device_id}: {H_DAY_RANGES} holds a damaged row"
     for table, _field in ROW_TABLES:
         rows = payload.get(table)
         if rows is None:
@@ -311,12 +339,20 @@ def join(loaded: dict[str, Any], payload: dict[str, Any]) -> dict[str, int]:
                         counts["entries"] += len(alt_values)
                         joined = True
                 continue
+            if field not in SERIES_FIELDS:
+                continue
             if isinstance(record.get(field), list) and values:
                 record[field] = list(values) + record[field]
                 counts["entries"] += len(values)
                 joined = True
         if joined:
             counts["devices"] += 1
+    for device_id, rows in (payload.get(H_DAY_RANGES) or {}).items():
+        record = devices.get(device_id) if isinstance(devices, dict) else None
+        if not isinstance(record, dict) or not isinstance(record.get(DEV_BATTERY_DAY_RANGES), list) or not rows:
+            continue
+        record[DEV_BATTERY_DAY_RANGES] = list(rows) + record[DEV_BATTERY_DAY_RANGES]
+        counts["entries"] += len(rows)
     for table, _field in ROW_TABLES:
         rows = payload.get(table)
         if not rows:
@@ -435,6 +471,9 @@ def describe(payload: Any) -> dict[str, Any]:
                     entries += sum(len(v) for v in values.values() if isinstance(v, list))
                 elif isinstance(values, list):
                     entries += len(values)
+    ranges = payload.get(H_DAY_RANGES)
+    if isinstance(ranges, dict):
+        entries += sum(len(rows) for rows in ranges.values() if isinstance(rows, list))
     return {
         "generation": payload.get(H_GENERATION),
         "line": payload.get(H_LINE),

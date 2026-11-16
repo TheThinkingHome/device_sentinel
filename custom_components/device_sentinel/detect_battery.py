@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.28.12 (2026-11-11)
+# File: detect_battery.py, Version: 0.29.3 (2026-11-15)
 
 """Battery: the level threshold and what is tracked.
 
@@ -73,8 +73,11 @@ from .const import (
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_DAY_LEVELS,
     DEV_BATTERY_DAY_COUNTS,
-    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_RANGE_HIGHS,
+    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
     DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_REPLACED_AT,
     SYS_BATTERY_REPLACED,
@@ -99,6 +102,12 @@ from .const import (
     DEV_LAST_ACTIVITY,
 )
 from .records import BAD_STATES, SERIES_MEMO_SIZE, restart_lognormal, series_key
+from .normalise import day_range_row_ok
+
+# A day range's row: [day, lowest level, highest level, lowest voltage,
+# highest voltage] (rules BAT-06, BAT-16).
+RANGE_DAY, RANGE_LOW, RANGE_HIGH, RANGE_VOLTS_LOW, RANGE_VOLTS_HIGH = range(5)
+RANGE_FIELDS = 5
 
 
 def mark_raw_battery(record: dict[str, Any]) -> bool:
@@ -116,7 +125,6 @@ def mark_raw_battery(record: dict[str, Any]) -> bool:
         return True
     for field in (
         DEV_BATTERY_DAILY, DEV_BATTERY_DAILY_PREVIOUS, DEV_BATTERY_DAY_LEVELS,
-        DEV_BATTERY_RANGE_LOWS, DEV_BATTERY_RANGE_HIGHS,
     ):
         series = record.get(field)
         if isinstance(series, list):
@@ -126,6 +134,14 @@ def mark_raw_battery(record: dict[str, Any]) -> bool:
                 else v
                 for v in series
             ]
+    # The day ranges' levels, not their voltages.
+    rows = record.get(DEV_BATTERY_DAY_RANGES)
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, list) and len(row) == RANGE_FIELDS:
+                for column in (RANGE_LOW, RANGE_HIGH):
+                    if _level(row[column]):
+                        row[column] = row[column] / 2.0
     for field in (
         DEV_BATTERY_VALUE, DEV_BATTERY_REPLACED_PENDING, DEV_BATTERY_PENDING_HIGH,
     ):
@@ -265,29 +281,113 @@ def battery_day_range(record: dict[str, Any]) -> tuple[float, float] | None:
     return min(chosen), max(chosen)
 
 
+def note_battery_volts(record: dict[str, Any], volts: Any) -> None:
+    """Note one moment the device was heard at this battery voltage: the
+    day's lowest and highest are kept (rule BAT-16)."""
+    if not _level(volts):
+        return
+    volts = float(volts)
+    low: Any = record.get(DEV_BATTERY_VOLTS_TODAY_LOW)
+    high: Any = record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)
+    if not _level(low) or not _level(high) or low > high:
+        # Out of step after a hand edit or a hostile file: start the day again.
+        low = high = volts
+    record[DEV_BATTERY_VOLTS_TODAY_LOW] = min(float(low), volts)
+    record[DEV_BATTERY_VOLTS_TODAY_HIGH] = max(float(high), volts)
+
+
+def _rows(record: dict[str, Any]) -> list[list[Any]]:
+    """The day ranges, oldest first, each row sound (rules BAT-06, BAT-16)."""
+    rows = record.get(DEV_BATTERY_DAY_RANGES)
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if day_range_row_ok(row)]
+
+
 def _ranges(record: dict[str, Any]) -> tuple[list[float], list[float]]:
-    lows = record.get(DEV_BATTERY_RANGE_LOWS)
-    highs = record.get(DEV_BATTERY_RANGE_HIGHS)
-    if not isinstance(lows, list) or not isinstance(highs, list) or len(lows) != len(highs):
-        return [], []
-    if not all(_level(v) for v in (*lows, *highs)):
-        return [], []
-    return [float(v) for v in lows], [float(v) for v in highs]
+    """The newest days' lows and highs the replacement rule reads, oldest
+    first: the rows with a level (rule BAT-06)."""
+    kept = [row for row in _rows(record) if row[RANGE_LOW] is not None][-BATTERY_RANGE_DAYS:]
+    return [float(row[RANGE_LOW]) for row in kept], [float(row[RANGE_HIGH]) for row in kept]
 
 
-def close_battery_day(record: dict[str, Any]) -> None:
-    """At midnight the day's range joins the last three, and a new day
-    starts with the level the battery holds now (rule BAT-06)."""
-    lows, highs = _ranges(record)
-    day = battery_day_range(record)
-    if day is not None:
-        lows.append(day[0])
-        highs.append(day[1])
-        record[DEV_BATTERY_RANGE_LOWS] = lows[-BATTERY_RANGE_DAYS:]
-        record[DEV_BATTERY_RANGE_HIGHS] = highs[-BATTERY_RANGE_DAYS:]
+def close_battery_day(record: dict[str, Any], day: date, keep: int, *, judge_heard: bool = True) -> None:
+    """At midnight a device heard that day keeps the day's lowest and
+    highest level and voltage as one dated row, the rows are held to How
+    Much History to Keep, and a new day starts with the level the battery
+    holds now (rules BAT-06, BAT-16).
+
+    A day the device was not heard holds only the level carried in at
+    midnight and measured nothing, so it writes no row, as it writes no
+    daily level (rule BAT-05)."""
+    rows = _rows(record)
+    heard = record.get(DEV_LAST_ACTIVITY)
+    start = dt_util.start_of_local_day(day).timestamp()
+    was_heard = not judge_heard or (
+        isinstance(heard, (int, float)) and not isinstance(heard, bool) and heard >= start
+    )
+    levels = battery_day_range(record)
+    low: Any = record.get(DEV_BATTERY_VOLTS_TODAY_LOW)
+    high: Any = record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)
+    volts = (round(float(low), 3), round(float(high), 3)) if _level(low) and _level(high) and low <= high else None
+    stamp = day.isoformat()
+    if was_heard and (levels is not None or volts is not None):
+        row = [
+            stamp,
+            levels[0] if levels else None, levels[1] if levels else None,
+            volts[0] if volts else None, volts[1] if volts else None,
+        ]
+        if judge_heard and rows and rows[-1][RANGE_DAY] == stamp:
+            # One day folded twice, as a restart across midnight can give:
+            # one row holding both parts of the day.
+            rows[-1] = _merged(rows[-1], row)
+        else:
+            rows.append(row)
+    if keep > 0:
+        del rows[:-keep]
+    record[DEV_BATTERY_DAY_RANGES] = rows
     record[DEV_BATTERY_DAY_LEVELS] = []
     record[DEV_BATTERY_DAY_COUNTS] = []
+    record[DEV_BATTERY_VOLTS_TODAY_LOW] = None
+    record[DEV_BATTERY_VOLTS_TODAY_HIGH] = None
     note_battery_sample(record, record.get(DEV_BATTERY_VALUE))
+
+
+def _merged(old: list[Any], new: list[Any]) -> list[Any]:
+    """Two rows of one day as one: the lower low and the higher high, for
+    the level and for the voltage, each pair kept whole."""
+    out = [new[RANGE_DAY]]
+    for low, high in ((RANGE_LOW, RANGE_HIGH), (RANGE_VOLTS_LOW, RANGE_VOLTS_HIGH)):
+        pairs = [(row[low], row[high]) for row in (old, new) if row[low] is not None]
+        out += [min(p[0] for p in pairs), max(p[1] for p in pairs)] if pairs else [None, None]
+    return out
+
+
+def ranges_from_old_lists(record: dict[str, Any], last_day: date) -> bool:
+    """Make the three-day lows and highs an older release kept into dated
+    rows, the newest on last_day, the day of the last midnight before the
+    file was saved, and remove them (rule STOR-19). A day already in the
+    rows, as after a return from an older release, keeps its row.
+    Returns whether anything was made."""
+    lows = record.pop(DEV_BATTERY_RANGE_LOWS, None)
+    highs = record.pop(DEV_BATTERY_RANGE_HIGHS, None)
+    if (
+        not isinstance(lows, list) or not isinstance(highs, list) or len(lows) != len(highs)
+        or not lows or not all(_level(v) for v in (*lows, *highs))
+    ):
+        return False
+    rows = _rows(record)
+    have = {row[RANGE_DAY] for row in rows}
+    made = False
+    for back, (low, high) in enumerate(reversed(list(zip(lows, highs, strict=True)))):
+        stamp = (last_day - timedelta(days=back)).isoformat()
+        if stamp in have or float(low) > float(high):
+            continue
+        rows.append([stamp, float(low), float(high), None, None])
+        made = True
+    rows.sort(key=lambda row: row[RANGE_DAY])
+    record[DEV_BATTERY_DAY_RANGES] = rows
+    return made
 
 
 def old_cell_high(record: dict[str, Any], level: float) -> float | None:
@@ -310,13 +410,19 @@ class BatteryMixin:
     """Battery: the level threshold and what is tracked."""
 
     def _roll_battery(self, record: dict[str, Any], device_id: str = "") -> None:
-        """The midnight roll: the day's range is kept first, so the roll
-        can judge a rise against the days before it, and a new day starts
-        after (rule BAT-06)."""
+        """The midnight roll: the rise is judged against the days kept
+        before this one, and then this day's range is kept and a new day
+        starts (rule BAT-06)."""
         try:
             self._roll_battery_day(record, device_id)
         finally:
-            close_battery_day(record)
+            # Outside a fold, as a roll run on its own is, the day is
+            # yesterday and was heard, as the roll itself takes it.
+            folding = getattr(self, "_folding_day", None)
+            day = folding or dt_util.as_local(dt_util.utcnow() - timedelta(minutes=1)).date()
+            close_battery_day(
+                record, day, int(getattr(self, "retention_days", 0) or 0), judge_heard=folding is not None,
+            )
 
     def _roll_battery_day(self, record: dict[str, Any], device_id: str = "") -> None:
         """Append today's battery level to the daily discharge series.
@@ -386,7 +492,7 @@ class BatteryMixin:
             return
         if pending is not None:
             record[DEV_BATTERY_REPLACED_PENDING] = None
-            old_high = record.get(DEV_BATTERY_PENDING_HIGH)
+            old_high: Any = record.get(DEV_BATTERY_PENDING_HIGH)
             record[DEV_BATTERY_PENDING_HIGH] = None
             # A new cell stays above the old cell's high all its next
             # whole day. A dip or a swing comes back only to where the

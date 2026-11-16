@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.10 (2026-10-27)
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.29.3 (2026-11-15)
 
 """When a falling cell reaches its target, as a range (rule BAT-13).
 
@@ -27,9 +27,19 @@ time, since most falling cells rest between steps.
   Each day's miss from the fit is kept, the misses are reshuffled a
   week at a time, so a run of low readings stays a run, and the fit is
   made again on each of 200 reshuffled histories. Each is projected
-  from today's reading to the target: the low threshold, or empty for
-  a cell already under it. The near and far ends are the 10th
-  and 90th percentiles of those days. The reshuffle is seeded from the
+  from the fit's value today to the target: the low threshold, or empty
+  for a cell already under it. The fit's value, not today's reading:
+  a cell that reads a step low one day and back the next moves the
+  date by weeks when the reading starts it, and by days when the fit
+  does. The start is never further over today's reading than the six
+  weeks' second deepest day under the fit, and at least a point, so a
+  collapse the fit has not caught up with is followed down without a
+  jump. Under the reading, the start is held a point over the target
+  while the reading is still over it, so the time left never drops to
+  nothing before the battery has crossed. The fit's own day is the far end,
+  the longest the battery is likely to last, since its fall speeds up
+  near the end; the width between those days' 10th and 90th percentiles
+  is taken off it for the near end. The reshuffle is seeded from the
   history, so the same history always gives the same range.
 - Worked out once for each history and reading, and kept, as the line
   is, so the minute check does not pay for it.
@@ -65,6 +75,16 @@ PROJECTION_FAR = 0.90
 # the arithmetic is guesswork. Over a year is said as "over a year"
 # (rule BAT-13).
 PROJECTION_LONGEST = 3 * 365
+# The near end is never under this share of the far end (rule BAT-13).
+PROJECTION_NEAR_SHARE = 0.25
+# The nearest a near end's path is drawn for, in days, so a near end of
+# today still draws a line that reaches the target.
+PROJECTION_NEAREST = 0.5
+# The least a reading may sit under the fit before the start follows it
+# down, and how far over the target the start is held while the reading
+# is over it: one step of a battery that reports whole numbers (rule
+# BAT-13).
+PROJECTION_STEP = 1.0
 
 _MEMO: dict[tuple[Any, ...], dict[str, Any] | None] = {}
 _CURVE_MEMO: dict[tuple[Any, ...], float | None] = {}
@@ -166,11 +186,31 @@ def _project(series: list[Any], level: float, target: float = 0.0) -> dict[str, 
     # the word and the range (rule BAT-12).
     curved = bend is not None and accelerating_pace(series) is not None
     model = bend if curved and bend is not None else line
-    # The distance to cover: to the threshold, the level a person acts on
-    # and can see arrive, not to an empty many devices never reach (rule BAT-13).
-    room = level - target
     # Today is the slot after the newest, yesterday.
     today = float(span)
+    # Each day's miss from the fit, for where the fall starts and for the
+    # reshuffle below.
+    misses = [b - _value(model, a) for a, b in zip(t, y, strict=True)]
+    # Where the fall starts: the fit's value today, not today's reading,
+    # which a single step moves (rule BAT-13), held near the reading at
+    # both edges below, each without a jump.
+    fit = _value(model, today)
+    if fit < level:
+        # Under the reading: the fit, held a point over the target while
+        # the reading is still over it, so the time left never drops to
+        # nothing before the battery has crossed, and never jumps where the
+        # fit crosses.
+        start = min(level, max(fit, target + PROJECTION_STEP))
+    else:
+        # Over the reading: no further over it than the six weeks' second
+        # deepest day under the fit, so one stray day does not hide a
+        # collapse, and at least a point.
+        depths = sorted((-miss for miss in misses if miss < 0), reverse=True)
+        under = max(depths[1] if len(depths) > 1 else (depths[0] if depths else 0.0), PROJECTION_STEP)
+        start = min(fit, level + under)
+    # The distance to cover: to the threshold, the level a person acts on
+    # and can see arrive, not to an empty many devices never reach (rule BAT-13).
+    room = start - target
 
     def path(p: list[float]) -> tuple[float, float]:
         return p[1] + 2.0 * p[2] * today, p[2]
@@ -179,7 +219,6 @@ def _project(series: list[Any], level: float, target: float = 0.0) -> dict[str, 
     centre = days_to_empty(room, slope, curve)
     # Each day's miss, reshuffled a week at a time: a run of low days
     # stays together, so the range carries the cell's own swings.
-    misses = [b - _value(model, a) for a, b in zip(t, y, strict=True)]
     weeks = [misses[i:i + int(BATTERY_WEEK_DAYS)] for i in range(0, n, int(BATTERY_WEEK_DAYS))]
     seed = int.from_bytes(hashlib.sha256(repr(tuple(y)).encode()).digest()[:8], "big")
     draw = random.Random(seed)  # noqa: S311  # nosec B311 - a repeatable reshuffle, not security
@@ -199,27 +238,49 @@ def _project(series: list[Any], level: float, target: float = 0.0) -> dict[str, 
     if not finite or centre is None:
         return None
     answers.sort(key=lambda a: a[0])
-    near = answers[int(PROJECTION_NEAR * (len(answers) - 1))]
-    far = answers[int(PROJECTION_FAR * (len(answers) - 1))]
-    if not math.isfinite(near[0]):
+    low = answers[int(PROJECTION_NEAR * (len(answers) - 1))]
+    high = answers[int(PROJECTION_FAR * (len(answers) - 1))]
+    if not math.isfinite(low[0]):
         return None
-    far_days = far[0] if math.isfinite(far[0]) else None
+    # The fit's own day is the far end: a battery's fall speeds up near its
+    # end, so the fit is the longest it is likely to last. The cell's own
+    # swings, the width between the reshuffles' 10th and 90th percentiles,
+    # come off it for the near end (rule BAT-13).
+    # Where fewer than nine in ten reshuffles reach the target there is no
+    # width, and the reshuffles' near end stands, never after the fit's day.
+    # The width is taken on days held to the longest said, as the far end
+    # is, and the near end is never under a quarter of the far end: a slow,
+    # noisy fall whose width outgrows its own day would otherwise say
+    # "under a week" for a battery far over its target.
+    far_day = min(centre, PROJECTION_LONGEST)
+    width = (
+        min(high[0], PROJECTION_LONGEST) - min(low[0], PROJECTION_LONGEST)
+        if math.isfinite(high[0]) else None
+    )
+    near_day = far_day - width if width is not None else min(low[0], far_day)
+    near_day = min(max(near_day, PROJECTION_NEAR_SHARE * far_day), far_day)
+    # The near end's path is the fit's own, run faster so it reaches the
+    # target on the near day: the same shape, earlier.
+    quicker = far_day / max(near_day, PROJECTION_NEAREST)
     return {
         "curved": curved,
         "level": level,
+        # The fit's value today, where the time left and the chart's
+        # future start (rule BAT-13).
+        "start": round(start, 2),
         # Where the time left ends: the low threshold, or 0 for a cell
         # already under it.
         "target": target,
-        "near": round(min(near[0], PROJECTION_LONGEST), 1),
-        "far": round(min(far_days, PROJECTION_LONGEST), 1) if far_days is not None else None,
-        "centre": round(min(centre, PROJECTION_LONGEST), 1),
+        "near": round(near_day, 1),
+        "far": round(far_day, 1),
+        "centre": round(far_day, 1),
         # The fitted pace today, points a week, positive for a fall: what
         # the sentence above the chart says of a curved fall (rule BAT-12).
         "pace": round(-slope * BATTERY_WEEK_DAYS, 1),
-        # Each end's path from today, level + slope d + curve d², so the
+        # Each end's path from today, start + slope d + curve d², so the
         # chart draws what was fitted rather than fitting again.
-        "near_path": [round(near[1], 5), round(near[2], 7)],
-        "far_path": [round(far[1], 5), round(far[2], 7)] if far_days is not None else None,
+        "near_path": [round(slope * quicker, 5), round(curve * quicker * quicker, 7)],
+        "far_path": [round(slope, 5), round(curve, 7)],
     }
 
 

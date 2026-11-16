@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.2 (2026-11-15)
+# File: dashboard.py, Version: 0.29.3 (2026-11-15)
 
 """What the dashboard reads from the coordinator.
 
@@ -2383,7 +2383,7 @@ class TrendsViewMixin:
             # when it regroups by type, as here.
             cell_rows.append({**cell, "maker": key[0], "model": key[1], "alone": alone})
         models = []
-        for (maker, model, _alone), cells in groups.items():
+        for (maker, model, alone_id), cells in groups.items():
             lowest = min(cells, key=lambda cell: cell["level"])
             kinds: dict[str, int] = {}
             for cell in cells:
@@ -2398,6 +2398,10 @@ class TrendsViewMixin:
                 "lowest_name": lowest["name"],
                 "lowest_id": lowest["device_id"],
                 "learning": all(cell["learning"] for cell in cells),
+                # A device that names no product is a row of its own, and
+                # the page names the device so two such rows can be told
+                # apart (rule BAT-18).
+                "alone": bool(alone_id),
                 # Each type its cells have and how many, most first;
                 # "" for cells with no type.
                 "types": sorted(kinds.items(), key=lambda item: (-item[1], item[0])),
