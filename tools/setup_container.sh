@@ -4,7 +4,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/setup_container.sh, Version: 0.28.3 (2026-11-05)
+# File: tools/setup_container.sh, Version: 0.29.3 (2026-11-15)
 #
 # Rebuild the whole test environment in a fresh build container.
 #
@@ -36,6 +36,9 @@ TREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PYTHON_VERSION="3.14.6"
 UV_VERSION="0.12.17"
+# The SHA-256 uv publishes beside that release's archive. A download that
+# does not match is never unpacked. Change it with UV_VERSION.
+UV_SHA256="fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63"
 UV="/usr/local/bin/uv"
 RUFF_PIN="0.15.22"
 BANDIT_PIN="1.9.4"
@@ -73,6 +76,8 @@ else
   URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${ARCHIVE}"
   TMP="$(mktemp -d)"
   curl -sSL -o "$TMP/$ARCHIVE" "$URL" || die "cannot download uv from $URL"
+  echo "$UV_SHA256  $TMP/$ARCHIVE" | sha256sum -c --status \
+    || die "uv from $URL does not match its pinned SHA-256; not installed"
   tar xzf "$TMP/$ARCHIVE" -C "$TMP" || die "cannot unpack uv"
   cp "$TMP"/uv-x86_64-unknown-linux-gnu/uv "$TMP"/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/ \
     || die "cannot install uv to /usr/local/bin"
@@ -143,7 +148,11 @@ mkdir -p "$JSDOM_DIR"
 if [ -d "$JSDOM_DIR/node_modules/jsdom" ]; then
   note "jsdom already installed"
 else
-  ( cd "$JSDOM_DIR" && npm install --silent jsdom >/dev/null 2>&1 ) \
+  # Exactly the tree the checks were proved on: the folder's lockfile pins
+  # jsdom and everything it pulls in, and npm ci installs nothing else.
+  cp "$TREE/tools/panel_checks/package.json" "$TREE/tools/panel_checks/package-lock.json" "$JSDOM_DIR/" \
+    || die "cannot copy the panel checks' lockfile to $JSDOM_DIR"
+  ( cd "$JSDOM_DIR" && npm ci --silent >/dev/null 2>&1 ) \
     || die "cannot install jsdom in $JSDOM_DIR"
 fi
 ( cd "$JSDOM_DIR" && node -e "require('jsdom')" ) \
