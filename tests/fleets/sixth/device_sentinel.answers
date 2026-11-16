@@ -1,0 +1,378 @@
+{
+ "version": 1,
+ "minor_version": 1,
+ "key": "device_sentinel.answers",
+ "data": {
+  "power": {
+   "models": {
+    "[\"Maker 001\", \"Model 001\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:40.344150+00:00",
+     "device_id": "05fa0000000000000000000000000001"
+    },
+    "[\"Maker 002\", \"Model 002\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:52.910858+00:00",
+     "device_id": "05fa0000000000000000000000000003"
+    },
+    "[\"Maker 003\", \"Model 003\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:30.382659+00:00",
+     "device_id": "05fa0000000000000000000000000004"
+    },
+    "[\"Maker 004\", \"Model 004\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:28.842421+00:00",
+     "device_id": "05fa0000000000000000000000000005"
+    },
+    "[\"Maker 005\", \"Model 005\", \"Model ID 005\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:30.594997+00:00",
+     "device_id": "05fa000000000000000000000000000e"
+    },
+    "[\"Maker 006\", \"Model 006\", \"Model ID 006\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:34.593667+00:00",
+     "device_id": "05fa000000000000000000000000000a"
+    },
+    "[\"Maker 007\", \"Model 007\", \"Model ID 007\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T18:01:34.861565+00:00",
+     "device_id": "05fa000000000000000000000000000f"
+    },
+    "[\"Maker 008\", \"Model 008\", \"Model ID 008\"]": {
+     "kind": "battery",
+     "type": "AA",
+     "quantity": 2,
+     "set": "2026-11-08T16:26:25.105546+00:00",
+     "device_id": "05fa000000000000000000000000001b"
+    },
+    "[\"Maker 009\", \"Model 009\", \"Model ID 009\"]": {
+     "kind": "battery",
+     "type": "AAA",
+     "quantity": 3,
+     "set": "2026-11-08T16:26:12.839244+00:00",
+     "device_id": "05fa000000000000000000000000001d"
+    },
+    "[\"Maker 010\", \"Model 010\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:55:59.359027+00:00",
+     "device_id": "05fa000000000000000000000000007d"
+    },
+    "[\"Maker 011\", \"Model 011\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:55:38.527025+00:00",
+     "device_id": "05fa0000000000000000000000000081"
+    },
+    "[\"Maker 012\", \"Model 012\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:55:00.442048+00:00",
+     "device_id": "05fa000000000000000000000000004c"
+    },
+    "[\"Maker 013\", \"Model 013\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:04.610793+00:00",
+     "device_id": "05fa0000000000000000000000000084"
+    },
+    "[\"Maker 014\", \"Model 014\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:56.911165+00:00",
+     "device_id": "05fa000000000000000000000000008a"
+    },
+    "[\"Maker 015\", \"Model 015\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:34.627488+00:00",
+     "device_id": "05fa000000000000000000000000004b"
+    },
+    "[\"Maker 016\", \"Model 016\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:55:17.047896+00:00",
+     "device_id": "05fa0000000000000000000000000054"
+    },
+    "[\"Maker 017\", \"Model 017\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:07.212237+00:00",
+     "device_id": "05fa000000000000000000000000008c"
+    },
+    "[\"Maker 018\", \"Model 018\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:54:36.228848+00:00",
+     "device_id": "05fa0000000000000000000000000070"
+    },
+    "[\"Maker 019\", \"Model 019\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:41.744189+00:00",
+     "device_id": "05fa000000000000000000000000008f"
+    },
+    "[\"Maker 020\", \"Model 020\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:47.725628+00:00",
+     "device_id": "05fa0000000000000000000000000092"
+    },
+    "[\"Maker 021\", \"Model 021\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:10.547240+00:00",
+     "device_id": "05fa0000000000000000000000000094"
+    },
+    "[\"Maker 022\", \"Model 022\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:24.643060+00:00",
+     "device_id": "05fa0000000000000000000000000095"
+    },
+    "[\"Maker 023\", \"Model 023\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:15.728628+00:00",
+     "device_id": "05fa0000000000000000000000000097"
+    },
+    "[\"Maker 024\", \"Model 024\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:35.553306+00:00",
+     "device_id": "05fa0000000000000000000000000099"
+    },
+    "[\"Maker 025\", \"Model 025\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:45.523770+00:00",
+     "device_id": "05fa000000000000000000000000009a"
+    },
+    "[\"Maker 026\", \"Model 026\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:50.036190+00:00",
+     "device_id": "05fa00000000000000000000000000ae"
+    },
+    "[\"Maker 027\", \"Model 027\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:29.519706+00:00",
+     "device_id": "05fa00000000000000000000000000b2"
+    }
+   },
+   "devices": {
+    "05fa0000000000000000000000000010": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:26.163538+00:00"
+    },
+    "05fa0000000000000000000000000011": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:57.991467+00:00"
+    },
+    "05fa0000000000000000000000000012": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:58:05.875120+00:00"
+    },
+    "05fa0000000000000000000000000013": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:57:48.279893+00:00"
+    },
+    "05fa0000000000000000000000000014": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:54:48.325969+00:00"
+    },
+    "05fa0000000000000000000000000015": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:56:35.327278+00:00"
+    },
+    "05fa0000000000000000000000000016": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:41.167652+00:00"
+    },
+    "05fa0000000000000000000000000017": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:59.591320+00:00"
+    },
+    "05fa000000000000000000000000001f": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-12T14:05:55.521611+00:00"
+    },
+    "05fa0000000000000000000000000020": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-11-10T17:55:52.077481+00:00"
+    }
+   }
+  },
+  "types": {
+   "models": {
+    "[\"Maker 007\", \"Model 007\", \"Model ID 007\"]": {
+     "type": "Switch",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000000f"
+    },
+    "[\"Maker 010\", \"Model 010\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000021"
+    },
+    "[\"Maker 011\", \"Model 011\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000024"
+    },
+    "[\"Maker 012\", \"Model 012\", \"\"]": {
+     "type": "Plug",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000026"
+    },
+    "[\"Maker 013\", \"Model 013\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000029"
+    },
+    "[\"Maker 014\", \"Model 014\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000002b"
+    },
+    "[\"Maker 015\", \"Model 015\", \"\"]": {
+     "type": "Plug",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000002c"
+    },
+    "[\"Maker 016\", \"Model 016\", \"\"]": {
+     "type": "Plug",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000002e"
+    },
+    "[\"Maker 017\", \"Model 017\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000037"
+    },
+    "[\"Maker 018\", \"Model 018\", \"\"]": {
+     "type": "Plug",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000039"
+    },
+    "[\"Maker 019\", \"Model 019\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000046"
+    },
+    "[\"Maker 020\", \"Model 020\", \"\"]": {
+     "type": "Light",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000047"
+    },
+    "[\"Maker 022\", \"Model 022\", \"\"]": {
+     "type": "EV",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000095"
+    },
+    "[\"Maker 023\", \"Model 023\", \"\"]": {
+     "type": "Powerwall3 Battery",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000096"
+    },
+    "[\"Maker 024\", \"Model 024\", \"\"]": {
+     "type": "Appliance",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa0000000000000000000000000099"
+    },
+    "[\"Maker 025\", \"Model 025\", \"\"]": {
+     "type": "Appliance",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000009a"
+    },
+    "[\"Maker 028\", \"Model 028\", \"\"]": {
+     "type": "Thermostat",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000009b"
+    },
+    "[\"Maker 029\", \"Model 029\", \"\"]": {
+     "type": "Thermostat",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa000000000000000000000000009d"
+    },
+    "[\"Maker 030\", \"Model 030\", \"\"]": {
+     "type": "Thermostat",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa00000000000000000000000000a3"
+    },
+    "[\"Maker 031\", \"Model 031\", \"\"]": {
+     "type": "Thermostat",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa00000000000000000000000000a6"
+    },
+    "[\"Maker 027\", \"Model 027\", \"\"]": {
+     "type": "Appliance",
+     "set": "2026-11-14T02:49:32.296428-05:00",
+     "device_id": "05fa00000000000000000000000000af"
+    }
+   },
+   "devices": {}
+  },
+  "acknowledged": {
+   "devices": {},
+   "lines": {
+    "noisy:tado": true
+   }
+  }
+ }
+}
