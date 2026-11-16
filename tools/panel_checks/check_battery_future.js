@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.29.3 (2026-11-15)
 // Panel checks: the device page's Future view (rules BAT-13, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
 const fs = require("fs");
@@ -95,7 +95,8 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("the chart with its future", !!chart(a.root));
   check("a shaded range between two lines", band(a.root) === 1
     && a.root.querySelectorAll(".futurechart polyline").length === 3, a.root.querySelectorAll(".futurechart polyline").length);
-  check("every kept day as a light dot", a.root.querySelectorAll(".futurechart circle").length === DOOR.length);
+  check("every kept day as a light dot", a.root.querySelectorAll(".futurechart circle:not(.todaydot)").length === DOOR.length);
+  check("today's reading as a dot of its own", a.root.querySelectorAll(".futurechart circle.todaydot").length === 1);
   check("the low battery line, since the range reaches it", lowLine(a.root));
   check("the range in words", text(a.root).includes("Expected empty in about 4 to 5 weeks."));
   // Today's line on the Future chart (rule BAT-17).
@@ -196,6 +197,22 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("no range drawn past the limit", band(b.root) === 0);
   check("it says empty after the limit", text(b.root).includes("Empty after 30 days."), text(b.root).slice(0, 0));
   check("no low battery line, nothing reaches it", !lowLine(b.root));
+
+  console.log("The fall starts from the fit's value today (rule BAT-13)");
+  const fitted = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    projection: { ...DOOR_PROJECTION, start: 18.4 } });
+  const f = await open(`${PREFIX}/device/${DEVICE}`, fitted);
+  button(f.root, "Future").click();
+  await settle();
+  const yAt = (v) => 190 - (v / 100) * 170;
+  const fHistory = [...f.root.querySelectorAll(".futurechart polyline")].find((l) => !l.classList.contains("futureline"));
+  const fLast = fHistory.getAttribute("points").split(" ").pop().split(",").map(Number);
+  check("the history runs to the fit's value today", Math.abs(fLast[1] - yAt(18.4)) < 0.2, fLast);
+  const firsts = [...f.root.querySelectorAll(".futurechart polyline.futureline")]
+    .map((l) => l.getAttribute("points").split(" ")[0].split(",").map(Number));
+  check("both red lines begin there", firsts.length === 2 && firsts.every(([, py]) => Math.abs(py - yAt(18.4)) < 0.2), firsts);
+  const dot = f.root.querySelector(".futurechart circle.todaydot");
+  check("today's reading keeps its dot", !!dot && Math.abs(Number(dot.getAttribute("cy")) - yAt(16.5)) < 0.2);
 
   console.log("A cell that is not falling");
   const c = await open(`${PREFIX}/device/${DEVICE}`, flat);

@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.29.2 (2026-11-15) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.29.3 (2026-11-15) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -80,8 +80,9 @@ NODE_PATH=/home/claude/jsdom/node_modules node tools/panel_checks/check_tables_h
 ```
 
 Each check reads the repository's own `panel.js` unless a path to
-another is passed as the first argument. `npm install` in this folder
-works as well, if jsdom is wanted beside the checks.
+another is passed as the first argument. `npm ci` in this folder
+works as well, if jsdom is wanted beside the checks: the lockfile pins
+jsdom and everything it pulls in.
 
 ## The Replies They Read
 

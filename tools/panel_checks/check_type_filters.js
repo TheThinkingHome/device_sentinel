@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.28.11 (2026-11-10)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.29.3 (2026-11-15)
 // Panel checks: types on Battery Trends, Devices (set-aside devices too) and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -248,9 +248,26 @@ const BATTERY = {
   const withBoards = Object.assign({}, BATTERY, { cell_rows: [...CELLS, ...boards], cells: CELLS.length + 2 });
   ({ root, window } = await open(`${PREFIX}/battery-trends`, { battery_trends: withBoards }));
   await click(linkNamed(root, "Leak Sensor"));
-  const espRows = tableRows(section(root, "By Model")).filter((tr) => tr.firstChild.textContent === "Espressif esp32");
+  const espRows = tableRows(section(root, "By Model")).filter((tr) => tr.firstChild.textContent.startsWith("Espressif esp32"));
   check("Two board devices of the type chosen are two rows, one cell each",
     espRows.length === 2 && espRows.every((tr) => text(tr.children[2]) === "1"), espRows.map((tr) => text(tr)));
+  check("Each names its device, so the two can be told apart",
+    espRows.map((tr) => tr.firstChild.textContent).sort().join("|") === "Espressif esp32 (Dryer Sensor)|Espressif esp32 (Furnace Monitor)",
+    espRows.map((tr) => tr.firstChild.textContent));
+
+  console.log("\nIn Simple, which leaves out WHICH ONE, rows that name no product still name their device (rule BAT-18)");
+  const boardModels = [
+    { maker: "Espressif", model: "esp32", cells: 1, rate: -0.4, typical: 60, lowest: 60, lowest_name: "Dryer Sensor", lowest_id: "b1", alone: true, types: [["Leak Sensor", 1]] },
+    { maker: "Espressif", model: "esp32", cells: 1, rate: -0.2, typical: 70, lowest: 70, lowest_name: "Furnace Monitor", lowest_id: "b2", alone: true, types: [["Leak Sensor", 1]] },
+  ];
+  const simpleBoards = Object.assign({}, BATTERY, { models: [...BATTERY.models, ...boardModels] });
+  ({ root, window } = await open(`${PREFIX}/battery-trends`, { battery_trends: simpleBoards, status: { ...payloads.status, dashboard: "simple" } }));
+  const simpleRows = tableRows(section(root, "By Model")).filter((tr) => tr.firstChild.textContent.startsWith("Espressif esp32"));
+  const named = simpleRows.map((tr) => tr.firstChild.textContent).sort();
+  check("Both rows name their device in Simple", named.join("|") === "Espressif esp32 (Dryer Sensor)|Espressif esp32 (Furnace Monitor)", named);
+  check("The name links to the device page", simpleRows.every((tr) => tr.firstChild.querySelector("a")), simpleRows.length);
+  const plain = tableRows(section(root, "By Model")).find((tr) => tr.firstChild.textContent.startsWith("Third Reality Door sensor"));
+  check("A model's row is unchanged", plain && plain.firstChild.textContent === "Third Reality Door sensor", plain && plain.firstChild.textContent);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
