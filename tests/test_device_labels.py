@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_device_labels.py, Version: 0.29.4 (2026-11-16)
 
 """A device's name in an HTML report: its area, and a link to it
 (rules BRIEF-13, CODE-10).
@@ -122,12 +122,12 @@ async def test_nothing_is_linked_until_a_person_says_so(
 ):
     """A report is a file that gets shared. The house's address goes
     into one only when its owner chooses which address to use."""
-    device, _ = register_device(hass, "lab6", name="Motion Laundry")
+    device, _ = register_device(hass, "lab6", name="Motion Sensor")
     _in_area(hass, device, "Laundry")
     coord = await setup_coordinator(hass)
 
-    label = coord._device_cell(device.id, "Motion Laundry")
-    assert label == "Motion Laundry [Laundry]"
+    label = coord._device_cell(device.id, "Motion Sensor")
+    assert label == "Motion Sensor [Laundry]"
     assert coord._report_link("/device-sentinel/device/x") is None
 
 
@@ -195,7 +195,7 @@ async def test_the_brief_tables_carry_the_area_and_the_link(
     )
     from homeassistant.util import dt as dt_util
 
-    device, _ = register_device(hass, "brief1", name="Motion Laundry")
+    device, _ = register_device(hass, "brief1", name="Motion Sensor")
     _in_area(hass, device, "Laundry")
     coord = await setup_coordinator(hass)
     await _linking(hass, coord, REPORT_LINKS_INTERNAL)
@@ -212,7 +212,7 @@ async def test_the_brief_tables_carry_the_area_and_the_link(
     with open(page, encoding="utf-8") as handle:
         html = handle.read()
     assert f"/device-sentinel/device/{device.id}" in html
-    assert ">Motion Laundry</a> [Laundry]" in html
+    assert ">Motion Sensor</a> [Laundry]" in html
 
 
 async def test_two_devices_sharing_a_name_link_to_the_right_one(
@@ -401,3 +401,13 @@ async def test_a_brief_rendered_twice_reads_the_same(
     assert once == twice
     assert f"/device-sentinel/device/{first.id}" in once
     assert f"/device-sentinel/device/{second.id}" in once
+
+
+async def test_a_name_holding_its_area_is_not_told_it_again(hass: HomeAssistant):
+    """"Motion Laundry" in the Laundry already says where it is, as names
+    were written before Home Assistant had areas (rules BRIEF-13, NOTE-13)."""
+    device, _ = register_device(hass, "lab10", name="Motion Laundry")
+    _in_area(hass, device, "Laundry")
+    coord = await setup_coordinator(hass)
+    assert coord._device_cell(device.id, "Motion Laundry") == "Motion Laundry"
+

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_child_devices.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_child_devices.py, Version: 0.29.4 (2026-11-16)
 
 """Child devices are watched like any other device (rules WATCH-01, GEN-07).
 
@@ -105,7 +105,9 @@ async def test_a_child_device_is_watched(hass: HomeAssistant, hass_storage):
     coordinator = entry.runtime_data
     assert coordinator._watched.get(child.id) == SOURCE
     assert child.id in coordinator.data["devices"]
-    assert coordinator._device_names[child.id] == "Pump"
+    # Named as Home Assistant shows it: a child with no area of its own
+    # after its parent (rule DEV-18).
+    assert coordinator._device_names[child.id] == "Boiler Pump"
 
 
 async def test_a_child_device_is_heard(hass: HomeAssistant, hass_storage):
@@ -218,7 +220,8 @@ async def test_the_muting_picker_offers_a_child_device(
         for option in config.get("options", []):
             if isinstance(option, dict):
                 labels.append(option["label"])
-    assert any(label.startswith("Pump") for label in labels), labels
+    # Named after its parent, as Home Assistant shows it (rule DEV-18).
+    assert any(label.startswith("Boiler Pump") for label in labels), labels
 
 
 async def test_every_surface_renders_a_child_without_a_deprecated_read(
@@ -299,3 +302,148 @@ async def test_a_child_device_keeps_its_integrations_name(hass: HomeAssistant, h
     tab = {row["device_id"]: row for row in coordinator.dashboard_devices()}
     assert tab[child.id]["integration_name"] == title
     assert coordinator.dashboard_device(child.id)["identity"]["integration_name"] == title
+
+
+# ------------------------------------------------- its name and its area
+
+
+async def test_a_child_without_an_area_is_in_its_parents_area(hass: HomeAssistant, hass_storage):
+    """As Home Assistant places it, so it is not on No Area Assigned and
+    its notifications and rows name the parent's room (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    cellar = ar.async_get(hass).async_create("Cellar")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    assert coordinator._area_of(child.id) == "Cellar"
+    cards = {card["kind"]: card for card in coordinator.device_recommendations()}
+    no_area = {row["device_id"] for row in cards.get("area", {}).get("devices", [])}
+    assert child.id not in no_area
+
+
+async def test_a_child_in_an_area_of_its_own_is_named_alone(hass: HomeAssistant, hass_storage):
+    """Home Assistant names a child in its own area by its own name, and
+    the area is its own (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    areas = ar.async_get(hass)
+    cellar = areas.async_create("Cellar")
+    garden = areas.async_create("Garden")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    registry.async_update_child_device(child.id, area_id=garden.id)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    assert coordinator._device_name(child.id) == "Pump"
+    assert coordinator._area_of(child.id) == "Garden"
+
+
+async def test_two_children_of_one_name_under_two_parents_are_told_apart(hass: HomeAssistant, hass_storage):
+    """Socket 1 on two power strips reads "Strip A Socket 1" and "Strip
+    B Socket 1", so they are not on Devices Sharing A Name (rule REC-04)."""
+    source = MockConfigEntry(domain=SOURCE, title="Strips")
+    source.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+    office = ar.async_get(hass).async_create("Office")
+    children = []
+    for uid in ("a", "b"):
+        strip = registry.async_get_or_create(
+            config_entry_id=source.entry_id, identifiers={(SOURCE, f"strip_{uid}")},
+            name=f"Strip {uid.upper()}", manufacturer="Maker", model="Strip",
+        )
+        registry.async_update_device(strip.id, area_id=office.id)
+        entities.async_get_or_create("sensor", SOURCE, f"strip_{uid}_power", device_id=strip.id, config_entry=source)
+        child, _, _ = _child(hass, source, registry, entities, strip, uid=f"socket_{uid}", name="Socket 1")
+        children.append(child.id)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    assert sorted(coordinator._device_name(c) for c in children) == ["Strip A Socket 1", "Strip B Socket 1"]
+    cards = {card["kind"]: card for card in coordinator.device_recommendations()}
+    named = {row["device_id"] for row in cards.get("names", {}).get("devices", [])}
+    assert not named & set(children)
+
+
+
+# ------------------------------------------------- renaming a child, and its page
+
+
+def test_the_parents_name_is_matched_as_whole_words():
+    """A parent "Lamp" does not swallow a child "Lampshade sensor"."""
+    from custom_components.device_sentinel.naming import with_parent, without_parent
+
+    assert with_parent("Lampshade sensor", "Lamp") == "Lamp Lampshade sensor"
+    assert with_parent("Lamp socket", "Lamp") == "Lamp socket"
+    assert with_parent("Socket 1", None) == "Socket 1"
+    assert without_parent("Boiler Pump", "Boiler") == "Pump"
+    assert without_parent("Boilerhouse pump", "Boiler") == "Boilerhouse pump"
+    assert without_parent("Boiler", "Boiler") == "Boiler"
+
+
+async def test_a_child_renamed_with_its_parents_name_keeps_its_own(hass: HomeAssistant, hass_storage):
+    """Home Assistant adds the parent's name itself, so a name typed with
+    it in front is saved without it, never shown twice (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    cellar = ar.async_get(hass).async_create("Cellar")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    coordinator.page_rename(child.id, "Boiler Circulation pump")
+    assert registry.async_get(child.id).name_by_user == "Circulation pump"
+    assert coordinator._device_name(child.id) == "Boiler Circulation pump"
+
+
+async def test_a_childs_page_says_whose_area_it_is_in(hass: HomeAssistant, hass_storage):
+    source, registry, entities, parent = _boiler(hass)
+    cellar = ar.async_get(hass).async_create("Cellar")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    entry = await setup_entry(hass)
+    acts = entry.runtime_data.page_actions(child.id)
+    assert acts["area_id"] is None and acts["area_from"] == "Boiler"
+    # A device in an area of its own names no other device's.
+    assert entry.runtime_data.page_actions(parent.id)["area_from"] is None
+
+
+async def test_a_childs_area_and_labels_are_set_from_its_page(hass: HomeAssistant, hass_storage):
+    """Home Assistant refuses its ordinary-device call for a child, so
+    each write from the page goes through the child's own (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    garden = ar.async_get(hass).async_create("Garden")
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    coordinator.page_set_area(child.id, garden.id)
+    assert registry.async_get(child.id).area_id == garden.id
+    coordinator.page_rename(child.id, "Pump 2")
+    assert registry.async_get(child.id).name_by_user == "Pump 2"
+
+
+async def test_a_child_in_its_own_area_can_go_back_to_its_parents(hass: HomeAssistant, hass_storage):
+    """Its page names the parent's area as the first choice, and choosing
+    it is said as that, never as "area removed" (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    areas = ar.async_get(hass)
+    cellar, garden = areas.async_create("Cellar"), areas.async_create("Garden")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    registry.async_update_child_device(child.id, area_id=garden.id)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    acts = coordinator.page_actions(child.id)
+    assert (acts["area_from"], acts["area_from_area"]) == ("Boiler", "Cellar")
+    coordinator.page_set_area(child.id, None)
+    assert registry.async_get(child.id).area_id is None
+    assert coordinator._area_of(child.id) == "Cellar"
+    said = [e.get("detail") for e in coordinator.data.get("system_events", []) if e.get("device_id") == child.id]
+    assert any("set to its parent's area, Cellar" in str(d) for d in said), said
+
+
+def test_a_name_whose_letters_fold_longer_is_kept_whole():
+    """"ß" folds to "ss", so cutting by the folded length would cut in
+    the wrong place; such a name is kept as typed."""
+    from custom_components.device_sentinel.naming import without_parent
+
+    assert without_parent("STRASSE Lampe", "Straße") == "STRASSE Lampe"
+    assert without_parent("boiler  Pump", "Boiler") == "Pump"
