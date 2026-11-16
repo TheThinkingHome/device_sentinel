@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_replacement_rule.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_battery_replacement_rule.py, Version: 0.29.3 (2026-11-15)
 
 """A new battery, told from a dip, a sag or a swing (rule BAT-06).
 
@@ -34,8 +34,7 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_DAY_COUNTS,
     DEV_BATTERY_DAY_LEVELS,
-    DEV_BATTERY_RANGE_HIGHS,
-    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_VALUE,
 )
@@ -183,8 +182,7 @@ async def test_without_days_kept_the_midnight_levels_decide(hass: HomeAssistant)
     record[DEV_BATTERY_DAILY] = [31.0, 30.0]
     record[DEV_BATTERY_VALUE] = 100.0
     coord._roll_battery(record, "dev-battery")
-    record[DEV_BATTERY_RANGE_LOWS] = []
-    record[DEV_BATTERY_RANGE_HIGHS] = []
+    record[DEV_BATTERY_DAY_RANGES] = []
     coord._roll_battery(record, "dev-battery")
     assert record[DEV_BATTERY_REPLACED_AT] is not None
 
@@ -218,7 +216,7 @@ async def test_the_day_starts_with_the_level_held(hass: HomeAssistant):
     _days(coord, record, [_held(55.0)])
     assert record[DEV_BATTERY_DAY_LEVELS] == [55.0]
     assert record[DEV_BATTERY_DAY_COUNTS] == [1]
-    assert record[DEV_BATTERY_RANGE_LOWS] == [55.0]
+    assert [row[1:3] for row in record[DEV_BATTERY_DAY_RANGES]] == [[55.0, 55.0]]
 
 
 async def test_each_moment_the_device_speaks_is_a_sample(hass: HomeAssistant, freezer):

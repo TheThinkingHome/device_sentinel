@@ -3,13 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_day_fields_hostile.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_battery_day_fields_hostile.py, Version: 0.29.3 (2026-11-15)
 
 """The battery day fields under hostile input (rule BAT-06).
 
 battery_day_levels and battery_day_counts are kept from every moment the
 battery is heard (detect_battery.note_battery_sample), and at midnight
-the day's range joins battery_range_lows and battery_range_highs;
+the day's range joins battery_day_ranges as a dated row;
 battery_pending_high is held with a suspected replacement.
 
 A device whose battery moves from a percentage entity to a binary low
@@ -35,16 +35,19 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DEV_BATTERY_DAY_COUNTS,
     DEV_BATTERY_DAY_LEVELS,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_PENDING_HIGH,
-    DEV_BATTERY_RANGE_HIGHS,
-    DEV_BATTERY_RANGE_LOWS,
 )
+from custom_components.device_sentinel.normalise import day_range_row_ok
 
-LEVEL_LISTS = (DEV_BATTERY_DAY_LEVELS, DEV_BATTERY_RANGE_LOWS, DEV_BATTERY_RANGE_HIGHS)
-DAY_FIELDS = (*LEVEL_LISTS, DEV_BATTERY_DAY_COUNTS, DEV_BATTERY_PENDING_HIGH)
+LEVEL_LISTS = (DEV_BATTERY_DAY_LEVELS,)
+DAY_FIELDS = (*LEVEL_LISTS, DEV_BATTERY_DAY_RANGES, DEV_BATTERY_DAY_COUNTS, DEV_BATTERY_PENDING_HIGH)
 
 
 def _sound(record) -> bool:
+    rows = record[DEV_BATTERY_DAY_RANGES]
+    if not isinstance(rows, list) or not all(day_range_row_ok(row) for row in rows):
+        return False
     for field in LEVEL_LISTS:
         held = record[field]
         if not isinstance(held, list) or not all(

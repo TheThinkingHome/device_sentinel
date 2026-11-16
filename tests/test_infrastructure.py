@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_infrastructure.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_infrastructure.py, Version: 0.29.3 (2026-11-15)
 
 """Diagnostics says what the plumbing is, not only how it behaved
 (rule DEV-16).
@@ -116,3 +116,25 @@ async def test_a_router_with_many_clients_does_not_bury_the_router(
     block = data["infrastructure"]["unifi"]
     assert block["device_count"] == 30
     assert len(block["devices"]) == 12
+
+
+async def test_an_ignored_or_switched_off_entry_says_so(
+    hass: HomeAssistant,
+):
+    """An ignored discovery is an entry that never loads: its source
+    says so, as a switched-off entry's disabled state does, so neither
+    reads as a second integration that failed."""
+    from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler
+
+    entry = await setup_entry(hass)
+    MockConfigEntry(domain="fritz", title="FRITZ!Box 7590", source="user").add_to_hass(hass)
+    MockConfigEntry(domain="fritz", title="FRITZ!Repeater", source=SOURCE_IGNORE).add_to_hass(hass)
+    MockConfigEntry(
+        domain="fritz", title="Old box", source="zeroconf", disabled_by=ConfigEntryDisabler.USER,
+    ).add_to_hass(hass)
+
+    data = await async_get_config_entry_diagnostics(hass, entry)
+
+    block = data["infrastructure"]["fritz"]
+    assert block["source"] == ["user", "ignore", "zeroconf"]
+    assert block["disabled_by"] == [None, None, "user"]

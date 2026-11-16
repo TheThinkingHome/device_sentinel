@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.27.10 (2026-10-27)
+# File: test_battery_report.py, Version: 0.29.3 (2026-11-15)
 
 """Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
@@ -122,7 +122,10 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     # The six-week line's pace, four weeks being always held
     # (rule BAT-11).
     assert round(falling[0]["slope"], 3) == -1.031
-    assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
+    # The near end: the curve's own day less the cell's swings, so earlier
+    # than the curve's day (rule BAT-13).
+    assert coord.battery_time_left(falling[0]["days"]) == "under a week"
+    assert falling[0]["days"] < falling[0]["days_far"]
     # Flat, the sag, then the fall: a bend, called accelerating
     # (rule BAT-12).
     assert falling[0]["reading"] == "accelerating"

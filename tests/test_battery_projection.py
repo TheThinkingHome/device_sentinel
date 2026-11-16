@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_projection.py, Version: 0.29.3 (2026-11-15)
 
 """When a falling cell runs empty, as a range (rule BAT-13).
 
@@ -54,17 +54,20 @@ def _wobble(i: int) -> float:
 def test_a_fall_that_is_speeding_up_is_projected_on_a_curve():
     found = battery_projection(DOOR, 16.5)
     assert found is not None and found["curved"] is True
-    # About a month, not three: the straight pace said about 91 days.
-    assert 20 <= found["near"] <= found["centre"] <= found["far"] <= 45, found
-    assert time_left_range(found["near"], found["far"]) == "about 4 to 5 weeks"
+    # About a month, not three: the straight pace said about 91 days. The
+    # curve's own day is the far end, and the width comes off it.
+    assert 15 <= found["near"] <= found["centre"] == found["far"] <= 40, found
+    assert time_left_range(found["near"], found["far"]) == "about 3 to 4 weeks"
 
 
 def test_a_steady_fall_is_projected_on_a_straight_line():
     steady = [80 - 0.3 * i + _wobble(i) for i in range(60)]
     found = battery_projection(steady, steady[-1])
     assert found is not None and found["curved"] is False
-    straight = steady[-1] / 0.3
-    assert found["near"] <= straight <= found["far"], (found, straight)
+    # From the line's value today, the slot after the newest, and the
+    # fit's own day is the far end.
+    straight = (80 - 0.3 * len(steady)) / 0.3
+    assert found["near"] <= found["far"] and abs(found["far"] - straight) < 0.02 * straight, (found, straight)
 
 
 def test_the_same_history_gives_the_same_range():
@@ -223,3 +226,132 @@ def test_a_bend_under_two_points_a_week_is_accelerating():
     # The same history turned upside down, rising faster, is not.
     rising = [round(48.0 - level, 1) for level in DOOR_AT_19]
     assert accelerating_pace(rising) is None
+
+
+def test_the_time_left_starts_from_the_line_not_the_reading():
+    """A reading a step off the line, inside the swings the six weeks
+    already held, moves the date by days, not weeks: the time left starts
+    from the fit's value today (rule BAT-13)."""
+    # Swings of up to 3 points a day, as a bouncing cell has.
+    steady = [80 - 0.3 * i + 12 * _wobble(i) for i in range(60)]
+    on_line = battery_projection(steady, 62.0)
+    step_low = battery_projection(steady, 60.0)
+    step_high = battery_projection(steady, 65.0)
+    assert on_line is not None and step_low is not None and step_high is not None
+    assert on_line["near"] == step_low["near"] == step_high["near"]
+    assert on_line["far"] == step_low["far"] == step_high["far"]
+    # The reading is still what the page shows.
+    assert (on_line["level"], step_low["level"]) == (62.0, 60.0)
+    assert abs(on_line["start"] - (80 - 0.3 * 60)) < 1.0, on_line["start"]
+
+
+def test_a_curved_fall_starts_from_the_curve_today():
+    from custom_components.device_sentinel.battery_projection import _fit, _value
+
+    found = battery_projection(DOOR, 16.5)
+    assert found is not None and found["curved"] is True
+    t = [float(i) for i in range(len(DOOR[-42:]))]
+    bend = _fit(t, [float(v) for v in DOOR[-42:]], True)
+    assert bend is not None
+    assert abs(found["start"] - _value(bend, 42.0)) < 0.01
+
+
+def test_a_line_already_under_the_target_starts_from_the_reading():
+    """A reading just over the threshold on a line already under it: the
+    fit has crossed before the battery has, so the reading starts it and
+    the range is a few days, never "reached" with nothing to draw."""
+    steady = [40 - 0.5 * i + _wobble(i) for i in range(60)]
+    found = battery_projection(steady, 16.0, 15.0)
+    assert found is not None and found["start"] == 16.0
+    assert 0.0 < found["near"] <= found["far"] < 7.0, found
+
+
+def test_a_collapse_the_line_has_not_caught_up_with_starts_from_the_reading():
+    """A steady fall near 40 that reads 9 today, under the threshold: the
+    reading is further under the line than any day was, so the time to
+    empty starts a point over 9, weeks rather than months."""
+    steady = [52 - 0.3 * i + _wobble(i) for i in range(42)]
+    found = battery_projection(steady, 9.0, 0.0)
+    assert found is not None and found["start"] == 10.0
+    assert found["near"] < 60, found
+    # A reading inside a point of the line still starts from the line.
+    usual = battery_projection(steady, 39.3, 15.0)
+    assert usual is not None and usual["start"] != 39.3
+
+
+def test_a_warm_day_over_the_line_does_not_hide_a_collapse():
+    """Only days under the line say how far under it a reading may sit:
+    a cell's one high day never lets a reading 10 points under pass as a
+    swing, and the start follows the reading down without a jump."""
+    steady = [52 - 0.3 * i + _wobble(i) for i in range(42)]
+    steady[20] += 10.0
+    line = battery_projection(steady, 39.0, 15.0)["start"]
+    starts = [battery_projection(steady, line - drop, 15.0)["start"] for drop in (0.5, 5.0, 10.0, 10.5)]
+    assert starts[0] == line
+    assert starts[1] < line - 3.0
+    # Each half point lower moves the start by at most half a point.
+    assert abs(starts[3] - starts[2]) <= 0.5 + 1e-9
+
+
+def test_the_start_nears_the_reading_as_the_line_nears_the_target():
+    """A reading a step over a line that is falling to the threshold: the
+    time left shrinks day by day and never drops to nothing while the
+    reading is still over the threshold (rule BAT-13)."""
+    nears = []
+    for today_line in (17.0, 16.0, 15.5, 15.2, 15.0, 14.8):
+        steady = [today_line + 0.3 * (60 - i) + _wobble(i) for i in range(60)]
+        found = battery_projection(steady, today_line + 2.0, 15.0)
+        assert found is not None
+        # The fit, held a point over the threshold (the wobble moves the
+        # fit a few hundredths).
+        assert abs(found["start"] - max(today_line, 16.0)) < 0.1, found
+        nears.append(found["near"])
+    assert all(near > 1.0 for near in nears), nears
+    # No jump where the line crosses the target.
+    assert max(abs(a - b) for a, b in zip(nears, nears[1:])) < 4.0, nears
+
+
+def test_one_stray_day_does_not_hide_a_collapse():
+    """A reconnect that read 10 points low once: the second deepest day
+    sets how far under the line a reading may sit."""
+    steady = [52 - 0.3 * i + _wobble(i) for i in range(42)]
+    steady[25] -= 10.0
+    found = battery_projection(steady, 20.0, 15.0)
+    assert found is not None and found["start"] <= 21.5, found
+
+
+def test_the_far_end_is_the_fits_own_day_and_the_width_comes_off_it():
+    """The fit's day is the longest the battery is likely
+    to last, and the cell's own swings set how much earlier the near end
+    is; the near end's path is the fit's, run faster (rule BAT-13)."""
+    found = battery_projection(DOOR, 16.5)
+    assert found["far"] == found["centre"]
+    assert found["far_path"][0] < 0
+    # The near path reaches empty on the near day.
+    from custom_components.device_sentinel.battery_projection import days_to_empty
+
+    reached = days_to_empty(found["start"], found["near_path"][0], found["near_path"][1])
+    assert abs(reached - found["near"]) < 0.5, (reached, found["near"])
+
+
+
+def test_a_wide_range_never_says_under_a_week_for_a_battery_far_from_its_target():
+    """A slow, noisy fall whose swings are wider than its own day: the near
+    end is held to a quarter of the far end, never today (rule BAT-13)."""
+    import random as _random
+
+    draw = _random.Random(7)
+    noisy = [40 - 0.5 / 7 * i + draw.uniform(-3, 3) for i in range(60)]
+    found = battery_projection(noisy, noisy[-1], 15.0)
+    assert found is not None
+    assert found["near"] >= 0.25 * found["far"] - 0.1, found
+    assert not time_left_range(found["near"], found["far"]).startswith("under a week"), found
+
+
+def test_a_far_end_past_three_years_keeps_a_near_end_past_it_too():
+    """The width is taken on days held to the longest said, as the far end
+    is, so a battery with years left never reads "under a week"."""
+    slow = [62 - 0.04 * i + _wobble(i) for i in range(60)]
+    found = battery_projection(slow, slow[-1], 0.0)
+    assert found is not None and found["far"] == 3 * 365, found
+    assert found["near"] >= 0.25 * found["far"], found

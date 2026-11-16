@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_model_pace.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_battery_model_pace.py, Version: 0.29.3 (2026-11-15)
 
 """How fast the others of a battery's model fall, shown as context
 (rule BAT-16).
@@ -86,3 +86,8 @@ async def test_boards_and_devices_with_no_model_get_no_pace(hass: HomeAssistant)
     unknown = [row for row in models if row["model"] == "not reported"]
     assert len(boards) == 3 and all(row["cells"] == 1 for row in boards)
     assert len(unknown) == 3 and all(row["cells"] == 1 for row in unknown)
+    # Each says so, and names its device, so the page can tell the rows
+    # apart (rule BAT-18).
+    assert all(row["alone"] for row in boards + unknown)
+    assert sorted(row["lowest_name"] for row in boards) == ["Board 0", "Board 1", "Board 2"]
+    assert not any(row["alone"] for row in models if row not in boards + unknown)

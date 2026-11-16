@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_stray_counted_twice.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_battery_stray_counted_twice.py, Version: 0.29.3 (2026-11-15)
 
 """A battery value heard at one report is one moment, through Home
 Assistant's state machine (rule BAT-06).
@@ -30,8 +30,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
-    DEV_BATTERY_RANGE_HIGHS,
-    DEV_BATTERY_RANGE_LOWS,
+    DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
 )
@@ -83,8 +82,9 @@ async def test_one_stray_low_on_the_new_cell_does_not_lose_the_change(hass: Home
     record = coord.data[DATA_DEVICES][device.id]
     # Two whole days of the old cell at 30 are kept.
     record[DEV_BATTERY_DAILY] = [31.0, 30.0]
-    record[DEV_BATTERY_RANGE_LOWS] = [30.0, 30.0]
-    record[DEV_BATTERY_RANGE_HIGHS] = [30.0, 30.0]
+    record[DEV_BATTERY_DAY_RANGES] = [
+        ["2026-07-09", 30.0, 30.0, None, None], ["2026-07-10", 30.0, 30.0, None, None],
+    ]
     # The change day: the new cell reads 100.
     await _set(hass, eids["pct"], "100")
     for value in ("20.1", "20.2", "20.3"):
