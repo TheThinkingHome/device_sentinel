@@ -12,6 +12,7 @@ committed.
 | `second/` | the second fleet: ZHA, Z-Wave, Matter, ESPHome and UniFi |
 | `fourth/` | the fourth fleet: Lutron Caseta, Z-Wave and Frigate |
 | `fifth/` | the fifth fleet: Alarm.com, SmartThings, Tuya, Hue, ZHA, Z-Wave and ESPHome |
+| `sixth/` | the sixth fleet: a cloud-pushed lighting system, a cloud thermostat that polls, Shelly and Matter, in Docker |
 | `upgrade/reference/`, `upgrade/second/` | the first two houses as they stood on 0.25, kept for the tests that prove an upgrade from a house written before the history file |
 
 Each holds the storage file, the clocks file, the history file where the
@@ -36,9 +37,13 @@ test sees the whole house as it would before 0.26.2. A house with no
 history file, such as the upgrade houses and `fourth/`, reads as it
 stands.
 
-Last refreshed 5 November 2026: `reference/` from the owner's files of
-that morning on 0.28.3, `second/` from Tim Plas's files of 2 November on
-0.27.17, and the new `fifth/` from the house of a friend of his, of
-4 November on 0.27.17 (115 devices, no history file: a house that sends
-only the diagnostics, storage, clocks and answers files). `fourth/` came
-out byte-identical.
+Last refreshed 16 November 2026: `reference/` from the owner's files of
+that morning on 0.29.3, `second/` from Tim Plas's files of 15 November
+on 0.28.13, and the new `sixth/` from a contributor's house of 14
+November on 0.28.12 (187 devices, six days after its install, so no
+device has learned a window yet). That house sent only its diagnostics
+download, which carries each device's whole record and every table: its
+storage, clocks and answers files were rebuilt from it, and what the
+download does not carry (the first-sighting lists, storms, the brief's
+closed day) starts as an established house would have it. `fourth/` and
+`fifth/` came out byte-identical.
