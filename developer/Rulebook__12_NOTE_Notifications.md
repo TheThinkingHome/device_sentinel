@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 16 November 2026, on Device Sentinel 0.29.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -120,3 +120,13 @@ This section covers how Device Sentinel tells people and automations about the P
 **Quiet Hours never hold an event.** Nothing fires inside the startup grace, except a withdrawal and a restore owed to an outage announced before the restart. A device that really reports inside the grace leaves the Problem List at once, and its recovery event is held and fired when the grace closes (see [WATCH-10](Rulebook__02_WATCH_What_Is_Watched.md#watch-10-the-startup-grace)).
 
 *Proof:* [`test_todo.py`](../tests/test_todo.py), [`test_set_aside_silent.py`](../tests/test_set_aside_silent.py), [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py), [`test_events_hostile.py`](../tests/test_events_hostile.py).
+
+### NOTE-13 A Message Says Where the Device Is
+
+**Since 0.29.4, every phone and persistent notification names a device with its area in brackets: "TIMMERFLOTTE temp/hmd sensor (Kitchen) 15%".**
+- **Why:** Home Assistant 2026.11 asks people to name each device for what it is and lets the area tell devices of one name apart, so three sensors of one name in three rooms read apart only with their rooms.
+- **Not added:** for a device with no area, and where the name already says where it is: it ends in a bracket, "Soil Moisture (Monstera)", or holds the area's name as whole words, "Kitchen light" in the Kitchen, as names were written before Home Assistant had areas. "Garden plug" in the Den still gets "(Den)".
+- **Where:** the push's line and the persistent card's summary, for every family. The Daily Brief keeps its own square brackets ([BRIEF-13](Rulebook__13_BRIEF_Daily_Brief.md#brief-13-links-in-the-brief)).
+
+*Proof:* [`test_notification_area.py`](../tests/test_notification_area.py).
+

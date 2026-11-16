@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 16 November 2026, on Device Sentinel 0.29.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -133,7 +133,7 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Choosing:** each choice shows the address it would publish, and one Home Assistant does not hold is refused.
 - **Strict:** None prints names plain, Internal uses only the internal address, External only the external one, and a chosen address later removed prints names plain.
 - **Where a link goes:** a device's link opens its page on the Device Sentinel dashboard, /device-sentinel/device/<id>. An integration outage's own row, such as "Zigbee2MQTT", belongs to the house and has no link. Two rows of the same name each link to their own device, in the order the table prints them.
-- **The area:** the area beside a name is not an address, so this setting never withholds it. It is left out only where the name already ends in a bracket, as "Soil Moisture (Monstera)" does.
+- **The area:** the area beside a name is not an address, so this setting never withholds it. It is left out only where the name already ends in a bracket, as "Soil Moisture (Monstera)" does, or, since 0.29.4, already holds the area's name, as "Kitchen light" in the Kitchen does ([NOTE-13](Rulebook__12_NOTE_Notifications.md#note-13-a-message-says-where-the-device-is)).
 
 *Proof:* [`test_www_retired.py`](../tests/test_www_retired.py), [`test_device_labels.py`](../tests/test_device_labels.py), [`test_settings.py`](../tests/test_settings.py).
 

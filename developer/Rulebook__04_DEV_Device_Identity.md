@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 16 November 2026, on Device Sentinel 0.29.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -35,7 +35,7 @@ This section covers what a device is called, what kind of device it is, what pow
 ### DEV-05 Renaming a Device
 
 **A device is renamed from its device page, through Home Assistant's own registry.**
-- **A name already in use:** a name another device already shows, ignoring capitals, is held. The page warns, naming the other device's area, and offers Change name or Save anyway.
+- **A name already in use:** a name another device already shows, ignoring capitals, is held when the two could not be told apart: both in the same area, or either with no area ([REC-04](Rulebook__15_REC_Recommendations.md#rec-04-the-device-cards)). The page warns, naming the other device's area, and offers Change name or Save anyway. Since 0.29.4, a name used by a device in another area is saved without asking, as Home Assistant 2026.11 names devices for what they are and tells them apart by their area.
 - **An empty name:** puts back the integration's name.
 - **Hidden characters:** a name holding hidden or control characters is refused.
 - **Emoji:** accents, single emoji, skin tones and country flags are welcome. An emoji joined from several, such as a family, the rainbow flag or the England flag, or one newer than Home Assistant's own character tables, is refused. A person who wants one renames the device on its Home Assistant page.
@@ -164,3 +164,15 @@ This section covers what a device is called, what kind of device it is, what pow
 - **Shown:** in Advanced, in the device page's Reporting group, "Last restart: Exception, Nov 8, 4:00 AM", with the earlier restarts folded under it. Simple does not show it. Device Telemetry lists every restart, newest first.
 
 *Proof:* [`test_tasmota_restarts.py`](../tests/test_tasmota_restarts.py), `check_status_readings.js`.
+
+### DEV-18 A Child Device's Name and Area
+
+**Since 0.29.4, a child device is named and placed the way Home Assistant shows it.**
+- **Its area:** a child device with no area of its own is in its parent device's area, as Home Assistant 2026.9 and later places it. The Problem List, the Daily Brief, the notifications, the dashboard and the No Area Assigned card all read it so.
+- **Its name:** a child device with no area of its own is named after its parent, "Power strip Socket 1". A child device in an area of its own is named alone, "Socket 1". A child whose own name already begins with its parent's is not named twice.
+- **Renaming it:** the rename box starts from the child's own name, and a name typed with the parent's in front is saved without it, since Home Assistant adds the parent's name itself. A rename is checked against other devices with the parent's name in front, as it will be shown.
+- **On its page:** the Area row says whose area it is in, "Kitchen, from Power strip". The area picker's first choice, for every child device whose parent has an area, reads "Same as Power strip (Kitchen)" and puts it there without asking, and the brief says "set to its parent's area, Kitchen". Choosing an area gives the child one of its own, and it is then named alone.
+- **Why:** Home Assistant names a child for its part and adds the parent's name where the child has no area of its own, so two power strips' "Socket 1" read apart.
+
+*Proof:* [`test_child_devices.py`](../tests/test_child_devices.py), [`test_devices_sharing_a_name.py`](../tests/test_devices_sharing_a_name.py).
+
