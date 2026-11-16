@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -59,11 +59,14 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **What this refuses:** a lock's low warning held over a night or a day, a coin cell that sags one cold night, a battery that swings with the day's warmth, and a slow drift on a warm day. A swing reads at its old high the day before the rise, so its next day never clears it.
 - **What is left to a person:** a battery that collapses from near full and is changed the very next day reads exactly as a sag does, and is refused. The person can give the day ([BAT-07](#bat-07-battery-last-replaced)). A sag at full held a whole day is taken for a change, and Cancel puts everything back.
 - **Just after the upgrade:** with no day kept before a rise, the rise is judged on the midnight levels alone, as before. Three days fill from empty.
+- **Each day's low and high are kept (since 0.29.3):** at midnight, a device heard that day keeps the day's lowest and highest level as one dated row, beside its lowest and highest voltage ([BAT-16](#bat-16-kept-for-a-better-forecast-later)). As many rows are kept as How Much History to Keep has days, as the daily levels are, and the rule reads its days before from the newest of them. A day the device was not heard writes no row, as it writes no daily level ([BAT-05](#bat-05-one-reading-a-day)). A day folded twice, as a restart across midnight can give, is one row holding both parts. The three days an older release kept become dated rows at the upgrade, the newest on the day before the file was last saved.
+- **The day's samples survive a power cut (since 0.29.3):** the levels heard today, their counts and the day's voltages are written with the clocks, every few minutes, rather than with the main file ([STOR-15](Rulebook__18_STOR_Storage.md#stor-15-what-is-recorded)).
+- **Back to an older release:** 0.29.2 and earlier read neither the rows nor the day's samples from the clocks, so for its first days back the rule judges a rise on the midnight levels alone, as just after an upgrade. The newest 30 rows are kept, unread, and in use again on the return. Older rows are lost at the older release's first write of the history file; the rest of that file is kept.
 - **The history:** starts again from the day the rise appeared, so each trend and forecast describes the battery in the device today. The old history is kept, unread.
 - **Raw scale:** a new battery is measured again for the raw scale ([BAT-02](#bat-02-what-counts-as-a-reading)).
 - **The words:** each surface says "replaced or recharged", because the level cannot tell the two apart. The exception is the device page's Battery last replaced row and its card, which [BAT-07](#bat-07-battery-last-replaced) governs.
 
-*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_wording.py`](../tests/test_battery_wording.py), [`test_battery_replacement_rule.py`](../tests/test_battery_replacement_rule.py), [`test_battery_day_fields_hostile.py`](../tests/test_battery_day_fields_hostile.py), [`test_battery_day_level_cap.py`](../tests/test_battery_day_level_cap.py), [`test_battery_stray_counted_twice.py`](../tests/test_battery_stray_counted_twice.py).
+*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py), [`test_battery_wording.py`](../tests/test_battery_wording.py), [`test_battery_replacement_rule.py`](../tests/test_battery_replacement_rule.py), [`test_battery_day_fields_hostile.py`](../tests/test_battery_day_fields_hostile.py), [`test_battery_day_level_cap.py`](../tests/test_battery_day_level_cap.py), [`test_battery_stray_counted_twice.py`](../tests/test_battery_stray_counted_twice.py), [`test_battery_day_ranges.py`](../tests/test_battery_day_ranges.py).
 
 ### BAT-07 Battery Last Replaced
 
@@ -129,8 +132,10 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 
 ### BAT-13 How Long a Battery Has Left
 
-**A judged battery is given a time left as a range.** The range comes from refitting its own last six weeks with its weekly swings reshuffled.
+**A judged battery is given a time left as a range.** The fit's own day is the far end, the longest the battery is likely to last, since its fall speeds up near the end. The near end is earlier by the battery's own swings: the width between the 10th and 90th percentiles of refitting its last six weeks with its weekly swings reshuffled (since 0.29.3; James, 15 November 2026, 19:26 to 19:50). Before 0.29.3 those two percentiles were the two ends, around the fit's day. Where fewer than nine in ten reshuffles reach the target, the near end is their 10th percentile, never after the fit's day. The far end is held to three years, and so is each day the width is taken from. The near end is never under a quarter of the far end, so a slow, noisy fall whose swings are wider than its own day never reads "under a week" while far from its target. On the chart, the near end's line is the fit's own, run faster to reach the target on the near day.
 - **When it is worked out:** from the history to yesterday and today's reading, so a new reading during the day works it out again.
+- **Where it starts (since 0.29.3):** from the fitted line's value today, not today's reading. A reading a step off the line, as a battery gives from one day to the next, moved the date by weeks when the reading started it. Today's reading still decides the target: a battery reading under the threshold runs to empty.
+- **When the reading moves it:** the start is never further over today's reading than the six weeks' second deepest day under the line, and at least one point, so one stray low day never hides a collapse. A reading further under than that is a collapse the line has not caught up with, and the start follows it down without a jump. When the line is under the reading, the start is held one point over the target while the reading is still over it, so the time left never drops to nothing before the battery has crossed, and there is no jump where the line crosses.
 - **Which line:** the curve of [BAT-12](#bat-12-accelerating) when it passes, the straight line otherwise.
 - **To the threshold:** the time left runs to the low threshold and reads "reaches 15% in about 3 to 5 weeks".
 - **To empty:** a battery already under the threshold, or one that has been low and not yet replaced, runs to empty and reads "empty in about …".
@@ -153,7 +158,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 ### BAT-15 Forecasts Are Kept and Scored
 
 **At each midnight, each judged battery whose time left comes from the six-week range of [BAT-13](#bat-13-how-long-a-battery-has-left) gains one forecast row.** A time left from the straight pace alone writes none. Nothing here changes a judgment.
-- **What a row holds:** the day, its level, whether it was accelerating, the target and the range.
+- **What a row holds:** the day, its level, whether it was accelerating, the target and the range. From 0.29.3 a row's far end is the fit's own day, sooner than the 90th percentile older rows hold, so a row is scored later sooner than before; each row is scored against the range it holds, and the house tallies count both kinds.
 - **Scoring:** when the battery reaches the target, its open rows are scored inside, earlier or later. A row whose far end passes first is later at once. A battery replaced first scores its rows replaced.
 - **Forecasts to empty:** a forecast to empty ([BAT-13](#bat-13-how-long-a-battery-has-left)) is scored on a reading of 0, or on the last day heard when the device went silent two days or more before its replacement.
 - **How many are kept:** each device keeps its newest 400 rows. The house tallies, one for the threshold and one for empty, never expire.
@@ -166,15 +171,15 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 **These are shown or kept for a better forecast later, and nothing is judged on them:**
 - **Lithium.** A battery whose type starts with CR is lithium. Its page says its level holds near full until close to its end while it is not falling, and Battery Trends says it once under Other Cells.
 - **Its model's pace.** A battery's page and Battery Trends row show the slowest and fastest weekly fall of the other devices of the same maker and model that have a weekly fall, as "Others of this model lose 0.8 to 1.6 points a week", when at least two qualify. A device with no weekly fall yet is left out, and so is one with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), since 0.28.11.
-- **Voltage, temperature and messages.** At each midnight, each battery device heard that day keeps its battery voltage, its own temperature and its message count, from its own entities only. A voltage outside 0.5 to 15 volts is left out. The rows are kept for the How Much History to Keep setting's days, and Advanced shows the newest day. A battery device whose voltage sensor is switched off is listed on the Battery Voltage Switched Off card (REC).
+- **Voltage, temperature and messages.** At each midnight, each battery device heard that day keeps its battery voltage, its own temperature and its message count, from its own entities only. Since 0.29.3 the day's lowest and highest voltage, read each moment the device is heard once its message is written, are kept too, in the day's row of [BAT-06](#bat-06-a-new-battery-is-detected), for How Much History to Keep. A voltage outside 0.5 to 15 volts is left out. The rows are kept for the How Much History to Keep setting's days, and Advanced shows the newest day. A battery device whose voltage sensor is switched off is listed on the Battery Voltage Switched Off card (REC).
 
-*Proof:* [`test_battery_lithium.py`](../tests/test_battery_lithium.py), [`test_battery_model_pace.py`](../tests/test_battery_model_pace.py), [`test_battery_evidence.py`](../tests/test_battery_evidence.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py).
+*Proof:* [`test_battery_lithium.py`](../tests/test_battery_lithium.py), [`test_battery_model_pace.py`](../tests/test_battery_model_pace.py), [`test_battery_evidence.py`](../tests/test_battery_evidence.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`test_battery_day_ranges.py`](../tests/test_battery_day_ranges.py).
 
 ### BAT-17 The Battery on the Device Page
 
 **The device page shows the five weekly averages with each week's loss, the reading, the time left and one sentence.**
 - **The chart:** draws the daily line in blue, the last five weekly averages in orange, and a fitted line on a falling battery. The weekly bars and the fitted line show at 30 and 14 days only.
-- **Simple, and Advanced's Future range:** draw each kept day as light dots under a smoothed line. The expected fall is two red lines that end where they reach the target, with the range shaded between and the day each reaches it under the axis. The low line shows only where the history or the range reaches it.
+- **Simple, and Advanced's Future range:** draw each kept day as light dots under a smoothed line, and today's reading as one more dot. Where a range shows, the smoothed line runs to where the expected fall starts ([BAT-13](#bat-13-how-long-a-battery-has-left)); otherwise to today's reading. The expected fall is two red lines that end where they reach the target, with the range shaded between and the day each reaches it under the axis. The low line shows only where the history or the range reaches it.
 - **In Simple:** the expected fall is drawn only when the near end is inside Days Till Low Warning.
 - **Future's limit:** the longer of half the days held and Days Till Low Warning.
 - **Past the limit:** when the near end is past that limit, nothing is drawn and it reads "Reaches 15% after N days." or "Empty after N days.", with N the limit.
@@ -188,7 +193,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **Batteries to Watch:** lists the steady fallers of [BAT-14](#bat-14-warnings).
 - **Falling:** shows the five weeks and the pace a week.
 - **Other Cells:** shows each remaining battery's last four weeks.
-- **By Model:** shows the points a week for each model. A device with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), is a row of its own, not pooled with unrelated hardware (since 0.28.11), with a type chosen too.
+- **By Model:** shows the points a week for each model. A device with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), is a row of its own, not pooled with unrelated hardware (since 0.28.11), with a type chosen too. Its maker and model are followed by the device's name, so two such rows can be told apart in Simple, which leaves out WHICH ONE (since 0.29.3).
 - **The summary:** splits the batteries that report a level into three parts that add up: falling, at or under the threshold and not falling, and not falling or not yet judged.
 
 *Proof:* [`test_dashboard_trends.py`](../tests/test_dashboard_trends.py), [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_type_filters.js`.

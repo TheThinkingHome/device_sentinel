@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -34,9 +34,10 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 - **At each start:** the load joins the history copy whose generation matches the main file, and a good copy is written over the other where they differ.
 - **A bad file:** a bad live file, or a pair whose generations do not match, restores the last-good set: the main file's last-good joined with the history copy of the same generation.
 - **No matching copy:** Device Sentinel starts with the main file's 30 days, never doubling a day, and says so as [STOR-12](#stor-12-no-silent-repair) sets out.
+- **A history a newer release added (since 0.29.3):** a device history this release does not know is left out of the join, not taken as damage, so a return from a newer release keeps every history this one knows. The battery day ranges ([BAT-06](Rulebook__09_BAT_Battery.md#bat-06-a-new-battery-is-detected)) sit under a key of their own in the history file for the same reason: 0.29.2 and earlier refuse a whole history file holding a device history they do not know. They read the file and skip the key, and their first write of the history file leaves it out, so a return to 0.29.2 loses the day ranges older than the newest 30.
 - **Older releases:** there is no rollback below 0.26.2. An older release reads only the main file and runs on 30 days. Going back to a 0.27 release and forward again loses the short drop-out rows and Wi-Fi address rows older than 30 days, which 0.28 keeps in the history file and 0.27 does not know: a device's address comes back at its next sample, with a new "since".
 
-*Proof:* [`test_history_file.py`](../tests/test_history_file.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_history_file_hostile.py`](../tests/test_history_file_hostile.py).
+*Proof:* [`test_history_file.py`](../tests/test_history_file.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_history_file_campaign.py`](../tests/test_history_file_campaign.py), [`test_history_file_hostile.py`](../tests/test_history_file_hostile.py), [`test_battery_day_ranges.py`](../tests/test_battery_day_ranges.py).
 
 ### STOR-04 Last-Good Copies
 
@@ -152,10 +153,10 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 **A reading is recorded as it was reported and judged when it is read, within [STOR-07](#stor-07-values-held-to-what-is-possible)'s bounds and the reading rules of BAT and SIG.**
 - **House events:** a thing that happened to the house, such as a restart, an outage or a settings change, is its own row in the house's events, stamped when it happened and never on a device. It explains the device rows beneath it and never replaces them.
-- **Running figures:** the day's running figures, its reading count among them, live with the clocks and are folded into the daily histories at midnight.
+- **Running figures:** the day's running figures, its reading count among them, live with the clocks and are folded into the daily histories at midnight. Since 0.29.3 the battery levels heard today with their counts, and the day's lowest and highest battery voltage, are among them ([BAT-06](Rulebook__09_BAT_Battery.md#bat-06-a-new-battery-is-detected)). A clocks file from an older release, without them, merges, and the main file's are kept.
 - **Second signal scale:** a device's second signal scale is one nested key on its record.
 
-*Proof:* [`test_storage_split.py`](../tests/test_storage_split.py), [`test_signal_stats.py`](../tests/test_signal_stats.py), [`test_clock_strip.py`](../tests/test_clock_strip.py), [`test_storage_shape.py`](../tests/test_storage_shape.py).
+*Proof:* [`test_storage_split.py`](../tests/test_storage_split.py), [`test_signal_stats.py`](../tests/test_signal_stats.py), [`test_clock_strip.py`](../tests/test_clock_strip.py), [`test_storage_shape.py`](../tests/test_storage_shape.py), [`test_battery_day_ranges.py`](../tests/test_battery_day_ranges.py).
 
 ### STOR-16 Each History Carries Its Dates
 
@@ -186,7 +187,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 **At each load the stored records are matched to the current record.**
 - **Fields:** a field missing is filled with its default, a field this code retired is removed, and any other unknown field is kept untouched, since it belongs to a newer release.
 - **Unused settings:** a setting no code reads is cleared at setup with a log line naming it.
-- **One-time conversions:** a conversion runs at load before the matching, marked with the release that ran it, so it runs once.
+- **One-time conversions:** a conversion runs at load before the matching, marked with the release that ran it, so it runs once. A conversion that removes the field it reads needs no mark: the three-day battery lows and highs become dated day ranges and are removed (since 0.29.3).
 - **Statistics epoch:** a change to it wipes only the learned rhythm and the verdict drawn from it. It takes a copy of the files first, and does not run if the copy fails.
 - **Clean-up:** a clean-up mechanism stays. A named entry it carries for one old fault is removed once a fresh download shows the fault gone.
 

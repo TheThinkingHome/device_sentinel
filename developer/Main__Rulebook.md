@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2.*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3.*
 
 **What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today. Under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings give the reason in plain words, then cite the rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))".
 

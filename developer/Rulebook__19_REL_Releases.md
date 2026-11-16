@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Releases (REL)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how a release reaches a house, how much proof it gets before it is tagged, when it counts as stable, and what is written about it: release notes, the README and the wiki. It also covers the Battery Notes library refresh that rides with each Latest. How the code and the tests are written is under [CODE](Rulebook__20_CODE_Code_and_Tests.md). The battery library's use on the device page is under [DEV](Rulebook__04_DEV_Device_Identity.md).
 
@@ -125,8 +125,9 @@ This section covers how a release reaches a house, how much proof it gets before
 
 ### REL-15 The Battery Notes Library Is Refreshed for Each Latest
 
-**Before each Latest, the copy of Battery Notes' device library that Device Sentinel ships is replaced with the current one from Battery Notes' repository.**
+**Before each Latest, the copy of Battery Notes' device library that Device Sentinel ships is refreshed: the pin is moved to Battery Notes' newest commit, and that commit's copy replaces the shipped one.**
 - **The refresh tool:** checks each entry has the fields Device Sentinel reads, reports how many devices were added, removed and changed, and writes the new copy unchanged.
+- **Pinned (since 0.29.3):** the library is taken from one commit of Battery Notes' repository, and written only when its SHA-256 is the one pinned beside it. Moving the pin is a change of its own: the tool shows a newer commit's SHA-256 without writing anything. The test tools are pinned the same way: jsdom and everything it pulls in by the dashboard checks' lockfile, and uv to its version and published SHA-256.
 - **By hand:** the date and count line in the library's licence notice is updated by hand.
 
 *Proof:* [`tools/update_battery_library.py`](../tools/update_battery_library.py), [`test_power_source.py`](../tests/test_power_source.py).

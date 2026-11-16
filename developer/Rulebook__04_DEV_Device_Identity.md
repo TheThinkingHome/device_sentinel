@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -152,6 +152,7 @@ This section covers what a device is called, what kind of device it is, what pow
 ### DEV-16 What the Diagnostics Say About Hardware
 
 **The diagnostics download names what the hardware is, not only how it behaves. It gives each device's manufacturer, model, model id and hardware and software versions, and a block naming the house's stacks, its MQTT broker if one runs, and each router integration. These are read live when the file is downloaded and stored nowhere.**
+- **Each entry's source and state (since 0.29.3):** each integration entry in the block gives how it came to be and whether it is switched off, so an ignored discovery reads as one, not as a second integration that failed to load.
 
 *Proof:* [`test_infrastructure.py`](../tests/test_infrastructure.py).
 
