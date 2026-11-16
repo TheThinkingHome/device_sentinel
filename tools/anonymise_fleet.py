@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.28.3 (2026-11-05)
+# File: tools/anonymise_fleet.py, Version: 0.29.4 (2026-11-16)
 
 """Build the committed fleet set from real houses' files.
 
@@ -40,6 +40,8 @@ What is replaced, with the same stand-in everywhere it occurs:
   hardware addresses;
 - the Wi-Fi network names, and the notification targets, which are
   often named after an email address.
+- each Wi-Fi device's network address and the access point it joined,
+  in the table of address changes.
 
 A missing name stays missing, since the suite tests nameless devices.
 Timestamps, domains, counts and every learned number stay as they are:
@@ -112,7 +114,12 @@ HISTORY_NAMES = {
 }
 DIAGNOSTICS_OUT = "config_entry-device_sentinel-fleet.json"
 KEEP_TARGETS = {"persistent_notification"}
-KINDS = ("ids", "entries", "names", "trackers", "networks", "targets", "models")
+KINDS = ("ids", "entries", "names", "trackers", "networks", "targets", "models", "addresses")
+# A Wi-Fi device's address and the access point it joined, in the
+# table of address changes: a house's own network addresses and an
+# access point's hardware address.
+ADDRESS_FIELDS = {"ip", "ap"}
+MAC = re.compile(r"[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}")
 
 
 class House:
@@ -154,6 +161,17 @@ class House:
 
     def network(self, real: str) -> str:
         return self._alias("networks", real, lambda n: f"network_{n}")
+
+    def address(self, real: str) -> str:
+        """A network address or an access point's hardware address,
+        each given a stand-in of its own kind."""
+        if MAC.fullmatch(real):
+            return self._alias(
+                "addresses", real, lambda n: f"02:00:00:{self.index:02x}:{n // 256:02x}:{n % 256:02x}"
+            )
+        return self._alias(
+            "addresses", real, lambda n: f"10.{self.index}.{n // 250}.{n % 250 + 1}"
+        )
 
     def target(self, real: str) -> str:
         if real in KEEP_TARGETS:
@@ -225,6 +243,8 @@ def _walk(value: Any, house: House, names: list[str], field: str = "") -> Any:
     if isinstance(value, str):
         if field in NAME_FIELDS:
             return house.name(value)
+        if field in ADDRESS_FIELDS and value:
+            return house.address(value)
         if field in SENTENCE_FIELDS:
             value = house.names_in(value, names)
         return house.ids_in(value)
@@ -310,7 +330,7 @@ def _leaks(written: list[Path], house: House, raw_names: set[str]) -> list[str]:
     """Every real value the run replaced, and every raw name, that
     still stands anywhere in what was written."""
     forbidden: dict[str, str] = {}
-    for kind in ("ids", "entries", "trackers", "networks", "targets", "models"):
+    for kind in ("ids", "entries", "trackers", "networks", "targets", "models", "addresses"):
         for real in house.used[kind]:
             forbidden[real] = kind
     for real in house.used["names"] | raw_names:
