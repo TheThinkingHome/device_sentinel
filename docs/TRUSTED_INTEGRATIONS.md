@@ -32,17 +32,22 @@ How to read the table:
 | Brother Printer (`brother`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | BTHome (`bthome`) | Some models only | Most devices show as unavailable. Devices that mark themselves as sleepy, such as battery buttons and contact sensors, show their restored values. | Code | 14 Nov 2026 |
 | Daikin AC (`daikin`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
+| Danfoss Link (`danfoss_link`) | Reports cached values | Each room is a device behind the Link CC. A room whose thermostat has lost radio contact stays available with the CC's last values, and its radio contact sensor turns off. | Code | 15 Nov 2026 |
 | Denon AVR (`denonavr`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Denon HEOS (`heos`) | Reports live | Its hub says when a device can't be reached, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | DLNA Digital Media Renderer (`dlna_dmr`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
+| Drayton Wiser (`wiser`) | Reports cached values | Devices behind the HeatHub stay available with the hub's last values while the hub answers. A device the hub can't hear shows only "NoSignal" on its signal sensor. | Code | 15 Nov 2026 |
+| Easee (`easee`) | Reports cached values | Every entity is always available. A charger that is offline shows the Easee cloud's last values, and its Online sensor turns off. | Code | 15 Nov 2026 |
 | ecobee (`ecobee`) | Not settled | Thermostats show as unavailable when offline. The code doesn't show what the cloud sends for a remote sensor that is gone. Treated as reporting live. | Code | 14 Nov 2026 |
 | Ecovacs (`ecovacs`) | Reports live | A robot shows no values until it reports. | Code | 14 Nov 2026 |
 | Ecowitt (`ecowitt`) | Reports live | A reading shows as unavailable until the gateway sends it, and again 5 minutes after it stops. | Code | 14 Nov 2026 |
+| Energi Data Service (`energidataservice`) | Reports live | A price service, not a device. Its sensors show no value after a restart until prices are fetched. | Code | 15 Nov 2026 |
 | EnOcean (`enocean`) | Reports cached values | Sensors restore their last values after a restart, and no entity ever goes unavailable. | Code | 15 Nov 2026 |
 | Enphase Envoy (`enphase_envoy`) | Some models only | An Envoy that can't be reached shows as unavailable. Inverters and batteries show the Envoy's last values for them; each has a Last Reported sensor. | Code | 14 Nov 2026 |
 | ESPHome (`esphome`) | Some models only | Most devices are unavailable until they connect. Devices built with deep sleep show their stored values as current. | Code | 14 Nov 2026 |
 | EufyLife (`eufylife_ble`) | Reports cached values | Bluetooth scales. The weight sensor is always shown available, with its restored value, because the scale sleeps between weighings. | Code | 15 Nov 2026 |
 | EZVIZ (`ezviz`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
+| FlightRadar24 (`flightradar24`) | Reports cached values | A web service, not a device. Its sensors are always available, and its tracked flight sensors restore their last values after a restart. | Code | 15 Nov 2026 |
 | Freebox (`freebox`) | Some models only | The router itself reports live. Freebox Home sensors, covers and cameras show the router's last values for them. | Code | 14 Nov 2026 |
 | Frigate (`frigate`) | Reports live | A camera that stops sending video shows as unavailable. | Code | 14 Nov 2026 |
 | FRITZ!Box Tools (`fritz`) | Reports live | A router that can't be reached shows as unavailable, and each client shows whether it is connected now. | Code | 14 Nov 2026 |
@@ -60,6 +65,7 @@ How to read the table:
 | HomeKit Device (`homekit_controller`) | Some models only | Wi-Fi and Thread accessories show as unavailable. Bluetooth accessories show their stored values until they are next read. | Code | 14 Nov 2026 |
 | HomematicIP Cloud (`homematicip_cloud`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | HomeWizard Energy (`homewizard`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
+| HP Printer (`hp_printer`) | Reports live | A printer that doesn't answer, such as one switched off, shows as unavailable. | Code | 15 Nov 2026 |
 | Hypervolt Charger (`hypervolt_charger`) | Not settled | The code doesn't show what the cloud sends for a charger that is offline. Treated as reporting live. | Code | 14 Nov 2026 |
 | IKEA TRÅDFRI (`tradfri`) | Reports live | Its hub says when a device can't be reached, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | Internet Printing Protocol (IPP) (`ipp`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
@@ -85,8 +91,12 @@ How to read the table:
 | MQTT (`mqtt`) | Not settled | It depends on what each device publishes. Zigbee2MQTT devices are judged by their Last Seen sensor. Other MQTT devices are treated as reporting live. | Seen running, Nov 2026 | 14 Nov 2026 |
 | MusicCast (`yamaha_musiccast`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Nanoleaf (`nanoleaf`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
+| Navimow (`navimow`) | Reports cached values | The mower stays available with the last state the Navimow cloud sent. | Code | 15 Nov 2026 |
+| NaviMower (`navimower`) | Reports cached values | The mower stays available with the Navimow cloud's last values while the cloud answers. Its Online sensor shows whether it is connected. | Code | 15 Nov 2026 |
+| Netatmo (`netatmo`) | Reports live | Its cloud says when a module can't be reached, and the module then shows as unavailable. | Code | 15 Nov 2026 |
 | Network UPS Tools (NUT) (`nut`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Nmap Tracker (`nmap_tracker`) | Reports live | A device not found by the first scan shows as away. | Code | 14 Nov 2026 |
+| Node-RED (`nodered`) | Reports cached values | Values come from Node-RED flows. After a restart, Node-RED sends each sensor's last state again, which its sensor nodes do by default. | Code | 15 Nov 2026 |
 | OctoPrint (`octoprint`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
 | Octopus Energy (`octopus_energy`) | Reports cached values | Its sensors restore their last values at a restart and keep them when the cloud can't be read. | Code | 14 Nov 2026 |
 | OKOK Scale (`okok_scale`) | Reports cached values | Bluetooth scales. Every sensor is always shown available, because the scale sleeps between weighings. | Code | 15 Nov 2026 |
@@ -108,6 +118,7 @@ How to read the table:
 | Shelly (`shelly`) | Some models only | Mains devices that can't be reached show as unavailable. First-generation battery devices that sleep (H&T, Flood, Door/Window, Smoke) show their restored values. Motion, Motion 2 and the Valve stay connected and report live, and newer sleeping devices have a Last Seen sensor. | Code | 15 Nov 2026 |
 | SmartThings (`smartthings`) | Reports live | Its cloud says when a device is offline, and the device then shows as unavailable. | Code | 14 Nov 2026 |
 | SMLIGHT SLZB (`smlight`) | Reports live | A device that can't be reached shows as unavailable after a restart. | Code | 14 Nov 2026 |
+| SNMP Printer (`snmp_printer`) | Reports cached values | A printer that can't be reached keeps its saved values, such as its ink and toner levels, and its status reads "offline". | Code | 15 Nov 2026 |
 | SolarEdge (`solaredge`) | Not settled | The code doesn't show what the cloud sends once an inverter stops reporting. Treated as reporting live. | Code | 14 Nov 2026 |
 | Sonos (`sonos`) | Reports live | A speaker that can't be reached gets no entities until it answers, so it shows as unavailable. | Code, and issue #36 | 14 Nov 2026 |
 | Sony Bravia TV (`braviatv`) | Reports live | A TV that can't be reached shows as off, never its last values. | Code | 14 Nov 2026 |
