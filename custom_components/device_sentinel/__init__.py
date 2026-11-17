@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.27.10 (2026-10-27)
+# File: __init__.py, Version: 0.29.5 (2026-11-17)
 
 """The Device Sentinel integration.
 
@@ -71,6 +71,7 @@ from .const import (
     STORAGE_KEY,
 )
 from .answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
+from .stand_ins import KEY_FILE, STAND_INS_KEY
 from .coordinator import DeviceSentinelCoordinator
 from .repairs import async_clear_all
 
@@ -506,6 +507,8 @@ def _own_report_files() -> list[str]:
         REPORT_CLASSIFICATION,
         REPORT_EPISODES,
         REPORT_BRIEF_HTML,
+        # The key to the diagnostics download's stand-ins (rule STOR-21).
+        KEY_FILE,
         *probe,
         *REPORT_STALE_FILES,
     ]
@@ -542,7 +545,10 @@ async def async_remove_entry(
         # whatever suffixes exist rather than a list somebody must
         # remember to extend. The answers file, and the older power
         # file it replaced, which older releases left behind on uninstall.
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY, STORAGE_HISTORY_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
+        for key in (
+            STORAGE_KEY, STORAGE_CLOCKS_KEY, STORAGE_HISTORY_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY,
+            STAND_INS_KEY,
+        ):
             for path in storage.glob(f"{key}*"):
                 try:
                     path.unlink()

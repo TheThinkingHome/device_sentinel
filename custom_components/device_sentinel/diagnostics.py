@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.29.3 (2026-11-15)
+# File: diagnostics.py, Version: 0.29.5 (2026-11-17)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -53,9 +53,14 @@ from .const import (
     DATA_SHORT_DROPS,
     BROKER_SCOPE,
     INFRASTRUCTURE_DEVICE_CAP,
+    LOGGER,
+    REPORT_DIR,
     ROUTER_DOMAINS,
     CONF_STUDY_HARDWARE,
+    DATA_STORM_DAYS,
     DATA_STORMS,
+    DATA_WIFI_MEDIUM,
+    DATA_WIFI_MEDIUM_REJECTED,
     EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
     CONF_BRIEF_TARGETS,
@@ -102,7 +107,16 @@ from .study_stacks import (
     matter_study,
     zwave_study,
 )
-from .device_fields import device_field
+from .device_fields import area_name_of, device_field
+from .diagnostics_names import hide_names
+from .stand_ins import (
+    KEY_FILE,
+    StandInBook,
+    async_load_book,
+    async_save_book,
+    book_lock,
+    key_text,
+)
 
 # The notification targets are the user's own device names; they add
 # nothing to a diagnosis and are redacted by default. The brief's
@@ -134,7 +148,7 @@ def _network_names(coordinator: Any) -> list[str]:
     return names
 
 
-def _wifi_scan_hidden(scan: Any, order: Any = ()) -> Any:
+def _wifi_scan_hidden(scan: Any, order: Any = (), book: StandInBook | None = None) -> Any:
     """The Wi-Fi scan with each network's name replaced by a stand-in,
     the same throughout: the house's own and every neighbour's the host
     hears, which public maps of networks can place (rule STOR-21). What
@@ -142,16 +156,18 @@ def _wifi_scan_hidden(scan: Any, order: Any = ()) -> Any:
     if not isinstance(scan, dict):
         return scan
     names: dict[str, str] = {}
-    for name in order or ():
-        if isinstance(name, str) and name not in names:
-            names[name] = f"SSID-{len(names) + 1:02d}"
 
     def stand_in(name: Any) -> Any:
         if not isinstance(name, str):
             return name
         if name not in names:
-            names[name] = f"SSID-{len(names) + 1:02d}"
+            # Kept in the book, so a network keeps its number in every
+            # download (rule STOR-21).
+            names[name] = book.word("network", name) if book is not None else f"SSID-{len(names) + 1:02d}"
         return names[name]
+
+    for name in order or ():
+        stand_in(name)
 
     hidden = dict(scan)
     for field in ("networks", "missing", "heard"):
@@ -424,20 +440,22 @@ _COMMON_WORDS = frozenset({
 })
 
 
-def _redact_addresses(payload: Any, networks: Any = ()) -> Any:
+def _redact_addresses(payload: Any, networks: Any = (), book: StandInBook | None = None) -> Any:
     """Return the payload with every MAC address and every home-network
     or web-host IPv4 address replaced; a version that looks like an
     address is left alone. Each Wi-Fi network named in `networks`, or
     under a key that names one, is replaced by a stand-in, the same
     throughout: a whole value, or a name quoted in a sentence, as the
-    Problem List words a Wi-Fi outage (rule STOR-21)."""
+    Problem List words a Wi-Fi outage (rule STOR-21). Given the book, a
+    network and a tracker keep their numbers from one download to the
+    next; an address is given a fresh one each time."""
     macs: dict[str, str] = {}
     ips: dict[str, str] = {}
     ssids: dict[str, str] = {}
 
     def ssid(name: str) -> str:
         if name not in ssids:
-            ssids[name] = f"SSID-{len(ssids) + 1:02d}"
+            ssids[name] = book.word("network", name) if book is not None else f"SSID-{len(ssids) + 1:02d}"
         return ssids[name]
 
     for name in networks or ():
@@ -449,7 +467,10 @@ def _redact_addresses(payload: Any, networks: Any = ()) -> Any:
     def tracker(match: re.Match[str]) -> str:
         whole = match.group(0)
         if whole not in trackers:
-            trackers[whole] = f"device_tracker.tracker_{len(trackers) + 1:02d}"
+            trackers[whole] = (
+                book.word("tracker", whole) if book is not None
+                else f"device_tracker.tracker_{len(trackers) + 1:02d}"
+            )
         return trackers[whole]
 
     def collect(value: Any) -> None:
@@ -587,7 +608,44 @@ def _addresses(device: Any, key: bytes) -> list[str]:
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
-    """Return the integration's learned state as diagnostics."""
+    """Return the integration's learned state as diagnostics, with no
+    address and no name of the house in it (rule STOR-21).
+
+    The stand-ins for names keep their numbers from one download to the
+    next, and the key to them is written to the reports folder, never
+    into the download.
+    """
+    coordinator = entry.runtime_data
+    async with book_lock(hass):
+        book = await async_load_book(hass)
+        payload = await _learned_state(hass, entry, book)
+        payload = _redact_addresses(payload, _network_names(coordinator), book)
+        payload, entity_words = hide_names(
+            hass, payload, book, coordinator._registry_devices(dr.async_get(hass))
+        )
+        try:
+            await async_save_book(hass, book)
+        except Exception as err:  # noqa: BLE001 - the download must still arrive
+            LOGGER.warning("Device Sentinel could not keep the diagnostics stand-ins: %s", err)
+        text = key_text(book, entity_words, str(coordinator.version), dt_util.now())
+        path = os.path.join(hass.config.path(REPORT_DIR), KEY_FILE)
+        try:
+            await hass.async_add_executor_job(_write_key, coordinator, path, text)
+        except OSError as err:
+            LOGGER.warning("Device Sentinel could not write %s: %s", path, err)
+    return payload
+
+
+def _write_key(coordinator: Any, path: str, text: str) -> None:
+    """The key beside the reports, owner only, written whole or not at all."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    coordinator._write_file(path, text)
+
+
+async def _learned_state(
+    hass: HomeAssistant, entry: DeviceSentinelConfigEntry, book: StandInBook
+) -> dict[str, Any]:
+    """The download before any name or address is taken out."""
     coordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
     # Fingerprints match inside this download only.
@@ -618,6 +676,11 @@ async def async_get_config_entry_diagnostics(
             # their fleet at all (rule DEV-16).
             # A child device carries none of these, and reads
             # None through device_field rather than a deprecation line.
+            # Its area, as a stand-in, so devices that share one show it
+            # (rule STOR-21).
+            # A child device with none of its own is in its parent's
+            # (rule DEV-18).
+            "area": area_name_of(hass, device) if device is not None else None,
             "manufacturer": device_field(device, "manufacturer"),
             "model": device_field(device, "model"),
             # Finer than the display name where a device gives it, and
@@ -660,6 +723,9 @@ async def async_get_config_entry_diagnostics(
             # Only how many it holds (rule WATCH-12).
             "statistics": {k: v for k, v in record.items() if k != DEV_HELD_VALUES},
             "held_value_count": len(record.get(DEV_HELD_VALUES) or {}),
+            # Whether the person wrote a note, never its words: a note can
+            # hold anything (rules DEV-19, STOR-21).
+            "has_note": coordinator.device_note(device_id) is not None,
             # Weekly averages and the trend read from them (rule BAT-18).
             "battery_trend": coordinator.battery_trend_summary(record),
             # What powers it and where that came from (rule DEV-06).
@@ -789,9 +855,18 @@ async def async_get_config_entry_diagnostics(
             # back (rule WATCH-12).
             "held_values": coordinator.held_diagnostics(),
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
+            # Each integration's daily storm tally, the noisy-integration
+            # advice's evidence (rules UP-17, UP-18, STOR-21).
+            "storm_days": list(coordinator.data.get(DATA_STORM_DAYS) or []),
+            # How each router-tracked device was classed, wired or
+            # wireless, which decides the Wi-Fi outage ties, and the
+            # readings the classing set aside (rules UP-12, UP-14,
+            # STOR-21). Each tracker is named by its stand-in.
+            "wifi_medium": dict(coordinator.data.get(DATA_WIFI_MEDIUM) or {}),
+            "wifi_medium_rejected": dict(coordinator.data.get(DATA_WIFI_MEDIUM_REJECTED) or {}),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
-            "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics, _network_names(coordinator)),
+            "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics, _network_names(coordinator), book),
             "study_hardware": list(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),
@@ -982,4 +1057,4 @@ async def async_get_config_entry_diagnostics(
         "held_records": coordinator.held_records(),
         "devices": devices,
     }
-    return _redact_addresses(payload, _network_names(coordinator))
+    return payload

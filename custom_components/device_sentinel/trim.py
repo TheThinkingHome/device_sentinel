@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: trim.py, Version: 0.28.12 (2026-11-11)
+# File: trim.py, Version: 0.29.5 (2026-11-17)
 
 """Erasing one device's or one integration's learned history.
 
@@ -50,9 +50,16 @@ from .const import (
     STORAGE_CLOCKS_VERSION,
     STORAGE_KEY,
     STORAGE_VERSION,
+    ADDR_DEVICE_ID,
+    DATA_ADDRESS_CHANGES,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_SHORT_DROP_DAYS,
+    DATA_SHORT_DROPS,
+    DATA_SIGNAL_STRESS,
+    DROP_DEVICE_ID,
+    EP_DEVICE_ID,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     INC_DEVICE_ID,
@@ -123,7 +130,11 @@ def trim_devices(
 
     Everything keyed on the device: the record with its second-scale
     block, the silence episodes, the incidents, the problem-list
-    items and their journal entries. The clock file needs no separate
+    items and their journal entries, and its short drop-outs, drop-out
+    days, Wi-Fi address changes, and the signal kept with each closed gap
+    (rule CFG-10).
+    The next save writes the history file without the rows of these
+    that sit there, because its part has changed. The clock file needs no separate
     pass because it is derived from the records at save time, so
     deleting the record deletes the clock entry with it. The device is
     rediscovered on its next event with a fresh record, learning from
@@ -140,6 +151,10 @@ def trim_devices(
         "incidents": 0,
         "todo_items": 0,
         "journal": 0,
+        "short_drop_outs": 0,
+        "drop_out_days": 0,
+        "address_changes": 0,
+        "signal_records": 0,
     }
     devices = data.get(DATA_DEVICES)
     if isinstance(devices, dict):
@@ -152,6 +167,10 @@ def trim_devices(
         (DATA_INCIDENTS, INC_DEVICE_ID, "incidents"),
         (DATA_TODO_ITEMS, TODO_DEVICE_ID, "todo_items"),
         (DATA_TODO_JOURNAL, TODO_DEVICE_ID, "journal"),
+        (DATA_SHORT_DROPS, DROP_DEVICE_ID, "short_drop_outs"),
+        (DATA_SHORT_DROP_DAYS, DROP_DEVICE_ID, "drop_out_days"),
+        (DATA_ADDRESS_CHANGES, ADDR_DEVICE_ID, "address_changes"),
+        (DATA_SIGNAL_STRESS, EP_DEVICE_ID, "signal_records"),
     ):
         rows = data.get(key)
         if not isinstance(rows, list):
@@ -167,6 +186,21 @@ def trim_devices(
         removed[counter] = len(rows) - len(kept)
         data[key] = kept
     return removed
+
+
+# How the brief names what a trim erased, one and more than one, so the
+# row reads as written words (rule CFG-10).
+_SAID = {
+    "records": ("record", "records"),
+    "episodes": ("silence episode", "silence episodes"),
+    "incidents": ("incident", "incidents"),
+    "todo_items": ("Problem List item", "Problem List items"),
+    "journal": ("Problem List journal entry", "Problem List journal entries"),
+    "short_drop_outs": ("short drop-out", "short drop-outs"),
+    "drop_out_days": ("drop-out day", "drop-out days"),
+    "address_changes": ("address change", "address changes"),
+    "signal_records": ("signal record", "signal records"),
+}
 
 
 def describe(
@@ -191,7 +225,7 @@ def describe(
         else:
             picked.append(", ".join(shown))
     counts = ", ".join(
-        f"{value} {label.replace('_', ' ')}"
+        f"{value} {_SAID.get(label, (label, label))[value != 1]}"
         for label, value in removed.items()
         if value
     )

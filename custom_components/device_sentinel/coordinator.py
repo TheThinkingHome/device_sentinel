@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.4 (2026-11-16)
+# File: coordinator.py, Version: 0.29.5 (2026-11-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -126,6 +126,7 @@ from .daily_dates import (
     FAMILY_SIGNAL_ALT,
 )
 from .device_actions import DeviceActionsMixin
+from .device_notes import DeviceNotesMixin
 from .pollers import PollerMixin
 from .power_source import PowerMixin
 from .device_type import TypeMixin
@@ -428,6 +429,7 @@ class DeviceSentinelCoordinator(
     PollerMixin,
     HubMixin,
     DeviceActionsMixin,
+    DeviceNotesMixin,
     PowerMixin,
     TypeMixin,
     AnswersMixin,
@@ -2064,6 +2066,7 @@ class DeviceSentinelCoordinator(
         # fold cannot detect a new cell over a replacement not yet
         # stored (rule BAT-07).
         self._settle_battery_entries()
+        self._settle_notes()
         await self._fold_if_a_midnight_was_missed()
         # A router integration seen for the first time, or Music
         # Assistant or a television integration, is excluded on a new
@@ -2328,6 +2331,7 @@ class DeviceSentinelCoordinator(
         # an older release or after a downgrade, is dated once and
         # stored (rule BAT-07).
         self._settle_battery_entries()
+        self._settle_notes()
         await self._write_reports_guarded("setup")
 
 
@@ -6058,6 +6062,7 @@ class DeviceSentinelCoordinator(
         # midnight, never at the catch-up fold a start runs, when the
         # readers have not all been heard yet.
         self._settle_battery_entries()
+        self._settle_notes()
         if _now is not None:
             self.prune_recommendation_acks()
         await self._write_reports_guarded()

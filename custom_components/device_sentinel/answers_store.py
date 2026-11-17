@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.1 (2026-11-14)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.5 (2026-11-17)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -19,13 +19,15 @@ The file:
      "acknowledged": {"devices": {card: {device: bool}},
                       "lines": {key: bool}},
      "battery": {device: {"day": "YYYY-MM-DD", "how": "confirmed"}},
-     "restart": {"models": {model: {"mode": "live" or "cached", "set": time}}}}
+     "restart": {"models": {model: {"mode": "live" or "cached", "set": time}}},
+     "notes": {device: {"text": "...", "set": time}}}
 
 The acknowledgments of the Recommendations tab live here too, because
 a person's own tick is an answer (rule REC-07); so does a battery
-replacement's day a person confirmed or entered (rule BAT-07). An older
+replacement's day a person confirmed or entered (rule BAT-07), and the
+note a person writes on a device's page (rule DEV-19). An older
 release that saves this file writes the power and type answers alone,
-so going back loses the ticks and the battery days.
+so going back loses the ticks, the battery days and the notes.
 
 "models" holds an answer per model, keyed by model_key; "devices" holds
 the answer of a device with no manufacturer or no model.
@@ -284,6 +286,8 @@ class AnswersMixin:
         # The models set to report live or cached values after a restart
         # (rule WATCH-12).
         dropped += self._restart_read(payload.get("restart"))  # type: ignore[attr-defined]
+        # The note a person writes on a device's page (rule DEV-19).
+        dropped += self._notes_read(payload.get("notes"))  # type: ignore[attr-defined]
         await self._note_dropped(dropped)
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
@@ -484,6 +488,11 @@ class AnswersMixin:
         restart = self._restart_payload()  # type: ignore[attr-defined]
         if restart["models"]:
             payload["restart"] = restart
+        # A person's notes on device pages (rule DEV-19), likewise only
+        # once one is written.
+        notes = self._notes_payload()  # type: ignore[attr-defined]
+        if notes:
+            payload["notes"] = notes
         return payload
 
     def _answers_count(self, part: str) -> int:
@@ -569,6 +578,9 @@ class AnswersMixin:
             "acknowledged": self._acks_payload(),  # type: ignore[attr-defined]
             "battery": self._battery_answers_payload(),  # type: ignore[attr-defined]
             "restart_models": len(self._restart_models),  # type: ignore[attr-defined]
+            # How many devices carry a note, never the words: a note
+            # can hold anything (rule STOR-21).
+            "notes": len(self._notes()),  # type: ignore[attr-defined]
         }
 
     def answers_held(self) -> list[dict[str, Any]]:

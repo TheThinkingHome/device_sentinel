@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.29.1 (2026-11-14)
+# File: dashboard_api.py, Version: 0.29.5 (2026-11-17)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -101,6 +101,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     hass.data[_REGISTERED] = True
     websocket_api.async_register_command(hass, ws_status)
     websocket_api.async_register_command(hass, ws_action)
+    websocket_api.async_register_command(hass, ws_device_note)
     websocket_api.async_register_command(hass, ws_subscribe_changes)
     websocket_api.async_register_command(hass, ws_classification)
     websocket_api.async_register_command(hass, ws_problem_list)
@@ -751,6 +752,7 @@ def ws_device_type(
         vol.Required("type"): "device_sentinel/device_area",
         vol.Required("device_id"): str,
         vol.Optional("area_id"): vol.Any(str, None),
+        vol.Optional("confirm", default=False): bool,
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
@@ -759,11 +761,30 @@ def ws_device_area(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Move a device to an area, or to none, recorded with where it was
-    pressed (rule BRIEF-07)."""
+    pressed (rule BRIEF-07). A move that leaves it beside a device of
+    the same name is held for a yes (rule DASH-10)."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_from(msg["source"], lambda: c.page_set_area(msg["device_id"], msg.get("area_id"))),
+        lambda c: c.page_from(
+            msg["source"], lambda: c.page_set_area(msg["device_id"], msg.get("area_id"), msg["confirm"])
+        ),
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_note",
+        vol.Required("device_id"): str,
+        vol.Optional("note"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_device_note(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Write, change or clear a device's note; empty clears it (rule DEV-19)."""
+    _page_act(hass, connection, msg, lambda c: c.page_set_note(msg["device_id"], msg.get("note")))
 
 
 @websocket_api.require_admin
@@ -792,6 +813,7 @@ def ws_device_label(
         vol.Required("type"): "device_sentinel/device_new_area",
         vol.Required("device_id"): str,
         vol.Required("name"): str,
+        vol.Optional("confirm", default=False): bool,
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
@@ -802,7 +824,9 @@ def ws_device_new_area(
     """Make an area and move a device into it."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_from(msg["source"], lambda: c.page_new_area(msg["device_id"], msg["name"])),
+        lambda c: c.page_from(
+            msg["source"], lambda: c.page_new_area(msg["device_id"], msg["name"], msg["confirm"])
+        ),
     )
 
 

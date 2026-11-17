@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.4 (2026-11-16)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.5 (2026-11-17)
 
 """Acting from the device page (rule DASH-09).
 
@@ -364,26 +364,88 @@ class DeviceActionsMixin:
         # A child device is shown after its parent, so its new name is
         # compared whole, as it will be shown (rule DEV-18).
         wanted = with_parent(name.strip(), parent_name_part(registry, device))
-        here = area_name_of(self.hass, device)
-        seen: set[str] = {device_id}
-        # Every device and child device, walked per config entry as the
-        # rest of the code walks them: reading the registry as a mapping
-        # is deprecated.
+        return self._shown_in_use(device_id, wanted, area_name_of(self.hass, device))
+
+    def _all_devices(self) -> list[Any]:
+        """Every device and child device, walked per config entry as the
+        rest of the code walks them: reading the registry as a mapping is
+        deprecated."""
+        registry = dr.async_get(self.hass)
+        found: dict[str, Any] = {}
         for config_entry in self.hass.config_entries.async_entries():
             for other in (
                 *dr.async_entries_for_config_entry(registry, config_entry.entry_id),
                 *child_devices(registry, config_entry.entry_id),
             ):
-                if other.id in seen:
-                    continue
-                seen.add(other.id)
-                # Compared whole, never cut to the length a surface shows.
-                shown = composed_name(other, registry) or display_name(other, None, other.id, registry)
-                there = area_name_of(self.hass, other)
-                # Either way round: a device with no area left beside a
-                # same-named one could no longer be told apart from it.
-                if cannot_be_told_apart(wanted, here, shown, there) or cannot_be_told_apart(shown, there, wanted, here):
-                    return NameInUse(shown, there)
+                found.setdefault(other.id, other)
+        return list(found.values())
+
+    def _shown_in_use(
+        self, device_id: str, wanted: str, here: str | None, skip: set[str] | frozenset[str] = frozenset()
+    ) -> NameInUse | None:
+        """Another device that `wanted`, shown in the area `here`, could
+        not be told apart from (rule REC-04). `skip` names devices whose
+        own names change in the same act, such as a parent's children."""
+        registry = dr.async_get(self.hass)
+        for other in self._all_devices():
+            if other.id == device_id or other.id in skip:
+                continue
+            # Compared whole, never cut to the length a surface shows.
+            shown = composed_name(other, registry) or display_name(other, None, other.id, registry)
+            there = area_name_of(self.hass, other)
+            # Either way round: a device with no area left beside a
+            # same-named one could no longer be told apart from it.
+            if cannot_be_told_apart(wanted, here, shown, there) or cannot_be_told_apart(shown, there, wanted, here):
+                return NameInUse(shown, there)
+        return None
+
+    def _children_of(self, device: Any) -> list[Any]:
+        """The child devices shown under this device's name: those with
+        no area of their own (rule DEV-18)."""
+        registry = dr.async_get(self.hass)
+        return [
+            other for other in self._all_devices()
+            if getattr(other, "parent_device_id", None) == device.id and parent_name_part(registry, other)
+        ]
+
+    @staticmethod
+    def _own_name(device: Any) -> str:
+        """The name a device carries before any parent's is put in front."""
+        for value in (getattr(device, "name_by_user", None), getattr(device, "name", None)):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    def _move_in_use(self, device_id: str, area_name: str | None, area_id: str | None) -> NameInUse | None:
+        """A clash the move to an area would make (rules REC-04, DASH-10).
+
+        The device is compared as it will be shown there: a child moved
+        into an area of its own loses its parent's name, and one left
+        with none is shown with its parent's name in its parent's area.
+        A parent's children with no area of their own move with it.
+        """
+        registry = dr.async_get(self.hass)
+        device = self._device(device_id)
+        own = self._own_name(device)
+        parent = parent_device(registry, device)
+        if area_id is None and parent is not None:
+            shown, here = with_parent(own, self._own_name(parent) or None), area_name_of(self.hass, parent)
+        else:
+            shown, here = own, area_name
+        children = self._children_of(device)
+        moving = {child.id for child in children} | {device_id}
+        if shown:
+            # Its own children move with it: a name they already share
+            # with it is not one the move makes.
+            clash = self._shown_in_use(device_id, shown, here, moving)
+            if clash is not None:
+                return clash
+        for child in children:
+            shown = with_parent(self._own_name(child), own or None)
+            # A child with no area of its own is in its parent's.
+            clash = self._shown_in_use(child.id, shown, here, moving)
+            if clash is not None:
+                return clash
         return None
 
     # ------------------------------------------------------------ acting
@@ -441,6 +503,18 @@ class DeviceActionsMixin:
         shown = wanted or device.name or ""
         if not confirm and shown:
             clash = self._name_in_use(device_id, shown)
+            if clash is None:
+                # A parent's children with no area of their own are shown
+                # after its name, so each is checked under the new one
+                # (rules REC-04, DEV-18).
+                children = self._children_of(device)
+                moving = {child.id for child in children}
+                for child in children:
+                    clash = self._shown_in_use(
+                        child.id, with_parent(self._own_name(child), shown), area_name_of(self.hass, child), moving
+                    )
+                    if clash is not None:
+                        break
             if clash is not None:
                 raise clash
         update_device(self.hass, device_id, name_by_user=wanted)
@@ -449,11 +523,18 @@ class DeviceActionsMixin:
             f"renamed {shown}" if wanted else f"name reset to {shown}",
         )
 
-    def page_set_area(self, device_id: str, area_id: str | None) -> None:
+    def page_set_area(self, device_id: str, area_id: str | None, confirm: bool = False) -> None:
+        """Move a device to an area, or to none. A move that would leave it
+        beside a device it could not be told apart from is held for a
+        yes, as a rename is (rules REC-04, DASH-10)."""
         self._device(device_id)
         area = ar.async_get(self.hass).async_get_area(area_id) if area_id else None
         if area_id and area is None:
             raise ValueError("Home Assistant has no such area")
+        if not confirm:
+            clash = self._move_in_use(device_id, area.name if area else None, area_id or None)
+            if clash is not None:
+                raise clash
         update_device(self.hass, device_id, area_id=area_id or None)
         if area is None:
             # A child device with no area is in its parent's, and the
@@ -478,7 +559,7 @@ class DeviceActionsMixin:
             raise ValueError("That text holds characters that cannot be shown.")
         return wanted
 
-    def page_new_area(self, device_id: str, name: str | None) -> None:
+    def page_new_area(self, device_id: str, name: str | None, confirm: bool = False) -> None:
         """Make an area and move the device into it (rule DASH-09).
 
         A name Home Assistant already holds is the area it names, not a
@@ -488,6 +569,12 @@ class DeviceActionsMixin:
         wanted = self._new_registry_name(name)
         areas = ar.async_get(self.hass)
         held = areas.async_get_area_by_name(wanted)
+        if not confirm:
+            # Checked before the area is made, so a held move leaves no
+            # empty area behind (rules REC-04, DASH-10).
+            clash = self._move_in_use(device_id, held.name if held is not None else wanted, held.id if held else "new")
+            if clash is not None:
+                raise clash
         area = held if held is not None else areas.async_create(wanted)
         update_device(self.hass, device_id, area_id=area.id)
         self._page_done(device_id, f"moved to {area.name}{'' if held else ', a new area'}")

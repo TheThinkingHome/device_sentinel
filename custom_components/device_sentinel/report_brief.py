@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.29.0 (2026-11-14)
+# File: report_brief.py, Version: 0.29.5 (2026-11-17)
 
 """The daily brief: the one report written for a person.
 
@@ -1086,7 +1086,11 @@ class BriefMixin:
         return "; ".join(names)
 
     def _option_labels(self) -> dict[str, str]:
-        """Return every option key's screen label, read once."""
+        """Return every option key's screen label, read once.
+
+        Read while Device Sentinel starts, on a worker thread, so a page
+        asked for on the event loop finds them in memory (rule CODE-06).
+        """
         cached = getattr(self, "_option_label_cache", None)
         if cached is not None:
             return cached

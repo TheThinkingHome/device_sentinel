@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: naming.py, Version: 0.29.4 (2026-11-16)
+# File: naming.py, Version: 0.29.5 (2026-11-17)
 
 """What a device is called, when the registry does not say.
 
@@ -67,6 +67,11 @@ def integration_label(domain: str | None) -> str:
     if not domain:
         return "Unknown"
     return STACK_DISPLAY_NAMES.get(domain, domain)
+
+
+def fitted_name(name: str) -> str:
+    """A name as a page or sentence shows it, cut where it is too long."""
+    return _fit(name)
 
 
 def _fit(name: str) -> str:
@@ -204,10 +209,16 @@ def area_is_said(name: str, area: str | None) -> bool:
     if not area or not area.strip():
         return True
     text = (name or "").rstrip()
+    if text.endswith((")", "]")):
+        return True
+    # An area with no letter in it, such as "1", is never taken as said:
+    # "Socket 1" in area "1" still reads "Socket 1 (1)" (rule NOTE-13).
+    if not any(ch.isalpha() for ch in area):
+        return False
     # The area as whole words, so "Den" is not found in "Garden plug".
     # An underscore counts as a break, as in "kitchen_light".
     held = re.search(rf"(?<![^\W_]){re.escape(area.strip().casefold())}(?![^\W_])", text.casefold())
-    return text.endswith((")", "]")) or held is not None
+    return held is not None
 
 
 def with_area(name: str, area: str | None) -> str:

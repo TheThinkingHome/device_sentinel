@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.4 (2026-11-16)
+# File: dashboard.py, Version: 0.29.5 (2026-11-17)
 
 """What the dashboard reads from the coordinator.
 
@@ -1653,6 +1653,8 @@ class DeviceViewMixin:
                 "restarts": _newest_pairs(record.get(DEV_RESTARTS)),
                 # Battery Last Replaced: None on mains (rule BAT-07).
                 "battery_replaced": self.battery_replacement_view(device_id),  # type: ignore[attr-defined]
+                # The person's own note, or None (rule DEV-19).
+                "note": self.device_note(device_id),  # type: ignore[attr-defined]
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),
