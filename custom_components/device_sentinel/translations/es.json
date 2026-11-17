@@ -1,0 +1,408 @@
+{
+  "title": "Device Sentinel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Device Sentinel",
+        "description": "Device Sentinel se instala con valores predeterminados que funcionan y empieza a vigilar de inmediato. La configuración está en las opciones después de la instalación."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configuración de Device Sentinel",
+        "description": "Los valores predeterminados de Device Sentinel bastan para empezar. Cuando empieces a adaptar la integración a tu sistema, ve de arriba abajo. Si quieres que las alertas lleguen a tu teléfono, empieza por Notificaciones.\n\n**Notificaciones**: a dónde van las alertas, las horas de silencio y el recordatorio diario.\n\n**Exclusiones y silencio**: el hardware que nunca quieres que se evalúe ni se informe, por nada. Para silenciar un solo tipo de informe de un dispositivo, usa en su lugar la lista de silencio de esa sección.\n\n**Batería baja**: el umbral bajo y el silencio solo de batería.\n\n**Intensidad de la señal**: cómo se evalúan los enlaces de radio que se debilitan frente al mínimo propio de cada dispositivo.\n\n**Detección de congelados y no disponibles**: cuánto tiempo puede estar callado un dispositivo antes de considerarse congelado, fijado con dos controles de margen de gracia, y qué dispositivos están silenciados para «congelado» o para «no disponible».\n\n**WiFi**: las redes vigiladas para detectar una caída del WiFi.\n\n**Avanzado**: almacenamiento e historial, la ventana de mantenimiento, si el panel se abre en Simple o Avanzado, y la herramienta de limpieza de datos.\n\n**Diagnóstico ampliado**: el hardware que eliges registrar en detalle, para ayudar a darle soporte.\n\n[Toda la documentación en la wiki de Device Sentinel]({wiki_link})\n\nCada sección se guarda al enviarla y te devuelve aquí. Cerrar este cuadro conserva todo lo que ya has enviado.",
+        "menu_options": {
+          "notifications": "Notificaciones y resumen diario",
+          "exclusions": "Exclusiones y silencio",
+          "battery": "Batería baja",
+          "signal": "Intensidad de la señal",
+          "freeze": "Detección de congelados y no disponibles",
+          "wifi": "WiFi",
+          "advanced": "Avanzado",
+          "extended": "Diagnóstico ampliado"
+        }
+      },
+      "notifications": {
+        "title": "Notificaciones y resumen diario",
+        "description": "Quién se entera de un problema, y cuándo. [Notificaciones y resumen diario en la wiki]({wiki_link})",
+        "sections": {
+          "instant": {
+            "name": "Notificaciones inmediatas",
+            "data": {
+              "high_priority_targets": "Destinatarios de prioridad alta",
+              "normal_priority_targets": "Destinatarios de prioridad normal",
+              "persistent_enabled": "Crear una notificación persistente"
+            },
+            "data_description": {
+              "high_priority_targets": "Reciben todas las alertas, a cualquier hora, también en las horas de silencio. El resumen diario no se envía aquí; solo va a «Enviar el resumen completo a».",
+              "normal_priority_targets": "Reciben todas las alertas, salvo durante las horas de silencio. El resumen diario no se envía aquí; solo va a «Enviar el resumen completo a».",
+              "persistent_enabled": "Muestra una sola tarjeta en el panel con el estado actual de la casa, agrupado por tipo."
+            }
+          },
+          "quiet": {
+            "name": "Horas de silencio",
+            "data": {
+              "quiet_hours_enabled": "Activar las horas de silencio",
+              "quiet_hours_start": "Inicio",
+              "quiet_hours_end": "Fin"
+            },
+            "data_description": {
+              "quiet_hours_enabled": "Durante estas horas, los destinatarios de prioridad normal no reciben nada y los de prioridad alta siguen recibiendo todas las alertas. El resumen diario cuenta lo que pasó."
+            }
+          },
+          "brief": {
+            "name": "Resumen diario",
+            "data": {
+              "daily_reminder_time": "Cuándo enviarlo",
+              "daily_reminder_mode": "Con qué frecuencia",
+              "brief_document_targets": "Enviar el resumen completo a",
+              "report_link_address": "Enlaces en los informes"
+            },
+            "data_description": {
+              "daily_reminder_mode": "El archivo del resumen se escribe en cualquier caso; esto decide si se envía.",
+              "brief_document_targets": "El servicio de correo u otros servicios que se usarán para enviar el resumen diario. Elígelos de la lista. Una dirección de correo escrita aquí no funcionará: para enviarlo por correo, configura primero la integración SMTP de Home Assistant, y sus destinatarios aparecerán en la lista. [Enviar el resumen diario por correo]({email_link})",
+              "report_link_address": "Los nombres de los dispositivos en el resumen diario pueden convertirse en enlaces a la página de ese dispositivo en el panel de Device Sentinel. El resumen se envía por correo y puede reenviarse, así que un enlace lleva consigo la dirección de tu casa. Elige la dirección que usan los enlaces, o None para no poner enlaces. Si las URL interna o externa no están definidas, puedes configurarlas en los [ajustes de red](/config/network) de Home Assistant."
+            }
+          }
+        }
+      },
+      "exclusions": {
+        "title": "Exclusiones y silencio",
+        "description": "La integración ofrece dos formas de ajustar qué dispositivos vigila y cómo informa. Excluir descarta; silenciar solo calla.\n\n[Exclusiones y silencio en la wiki]({wiki_link})",
+        "sections": {
+          "exclude": {
+            "name": "Integraciones y dispositivos a excluir",
+            "description": "Una integración o un dispositivo excluido queda completamente apartado. No se aprende nada, no se guarda ningún dato y nunca aparece en los informes ni en las notificaciones. Lo que ya había registrado se descarta en la siguiente medianoche local, así que quitarlo de la lista antes de esa hora lo deja intacto. Úsalo cuando lo que publica un dispositivo no es una medida de tu casa: teléfonos que salen de ella, tabletas de pared siempre enchufadas, sondas que responden a cada consulta. Un dispositivo también puede excluirse desde su página en el panel de Device Sentinel.",
+            "data": {
+              "excluded_integrations": "Integraciones a excluir",
+              "devices_to_exclude": "Dispositivos a excluir"
+            },
+            "data_description": {
+              "excluded_integrations": "Todos los dispositivos de una integración marcada quedan apartados.",
+              "devices_to_exclude": "Cada dispositivo elegido aquí queda apartado por sí solo, con las mismas reglas."
+            }
+          },
+          "muting": {
+            "name": "Silencio global",
+            "description": "Un elemento silenciado se sigue vigilando y sus datos se guardan, pero se mantiene fuera de la Lista de problemas, de los informes y de las alertas. Si quitas el silencio más tarde, Device Sentinel vuelve a informar del dispositivo en el acto, porque su historial ya está a mano. Las tres listas van de lo más amplio a lo más concreto: integración, etiqueta, dispositivo. Silencia en un nivel superior y guarda, y todo lo que abarca desaparece como opción de las listas de debajo.",
+            "data": {
+              "muted_integrations": "Integraciones silenciadas globalmente",
+              "muted_labels": "Etiquetas silenciadas globalmente",
+              "muted_devices": "Dispositivos silenciados globalmente"
+            },
+            "data_description": {
+              "muted_integrations": "Silencia todos los dispositivos de la integración. Sus dispositivos se aprenderán y registrarán, pero no aparecerán en la Lista de problemas ni en ningún informe o notificación.",
+              "muted_labels": "Se silencia cualquier dispositivo que lleve estas etiquetas. Una etiqueta en una sola entidad no silencia nada. Puedes gestionar este silencio sin abrir nunca este cuadro: basta con poner la etiqueta en la página del propio dispositivo, y Device Sentinel deja de informar sobre él.",
+              "muted_devices": "Aplica exactamente las mismas reglas de silencio que las listas de arriba, pero dispositivo por dispositivo. Añade aquí un dispositivo concreto para quitarlo de la Lista de problemas y silenciar sus informes y notificaciones."
+            }
+          }
+        }
+      },
+      "battery": {
+        "title": "Batería baja",
+        "data": {
+          "low_threshold": "Umbral de batería baja",
+          "battery_days_till_empty": "Días de aviso antes del umbral"
+        },
+        "data_description": {
+          "low_threshold": "Una batería en este nivel o por debajo se marca como baja.",
+          "battery_days_till_empty": "Una batería que baja recibe un aviso este número de días antes de llegar a tu umbral bajo. Solo se evalúa una batería que está a tres veces el umbral o menos, y su fecha sale de su propio historial como un rango: una batería que baja cada semana más deprisa recibe el aviso cuando el extremo cercano del rango cae dentro de estos días, y una que baja a ritmo constante aparece en Batteries to Watch del resumen diario y en Battery Trends. Una batería que mantiene su carga nunca recibe aviso, y una pila que ya está por debajo de tu umbral no se marca dos veces."
+        },
+        "description": "Device Sentinel vigila por defecto cada batería que encuentra. El umbral dice qué pilas están bajas; los días de aviso, cuáles están a punto de estarlo. Una pila se considera en descenso, con un tiempo restante, solo cuando está a tres veces el umbral o menos: más arriba, ninguna batería se ha vigilado el tiempo suficiente para decir cuándo llegará. Una batería necesita cuatro semanas de lecturas en las últimas seis antes de evaluarse. Muchos dispositivos dejan de funcionar antes de que su batería llegue al 0 %, así que el tiempo restante se cuenta hasta tu umbral. Cuando una batería ha estado baja, su tiempo restante se cuenta hasta vaciarse hasta que la cambies, aunque vuelva a leer por encima del umbral. Una batería se marca cuando está en el umbral o por debajo.\n\n[Batería baja en la wiki]({wiki_link})",
+        "sections": {
+          "battery_muting": {
+            "name": "Silencio de batería",
+            "description": "Silenciar aquí una batería detiene solo los informes de batería de ese dispositivo; todo lo demás se sigue vigilando. Las tres listas van de lo más amplio a lo más concreto: integración, etiqueta, dispositivo. Silencia en un nivel superior y guarda, y todo lo que abarca desaparece como opción de las listas de debajo.",
+            "data": {
+              "battery_muted_integrations": "Integraciones silenciadas (batería)",
+              "battery_muted_labels": "Etiquetas silenciadas (batería)",
+              "battery_muted_devices": "Dispositivos silenciados (batería)"
+            },
+            "data_description": {
+              "battery_muted_integrations": "Una sola marca abarca todas las baterías de esa integración (por ejemplo, los teléfonos de mobile_app).",
+              "battery_muted_labels": "Device Sentinel deja de avisar de batería baja en cualquier dispositivo que lleve una de estas etiquetas. Pon la etiqueta en la página del propio dispositivo y se aplica aquí sin abrir este cuadro.",
+              "battery_muted_devices": "Cada dispositivo de la lista tiene una batería vigilada. Los dispositivos marcados están silenciados para los informes de batería."
+            }
+          }
+        }
+      },
+      "signal": {
+        "title": "Intensidad de la señal",
+        "description": "Controla cómo la integración detecta los enlaces de radio que fallan. Un mal día de señal es una bajada medida frente a la normalidad reciente del propio dispositivo, así que un sensor estable y uno inestable se juzgan cada uno con su propio criterio. [Intensidad de la señal en la wiki]({wiki_link})",
+        "data": {
+          "badday_drop_lqi": "Bajada de mal día, LQI",
+          "badday_drop_rssi": "Bajada de mal día, RSSI",
+          "badday_sensitivity": "Sensibilidad de mal día",
+          "badday_baseline_days": "Días de historial de señal",
+          "short_drop_limit": "Límite de microcorte (minutos)"
+        },
+        "data_description": {
+          "badday_drop_lqi": "Fija la caída en puntos de LQI necesaria para marcar un mal día de señal. Un día cuenta como malo solo si supera a la vez este umbral y el ajuste de sensibilidad de abajo. Súbelo para marcar menos días.",
+          "badday_drop_rssi": "Fija la misma caída en decibelios para los dispositivos que informan en dBm. Funciona igual que el control de LQI de arriba.",
+          "badday_sensitivity": "Ajusta la caída necesaria según la variación habitual del propio dispositivo, lo que evita que los sensores irregulares se marquen todos los días. Un sensor estable depende de los controles de caída de arriba. Con un valor de 4, un sensor inestable que varía 10 puntos de forma habitual necesita una caída de 40 puntos para activarse. Bájalo para marcar más días.",
+          "badday_baseline_days": "Este ajuste define cuántos días pasados se usan para calcular lo que es normal en un dispositivo. La señal de hoy se compara con ese nivel normal, y una bajada por debajo, según los ajustes de arriba, se marca.",
+          "short_drop_limit": "Un dispositivo que queda no disponible y vuelve por sí solo dentro de este número de minutos ha hecho un microcorte. Dos en 12 horas lo añaden a la Lista de problemas como problema de señal. Mientras un dispositivo tiene microcortes, una caída más larga que este límite se informa como no disponible. Un dispositivo que informa a menudo puede usar un límite propio más corto. Bájalo para enterarte antes de una caída; súbelo si los microcortes de un dispositivo se siguen informando como no disponible."
+        },
+        "sections": {
+          "signal_muting": {
+            "name": "Silencio de señal",
+            "description": "Qué dispositivos quedan fuera de los informes de señal, microcortes incluidos. La señal se sigue registrando para todo lo que aparece aquí, así que volver a incluir un dispositivo recupera su historial en el acto. Las tres listas van de lo más amplio a lo más concreto: integración, etiqueta, dispositivo. Silencia en un nivel superior y guarda, y todo lo que abarca desaparece como opción de las listas de debajo.",
+            "data": {
+              "signal_muted_integrations": "Integraciones silenciadas (señal)",
+              "signal_muted_labels": "Etiquetas silenciadas (señal)",
+              "signal_muted_devices": "Dispositivos silenciados (señal)"
+            },
+            "data_description": {
+              "signal_muted_integrations": "Device Sentinel deja de avisar de la señal de todos los dispositivos de una integración marcada.",
+              "signal_muted_labels": "Device Sentinel deja de avisar de la señal de los dispositivos que llevan una etiqueta marcada.",
+              "signal_muted_devices": "Device Sentinel deja de avisar de la señal de un dispositivo marcado. La sigue registrando, así que volver a incluirlo recupera su historial al instante."
+            }
+          }
+        }
+      },
+      "freeze": {
+        "title": "Detección de congelados y no disponibles",
+        "description": "Cuánto tiempo puede estar callado un dispositivo antes de considerarse congelado, y qué dispositivos están silenciados para «congelado» o para «no disponible». Cada dispositivo se juzga frente a su propio ritmo aprendido, así que no fijas un tiempo de espera único; fijas el margen de gracia que se suma a lo normal de cada dispositivo. Delta bajo es el margen de un dispositivo rápido, delta alto el de uno lento, y la curva entre ambos la forman los dos. Sube delta bajo si un dispositivo muy activo se marca demasiado pronto; baja delta alto si un dispositivo lento debe detectarse antes. [Detección de congelados y no disponibles en la wiki]({wiki_link})",
+        "data": {
+          "freeze_delta_low": "Delta bajo (margen de dispositivo rápido, minutos)",
+          "freeze_delta_high": "Delta alto (margen de dispositivo lento, horas)"
+        },
+        "data_description": {
+          "freeze_delta_low": "El margen de gracia de un dispositivo rápido, en minutos: cuánto puede pasar callado más allá de lo normal antes de considerarse congelado.",
+          "freeze_delta_high": "El margen de gracia de un dispositivo lento, en horas. Los dos deltas forman toda la curva entre ellos, así que un dispositivo intermedio queda entre ambos valores."
+        },
+        "sections": {
+          "freeze_muting": {
+            "name": "Silencio de congelados",
+            "description": "Qué dispositivos nunca se consideran congelados ni sin informar. Device Sentinel sigue informando de un dispositivo silenciado aquí cuando queda no disponible; para evitarlo, usa «Silencio de no disponibles» más abajo. Cada uno conserva su reloj y su ritmo aprendido, así que volver a incluirlo es inmediato. Las tres listas van de lo más amplio a lo más concreto: integración, etiqueta, dispositivo. Silencia en un nivel superior y guarda, y todo lo que abarca desaparece como opción de las listas de debajo.",
+            "data": {
+              "freeze_muted_integrations": "Integraciones silenciadas (congelado)",
+              "freeze_muted_labels": "Etiquetas silenciadas (congelado)",
+              "freeze_muted_devices": "Dispositivos silenciados (congelado)"
+            },
+            "data_description": {
+              "freeze_muted_integrations": "Todos los dispositivos de una integración marcada dejan de considerarse congelados o sin informar.",
+              "freeze_muted_labels": "Los dispositivos que llevan una etiqueta marcada dejan de considerarse congelados o sin informar. Pon la etiqueta en la página del propio dispositivo y se aplica aquí.",
+              "freeze_muted_devices": "Un dispositivo marcado nunca se considera congelado ni sin informar. Conserva su reloj y su ritmo, así que volver a incluirlo es inmediato."
+            }
+          },
+          "unavailable_muting": {
+            "name": "Silencio de no disponibles",
+            "description": "Qué dispositivos nunca se consideran no disponibles. Úsalo para un dispositivo que queda no disponible a propósito, como una televisión apagada en el enchufe. Device Sentinel sigue informando de un dispositivo silenciado aquí cuando está congelado o nunca informa; para evitarlo, usa «Silencio de congelados» más arriba. Las dos listas van de lo más amplio a lo más concreto: etiqueta, dispositivo. Silencia por etiqueta y guarda, y los dispositivos que abarca desaparecen como opción de la lista de debajo. La lista de dispositivos es la misma que fija el botón Mute unavailable en la página de un dispositivo.",
+            "data": {
+              "unavailable_muted_labels": "Etiquetas silenciadas (no disponible)",
+              "unavailable_muted_devices": "Dispositivos silenciados (no disponible)"
+            },
+            "data_description": {
+              "unavailable_muted_labels": "Los dispositivos que llevan una etiqueta marcada dejan de considerarse no disponibles. Pon la etiqueta en la página del propio dispositivo y se aplica aquí.",
+              "unavailable_muted_devices": "Un dispositivo marcado nunca se considera no disponible. Conserva su reloj y su ritmo, así que volver a incluirlo es inmediato."
+            }
+          }
+        }
+      },
+      "advanced": {
+        "title": "Avanzado",
+        "description": "Ajustes que la mayoría de la gente nunca necesita cambiar. [Avanzado en la wiki]({wiki_link})",
+        "data": {
+          "dashboard_mode": "Panel: Simple o Avanzado",
+          "repeat_floor": "Umbral de reincidencia",
+          "storage_write_minutes": "Intervalo de escritura en disco",
+          "history_days": "Cuánto historial conservar",
+          "maintenance_minutes": "Ventana de mantenimiento en minutos",
+          "cached_integrations": "Integraciones que devuelven valores en caché"
+        },
+        "data_description": {
+          "dashboard_mode": "El modo en que se abre el panel en cada ventana. Simple muestra lo que está roto y qué hacer; Avanzado añade las tendencias, los gráficos y la configuración. El selector del panel lo cambia hasta que salgas del panel.",
+          "repeat_floor": "Cuántas interrupciones sin explicar en una semana ponen un dispositivo en la sección Repeat Offenders del resumen diario. Una interrupción queda sin explicar cuando ningún reinicio, caída, recarga o ventana de emparejamiento la justifica. Un valor más bajo señala dispositivos antes; uno más alto espera a un patrón más claro.",
+          "storage_write_minutes": "El tiempo que la actividad habitual se guarda en memoria antes de escribirse en disco. Ponlo más largo en hardware lento y en equipos que escriben en una tarjeta SD. Un valor más largo puede hacer perder datos de los temporizadores si tu sistema sufre un corte de luz. Los eventos se escriben en el momento en que ocurren, así que el riesgo es mínimo.",
+          "history_days": "Cuántos días de registros diarios de batería, señal y pausas de «no disponible» y «congelado» se conservan para estudiar tendencias largas. 30 días son necesarios, pero algunas tendencias solo se ven con periodos más largos.",
+          "maintenance_minutes": "Cuánto tiempo el botón Modo mantenimiento declara que estás trabajando en el hardware. Un dispositivo que se recupera dentro de la ventana se toma como tu arreglo, y su silencio no se aprende como normal.",
+          "cached_integrations": "Tras un reinicio, estas integraciones pueden devolver los últimos valores de un dispositivo antes de que el dispositivo haya podido despertar y comunicarse, así que un dispositivo que estaba caído no se considera recuperado hasta que cambie uno de sus valores. Desmarca una integración solo si estás seguro de que sus dispositivos informan en directo. Si marcas una por error, un dispositivo que funciona y que estaba caído durante un reinicio podría seguir apareciendo como caído. La marca y el modelo de cada dispositivo se pueden ajustar en su página de detalle."
+        },
+        "sections": {
+          "data_trim": {
+            "name": "Limpieza de datos",
+            "description": "Usa esta herramienta cuando el soporte lo pida, o cuando unos datos dañados exijan empezar de cero. Guardar esta pantalla borra las estadísticas, los episodios de silencio, las incidencias y las entradas de la Lista de problemas de todo lo que selecciones abajo. Como precaución, el sistema escribe una copia de seguridad en config/device_sentinel/trim_backups antes de borrar nada, y cada copia se elimina a los 30 días, salvo la más reciente. Los dispositivos en sí no se tocan. Vuelven a aparecer en segundos para aprender una nueva referencia, y conservan intactas todas las exclusiones y silencios existentes. Las dos casillas de selección se vacían tras ejecutarse, para evitar un doble borrado por error.",
+            "data": {
+              "trim_integrations": "Borrar el historial de integraciones",
+              "trim_devices": "Borrar el historial de dispositivos"
+            },
+            "data_description": {
+              "trim_integrations": "Borra el historial aprendido de todos los dispositivos de las integraciones seleccionadas.",
+              "trim_devices": "Borra el historial aprendido de los dispositivos seleccionados aquí."
+            }
+          }
+        }
+      },
+      "wifi": {
+        "title": "WiFi",
+        "description": "Device Sentinel puede vigilar la disponibilidad de tu red WiFi e informar de una caída del WiFi como un solo recuento de los dispositivos afectados, en lugar de informar de cada dispositivo por separado. Para que funcione, tu servidor de Home Assistant debe tener un adaptador inalámbrico bien conectado a tu red. Configúralo primero en Ajustes, Sistema, Red, y luego vuelve aquí. [WiFi en la wiki]({wiki_link})",
+        "data": {
+          "wifi_networks": "Tus redes WiFi de IoT",
+          "wifi_confirm_seconds": "Retardo de confirmación"
+        },
+        "data_description": {
+          "wifi_networks": "Las redes que usan tus dispositivos y sensores para comunicarse con Home Assistant. Device Sentinel no puede saber qué red usa cada uno de tus dispositivos. Si eliges más de una, cuando cualquiera de ellas caiga, la integración informará de que el WiFi no está disponible. Para un mejor funcionamiento se recomienda usar una sola red para todos tus dispositivos.",
+          "wifi_confirm_seconds": "Los segundos que una red debe estar no disponible antes de informar de una caída. Un router que se reinicia por la noche desaparece unos treinta segundos."
+        }
+      },
+      "extended": {
+        "title": "Diagnóstico ampliado",
+        "description": "Device Sentinel solo da soporte a cierto hardware después de ver cómo se comporta en un sistema real, y nadie de los que trabajan en Device Sentinel tiene un ejemplar de todo. Activar un interruptor aquí añade lecturas en bruto de ese hardware a tu descarga de diagnóstico. No se transmite nada. Si quieres soporte para un hardware de esta lista, activa su interruptor y espera 48 horas. Después, descarga tu diagnóstico desde la página de la integración Device Sentinel y abre una incidencia con el archivo de diagnóstico adjunto, diciendo qué te gustaría que se hiciera. [Diagnóstico ampliado en la wiki]({wiki_link})",
+        "data": {
+          "study_hardware": "Hardware a estudiar"
+        },
+        "data_description": {
+          "study_hardware": "Aquí solo aparece el hardware que hay en tu sistema, y solo cuando su soporte aún está en desarrollo. Problem Sensors and Polling aparece en todos los sistemas: registra los sensores de problemas de cada dispositivo y qué integraciones actualizan todos sus dispositivos a la vez. Elegir algo no cambia nada del funcionamiento de Device Sentinel."
+        }
+      }
+    },
+    "error": {
+      "internal_url_not_set": "Home Assistant no tiene URL interna, así que no se enlazaría nada. Define una en Ajustes, Sistema, Red, o elige None.",
+      "external_url_not_set": "Home Assistant no tiene URL externa, así que no se enlazaría nada. Define una en Ajustes, Sistema, Red, o elige None.",
+      "priority_target_is_address": "Los destinatarios de prioridad alta y de prioridad normal tienen que ser una acción de notificación, como la aplicación Companion de tu teléfono, no una dirección de correo. Elígelos de la lista.",
+      "priority_target_is_persistent": "Los destinatarios de prioridad alta y de prioridad normal tienen que ser una acción de notificación, como la aplicación Companion de tu teléfono. Las alertas no se envían a la notificación persistente; activa en su lugar «Crear una notificación persistente» más abajo.",
+      "brief_target_is_address": "«Enviar el resumen completo a» necesita un servicio de correo, no una dirección de correo. Configura la integración SMTP de Home Assistant y luego elige su destinatario de la lista.",
+      "brief_target_is_phone": "El resumen completo va al correo o a una notificación persistente, no a un teléfono, que no puede mostrarlo. Tu teléfono recibe las alertas en directo de los destinatarios de prioridad alta y de prioridad normal."
+    }
+  },
+  "selector": {
+    "reminder_mode": {
+      "options": {
+        "daily": "Cada día, con un «todo bien» cuando no hay nada que atender",
+        "overnight": "Solo cuando hay algo que atender",
+        "none": "Nunca"
+      }
+    },
+    "dashboard_mode": {
+      "options": {
+        "simple": "Simple",
+        "advanced": "Avanzado"
+      }
+    }
+  },
+  "issues": {
+    "notify_target_missing": {
+      "title": "Un destinatario de notificación de Device Sentinel no existe",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Quitar los destinatarios de notificación que no existen",
+            "description": "{count} {targets} de notificación en los ajustes de Device Sentinel indican un servicio que Home Assistant no tiene: {detail}.\n\nLas notificaciones enviadas a esos destinatarios fallan y se escriben en el registro, y Device Sentinel no se entera de los fallos. Esto suele significar que se quitó o se renombró una aplicación Companion, o que se escribió una dirección de correo donde va un servicio. Elige un servicio de la lista en Notificaciones y resumen diario.\n\n«Quitarlos» los saca de los ajustes de Device Sentinel y deja los demás destinatarios como están. Si te quedas sin ninguno, define uno nuevo en Notificaciones y resumen diario. «Ignorar» oculta esta tarjeta hasta que elijas volver a mostrar los problemas ignorados.",
+            "menu_options": {
+              "confirm": "Quitarlos",
+              "ignore": "Ignorar"
+            }
+          },
+          "confirm": {
+            "title": "Quitar los destinatarios de notificación que no existen",
+            "description": "{count} {targets} de notificación en los ajustes de Device Sentinel indican un servicio que Home Assistant no tiene: {detail}.\n\nLas notificaciones enviadas a esos destinatarios fallan y se escriben en el registro, y Device Sentinel no se entera de los fallos. Esto suele significar que se quitó o se renombró una aplicación Companion, o que se escribió una dirección de correo donde va un servicio. Elige un servicio de la lista en Notificaciones y resumen diario.\n\n«Quitarlos» los saca de los ajustes de Device Sentinel y deja los demás destinatarios como están. Si te quedas sin ninguno, define uno nuevo en Notificaciones y resumen diario. «Ignorar» oculta esta tarjeta hasta que elijas volver a mostrar los problemas ignorados."
+          }
+        }
+      }
+    },
+    "storage_restored": {
+      "title": "Device Sentinel restauró su almacenamiento",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel restauró su almacenamiento",
+            "description": "{reason}\n\n{loss}\n\n{where}\n\nNo hay nada que reparar. El archivo ya se ha sustituido y Device Sentinel ya está funcionando. Selecciona Enviar para borrar este aviso."
+          }
+        }
+      }
+    },
+    "storage_repaired": {
+      "title": "Device Sentinel reparó su almacenamiento",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel reparó su almacenamiento",
+            "description": "Se encontraron datos dañados y se repararon automáticamente. Qué se reparó: {what}. Dónde están los originales: {where}. No tienes que hacer nada; pulsar Enviar registra que lo has leído."
+          }
+        }
+      }
+    },
+    "containers_repaired": {
+      "title": "Device Sentinel reparó la estructura de su almacenamiento",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel reparó la estructura de su almacenamiento",
+            "description": "Una parte del archivo de almacenamiento tenía un tipo de valor incorrecto que habría impedido arrancar a Device Sentinel. Se reparó automáticamente antes de ejecutar nada más. Qué se reparó: {what}. Dónde están los originales: {where}. No tienes que hacer nada; pulsar Enviar registra que lo has leído."
+          }
+        }
+      }
+    },
+    "shared_address": {
+      "title": "Dos dispositivos comparten una dirección de red",
+      "description": "{detail}. Dos dispositivos que responden a una misma dirección hacen que cualquiera de los dos parezca haber dejado de funcionar. Para arreglarlo, reserva una dirección para cada dispositivo en los ajustes DHCP de tu router, para que el router dé a cada uno la suya. Esta tarjeta desaparece sola cuando cada dispositivo tiene su propia dirección."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Estado",
+        "state": {
+          "watching": "Vigilando",
+          "learning": "Aprendiendo",
+          "problem": "Problema"
+        }
+      },
+      "devices_watched": {
+        "name": "Dispositivos: vigilados"
+      },
+      "devices_learned": {
+        "name": "Dispositivos: aprendidos"
+      },
+      "devices_set_aside": {
+        "name": "Dispositivos: apartados"
+      },
+      "signal_rails": {
+        "name": "Señal: en el límite"
+      },
+      "signal_weak": {
+        "name": "Señal: débil"
+      },
+      "battery_low": {
+        "name": "Batería: baja"
+      },
+      "device_frozen": {
+        "name": "Dispositivo: congelado"
+      },
+      "maintenance_ends": {
+        "name": "Mantenimiento: fin"
+      },
+      "broker": {
+        "name": "Broker: MQTT"
+      },
+      "bridge_wifi": {
+        "name": "Puente: WiFi"
+      },
+      "bridge_zigbee2mqtt": {
+        "name": "Puente: Zigbee2MQTT"
+      },
+      "bridge_zha": {
+        "name": "Puente: ZHA"
+      },
+      "falling_batteries": {
+        "name": "Batería: en descenso"
+      }
+    },
+    "button": {
+      "regenerate_reports": {
+        "name": "Regenerar informes"
+      },
+      "maintenance_mode": {
+        "name": "Modo mantenimiento"
+      }
+    },
+    "todo": {
+      "problem_list": {
+        "name": "Lista de problemas"
+      }
+    }
+  }
+}
