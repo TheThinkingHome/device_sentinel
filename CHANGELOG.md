@@ -2,6 +2,12 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases from 0.28 on are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
+## [0.29.5](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.29.5), November 17, 2026
+
+A device that comes back after a restart leaves the Problem List, except on the integrations listed under Integrations That Report Cached Values, which can be set by make and model. A Firmware Updates card lists each model with devices behind on firmware, battery forecasts no longer jump from day to day, and Device Sentinel follows Home Assistant 2026.11's naming, adding the area to each alert. Each device page has a Notes row, and the diagnostics download names no device, area, label or network, so it can go on a public issue; its key stays in `config/device_sentinel`. Setup and settings are in Spanish, and the reports in `config/device_sentinel` are readable by their owner only.
+
+Co-authored with Tim Plas (@tplas).
+
 ## [0.28.13](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.28.13), November 15, 2026
 
 A device that keeps dropping out and coming back goes on the Problem List as a signal problem, and automations that matched `flapping` must match `short_drop_outs`. A new Networks tab shows each network and its own page, and a network that goes down at the same time each night can be marked as expected. The Devices tab lists all the devices Device Sentinel found, replacing the Classification tab, and the Problem List sits at the top of the Daily Brief. Cloud integrations that poll, such as Alarm.com and Tado, are one problem when the cloud stops updating, and recommendations are set one model at a time. Storage survives a Docker stop, a battery that dips for a night is no longer taken for a new one, only an admin can tick a Problem List item, and notification targets take a service, never a typed address. Setup and settings are in French, thanks to TOM (@Tomti06, [issue #24](https://github.com/TheThinkingHome/device_sentinel/issues/24)).
