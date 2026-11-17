@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_chart.js, Version: 0.29.4 (2026-11-16)
+// File: tools/panel_checks/check_battery_chart.js, Version: 0.29.5 (2026-11-17)
 // Panel checks: the weekly bars in orange and the fitted line, drawn only
 // at 30 and 14 days.
 // The fitted line is drawn for a cell falling at an even pace only: an
@@ -211,21 +211,20 @@ const daily = (root) => [...root.querySelectorAll("svg path")].find((p) => p.get
   await range(d.root, "14 Days");
   check("at 14 days: neither", smoothLine(d.root) === 0 && bounce(d.root) === 0);
 
-  console.log("A new battery and a gap: the line and band break there (rule BAT-17)");
-  // 100 days falling 40% to 5%, a new battery at 100%, and three weeks
-  // with a five-day gap in them.
-  const swapped = Array.from({ length: 100 }, (_, i) => 40 - (35 * i) / 99)
-    .concat(Array.from({ length: 21 }, (_, i) => (i >= 8 && i < 13 ? null : 100 - i * 0.2)));
+  console.log("A rise not counted as a new battery stays one line; a gap breaks it (rule BAT-17)");
+  // The history drawn is the battery in the device: Device Sentinel
+  // starts it again at each replacement (rules BAT-06, BAT-07), so a rise
+  // left in it, such as a replacement a person cancelled, is the same
+  // battery. 100 days falling 40% to 25%, a rise to 45% kept as the same
+  // battery, and three weeks with a five-day gap in them.
+  const kept = Array.from({ length: 100 }, (_, i) => 40 - (15 * i) / 99)
+    .concat(Array.from({ length: 21 }, (_, i) => (i >= 8 && i < 13 ? null : 45 - i * 0.2)));
   const r = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
-    page.battery = { ...door.device(JSON.parse(JSON.stringify(page))).battery, daily: swapped, now: 96 };
+    page.battery = { ...door.device(JSON.parse(JSON.stringify(page))).battery, daily: kept, now: 41 };
     return page;
   } });
-  check("three stretches: before, after and past the gap", smoothLine(r.root) === 3 && bounce(r.root) === 3,
+  check("two stretches: up to the gap and past it", smoothLine(r.root) === 2 && bounce(r.root) === 2,
     [smoothLine(r.root), bounce(r.root)]);
-  const highest = (el) => Math.min(...el.getAttribute("points").split(" ").map((p) => Number(p.split(",")[1])));
-  const before = r.root.querySelectorAll("svg polygon.bounceband")[0];
-  const yFor = (v) => { const ax = [...r.root.querySelectorAll("svg text.axis")].map((t) => t.textContent).filter((w) => /^[0-9.]+%$/.test(w)).map((w) => Number(w.slice(0, -1))); const lo = Math.min(...ax), hi = Math.max(...ax); return 190 - ((v - lo) / (hi - lo)) * 170; };
-  check("the old battery's band never climbs towards the new one", highest(before) > yFor(45), [highest(before), yFor(45)]);
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

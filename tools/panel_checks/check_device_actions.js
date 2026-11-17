@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.29.5 (2026-11-17)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -321,6 +321,37 @@ const excludedPage = (excluded) => (p) => {
   await settle();
   check("Area: choosing another area moves it without asking",
     areaCalls().length === 1 && areaCalls()[0].area_id === "laundry", areaCalls());
+
+  console.log("\nA move that would share a name asks first (0.29.5)");
+  ({ root, calls } = await open({
+    device_area: (m) => {
+      if (!m.confirm) { const e = new Error("Another device is already named Button Randy Night Table (in the Laundry)."); e.code = "name_in_use"; throw e; }
+      return {};
+    },
+  }));
+  const pickLaundry = async () => {
+    // Choose another area leaves the picker open.
+    const change = rowCell(root, "Area").querySelector('button[aria-label="Change area"]');
+    if (change) await click(change);
+    const pick = [...rowCell(root, "Area").querySelectorAll("label.pick")].find((l) => l.textContent === "Laundry").querySelector("input");
+    pick.checked = true;
+    pick.dispatchEvent(new (pick.ownerDocument.defaultView.Event)("change"));
+    await settle();
+  };
+  await pickLaundry();
+  check("Area clash: the clash is said, with Choose another area and Move anyway",
+    /Another device is already named Button Randy Night Table \(in the Laundry\)\./.test(rowCell(root, "Area").textContent)
+    && buttonIn(rowCell(root, "Area"), "Choose another area") && buttonIn(rowCell(root, "Area"), "Move anyway"),
+    rowCell(root, "Area").textContent);
+  await click(buttonIn(rowCell(root, "Area"), "Choose another area"));
+  check("Area clash: Choose another area sends nothing more, the clash goes and the picker stays open",
+    areaCalls().length === 1 && !/already named/.test(rowCell(root, "Area").textContent)
+    && rowCell(root, "Area").querySelectorAll("label.pick").length > 0, areaCalls());
+  await pickLaundry();
+  await click(buttonIn(rowCell(root, "Area"), "Move anyway"));
+  const moved = areaCalls().pop();
+  check("Area clash: Move anyway sends the same move with a yes",
+    moved && moved.area_id === "laundry" && moved.confirm === true, moved);
 
   console.log("\nAfter a change, every tab is fetched again (0.25.0)");
   ({ root, calls } = await open({}));

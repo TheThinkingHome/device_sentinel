@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.14 (2026-10-29)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.29.5 (2026-11-17)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // rows and lines not ticked, as the tab and the button do, says they
 // help Device Sentinel run better and that none is required, singles
@@ -412,6 +412,34 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   const typed = three.calls.find((c) => c.type === "device_sentinel/device_type");
   check("Save sets the type, for the whole model, from the Recommendations tab",
     typed && typed.device_id === ROWS[2].device_id && typed.choice === "Plug" && typed.source === "recommendations", typed);
+
+  // A move that would leave the device reading as another of its name is
+  // held for a yes, as on its page (rule DASH-10).
+  console.log("\nNo Area Assigned: a move that would share a name");
+  const clash = await open({ path: `${PREFIX}/recommendations?open=area`, answers: {
+    recommendations: threeRecs,
+    device_area: (m) => {
+      if (!m.confirm) { const e = new Error("Another device is already named Porch Light (in the Porch)."); e.code = "name_in_use"; throw e; }
+      return {};
+    },
+  } });
+  const clashCard = [...clash.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "area");
+  const clashDetails = clashCard && clashCard.querySelector("details");
+  if (clashDetails && !clashDetails.open) clashDetails.open = true;
+  await settle();
+  const clashRow = clashCard.querySelector("tbody tr");
+  const clashSelect = clashRow.querySelector('select[aria-label="Which area"]');
+  clashSelect.value = "porch"; clashSelect.dispatchEvent(new clash.window.Event("change"));
+  [...clashRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await settle(); await settle();
+  const anyway = [...clashCard.querySelectorAll("button")].find((b) => b.textContent === "Save anyway");
+  check("A move that would share a name is held, with Save anyway",
+    /Another device is already named Porch Light \(in the Porch\)/.test(clashCard.textContent) && Boolean(anyway),
+    clashCard.textContent.slice(0, 300));
+  if (anyway) { anyway.click(); await settle(); await settle(); }
+  const yes = clash.calls.filter((c) => c.type === "device_sentinel/device_area").pop();
+  check("Save anyway sends the same move with a yes",
+    yes && yes.area_id === "porch" && yes.confirm === true && yes.source === "recommendations", yes);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

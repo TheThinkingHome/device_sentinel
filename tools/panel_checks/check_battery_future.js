@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.29.4 (2026-11-16)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.29.5 (2026-11-17)
 // Panel checks: the device page's Future view (rules BAT-13, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
 // The Future chart's scale fits what it draws (rule BAT-17): read its
@@ -270,6 +270,19 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   const wx = Number(word.getAttribute("x"));
   check("anchored to end inside the chart", word.getAttribute("text-anchor") === "end" && wx <= 1100 && wx > 1000,
     [wx, word.getAttribute("text-anchor")]);
+
+  console.log("A short history near the top with a long fall: the reading clears the word today (rule BAT-17)");
+  const sp = await open(`${PREFIX}/device/${DEVICE}`, withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    daily: [99, 99, 99, 99, 99], now: 99, projection: { ...DOOR_PROJECTION, curved: false, start: 99, level: 99,
+      near: 25, far: 60, centre: 40, near_path: [-3.4, 0], far_path: [-1.4, 0] }, left: "about 4 to 9 weeks", left_soon: true }));
+  button(sp.root, "Future").click();
+  await settle();
+  const spWord = [...sp.root.querySelectorAll(".futurechart text.axis")].find((t) => t.textContent === "today");
+  const spLabel = sp.root.querySelector(".futurechart text.todaylabel");
+  const sameSide = spWord.getAttribute("text-anchor") === spLabel.getAttribute("text-anchor");
+  const apart = Math.abs(Number(spLabel.getAttribute("y")) - Number(spWord.getAttribute("y")));
+  check("the reading is not written over the word", !sameSide || apart >= 14,
+    [spWord.getAttribute("text-anchor"), spLabel.getAttribute("text-anchor"), apart]);
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();
