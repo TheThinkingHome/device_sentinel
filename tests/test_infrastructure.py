@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_infrastructure.py, Version: 0.29.3 (2026-11-15)
+# File: tests/test_infrastructure.py, Version: 0.29.5 (2026-11-17)
 
 """Diagnostics says what the plumbing is, not only how it behaved
 (rule DEV-16).
@@ -33,7 +33,7 @@ async def test_a_device_carries_its_make_and_model(hass: HomeAssistant):
     source = MockConfigEntry(domain="mqtt")
     source.add_to_hass(hass)
     registry = dr.async_get(hass)
-    registry.async_get_or_create(
+    made = registry.async_get_or_create(
         config_entry_id=source.entry_id,
         identifiers={("mqtt", "sensor-1")},
         name="Fenetre Thomas",
@@ -44,11 +44,9 @@ async def test_a_device_carries_its_make_and_model(hass: HomeAssistant):
 
     data = await async_get_config_entry_diagnostics(hass, entry)
 
-    device = next(
-        row
-        for row in data["devices"].values()
-        if row["name"] == "Fenetre Thomas"
-    )
+    # Named by its stand-in, never "Fenetre Thomas" (rule STOR-21).
+    device = data["devices"][made.id]
+    assert device["name"] == "Device 1"
     assert device["manufacturer"] == "Third Reality"
     assert device["model"] == "3RDS17BZ"
     assert device["sw_version"] == "1.0.9"

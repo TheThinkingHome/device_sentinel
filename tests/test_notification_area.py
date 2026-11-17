@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_notification_area.py, Version: 0.29.4 (2026-11-16)
+# File: tests/test_notification_area.py, Version: 0.29.5 (2026-11-17)
 
 """A phone message says where the device is (rules NOTE-13, BRIEF-13).
 
@@ -49,6 +49,7 @@ NAME = "TIMMERFLOTTE temp/hmd sensor"
         ("Soil Moisture (Monstera)", "Living Room", "Soil Moisture (Monstera)"),
         ("Sensor [spare]", "Office", "Sensor [spare]"),
         ("Door 2nd Bedroom", "Guest", "Door 2nd Bedroom (Guest)"),
+        ("Socket 1", "1", "Socket 1 (1)"),
     ],
 )
 def test_a_name_takes_its_area_unless_it_says_it(name, area, said):
@@ -59,7 +60,8 @@ def test_a_name_takes_its_area_unless_it_says_it(name, area, said):
     ("name", "area", "said"),
     [("Garden plug", "Den", False), ("Bathroom shelf", "Bath", False), ("Bedroom 2 lamp", "Bedroom", True),
      ("Lamp (Living Room)", "Office", True), ("Office.Lamp", "Office", True), ("Den+lamp", "Den", True),
-     ("kitchen_light", "Kitchen", True)],
+     ("kitchen_light", "Kitchen", True), ("Socket 1", "1", False), ("Plug 2.4", "2.4", False),
+     ("Lamp (spare)", "3", True), ("Room 12 sensor", "Room 12", True)],
 )
 def test_an_area_is_said_only_as_whole_words(name, area, said):
     """"Den" is not in "Garden plug": the area is found as whole words,

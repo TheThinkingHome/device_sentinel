@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_odd_identifiers.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_odd_identifiers.py, Version: 0.29.5 (2026-11-17)
 
 """An identifier of any length never stops Device Sentinel
 (rules DEV-13, STOR-21).
@@ -86,8 +86,10 @@ async def test_a_haier_appliance_does_not_stop_setup(hass: HomeAssistant):
 
 @pytest.mark.parametrize("studied", [False, True], ids=["plain", "extended"])
 async def test_every_odd_shape_sets_up_ticks_and_downloads(hass: HomeAssistant, studied):
-    for index, identifier in enumerate(ODD):
+    made = [
         _device(hass, f"odd{index}", identifier, f"Odd {index}", f"odd{index}")
+        for index, identifier in enumerate(ODD)
+    ]
     options = {CONF_STUDY_HARDWARE: [STUDIABLE["matter"]]} if studied else {}
     entry = await setup_entry(hass, options)
     assert entry.state is ConfigEntryState.LOADED
@@ -101,8 +103,9 @@ async def test_every_odd_shape_sets_up_ticks_and_downloads(hass: HomeAssistant, 
         told = {row["name"]: row["identifiers"] for row in watched}
         # Every part kept; the MAC in the middle is the appliance's own, so the
         # download carries its stand-in rather than the address itself
-        # (rule STOR-21).
-        assert told["Odd 0"] == ["A4:CF:12:MAC-01:washing_machine"]
+        # (rule STOR-21). The device is named by its stand-in.
+        first = report["devices"][made[0].id]["name"]
+        assert told[first] == ["A4:CF:12:MAC-01:washing_machine"]
 
 
 async def test_a_mac_in_a_third_part_still_ties_the_device(hass: HomeAssistant):

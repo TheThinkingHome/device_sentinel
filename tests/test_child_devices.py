@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_child_devices.py, Version: 0.29.4 (2026-11-16)
+# File: tests/test_child_devices.py, Version: 0.29.5 (2026-11-17)
 
 """Child devices are watched like any other device (rules WATCH-01, GEN-07).
 
@@ -38,6 +38,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel import diagnostics
+from custom_components.device_sentinel.device_actions import NameInUse
 from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_MUTED_DEVICES,
@@ -447,3 +448,77 @@ def test_a_name_whose_letters_fold_longer_is_kept_whole():
 
     assert without_parent("STRASSE Lampe", "Straße") == "STRASSE Lampe"
     assert without_parent("boiler  Pump", "Boiler") == "Pump"
+
+
+# ------------------------------------------------- names a move or rename makes
+
+
+async def test_renaming_a_parent_checks_its_childrens_new_names(hass: HomeAssistant):
+    """A child with no area of its own is shown after its parent's name,
+    so renaming the parent renames the child as people see it; a name a
+    device beside it already shows is held for a yes (rules REC-04,
+    DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    _child(hass, source, registry, entities, parent)
+    # Another device already shown as the child would be: "Furnace Pump",
+    # with no area.
+    registry.async_get_or_create(config_entry_id=source.entry_id, identifiers={(SOURCE, "other")}, name="Furnace Pump")
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse) as held:
+        entry.runtime_data.page_rename(parent.id, "Furnace")
+    assert held.value.name == "Furnace Pump"
+    entry.runtime_data.page_rename(parent.id, "Furnace", confirm=True)
+    assert registry.async_get(parent.id).name_by_user == "Furnace"
+
+
+async def test_a_child_moved_into_a_room_is_checked_by_its_own_name(hass: HomeAssistant):
+    """In an area of its own the child is named alone, so it is compared
+    as "Pump", not "Boiler Pump" (rule DEV-18)."""
+    source, registry, entities, parent = _boiler(hass)
+    child, _plain, _battery = _child(hass, source, registry, entities, parent)
+    cellar = ar.async_get(hass).async_create("Cellar").id
+    other = registry.async_get_or_create(config_entry_id=source.entry_id, identifiers={(SOURCE, "other")}, name="Pump")
+    registry.async_update_device(other.id, area_id=cellar)
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse) as held:
+        entry.runtime_data.page_set_area(child.id, cellar)
+    assert held.value.area == "Cellar"
+
+
+async def test_a_parent_moved_takes_its_childrens_names_with_it(hass: HomeAssistant):
+    """The children with no area of their own move with their parent, so
+    each is checked in the new room under its shown name."""
+    source, registry, entities, parent = _boiler(hass)
+    _child(hass, source, registry, entities, parent)
+    cellar = ar.async_get(hass).async_create("Cellar").id
+    other = registry.async_get_or_create(config_entry_id=source.entry_id, identifiers={(SOURCE, "other")}, name="Boiler Pump")
+    registry.async_update_device(other.id, area_id=cellar)
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse) as held:
+        entry.runtime_data.page_set_area(parent.id, cellar)
+    assert held.value.name == "Boiler Pump"
+
+
+async def test_a_parent_moved_with_a_child_of_its_own_name_is_not_held(hass: HomeAssistant):
+    """A child shown under its parent's name moves with it: a name the two
+    already share is not one the move makes (rule DASH-10)."""
+    source, registry, entities, parent = _boiler(hass)
+    _child(hass, source, registry, entities, parent, uid="twin", name=parent.name)
+    cellar = ar.async_get(hass).async_create("Cellar").id
+    entry = await setup_entry(hass)
+    entry.runtime_data.page_set_area(parent.id, cellar)
+    assert registry.async_get(parent.id).area_id == cellar
+
+
+async def test_a_child_in_its_parents_area_says_so_in_the_download(hass: HomeAssistant, hass_storage):
+    """The download's row gives a child with no area of its own its
+    parent's, as a stand-in, so the two read as one room (rule STOR-21)."""
+    from custom_components.device_sentinel.diagnostics import async_get_config_entry_diagnostics
+
+    source, registry, entities, parent = _boiler(hass)
+    cellar = ar.async_get(hass).async_create("Cellar")
+    registry.async_update_device(parent.id, area_id=cellar.id)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    entry = await setup_entry(hass)
+    rows = (await async_get_config_entry_diagnostics(hass, entry))["devices"]
+    assert rows[child.id]["area"] == rows[parent.id]["area"] == "Area 1"

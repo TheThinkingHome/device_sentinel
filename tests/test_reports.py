@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.27.10 (2026-10-27)
+# File: test_reports.py, Version: 0.29.5 (2026-11-17)
 
 """The diagnostic files: telemetry, classification and silence episodes
 (rules BRIEF-14, BRIEF-15, BRIEF-16, FRZ-08).
@@ -237,7 +237,8 @@ async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
     assert result["todo_items"] == []
 
     entry_device = result["devices"][device.id]
-    assert entry_device["name"] == "Diag Device"
+    # A stand-in, never the name (rule STOR-21).
+    assert entry_device["name"] == "Device 1"
     assert entry_device["integration"] == "test"
     assert entry_device["clock_source"] == "recorded"
     assert entry_device["muted"] is None
@@ -826,7 +827,7 @@ async def test_episodes_reach_diagnostics(hass: HomeAssistant):
     coord._judge_all_devices()
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert "silence_episodes" in diag
-    assert diag["silence_episodes"][0][EP_NAME] == "Episode Diag Sensor"
+    assert diag["silence_episodes"][0][EP_NAME] == diag["devices"][device.id]["name"] == "Device 1"
 
 
 # ==================================================================

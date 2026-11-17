@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_trim.py, Version: 0.28.12 (2026-11-11)
+# File: test_trim.py, Version: 0.29.5 (2026-11-17)
 
 """The trim choosers: erasing one device's history on purpose (rule
 CFG-10)."""
@@ -14,15 +14,20 @@ import os
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.device_sentinel import trim
+from custom_components.device_sentinel import history_file, trim
 
 from custom_components.device_sentinel.const import (
     CONF_MUTED_DEVICES,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
+    DATA_ADDRESS_CHANGES,
     DATA_DEVICES,
     DATA_EPISODES,
+    DATA_HISTORY_LINE,
     DATA_INCIDENTS,
+    DATA_SHORT_DROP_DAYS,
+    DATA_SHORT_DROPS,
+    DATA_SIGNAL_STRESS,
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     DEV_SIGNAL_DAILY_P5,
@@ -61,6 +66,25 @@ def _furnish(coord, device_id: str, name: str) -> None:
          "status": "needs_action", "acked_at": None,
          "sort_name": name, "kinds": {"frozen": 1.0}}
     )
+
+
+def _furnish_tables(coord, device_id: str, name: str) -> None:
+    """The four tables kept beside the record, two rows old enough for
+    the history file and one recent."""
+    for when in (TIME_BASE + 10.0, TIME_BASE + 20.0, TIME_BASE + 40 * 86400.0):
+        coord.data.setdefault(DATA_SHORT_DROPS, []).append(
+            {"device_id": device_id, "went": when, "length": 120.0, "window": 1800.0,
+             "signal_went": None, "signal_back": None, "signal_usual": None})
+        coord.data.setdefault(DATA_ADDRESS_CHANGES, []).append(
+            {"device_id": device_id, "when": when, "ip": "192.0.2.7", "ap": None})
+        coord.data.setdefault(DATA_SIGNAL_STRESS, []).append(
+            {"device_id": device_id, "name": name, "since": when - 60.0, "at": when,
+             "ended": "recovered", "signal": None})
+    coord.data.setdefault(DATA_SHORT_DROP_DAYS, []).append(
+        {"device_id": device_id, "day": "2026-06-01", "drops": 3, "short": 3, "total": 360.0,
+         "longest": 120.0, "signal_went_n": 0, "signal_back_n": 0})
+    for key in (DATA_SHORT_DROPS, DATA_ADDRESS_CHANGES, DATA_SIGNAL_STRESS):
+        coord.data[key].sort(key=lambda row: row.get("went", row.get("when", row.get("at"))))
 
 
 async def _save_options(hass: HomeAssistant, entry, **changes) -> None:
@@ -390,7 +414,7 @@ async def test_an_ignored_device_is_named_not_numbered(
     # Excluding sets a device aside at once but its record survives
     # until the next fold discards it (rule MUTE-01), so this trim did have
     # something to take.
-    assert "1 records" in detail
+    assert "1 record," in detail or detail.endswith("1 record")
     assert dr.async_get(hass).async_get(target.id) is not None
 
 
@@ -484,3 +508,33 @@ def test_the_trim_log_says_so_when_nothing_was_recorded(caplog) -> None:
     caplog.set_level(logging.INFO)
     trim.log_result("2026-08-24-1200", {"devices": 0}, ["Ghost"])
     assert "Erased: nothing recorded" in caplog.text
+
+
+async def test_a_trim_takes_the_device_rows_kept_beside_its_record(hass: HomeAssistant):
+    """Short drop-outs, drop-out days, address changes and the signal
+    kept with each closed gap go with the device's history, in memory and
+    in the history file; another device keeps all of them (rule CFG-10)."""
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    target, _ = register_device(hass, "tr9", "Trim Me")
+    keeper, _ = register_device(hass, "tr10", "Leave Me")
+    coord._rebuild_registry_view()
+    _furnish_tables(coord, target.id, "Trim Me")
+    _furnish_tables(coord, keeper.id, "Leave Me")
+    # Rows older than this line belong to the history file.
+    coord.data[DATA_HISTORY_LINE] = TIME_BASE + 30 * 86400.0
+
+    await _save_options(hass, entry, **{CONF_TRIM_DEVICES: [target.id]})
+
+    for key in (DATA_SHORT_DROPS, DATA_SHORT_DROP_DAYS, DATA_ADDRESS_CHANGES, DATA_SIGNAL_STRESS):
+        owners = [row["device_id"] for row in coord.data[key]]
+        assert target.id not in owners, key
+        assert keeper.id in owners, key
+    _view, part = history_file.split(coord._data_to_save())
+    for key in (DATA_SHORT_DROPS, DATA_ADDRESS_CHANGES, DATA_SIGNAL_STRESS):
+        older = [row["device_id"] for row in part.get(key) or []]
+        assert target.id not in older, key
+        assert keeper.id in older, key
+    said = [row for row in coord.data[DATA_SYSTEM_EVENTS] if row.get(SYS_KIND) == SYS_TRIMMED][-1]
+    assert "3 short drop-outs" in said["detail"]
+    assert "1 drop-out day," in said["detail"]

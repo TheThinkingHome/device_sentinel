@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_devices_sharing_a_name.py, Version: 0.29.4 (2026-11-16)
+# File: tests/test_devices_sharing_a_name.py, Version: 0.29.5 (2026-11-17)
 
 """Devices of one name are told apart by their areas (rule REC-04).
 
@@ -189,3 +189,85 @@ async def test_renaming_beside_a_device_with_no_area_is_held(hass: HomeAssistant
     with pytest.raises(NameInUse) as held:
         entry.runtime_data.page_rename(other, NAME)
     assert held.value.area is None
+
+
+# ------------------------------------------------------ the move warning
+
+
+async def test_moving_into_a_room_with_a_device_of_the_same_name_is_held(hass: HomeAssistant, hass_storage):
+    """A move is checked as a rename is: into a room where a device of the
+    same name already is, it asks first (rules REC-04, DASH-10)."""
+    source = MockConfigEntry(domain=SOURCE, title="Sensors")
+    source.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    kitchen, office = areas.async_create("Kitchen").id, areas.async_create("Office").id
+    _sensor(hass, source, "a", NAME, kitchen)
+    other = _sensor(hass, source, "b", NAME, office)
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse) as held:
+        entry.runtime_data.page_set_area(other, kitchen)
+    assert held.value.area == "Kitchen"
+    assert dr.async_get(hass).async_get(other).area_id == office
+    entry.runtime_data.page_set_area(other, kitchen, confirm=True)
+    assert dr.async_get(hass).async_get(other).area_id == kitchen
+
+
+async def test_moving_into_a_room_of_its_own_is_not_held(hass: HomeAssistant, hass_storage):
+    source = MockConfigEntry(domain=SOURCE, title="Sensors")
+    source.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    kitchen, office, bedroom = (areas.async_create(r).id for r in ("Kitchen", "Office", "Bedroom"))
+    _sensor(hass, source, "a", NAME, kitchen)
+    other = _sensor(hass, source, "b", NAME, office)
+    entry = await setup_entry(hass)
+    entry.runtime_data.page_set_area(other, bedroom)
+    assert dr.async_get(hass).async_get(other).area_id == bedroom
+
+
+async def test_taking_away_the_area_beside_a_device_of_the_same_name_is_held(hass: HomeAssistant, hass_storage):
+    """With no area it could no longer be told apart from the one in the
+    Kitchen."""
+    source = MockConfigEntry(domain=SOURCE, title="Sensors")
+    source.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    kitchen, office = areas.async_create("Kitchen").id, areas.async_create("Office").id
+    _sensor(hass, source, "a", NAME, kitchen)
+    other = _sensor(hass, source, "b", NAME, office)
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse):
+        entry.runtime_data.page_set_area(other, None)
+    assert dr.async_get(hass).async_get(other).area_id == office
+
+
+async def test_a_new_area_named_as_a_room_with_the_same_name_is_held_and_makes_nothing(hass: HomeAssistant, hass_storage):
+    source = MockConfigEntry(domain=SOURCE, title="Sensors")
+    source.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    kitchen, office = areas.async_create("Kitchen").id, areas.async_create("Office").id
+    _sensor(hass, source, "a", NAME, kitchen)
+    other = _sensor(hass, source, "b", NAME, office)
+    entry = await setup_entry(hass)
+    with pytest.raises(NameInUse):
+        entry.runtime_data.page_new_area(other, "kitchen")
+    count = len(areas.async_list_areas())
+    entry.runtime_data.page_new_area(other, "Pantry")
+    assert len(areas.async_list_areas()) == count + 1
+    assert dr.async_get(hass).async_get(other).area_id == areas.async_get_area_by_name("Pantry").id
+
+
+async def test_the_page_asks_and_moves_on_a_yes(hass: HomeAssistant, hass_storage, hass_ws_client):
+    source = MockConfigEntry(domain=SOURCE, title="Sensors")
+    source.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    kitchen, office = areas.async_create("Kitchen").id, areas.async_create("Office").id
+    _sensor(hass, source, "a", NAME, kitchen)
+    other = _sensor(hass, source, "b", NAME, office)
+    await setup_entry(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "device_sentinel/device_area", "device_id": other, "area_id": kitchen})
+    reply = await client.receive_json()
+    assert not reply["success"] and reply["error"]["code"] == "name_in_use"
+    assert reply["error"]["message"] == f"Another device is already named {NAME} (in the Kitchen)."
+    await client.send_json({"id": 2, "type": "device_sentinel/device_area", "device_id": other, "area_id": kitchen, "confirm": True})
+    assert (await client.receive_json())["success"]
+    assert dr.async_get(hass).async_get(other).area_id == kitchen

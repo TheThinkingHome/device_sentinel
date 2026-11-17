@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.27.17 (2026-11-02)
+# File: tests/test_answers_store.py, Version: 0.29.5 (2026-11-17)
 
 """The one file of pencil answers, its last-good copy, and the move
 from the old power file (rules STOR-20, STOR-01, WATCH-07).
@@ -21,6 +21,7 @@ test_backup_integrity.py does.
 
 from __future__ import annotations
 
+import re
 import asyncio
 import contextlib
 import glob
@@ -331,10 +332,15 @@ async def test_answers_for_unwatched_devices_are_kept_and_listed_in_one_place(ha
     assert coord.power_view(watched.id)["words"] == "2× AA", "the excluded setter's answer stopped covering its model"
     lamp_item = by_model[lamp_key]
     assert (lamp_item["power"], lamp_item["type"], lamp_item["set"]) == ("Mains Powered", "Lamp", SET)
-    assert lamp_item["devices"] == [{"device_id": lamp.id, "name": "Lamp Office", "why": "excluded"}]
+    # In the download each device is named by its stand-in (rule STOR-21).
+    lamp_name = lamp_item["devices"][0]["name"]
+    assert re.fullmatch(r"Device \d+", lamp_name)
+    assert lamp_item["devices"] == [{"device_id": lamp.id, "name": lamp_name, "why": "excluded"}]
     assert by_model[gone_key]["devices"] == [{"device_id": "gone", "name": None, "why": "not in Home Assistant"}]
     assert (by_model[None]["power"], by_model[None]["type"]) == ("Mains Powered", "Hub")
-    assert by_model[None]["devices"] == [{"device_id": bare.id, "name": "Bridge Bare", "why": "excluded"}]
+    bare_name = by_model[None]["devices"][0]["name"]
+    assert re.fullmatch(r"Device \d+", bare_name) and bare_name != lamp_name
+    assert by_model[None]["devices"] == [{"device_id": bare.id, "name": bare_name, "why": "excluded"}]
     assert len(held) == 3
 
 

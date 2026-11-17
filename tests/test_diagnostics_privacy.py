@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_diagnostics_privacy.py, Version: 0.29.5 (2026-11-17)
 
 """Network addresses leave the diagnostics download (rule STOR-21).
 
@@ -84,7 +84,8 @@ async def test_the_download_carries_no_address(hass: HomeAssistant):
     text = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
     assert not FULL_MAC.search(text)
     assert "192.168.68.40" not in text
-    assert "20:F8:3B:MAC-" in text
+    # The name that held the address is itself a stand-in now.
+    assert "Plug With A MAC" not in text
 
 
 def test_every_spelling_of_one_mac_is_one_stand_in():
@@ -133,17 +134,20 @@ def test_a_zigbee_address_is_kept_whole():
 
 async def test_the_download_keeps_zigbee_addresses_and_hides_a_mac(hass: HomeAssistant):
     """The whole download: a network address and both Zigbee forms,
-    carried in device names as a person may write them."""
-    register_device(hass, "net", name="Plug 20:F8:3B:09:97:53")
-    register_device(hass, "zha", name="Sensor 00:12:4b:00:1c:a1:b2:c3")
-    register_device(hass, "z2m", name="Sensor 0x00124b001ca1b2c4")
+    carried in a Problem List sentence as a stack may word them. A
+    device's name is a stand-in, so a name no longer carries them."""
+    from custom_components.device_sentinel.const import DATA_TODO_ITEMS
+
+    register_device(hass, "net", name="Plug")
     entry = await setup_entry(hass)
+    entry.runtime_data.data[DATA_TODO_ITEMS] = [{
+        "uid": "u",
+        "description": "Seen at 20:F8:3B:09:97:53, then as 00:12:4b:00:1c:a1:b2:c3 and 0x00124b001ca1b2c4.",
+    }]
     text = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
     assert "20:f8:3b:09:97:53" not in text.lower()
-    assert "Plug 20:F8:3B:MAC-01" in text
-    assert "Sensor 00:12:4b:00:1c:a1:b2:c3" in text
+    assert "Seen at 20:F8:3B:MAC-01, then as 00:12:4b:00:1c:a1:b2:c3 and 0x00124b001ca1b2c4." in text
     assert "MAC-02" not in text
-    assert "Sensor 0x00124b001ca1b2c4" in text
 
 
 async def test_held_values_do_not_reach_the_download(hass: HomeAssistant, freezer):

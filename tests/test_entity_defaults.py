@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_entity_defaults.py, Version: 0.29.5 (2026-11-17)
 
 """Which entities a first install presents, and what removal leaves
 (rules CFG-08, CFG-09, STOR-24).
@@ -94,6 +94,8 @@ async def test_removal_deletes_everything_written(hass: HomeAssistant):
         storage / STORAGE_CLOCKS_KEY,
         storage / f"{STORAGE_KEY}.prephase-c",
         storage / f"{STORAGE_CLOCKS_KEY}.epoch-2",
+        # The diagnostics download's kept numbers (rule STOR-21).
+        storage / "device_sentinel.stand_ins",
     ]
     for path in mine:
         path.write_text("{}")
@@ -124,6 +126,7 @@ def _write_own_reports(hass, report_dir):
         "device_telemetry.md", "classification.md", "silence_episodes.md",
         "daily_brief.html", "stack_probe.md", "stack_probe.md.1",
         "stack_probe.md.3", "classification.md.tmp", "rhythm_shadow.md",
+        "diagnostics_key.md",
     ):
         (report_dir / name).write_text("mine")
     trims = Path(hass.config.path(TRIM_BACKUP_DIR))

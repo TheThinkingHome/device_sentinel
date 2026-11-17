@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_entities.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_diagnostics_entities.py, Version: 0.29.5 (2026-11-17)
 
 """Every entity of a device in the diagnostics download (rule DEV-10).
 
@@ -43,12 +43,17 @@ async def test_every_entity_of_a_device_is_listed_with_what_type_rules_read(hass
     entry = await setup_entry(hass)
     payload = await async_get_config_entry_diagnostics(hass, entry)
     rows = {row["entity_id"]: row for row in payload["devices"][device.id]["all_entities"]}
-    assert set(rows) == {sensor_id, leak.entity_id, off.entity_id}
-    assert rows[leak.entity_id]["domain"] == "binary_sensor"
-    assert rows[leak.entity_id]["device_class"] == "moisture"
-    assert rows[leak.entity_id]["platform"] == "test"
-    assert rows[off.entity_id] == {
-        "entity_id": off.entity_id, "domain": "sensor", "platform": "test",
+    # Each id under its device's stand-in, not its name (rule STOR-21).
+    assert (sensor_id, leak.entity_id, off.entity_id) == (
+        "sensor.leak_kitchen_sink", "binary_sensor.leak_kitchen_sink", "sensor.leak_kitchen_sink_2",
+    )
+    sensor_id, leak_id, off_id = "sensor.device_1", "binary_sensor.device_1", "sensor.device_1_2"
+    assert set(rows) == {sensor_id, leak_id, off_id}
+    assert rows[leak_id]["domain"] == "binary_sensor"
+    assert rows[leak_id]["device_class"] == "moisture"
+    assert rows[leak_id]["platform"] == "test"
+    assert rows[off_id] == {
+        "entity_id": off_id, "domain": "sensor", "platform": "test",
         "device_class": "temperature", "unit": "°C", "category": "diagnostic",
         "disabled_by": "user",
     }

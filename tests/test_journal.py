@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.27.10 (2026-10-27)
+# File: test_journal.py, Version: 0.29.5 (2026-11-17)
 
 """The record of incidents, episodes and system events, and what the
 brief says from it (rules LIST-09, LIST-11, BRIEF-16, STOR-18).
@@ -462,7 +462,8 @@ async def test_incidents_reach_diagnostics(hass: HomeAssistant):
     coord._sync_problem_list()
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert "incidents" in diag
-    assert diag["incidents"][0][INC_NAME] == "Diag Sensor"
+    # The name is the device's stand-in in the download (rule STOR-21).
+    assert diag["incidents"][0][INC_NAME] == diag["devices"][device.id]["name"] == "Device 1"
 
 
 async def test_startup_storm_is_named_a_restart(hass: HomeAssistant):
@@ -599,7 +600,8 @@ async def test_diagnostics_carry_the_support_fields(
     }
     rows = diag["devices"][device.id]["entities"]
     battery_rows = [r for r in rows if r["kind"] == "battery"]
-    assert battery_rows and battery_rows[0]["entity_id"] == entity_id
+    # The id's name part is the device's stand-in (rule STOR-21).
+    assert battery_rows and battery_rows[0]["entity_id"] == entity_id.replace("support_sensor", "device_1")
     assert battery_rows[0]["disabled_by"] is None
     assert battery_rows[0]["state"] == "77"
 

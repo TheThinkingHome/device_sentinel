@@ -1,7 +1,7 @@
 """The 30-day hold of a removed device's record (rule WATCH-07).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_removed_hold.py, Version: 0.27.10 (2026-10-27)
+# File: test_removed_hold.py, Version: 0.29.5 (2026-11-17)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -240,11 +240,12 @@ async def test_the_diagnostics_list_the_held_records(hass: HomeAssistant):
 
     held = found["held_records"]
     assert [row["device_id"] for row in held] == [hardware.device_id]
-    assert held[0]["name"] == "Office Sensor"
+    # Under its stand-in, as everywhere in the download (rule STOR-21).
+    assert held[0]["name"] == "Device 1"
     removed = dt_util.parse_datetime(held[0]["removed"])
     deleted = dt_util.parse_datetime(held[0]["deleted_after"])
     assert deleted - removed == timedelta(days=REMOVED_HOLD_DAYS)
-    assert found["devices"][hardware.device_id]["name"] == "Office Sensor"
+    assert found["devices"][hardware.device_id]["name"] == "Device 1"
 
 
 # ------------------------------------------------------------ coming back
