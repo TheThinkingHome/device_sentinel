@@ -84,8 +84,8 @@ How the configuration screens are laid out and worded, what the entities Device 
 **Advanced's Data Trim section erases the learned history of the devices or integrations a person picks, when the screen is saved.**
 - **The choosers:** they offer each device and integration Device Sentinel finds, whatever its state, and a device picked twice is allowed.
 - **A backup first:** a copy of the stored files goes to trim_backups first, and nothing is erased if the copy fails.
-- **What goes:** the device's record, older history included (STOR), its silence episodes, incidents and Problem List items, and its Battery Last Replaced answer, so the device starts clean.
-- **What stays:** its mutes and exclusions, the house's own events, and all bridge, broker, pairing and storm state.
+- **What goes:** the device's record, older history included (STOR), its silence episodes, incidents and Problem List items, its Battery Last Replaced answer, and since 0.29.5 its short drop-outs and drop-out days, its address changes and the signal records kept with each silence, so the device starts clean. Before 0.29.5 those four stayed, and a device trimmed for bad drop-outs went on being judged on them.
+- **What stays:** the answers the person gave about it, what powers it, what it is and its note ([DEV-19](Rulebook__04_DEV_Device_Identity.md#dev-19-notes)), since bad data is no reason to forget them; its mutes and exclusions, the house's own events, and all bridge, broker, pairing and storm state.
 - **Afterwards:** the choosers are emptied, storage is written at once, and the Daily Brief reports the trim in one row: one act, one row.
 
 *Proof:* [`test_trim.py`](../tests/test_trim.py), [`test_history_file.py`](../tests/test_history_file.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py).

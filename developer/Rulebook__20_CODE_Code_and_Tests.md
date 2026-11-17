@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Code and Tests (CODE)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel's code is written and checked: the code standard, comments and the rule IDs they cite, the header on each file, the linters and the type checker, and how tests are written, pinned and fed. How a release is proven and shipped is under [REL](Rulebook__19_REL_Releases.md); how stored files are checked is under [STOR](Rulebook__18_STOR_Storage.md).
 
@@ -52,8 +52,9 @@ This section covers how Device Sentinel's code is written and checked: the code 
 - **At setup:** a question about the file system asked during setup goes to a background job, once, with the look and the change in the same job.
 - **When a job fails:** a background job's own failure is never left to Home Assistant. The code that starts it catches the failure, logs it with what started it, and carries on. So a report that cannot be written is a missing report, not a broken integration.
 - **The Daily Brief:** a Daily Brief whose write failed is not emailed.
+- **The dashboard:** a dashboard page is built from what is in memory. Anything a page needs from a file is read at setup, on a worker thread. The Brief tab once read the settings labels on the event loop, and Home Assistant logged a blocking call after each restart ([issue #34](https://github.com/TheThinkingHome/device_sentinel/issues/34)).
 
-*Proof:* [`test_hardening.py`](../tests/test_hardening.py), [`test_reports.py`](../tests/test_reports.py), [`test_www_retired.py`](../tests/test_www_retired.py).
+*Proof:* [`test_hardening.py`](../tests/test_hardening.py), [`test_reports.py`](../tests/test_reports.py), [`test_www_retired.py`](../tests/test_www_retired.py), [`test_dashboard_event_loop.py`](../tests/test_dashboard_event_loop.py).
 
 ### CODE-07 Pairing Two Lists States Its Intent
 

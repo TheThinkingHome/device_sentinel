@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -104,7 +104,8 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 **An act that can be undone on the page asks for no confirmation; Mute everything asks once. When a write is refused, Home Assistant's reason shows under its row, and the row keeps its old value.**
 - **Refused buttons:** since 0.28.7 a refused button's reason shows beside it on every tab, "Turn it on" and Exclude among them. Before, the reason was lost once the click had been handled, and the button stayed greyed.
 - **A day removed by hand:** pressing a bar on a freeze chart asks first, "Remove (day) from this device's rhythm?", with the warning, "Remove this day" and "Keep it"; pressing a removed bar asks "Count (day) again?", with "Count it again" and "Cancel". Both change the device's wait at once ([FRZ-25](Rulebook__05_FRZ_Freeze.md#frz-25-a-day-removed-by-hand)).
-- **No area:** choosing "No area" for a device that has one asks first, "Remove (device) from (area) in Home Assistant?", with "Remove from area" and "Keep its area", because taking a device out of its area changes Home Assistant's own dashboards, voice and area automations at once. Choosing another area does not ask.
+- **No area:** choosing "No area" for a device that has one asks first, "Remove (device) from (area) in Home Assistant?", with "Remove from area" and "Keep its area", because taking a device out of its area changes Home Assistant's own dashboards, voice and area automations at once. Choosing another area does not ask, unless the move would leave it unable to be told apart from another device of its name.
+- **A name it would share (since 0.29.5):** moving a device to another area, or to a new one, is checked as a rename is ([REC-04](Rulebook__15_REC_Recommendations.md#rec-04-the-device-cards)), against each device as it will be shown, its child devices with no area of their own included, before anything changes. A clash shows "Another device is already named (name) (in the Kitchen).", with "Choose another area" and "Move anyway" on the device page, and "Save anyway" on a card. Renaming a parent checks each of its child devices with no area of their own the same way. Before 0.29.5 only a rename was checked.
 
 *Proof:* [`tools/panel_checks/check_device_actions.js`](../tools/panel_checks/check_device_actions.js), [`tools/panel_checks/check_removed_days.js`](../tools/panel_checks/check_removed_days.js).
 

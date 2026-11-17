@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 16 November 2026, on Device Sentinel 0.29.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -170,9 +170,19 @@ This section covers what a device is called, what kind of device it is, what pow
 **Since 0.29.4, a child device is named and placed the way Home Assistant shows it.**
 - **Its area:** a child device with no area of its own is in its parent device's area, as Home Assistant 2026.9 and later places it. The Problem List, the Daily Brief, the notifications, the dashboard and the No Area Assigned card all read it so.
 - **Its name:** a child device with no area of its own is named after its parent, "Power strip Socket 1". A child device in an area of its own is named alone, "Socket 1". A child whose own name already begins with its parent's is not named twice.
-- **Renaming it:** the rename box starts from the child's own name, and a name typed with the parent's in front is saved without it, since Home Assistant adds the parent's name itself. A rename is checked against other devices with the parent's name in front, as it will be shown.
+- **Renaming it:** the rename box starts from the child's own name, and a name typed with the parent's in front is saved without it, since Home Assistant adds the parent's name itself. A rename is checked against other devices with the parent's name in front, as it will be shown. Since 0.29.5 renaming or moving the parent checks each such child too, and moving a child into an area of its own checks it by its own name ([DASH-10](Rulebook__14_DASH_Dashboard.md#dash-10-confirmations-and-refusals)).
 - **On its page:** the Area row says whose area it is in, "Kitchen, from Power strip". The area picker's first choice, for every child device whose parent has an area, reads "Same as Power strip (Kitchen)" and puts it there without asking, and the brief says "set to its parent's area, Kitchen". Choosing an area gives the child one of its own, and it is then named alone.
 - **Why:** Home Assistant names a child for its part and adds the parent's name where the child has no area of its own, so two power strips' "Socket 1" read apart.
 
 *Proof:* [`test_child_devices.py`](../tests/test_child_devices.py), [`test_devices_sharing_a_name.py`](../tests/test_devices_sharing_a_name.py).
 
+### DEV-19 Notes
+
+**Since 0.29.5, each device has a Notes row on its page, for the person's own words about it.** "Previously the terrace door sensor in the guest room", or "Put in service on 10 October 2025".
+- **Where:** last in the Identity section's first group, before Power, in Simple and in Advanced. Empty until a person writes one; nothing suggests what to write and no card asks for one.
+- **Writing one:** a pencil, as for the name, opens a box of up to 500 characters on one line, with Save, Clear and Cancel. A character that cannot be shown, a line break among them, is refused, as in a rename ([DEV-05](#dev-05-renaming-a-device)), and so is a note over 500 characters; the old note stays.
+- **Where it is kept:** in the answers file ([STOR-20](Rulebook__18_STOR_Storage.md#stor-20-the-answers-file)), so a Data Trim keeps it, and so does excluding the device. It goes once the device has left Home Assistant and its held record is gone, as a power answer does.
+- **The brief:** writing, changing or clearing a note is a house event, "note added, from its device page", without the words.
+- **The download:** the words are never in it, since a note can hold anything; each device says only whether it has one ([STOR-21](Rulebook__18_STOR_Storage.md#stor-21-the-diagnostics-download)).
+
+*Proof:* [`test_device_notes.py`](../tests/test_device_notes.py), [`tools/panel_checks/check_device_notes.js`](../tools/panel_checks/check_device_notes.js).
