@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.4 (2026-11-16)
+// File: panel.js, Version: 0.29.5 (2026-11-17)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -117,15 +117,17 @@ const smoothBattery = (points) => points.map(([i]) => {
 });
 // The kept days split where a smoothed line must not run across
 // (rule BAT-17): a gap of more than three days with no reading, which
-// a line would bridge as if it were data, and a rise of 15 points or
-// more from one day to the next, which is a new battery, not the old
-// one's trend. Each stretch is smoothed on its own.
+// a line would bridge as if it were data. A new battery needs no split
+// here: the history the charts draw is the battery in the device,
+// started again at each replacement detected or entered (rules BAT-06,
+// BAT-07), so a rise left in it is one Device Sentinel did not count
+// as a new battery. Each stretch is smoothed on its own.
 const batteryStretches = (points) => {
   const stretches = [];
   let run = [];
   for (const point of points) {
     const last = run[run.length - 1];
-    if (last && (point[0] - last[0] > 4 || point[1] - last[1] >= 15)) {
+    if (last && point[0] - last[0] > 4) {
       stretches.push(run);
       run = [];
     }
@@ -702,6 +704,8 @@ const STYLE = `
   .actnote.ask { background: rgba(255, 152, 0, 0.12); color: var(--warning-color, #b26a00); }
   .actinput { min-height: 30px; padding: 0 8px; border: 1px solid var(--divider-color); border-radius: 6px;
     background: transparent; color: var(--primary-text-color); font: inherit; min-width: 240px; }
+  .noteinput { flex: 1 1 320px; min-width: 200px; }
+  .note { overflow-wrap: anywhere; }
   .pick { display: flex; align-items: center; gap: 8px; min-height: 30px; }
   .chip[aria-pressed="true"] { color: var(--primary-color); border-color: var(--primary-color); }
   .scroll { overflow-x: auto; }
@@ -3116,15 +3120,25 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     const select = el("select", { class: "actinput", "aria-label": "Which area" },
       el("option", { value: "" }, "Choose…"), ...(choices.areas || []).map((a) => el("option", { value: a.id }, a.name)));
-    const save = el("button", { class: "chip", type: "button", disabled: "", onclick: async () => {
+    // A move that leaves the device beside one of the same name is held
+    // for a yes, as on the device page (rules REC-04, DASH-10).
+    const ask = el("span", { class: "actrow" });
+    const send = async (confirm) => {
       if (!select.value) return;
+      ask.replaceChildren();
       try {
-        await this._call({ type: "device_sentinel/device_area", device_id: deviceId, area_id: select.value, source });
+        await this._call({ type: "device_sentinel/device_area", device_id: deviceId, area_id: select.value, confirm, source });
         await done();
-      } catch (err) { fail(err); }
-    } }, "Save");
-    select.addEventListener("change", () => { save.disabled = !select.value; });
-    return el("span", { class: "actrow" }, select, save);
+      } catch (err) {
+        if (err && err.code === "name_in_use") {
+          ask.replaceChildren(el("span", { class: "small" }, err.message),
+            el("button", { class: "chip", type: "button", onclick: () => send(true) }, "Save anyway"));
+        } else fail(err);
+      }
+    };
+    const save = el("button", { class: "chip", type: "button", disabled: "", onclick: () => send(false) }, "Save");
+    select.addEventListener("change", () => { save.disabled = !select.value; ask.replaceChildren(); });
+    return el("span", { class: "actcol" }, el("span", { class: "actrow" }, select, save), ask);
   }
 
   // A device's area in a list: set, its name; else "Not Set" to set it.
@@ -4137,7 +4151,9 @@ class DeviceSentinelPanel extends HTMLElement {
     } catch (err) {
       const base = this._edit(device) || { device, row };
       if (err && err.code === "name_in_use") {
-        this._devEdit = { ...base, row, clash: err.message, error: null };
+        // Kept, so "Move anyway" can send the same act with a yes
+        // (rule DASH-10).
+        this._devEdit = { ...base, row, clash: err.message, error: null, pending: message };
       } else {
         this._devEdit = { ...base, row, errorRow: row, clash: null,
           error: (err && err.message) || "Home Assistant refused the change." };
@@ -4171,6 +4187,34 @@ class DeviceSentinelPanel extends HTMLElement {
       history.length ? el("ul", { class: "small", style: "margin:2px 0 0;padding-left:18px;line-height:1.5" },
         ...[...history].reverse().map((row) => el("li", {},
           row.since ? `${row.version}, first seen ${moment(row.since)}` : row.version))) : null);
+  }
+
+  // The Notes row (rule DEV-19): the person's own line about the
+  // device, empty until they write one. Device Sentinel says nothing
+  // about what goes in it.
+  _noteCell(who) {
+    const e = this._edit(who.device_id);
+    if (!e || e.row !== "note") {
+      return el("div", { class: "actcol" }, el("div", { class: "actrow" },
+        who.note ? el("span", { class: "note" }, who.note) : null,
+        this._editMark(who.note ? "Edit the note" : "Write a note", () => {
+          this._devEdit = { device: who.device_id, row: "note", value: who.note || "" };
+          this._paintDevicePage();
+          const box = this._pane.querySelector("input.noteinput");
+          if (box) box.focus();
+        })), this._actNote("note"));
+    }
+    const input = el("input", { class: "actinput noteinput", type: "text", "aria-label": "Notes", maxlength: "500",
+      value: e.value || "" });
+    input.addEventListener("input", () => { e.value = input.value; });
+    const save = (note) => this._deviceAct({ type: "device_sentinel/device_note", device_id: who.device_id, note }, "note");
+    input.addEventListener("keydown", (event) => { if (event.key === "Enter") save(input.value); });
+    return el("div", { class: "actcol" },
+      el("div", { class: "actrow" }, input,
+        el("button", { class: "chip", type: "button", onclick: () => save(input.value) }, "Save"),
+        who.note ? el("button", { class: "chip", type: "button", onclick: () => save("") }, "Clear") : null,
+        el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")),
+      this._actNote("note"));
   }
 
   _nameCell(who) {
@@ -4550,7 +4594,17 @@ class DeviceSentinelPanel extends HTMLElement {
           onclick: () => { this._areaClearAsk = null; choose(null); } }, "Remove from area"),
         el("button", { class: "chip", type: "button",
           onclick: () => { this._areaClearAsk = null; this._paintDevicePage(); } }, "Keep its area"))) : null;
+    // A move that leaves the device beside one of the same name asks
+    // first, as a rename does (rules REC-04, DASH-10).
+    const clash = e.clash ? el("div", { class: "actcol" },
+      el("div", { class: "actnote ask", role: "alert" }, e.clash),
+      el("div", { class: "actrow" },
+        el("button", { class: "chip", type: "button",
+          onclick: () => { this._devEdit = { ...e, clash: null, pending: null }; this._paintDevicePage(); } }, "Choose another area"),
+        el("button", { class: "chip", type: "button",
+          onclick: () => this._deviceAct({ ...e.pending, confirm: true }, "area") }, "Move anyway"))) : null;
     return el("div", { class: "actcol" },
+      clash,
       el("fieldset", { style: "border:none;margin:0;padding:0" },
         el("legend", { class: "muted", style: "padding:0 0 4px" }, "Area"),
         // A child device with no area of its own is in its parent's, so
@@ -5010,6 +5064,9 @@ class DeviceSentinelPanel extends HTMLElement {
       ...(who.same_hardware ? [["Same hardware", this._sameHardwareCell(who)]] : []),
       ...(simple ? [] : addressRows),
       ...netRows,
+      // The person's own note, last in the first group, in Simple and
+      // Advanced alike (rule DEV-19).
+      ...(acts ? [["Notes", this._noteCell(who)]] : who.note ? [["Notes", who.note]] : []),
       group("Power"),
       ...(byKind("battery").length ? [["Battery level", valueCell("battery")]] : []),
       ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]]
@@ -5398,11 +5455,13 @@ class DeviceSentinelPanel extends HTMLElement {
       g.append(svg("polyline", { fill: "none", stroke: "var(--primary-color, #03a9f4)", "stroke-width": 2.4,
         points: smooth.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
     }
+    // The word "today" sits right of the line, or left of it where the
+    // line is near the right edge, as when no fall is drawn and the
+    // history is long (rule BAT-17).
+    const wordLeft = x(n) + 35 > right + 10;
     g.append(svg("line", { x1: x(n), y1: 20, x2: x(n), y2: 190, stroke: "var(--secondary-text-color)", "stroke-opacity": 0.6 }),
-      // Right of the line, or left of it where the line is near the right
-      // edge, as when no fall is drawn and the history is long (rule BAT-17).
-      svg("text", { x: x(n) + 35 > right + 10 ? x(n) - 4 : x(n) + 4, y: 32, class: "axis",
-        "text-anchor": x(n) + 35 > right + 10 ? "end" : "start" }, "today"));
+      svg("text", { x: wordLeft ? x(n) - 4 : x(n) + 4, y: 32, class: "axis",
+        "text-anchor": wordLeft ? "end" : "start" }, "today"));
     let lowest = points.length ? Math.min(...points.map(([, v]) => v)) : 100;
     // Each zero falls on its own day, said under the axis (rule BAT-17).
     const zeroes = [];
@@ -5481,9 +5540,15 @@ class DeviceSentinelPanel extends HTMLElement {
       g.append(svg("circle", { class: "todaydot", cx: x(n), cy: y(level), r: 4.5,
         fill: "var(--primary-color, #03a9f4)", stroke: "#fff", "stroke-width": 1.6 }),
       // Left of the dot, or right of it where the history is too short
-      // to hold the words.
+      // to hold the words; moved down, clear of the word "today", where
+      // both sit on one side of the line at its height (rule BAT-17).
       svg("text", { class: "axis todaylabel", x: x(n) - 8 < left + 80 ? x(n) + 8 : x(n) - 8,
-        y: Math.min(186, y(level) + 18), "text-anchor": x(n) - 8 < left + 80 ? "start" : "end" },
+        y: (() => {
+          const under = Math.min(186, y(level) + 18);
+          const labelLeft = !(x(n) - 8 < left + 80);
+          return labelLeft === wordLeft && Math.abs(under - 32) < 14 ? Math.min(186, 48) : under;
+        })(),
+        "text-anchor": x(n) - 8 < left + 80 ? "start" : "end" },
         `today ${levelText(level)}`));
     }
     // Simple says why the fall stops at the threshold (rule BAT-13); Advanced
