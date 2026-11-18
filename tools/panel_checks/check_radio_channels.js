@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_radio_channels.js, Version: 0.29.6 (2026-11-17)
+// File: tools/panel_checks/check_radio_channels.js, Version: 0.29.7 (2026-11-17)
 // Panel checks: radio channels (rules SIG-19, DASH-19, REC-13).
 // The Networks tab's chart sits at the top, Advanced only, red where a
 // network overlaps a Zigbee or Thread channel. A device page's Radio
@@ -43,7 +43,7 @@ const NETWORKS = { rows: [
   { key: "z2m", name: "Zigbee2MQTT", kind: "z2m", status: { state: "ok", words: "Running", since: null }, watched: 2,
     with_problem: 0, counts: COUNTS, last_outage: null, outages: 0 },
 ], air: AIR };
-const WIFI_CARD = { kind: "channel", channel: 6,
+const WIFI_CARD = { kind: "channel", channel: 6, reason: "wifi:4:crowded", returns: "your Wi-Fi moves off channel 4",
   sentence: "Your Wi-Fi on channel 4 overlaps a neighbour's network on channel 1, heard at 52%. If your router lets you choose, channel 6 is clearer: it covers none of your Zigbee or Thread channels, and the strongest network heard near it is at 34%.",
   question: "A mesh router that picks its own channel may change it back. Device Sentinel only hears Wi-Fi where your server is." };
 const PAGE = (key, extra = {}) => ({
@@ -112,15 +112,23 @@ const chart = (root) => root.querySelector(".pane [data-chart=air]");
   check("it is the first thing on the tab", c && root.querySelector(".pane").firstElementChild === c);
   check("its title and caption", c && c.textContent.includes("What the Server Hears") && c.textContent.includes("share one band"));
   const shapes = c ? [...c.querySelectorAll("path")] : [];
-  check("one shape per 2.4 GHz network, none for 5 GHz", shapes.length === 5, shapes.length);
+  check("one shape a channel's networks within four points, none for 5 GHz", shapes.length === 4, shapes.length);
   const red = shapes.filter((p) => p.getAttribute("stroke").includes("error-color"));
-  check("the two networks over Zigbee channel 11 are red", red.length === 2, red.length);
+  check("the networks over Zigbee channel 11 are one red shape, naming both", red.length === 1
+    && red[0].textContent.startsWith("Neighbour, (hidden network)"), red.map((p) => p.textContent));
   check("the house's own network drawn in its own colour",
     shapes.some((p) => p.getAttribute("stroke").includes("primary-color")));
   const bars = c ? [...c.querySelectorAll("rect")] : [];
   check("one bar per Zigbee network", bars.length === 2, bars.length);
-  check("the bars are named with their channels", c && c.textContent.includes("Zigbee2MQTT 11") && c.textContent.includes("ZHA 25"));
-  check("a hidden network is named so in its tooltip", shapes.some((p) => p.textContent.startsWith("(hidden network)")));
+  check("the Zigbee networks are named with their channels", c && c.textContent.includes("Zigbee2MQTT on 11 \u00b7 ZHA on 25"));
+  const labels = c ? [...c.querySelectorAll("text.netname")].map((t) => t.textContent) : [];
+  check("a name over each channel's networks, the shortest first and the rest counted",
+    JSON.stringify(labels.sort()) === JSON.stringify(["Across", "Home", "Neighbour +1", "Upstairs"]), labels);
+  const zrow = c ? [...c.querySelectorAll("text")].filter((t) => /^(1[1-9]|2[0-6])$/.test(t.textContent) && t.getAttribute("y") < 60) : [];
+  check("every Zigbee channel from 11 to 26 along the top", zrow.length === 16, zrow.length);
+  check("the ones in use in colour", zrow.filter((t) => (t.getAttribute("style") || "").includes("success-color")).map((t) => t.textContent).join() === "11,25");
+  check("thin lines", shapes.every((p) => Number(p.getAttribute("stroke-width")) <= 1.5));
+  check("the chart keeps its own width", /\.airbox \{ max-width: 940px; \}/.test(root.querySelector("style").textContent));
   check("the 50% line is dashed", c && [...c.querySelectorAll("line")].some((l) => l.getAttribute("stroke-dasharray")));
   check("no stray words", noStrays(root), text(root));
 
@@ -164,6 +172,24 @@ const chart = (root) => root.querySelector(".pane [data-chart=air]");
   check("the channel 1 rows are red", rows[0] && /error-color/.test(rows[0].children[3].getAttribute("style") || ""));
   check("the channel card is on the page", text(root).includes("Recommendations for This Network") && text(root).includes("channel 6 is clearer"));
   check("no stray words", noStrays(root), text(root));
+  let sent = [];
+  ({ root } = await open("/network/wifi?from=networks", "advanced", {
+    network: async () => PAGE("wifi", { radio: { scanned_at: AIR.scanned_at, scan: "ok", heard: AIR.wifi }, cards: [WIFI_CARD] }),
+    channel_dismiss: async (m) => { sent.push(m); return {}; } }));
+  const dismiss = [...root.querySelectorAll(".pane button")].find((b) => b.textContent === "Dismiss");
+  check("the channel card has Dismiss", Boolean(dismiss));
+  if (dismiss) { dismiss.click(); await settle(); }
+  check("Dismiss sends the network and the card's reason", sent.length === 1 && sent[0].key === "wifi"
+    && sent[0].reason === "wifi:4:crowded" && sent[0].on === true, sent);
+  sent = [];
+  ({ root } = await open("/network/wifi?from=networks", "advanced", {
+    network: async () => PAGE("wifi", { radio: { scanned_at: AIR.scanned_at, scan: "ok", heard: AIR.wifi,
+      dismissed: { reason: "wifi:4:crowded", returns: "your Wi-Fi moves off channel 4" } }, cards: [] }),
+    channel_dismiss: async (m) => { sent.push(m); return {}; } }));
+  check("a dismissed card says when it comes back", text(root).includes("You dismissed the channel recommendation. It comes back if your Wi-Fi moves off channel 4."), text(root));
+  const again = [...root.querySelectorAll(".pane button")].find((b) => b.textContent === "Show it again");
+  if (again) { again.click(); await settle(); }
+  check("Show it again takes the dismissal back", sent.length === 1 && sent[0].on === false && sent[0].reason === "wifi:4:crowded", sent);
   ({ root } = await open("/network/wifi?from=networks", "advanced", { network: async () => PAGE("wifi", {
     radio: { scanned_at: null, scan: "no_adapter", heard: [] } }) }));
   check("no scan says why", text(root).includes("cannot scan for Wi-Fi"), text(root));
