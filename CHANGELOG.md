@@ -2,6 +2,10 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases from 0.28 on are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
+## [0.29.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.29.6), November 17, 2026
+
+Each device page in Advanced names the radio channel its device uses, and the Networks tab opens with a chart of the 2.4 GHz band as your server hears it: your Wi-Fi, your neighbours' and your Zigbee and Thread channels, red where a strong network covers one. When your Wi-Fi shares a crowded channel or covers your Zigbee channel, or a neighbour's covers a Zigbee network whose devices show weak links, a recommendation names a clearer channel.
+
 ## [0.29.5](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.29.5), November 17, 2026
 
 A device that comes back after a restart leaves the Problem List, except on the integrations listed under Integrations That Report Cached Values, which can be set by make and model. A Firmware Updates card lists each model with devices behind on firmware, battery forecasts no longer jump from day to day, and Device Sentinel follows Home Assistant 2026.11's naming, adding the area to each alert. Each device page has a Notes row, and the diagnostics download names no device, area, label or network, so it can go on a public issue; its key stays in `config/device_sentinel`. Setup and settings are in Spanish, and the reports in `config/device_sentinel` are readable by their owner only.
