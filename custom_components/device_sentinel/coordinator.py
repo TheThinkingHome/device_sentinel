@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.5 (2026-11-17)
+# File: coordinator.py, Version: 0.29.6 (2026-11-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -335,6 +335,7 @@ from .study import StudyMixin
 from .study_tado import TadoStudyMixin
 from .study_sonos import SonosStudyMixin
 from .study_watch import WatchStudyMixin
+from .radio_channels import RadioChannelsMixin
 from .wifi import WifiScanMixin
 from .dashboard import (
     BriefViewMixin,
@@ -455,6 +456,7 @@ class DeviceSentinelCoordinator(
     InterventionMixin,
     RouterTiesMixin,
     WifiScanMixin,
+    RadioChannelsMixin,
     StudyMixin,
     WatchStudyMixin,
     TadoStudyMixin,
@@ -6233,6 +6235,13 @@ class DeviceSentinelCoordinator(
         # than run inside the synchronous judgment below.
         await self._detect_clock_reset()
         await self.async_sweep_wifi()
+        # The channels each network uses: the network the server is
+        # joined to, and, where no Wi-Fi network is chosen, an hourly
+        # scan of its own (rule SIG-19). Never breaks the minute.
+        try:
+            await self.async_sweep_air()
+        except Exception as err:  # noqa: BLE001
+            LOGGER.debug("device_sentinel: radio channels not read: %s", err)
         self._sweep_storms(dt_util.utcnow().timestamp())
         self.probe_tick(dt_util.utcnow().timestamp())
         # Firmware that has held ten minutes, once the restart's stale

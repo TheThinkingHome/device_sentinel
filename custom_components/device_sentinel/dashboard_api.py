@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.29.5 (2026-11-17)
+# File: dashboard_api.py, Version: 0.29.6 (2026-11-17)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -467,7 +467,8 @@ def ws_networks(
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    connection.send_result(msg["id"], {"rows": coordinator.dashboard_networks()})
+    # The radio chart at the top of the tab, Advanced only (rule DASH-19).
+    connection.send_result(msg["id"], {"rows": coordinator.dashboard_networks(), "air": coordinator.air_view_safe()})
 
 
 @websocket_api.require_admin

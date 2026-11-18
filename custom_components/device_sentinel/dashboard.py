@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.5 (2026-11-17)
+# File: dashboard.py, Version: 0.29.6 (2026-11-17)
 
 """What the dashboard reads from the coordinator.
 
@@ -1687,6 +1687,10 @@ class DeviceViewMixin:
                 "short_drops": self.short_drops_of(device_id),
                 "address": self.address_of(device_id),
                 "dropping_out": self.is_flapping(device_id),
+                # The Radio channel row: the channel and where it was
+                # learned, with a warning where a strong network
+                # overlaps it (rule SIG-19).
+                "radio": self.device_radio_safe(device_id),
             },
             "readings": readings,
             "status": {

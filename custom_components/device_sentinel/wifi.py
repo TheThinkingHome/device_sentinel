@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.29.0 (2026-11-14)
+# File: wifi.py, Version: 0.29.6 (2026-11-17)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -191,6 +191,11 @@ class WifiScanMixin:
             # not a missing network, and treating it as one would
             # declare an outage every time Home Assistant shuts down.
             return
+        # The same scan tells which channel each network uses (rule
+        # SIG-19): no second scan where a network is chosen.
+        note_air = getattr(self, "_note_air", None)
+        if callable(note_air):
+            note_air(points, dt_util.utcnow().timestamp())
 
         heard = {
             point.get("ssid")

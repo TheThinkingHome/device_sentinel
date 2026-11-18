@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: networks.py, Version: 0.28.7 (2026-11-09)
+# File: networks.py, Version: 0.29.6 (2026-11-17)
 
 """The Networks tab and each network's page (rule DASH-17).
 
@@ -504,6 +504,10 @@ class NetworksMixin:
             "counts": counts,
             "hardware": self._network_hardware(key),
             **extras,
+            # A channel recommendation joins the network's own cards
+            # (rule REC-13).
+            "cards": [*extras.get("cards", []), *self.channel_cards(key)],  # type: ignore[attr-defined]
+            "radio": self.network_radio(key),  # type: ignore[attr-defined]
             "notices": self._network_notices(key),
             "sensors": self._network_sensors(key, members),
             "signal": self._network_signal(key, members),
@@ -587,6 +591,10 @@ class NetworksMixin:
                 if isinstance(path, str) and path:
                     rows.append(self._hardware_row("Connected by", "Network" if host else "USB or serial"))
                 break
+            # The channel ZHA holds in memory (rule SIG-19).
+            channel = self.zha_channel_safe()  # type: ignore[attr-defined]
+            if channel is not None:
+                rows.append(self._hardware_row("Zigbee channel", channel))
         elif key == STACK_ZWAVE:
             controllers = [
                 device for device in self._registry_devices_of(STACK_ZWAVE)

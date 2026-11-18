@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.29.5 (2026-11-17)
+# File: diagnostics.py, Version: 0.29.6 (2026-11-17)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -175,6 +175,13 @@ def _wifi_scan_hidden(scan: Any, order: Any = (), book: StandInBook | None = Non
         if isinstance(value, (list, tuple, set)):
             hidden[field] = [stand_in(name) for name in value]
     return hidden
+
+
+def _radio_channels(coordinator: Any) -> Any:
+    try:
+        return coordinator.radio_diagnostics()
+    except Exception as err:  # noqa: BLE001 - one section never breaks the download
+        return {"error": type(err).__name__}
 
 
 def _taint_reasons(episodes: list[dict[str, Any]]) -> dict[str, int]:
@@ -867,6 +874,11 @@ async def _learned_state(
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
             "wifi_scan": _wifi_scan_hidden(coordinator.wifi_scan_diagnostics, _network_names(coordinator), book),
+            # The channel each network uses and every network the server
+            # heard at its last scan, with the cards they make (rules
+            # SIG-19, REC-13). Each name is a stand-in under its "ssid"
+            # key and each access point an address stand-in (rule STOR-21).
+            "radio_channels": _radio_channels(coordinator),
             "study_hardware": list(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),

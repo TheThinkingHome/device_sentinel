@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.28.11 (2026-11-10)
+# File: network_extras.py, Version: 0.29.6 (2026-11-17)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -867,7 +867,9 @@ class NetworkExtrasMixin:
                 cards = self.network_outage_view(key, forget=False)["cards"]
             except Exception as err:  # noqa: BLE001 - one network never breaks the tab
                 LOGGER.debug("Outage patterns for %s not read: %s", key, err)
-                continue
+                cards = []
+            # Its channel recommendation (rule REC-13).
+            cards = [*cards, *self.channel_cards(key)]  # type: ignore[attr-defined]
             if cards:
                 rows.append({"key": key, "name": self.network_name(key), "cards": cards})  # type: ignore[attr-defined]
         return rows
