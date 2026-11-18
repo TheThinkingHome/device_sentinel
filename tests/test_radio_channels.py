@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_radio_channels.py, Version: 0.29.7 (2026-11-17)
+# File: tests/test_radio_channels.py, Version: 0.29.7 (2026-11-18)
 
 """Radio channels (rules SIG-19, SIG-20, REC-13, DASH-19).
 
@@ -200,7 +200,8 @@ async def test_device_rows(hass: HomeAssistant, supervisor: FakeSupervisor):
     coord._radio_stack = {"zb": STACK_Z2M}
     radio = coord.device_radio("zb")
     assert radio["words"] == "Zigbee channel 11, from Zigbee2MQTT"
-    assert radio["warn"] == "A neighbour's Wi-Fi on channel 1, heard at 52%, covers this channel."
+    # A healthy mesh: no Zigbee card, so no warning (rule SIG-20).
+    assert radio["warn"] is None
     # A device a router reports on the 2.4 GHz band of its network.
     hass.states.async_set("device_tracker.plug", "home", {"source_type": "router", "band": "2G"})
     coord._wifi_ties = {"plug": "device_tracker.plug"}
@@ -369,6 +370,7 @@ async def test_download_hides_every_name_and_address(hass: HomeAssistant, monkey
     # Keys only: a network's display name could read as a device's.
     assert radio["zigbee"] == [{"key": "z2m", "channel": 11}]
     assert all("question" not in c for c in radio["cards"]["wifi"])
+    assert radio["acknowledged"] == []
     assert [r["channel"] for r in radio["heard"]] == [1, 4, 4, 4, 6, 11]
     assert [c["channel"] for c in radio["cards"]["wifi"]] == [6]
 
@@ -482,98 +484,122 @@ async def test_a_mesh_on_two_channels_gets_one_wifi_card(hass: HomeAssistant):
     assert cards[0]["sentence"].startswith("Your Wi-Fi on channel 1 covers your Zigbee or Thread channel 11")
 
 
-# ------------------------------------------------------------ dismissing
+# ------------------------------------------------------- the tick
 
 
-async def test_dismiss_hides_the_card_until_its_reason_changes(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_a_ticked_channel_card_stays_faded_and_leaves_the_count(hass: HomeAssistant, supervisor: FakeSupervisor):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
-    [card] = coord.channel_cards(WIFI_KEY)
-    assert card["reason"] == "wifi:4:crowded"
-    coord.set_channel_dismissed(WIFI_KEY, card["reason"], True)
-    assert coord.channel_cards(WIFI_KEY) == []
-    assert coord.network_recommendations() == [] or all(r["key"] != WIFI_KEY for r in coord.network_recommendations())
-    page = coord.network_radio(WIFI_KEY)["dismissed"]
-    assert page["reason"] == "wifi:4:crowded" and "moves off channel 4" in page["returns"]
-    # The router moves to channel 1, over Zigbee channel 11: a new card.
-    for row in coord._air:
-        if row["ssid"].startswith("Home") and row["mhz"] == 2427:
-            row.update(mhz=2412, channel=1)
-    [again] = coord.channel_cards(WIFI_KEY)
-    assert again["reason"] == "wifi:1:covered"
-    assert coord.network_radio(WIFI_KEY)["dismissed"] is None
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    [card] = row["cards"]
+    assert card["ack_key"] == "net:wifi:channel:wifi:4:crowded" and card["acknowledged"] is False
+    coord.set_recommendation_ack(True, line=card["ack_key"])
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    assert row["cards"][0]["acknowledged"] is True, "still listed, ticked"
+    # The router moves to channel 1, over Zigbee channel 11: a new card, unticked.
+    for air in coord._air:
+        if air["ssid"].startswith("Home") and air["mhz"] == 2427:
+            air.update(mhz=2412, channel=1)
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    assert row["cards"][0]["ack_key"] == "net:wifi:channel:wifi:1:covered"
+    assert row["cards"][0]["acknowledged"] is False
 
 
-async def test_show_it_again(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_untick_brings_it_back(hass: HomeAssistant, supervisor: FakeSupervisor):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
-    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", True)
-    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", False)
-    assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    key = coord.network_recommendations()[0]["cards"][0]["ack_key"]
+    coord.set_recommendation_ack(True, line=key)
+    coord.set_recommendation_ack(False, line=key)
+    assert coord.network_recommendations()[0]["cards"][0]["acknowledged"] is False
 
 
-async def test_dismiss_refuses_what_is_not_a_card(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_a_tick_needs_a_card_that_is_shown(hass: HomeAssistant, supervisor: FakeSupervisor):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
-    for key, reason in (("mqtt", "wifi:4:crowded"), (WIFI_KEY, ""), (WIFI_KEY, "x" * 65), (WIFI_KEY, "wifi:9:crowded")):
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    for line in ("net:wifi:channel:wifi:9:crowded", "net:mqtt:channel:x", "net:"):
         with pytest.raises(ValueError):
-            coord.set_channel_dismissed(key, reason, True)
-    assert not coord.data.get("channel_dismissed")
+            coord.set_recommendation_ack(True, line=line)
 
 
-async def test_a_zigbee_card_is_dismissed_by_its_channel(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_midnight_keeps_a_shown_cards_tick_and_forgets_a_gone_one(hass: HomeAssistant, supervisor: FakeSupervisor):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
-    coord._network_members = lambda: {STACK_Z2M: ["a", "b"]}
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    key = coord.network_recommendations()[0]["cards"][0]["ack_key"]
+    coord.set_recommendation_ack(True, line=key)
+    coord.prune_recommendation_acks()
+    assert coord._acks()["lines"].get(key) is True
+    # The neighbour goes quiet: no card, and two days on, no tick.
+    coord._air = [r for r in coord._air if r["mhz"] != 2412]
+    coord._net_ack_seen = {}
+    coord.prune_recommendation_acks()
+    assert key not in coord._acks()["lines"]
+
+
+async def test_the_device_warning_follows_its_card(hass: HomeAssistant, supervisor: FakeSupervisor):
+    """A neighbour over Zigbee channel 11: no warning while the mesh is
+    healthy, a warning once the Zigbee card shows, none once it is ticked."""
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    coord._radio_stack = {"zb": STACK_Z2M}
+    coord._network_members = lambda: {STACK_Z2M: ["zb", "b"]}
+    coord.is_flapping = lambda _d: False
+    assert coord.device_radio("zb")["warn"] is None
     coord.is_flapping = lambda _d: True
+    assert coord.device_radio("zb")["warn"] == "A neighbour's Wi-Fi on channel 1, heard at 52%, covers this channel."
     [card] = coord.channel_cards(STACK_Z2M)
-    assert card["reason"] == "z2m:11"
-    coord.set_channel_dismissed(STACK_Z2M, card["reason"], True)
-    assert coord.channel_cards(STACK_Z2M) == []
-    assert coord.network_radio(STACK_Z2M) == {"dismissed": {"reason": "z2m:11", "returns": "Zigbee2MQTT moves off channel 11"}}
-    # The Wi-Fi card is its own.
-    assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
+    coord.mark_network_cards(STACK_Z2M, [card])
+    coord.set_recommendation_ack(True, line=card["ack_key"])
+    assert coord.device_radio("zb")["warn"] is None
 
 
-async def test_a_dismissal_survives_a_restart(hass: HomeAssistant, supervisor: FakeSupervisor):
-    from tests.helpers import setup_entry
+async def test_the_own_wifi_warning_follows_the_wifi_card(hass: HomeAssistant):
+    points = [{"ssid": HOME, "frequency": 2412, "signal": 80, "mac": "02:00:00:00:00:01"},
+              {"ssid": "Far", "frequency": 2462, "signal": 20, "mac": "02:00:00:00:00:09"}]
+    hass.data["hassio"] = FakeSupervisor(points=points)
+    coord = await setup_coordinator(hass, {CONF_WIFI_NETWORKS: [HOME]})
+    _zigbee(coord, hass, z2m=11, zha=None)
+    await coord.async_sweep_wifi()
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    coord._radio_stack = {"zb": STACK_Z2M}
+    assert coord.device_radio("zb")["warn"] == "Your own Wi-Fi on channel 1 covers this channel."
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    coord.set_recommendation_ack(True, line=row["cards"][0]["ack_key"])
+    assert coord.device_radio("zb")["warn"] is None
 
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-    _zigbee(coord, hass)
-    await _scanned(hass, coord)
-    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", True)
-    await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
-    coord = entry.runtime_data
-    assert [r["reason"] for r in coord.data.get("channel_dismissed", [])] == ["wifi:4:crowded"]
 
-
-async def test_hostile_stored_dismissals_are_ignored(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_the_tick_command(hass: HomeAssistant, supervisor: FakeSupervisor, hass_ws_client):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
-    for junk in (None, "text", {"network": "wifi"}, [None, 5, {"network": 3, "reason": None}]):
-        coord.data["channel_dismissed"] = junk
-        assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
-
-
-async def test_the_dismiss_command_is_for_admins(hass: HomeAssistant, supervisor: FakeSupervisor, hass_ws_client, hass_admin_user):
-    coord = await setup_coordinator(hass)
-    _zigbee(coord, hass)
-    await _scanned(hass, coord)
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
     client = await hass_ws_client(hass)
-    await client.send_json({"id": 1, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:4:crowded", "on": True})
+    await client.send_json({"id": 1, "type": "device_sentinel/recommendations"})
+    recs = (await client.receive_json())["result"]
+    [row] = [r for r in recs["networks"] if r["key"] == WIFI_KEY]
+    key = row["cards"][0]["ack_key"]
+    await client.send_json({"id": 2, "type": "device_sentinel/recommendation_ack", "line": key, "on": True})
     assert (await client.receive_json())["success"]
-    assert coord.channel_cards(WIFI_KEY) == []
-    await client.send_json({"id": 2, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:9:crowded", "on": True})
-    reply = await client.receive_json()
-    assert not reply["success"] and reply["error"]["code"] == "not_found"
-    hass_admin_user.groups = []
-    await client.send_json({"id": 3, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:4:crowded", "on": False})
-    reply = await client.receive_json()
-    assert not reply["success"] and reply["error"]["code"] == "unauthorized"
+    await client.send_json({"id": 3, "type": "device_sentinel/network", "key": WIFI_KEY})
+    page = (await client.receive_json())["result"]
+    assert page["cards"][0]["acknowledged"] is True
+
+
+async def test_hostile_ticks_are_ignored(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    coord._recommendation_acks = {"devices": {}, "lines": {"net:wifi:channel:wifi:4:crowded": "yes"}}
+    coord._acks_read({"lines": {"net:wifi:channel:wifi:4:crowded": "yes", "net:x": 5}})
+    assert coord._acks()["lines"] == {}
