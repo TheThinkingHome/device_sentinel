@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.29.6 (2026-11-17)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -132,7 +132,8 @@ const rowCell = (root, label) => {
   // Type follows Name (rule DASH-08).
   // A row with nothing to show is left out: this test device
   // reports no manufacturer, model, hardware version or address.
-  const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration",
+  // The person's note closes the first group (rule DEV-19).
+  const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration", "Notes",
     "[Power]", "Battery level", "Battery sensor", "Powered by", "[Signal]", "Signal", "Signal sensor",
     // Reporting, and the Wait rule under Its Rhythm; Muted
     // and Excluded, with its button, last under Actions (rule DASH-08).
@@ -148,6 +149,15 @@ const rowCell = (root, label) => {
   const wantFull = ["Name", "Type", "Device ID", "Area", "Labels", "Manufacturer", "Model", "Model ID", "Hardware version", "Integration",
     "MAC Address", "Zigbee Address", ...want.slice(6)];
   check("With data, every row in the approved order", JSON.stringify(full) === JSON.stringify(wantFull), full);
+  // The Radio Channel row follows the addresses, before the note (rule SIG-19).
+  ({ root } = await open({ tweak: (p) => {
+    Object.assign(p.identity, { addresses: [{ label: "MAC Address", value: "aa:bb" }],
+      radio: { kind: "zigbee", channel: 11, words: "Zigbee channel 11, from Zigbee2MQTT", warn: null } });
+  } }));
+  const radioRows = labelsOf(root).filter((l) => l !== "Connects" && l !== "Battery steps");
+  check("Radio Channel after the addresses, before Notes",
+    radioRows.indexOf("Radio Channel") === radioRows.indexOf("MAC Address") + 1
+    && radioRows.indexOf("Notes") === radioRows.indexOf("Radio Channel") + 1, radioRows);
   ({ root, window, events, hass, panel } = await open());
   check("No Live readings section, and no Heartbeat row", !/Live readings/.test(root.textContent) && !order.includes("Heartbeat"));
   check("Battery level: the value, then when it changed", /^19\.5% changed 3\.2h ago/.test(rowCell(root, "Battery level").textContent),
