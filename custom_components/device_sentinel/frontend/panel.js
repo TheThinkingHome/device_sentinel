@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.7 (2026-11-17)
+// File: panel.js, Version: 0.29.7 (2026-11-18)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1528,7 +1528,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const { lines, cards, networks } = this._recsInView();
     return lines.filter((line) => !line.acknowledged).length
       + cards.reduce((n, card) => n + card.devices.filter((row) => !row.acknowledged).length, 0)
-      + networks.reduce((n, row) => n + row.cards.length, 0);
+      + networks.reduce((n, row) => n + row.cards.filter((card) => !card.acknowledged).length, 0);
   }
 
   // Simple or Advanced (rule DASH-03): the switch while it is
@@ -1825,13 +1825,14 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The acknowledgment tick (rule REC-07): one device on one card, or
   // one written line, and it can be unticked again.
-  _ackBox(on, which) {
+  _ackBox(on, which, after = null) {
     const box = el("input", { type: "checkbox", "aria-label": "Acknowledged", ...(on ? { checked: "" } : {}) });
     box.addEventListener("change", async () => {
       box.disabled = true;
       try {
         await this._call({ type: "device_sentinel/recommendation_ack", on: box.checked, ...which });
         this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+        if (after) await after();
       } catch (err) {
         box.checked = !box.checked;
       }
@@ -2692,22 +2693,6 @@ class DeviceSentinelPanel extends HTMLElement {
         await this._refresh();
       } }, "Yes, it is expected"));
     }
-    // A channel the router will not change: dismissed until the reason
-    // for the card changes (rule REC-13).
-    if (card.kind === "channel") {
-      actions.push(el("button", { class: "chip", type: "button", onclick: async (ev) => {
-        const btn = ev.target;
-        btn.disabled = true;
-        try {
-          await this._call({ type: "device_sentinel/channel_dismiss", key: net.key, reason: card.reason, on: true });
-        } catch (err) {
-          btn.disabled = false;
-          btn.after(el("span", { class: "actnote refused" }, err.message || "That did not save."));
-          return;
-        }
-        await this._refresh();
-      } }, "Dismiss"));
-    }
     const book = card.logbook;
     if (book && book.start && book.end) {
       // Worded in the house's own time, as the sentence is.
@@ -2717,9 +2702,14 @@ class DeviceSentinelPanel extends HTMLElement {
     const app = this._networkApp(net.key);
     if (app) actions.push(this._link(app[0], app[1]));
     else if (named) actions.push(this._link(`Open ${net.name}'s page`, this._networkPath(net.key)));
-    // No Acknowledged box: each card is answered by its own button, or
-    // ends by itself (rule DASH-18).
-    return el("article", { class: "rec", "data-kind": `network-${net.key}-${card.kind}-${card.minute ?? card.channel ?? ""}` },
+    // The Acknowledged tick, as on every recommendation (rule REC-07):
+    // a ticked card stays, faded, and leaves the count. On the network's
+    // own page the page is read again.
+    if (card.ack_key) {
+      actions.push(this._ackBox(Boolean(card.acknowledged), { line: card.ack_key }, named ? null : () => this._refresh()));
+    }
+    return el("article", { class: card.acknowledged ? "rec acked" : "rec",
+      "data-kind": `network-${net.key}-${card.kind}-${card.minute ?? card.channel ?? ""}` },
       named ? el("h3", {}, net.name) : null,
       el("p", {}, el("strong", {}, card.sentence)),
       card.question ? el("p", {}, card.question) : null,
@@ -2784,28 +2774,10 @@ class DeviceSentinelPanel extends HTMLElement {
     // ran long, radio noise. One sentence each, also on the
     // Recommendations tab (rule DASH-18).
     const recCards = [...(page.cards || []), ...((page.noise && page.noise.cards) || [])];
-    const dismissed = (page.radio && page.radio.dismissed) || null;
-    if (recCards.length || dismissed) {
+    if (recCards.length) {
       sections.push(el("h3", { class: "section" }, "Recommendations for This Network"),
         ...recCards.map((card) => this._networkCard(page, card)));
     }
-    if (dismissed) {
-      sections.push(el("p", { class: "muted", style: "margin:0;line-height:1.5" },
-        `You dismissed the channel recommendation. It comes back if ${dismissed.returns}. `,
-        el("button", { class: "linkbtn", type: "button", onclick: async (ev) => {
-          const btn = ev.target;
-          btn.disabled = true;
-          try {
-            await this._call({ type: "device_sentinel/channel_dismiss", key: page.key, reason: dismissed.reason, on: false });
-          } catch (err) {
-            btn.disabled = false;
-            btn.after(el("span", { class: "actnote refused" }, err.message || "That did not save."));
-            return;
-          }
-          await this._refresh();
-        } }, "Show it again")));
-    }
-
     // Its devices: a count per problem group, each opening the Devices
     // tab on those devices.
     const tiles = NETWORK_GROUPS.filter(([key], i) => i < 4 || (page.counts && page.counts[key]))
