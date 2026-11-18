@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.27.17 (2026-11-01)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.29.7 (2026-11-18)
 //
 // Panel checks: the device page reads at one size (rule DASH-06).
 // Secondary text such as "heard by Device Sentinel 9m ago" and
@@ -141,11 +141,12 @@ const rowCell = (root, label) => {
 const REAL = JSON.parse(fs.readFileSync(__dirname + "/real_device.json", "utf8")).device;
 
 // Controls, headings (a table's column headings among them, the same
-// capitals as on every tab, and the rhythm charts' titles, the size of
-// Its Rhythm), the big figures and the charts' own labels keep their
+// capitals as on every tab, the rhythm charts' titles, the size of
+// Its Rhythm, and the Identity table's group names, the size of
+// Identity), the big figures and the charts' own labels keep their
 // sizes; everything else on the page is text.
 const KEEPS_ITS_SIZE = [
-  "button", "select", "option", "input", "textarea", "svg", "svg *", "h2", "h3", "th",
+  "button", "select", "option", "input", "textarea", "svg", "svg *", "h2", "h3", "th", "tr.kvgroup td",
   ".chip", ".reading .v", ".stat .v", ".ruleline span", ".statusline > div:first-child",
   ".ruletitle", ".ruletitle *",
 ].join(", ");
@@ -223,6 +224,26 @@ const PAGES = [
     check("Buttons and chips keep 13px", chip && sizeOf(window, chip) === "13px", chip && sizeOf(window, chip));
     const word = host.querySelector(".statusline > div:first-child");
     check("The status word keeps its 18px", word && sizeOf(window, word) === "18px", word && sizeOf(window, word));
+  }
+  // The Identity table lines up under its heading, and its four group
+  // names (Power, Signal, Reporting, Actions) read at the heading's size
+  // (rule DASH-08). Before 0.29.7 the network page's two-column grid
+  // also caught this table and pushed its rows one column to the right.
+  {
+    const { window, root } = await open({ tweak: PAGES[0][1] });
+    const host = lightCopy(window, root);
+    const table = host.querySelector("table.kv");
+    const display = table ? window.getComputedStyle(table).display : null;
+    check("The Identity table is laid out as a table, not a grid", table && display !== "grid", display);
+    const heading = [...host.querySelectorAll("h3")].find((h) => h.textContent.trim() === "Identity");
+    const groups = [...host.querySelectorAll("table.kv tr.kvgroup td")];
+    const sizes = groups.map((g) => `${g.textContent.trim()} ${sizeOf(window, g)}`);
+    check("Power, Signal, Reporting and Actions read at the size of Identity",
+      heading && groups.length >= 3 && groups.every((g) => sizeOf(window, g) === sizeOf(window, heading)),
+      [heading && `Identity ${sizeOf(window, heading)}`, ...sizes]);
+    const list = host.querySelector("div.kv");
+    check("A network page's two-column list is still a grid",
+      !list || window.getComputedStyle(list).display === "grid", list && window.getComputedStyle(list).display);
   }
   {
     const { window, root } = await open({ answers: { device: (m) => {
