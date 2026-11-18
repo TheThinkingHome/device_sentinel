@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.5 (2026-11-17)
+// File: panel.js, Version: 0.29.6 (2026-11-17)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2478,6 +2478,78 @@ class DeviceSentinelPanel extends HTMLElement {
   // The Networks tab (rule DASH-17): each network the house has, its
   // state, its devices, those with a problem and its last outage. Simple
   // leaves out the last outage.
+  // The Networks tab's radio chart, Advanced only (rule DASH-19): the
+  // 2.4 GHz band at the server's last scan, each Wi-Fi network as wide
+  // as its channel and as tall as its signal, and each Zigbee and Thread
+  // channel as a bar. Red where the house's own Wi-Fi, or a neighbour's
+  // heard at 50% or more, covers a Zigbee or Thread channel.
+  _airChart(air) {
+    if (!air) return null;
+    const wifi = (air.wifi || []).filter((r) => r.band === "2.4 GHz");
+    const bars = [...(air.zigbee || []).map((z) => ({ ...z, label: `${z.name} ${z.channel}`, colour: "var(--success-color, #43a047)" })),
+      ...(air.thread || []).map((t) => ({ ...t, label: `Thread ${t.channel}`, colour: "var(--info-color, #039be5)" }))];
+    if (!wifi.length && !bars.length) return null;
+    const W = 720, H = 246, L = 34, R = 12, T = 40, B = 44;
+    const lo = 2397, hi = 2486;
+    const x = (mhz) => L + ((mhz - lo) / (hi - lo)) * (W - L - R);
+    const y = (pct) => T + (1 - pct / 100) * (H - T - B);
+    const own = "var(--primary-color, #03a9f4)";
+    const other = "var(--secondary-text-color, #727272)";
+    const bad = "var(--error-color, #db4437)";
+    const parts = [];
+    for (const pct of [0, 50, 100]) {
+      parts.push(svg("line", { x1: L, x2: W - R, y1: y(pct), y2: y(pct), stroke: "var(--divider-color, #ccc)",
+        "stroke-dasharray": pct === 50 ? "4 3" : null }));
+      parts.push(svg("text", { class: "axis", x: L - 4, y: y(pct) + 4, "text-anchor": "end" }, `${pct}%`));
+    }
+    for (let c = 1; c <= 13; c += 1) {
+      const mhz = 2407 + 5 * c;
+      parts.push(svg("text", { class: "axis", x: x(mhz), y: H - B + 14, "text-anchor": "middle" }, String(c)));
+    }
+    parts.push(svg("text", { class: "axis", x: (L + W - R) / 2, y: H - B + 30, "text-anchor": "middle" }, "Wi-Fi channel"));
+    // Weakest first, so a strong network is drawn over a weak one.
+    for (const r of [...wifi].sort((a, b) => (a.signal || 0) - (b.signal || 0))) {
+      const top = y(r.signal || 0), base = y(0);
+      const colour = r.bad ? bad : r.own ? own : other;
+      const name = r.ssid || "(hidden network)";
+      parts.push(svg("path", {
+        d: `M${x(r.mhz - 11)},${base} L${x(r.mhz - 9)},${top} L${x(r.mhz + 9)},${top} L${x(r.mhz + 11)},${base} Z`,
+        fill: colour, "fill-opacity": r.own ? 0.18 : 0.08, stroke: colour, "stroke-width": r.bad ? 2 : 1.2,
+      }, svg("title", {}, `${name}, ${r.own ? "yours" : "a neighbour's"}, channel ${r.channel}, ${r.signal ?? "?"}%`)));
+    }
+    bars.forEach((b, i) => {
+      parts.push(svg("rect", { x: x(b.mhz) - 2, y: y(100), width: 4, height: y(0) - y(100), fill: b.colour },
+        svg("title", {}, b.label)));
+      // Labels alternate between two lines, so two close channels never overlap.
+      parts.push(svg("text", { class: "axis", x: x(b.mhz), y: i % 2 ? T - 8 : T - 24, "text-anchor": "middle" }, b.label));
+    });
+    const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": "The 2.4 GHz band as the server hears it: each Wi-Fi network, and each Zigbee and Thread channel" }, ...parts);
+    const swatch = (colour, text, fill) => el("span", {},
+      el("span", { class: "swatch", style: `width:12px;height:10px;border:1.5px solid ${colour};background:${fill ? colour : "none"}` }), text);
+    const legend = el("div", { class: "legend" },
+      swatch(own, "Your Wi-Fi"), swatch(other, "A neighbour's Wi-Fi"),
+      ...(wifi.some((r) => r.bad) ? [swatch(bad, "Covers a Zigbee or Thread channel")] : []), swatch("var(--success-color, #43a047)", "Zigbee", true),
+      ...((air.thread || []).length ? [swatch("var(--info-color, #039be5)", "Thread", true)] : []));
+    const when = air.scanned_at ? new Date(air.scanned_at) : null;
+    const note = air.scan === "ok" && when && Number.isFinite(when.getTime())
+      ? `Last scan ${when.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`
+      : "";
+    const why = {
+      no_adapter: "This server has no Wi-Fi adapter, so only the Zigbee and Thread channels are shown.",
+      adapter_off: "This server's Wi-Fi adapter is turned off in Settings, System, Network, so only the Zigbee and Thread channels are shown.",
+      no_supervisor: "Device Sentinel hears Wi-Fi only on Home Assistant OS or Supervised, so only the Zigbee and Thread channels are shown.",
+      not_yet: "The first Wi-Fi scan has not run yet. It runs about a minute after Home Assistant starts.",
+    }[air.scan];
+    return el("div", { class: "chart", "data-chart": "air" },
+      el("div", { class: "statusline" }, el("strong", {}, "What the Server Hears"), el("span", { class: "small" }, note)),
+      chart, legend,
+      el("p", { class: "muted", style: "margin:0;line-height:1.5" },
+        "Zigbee, Thread and 2.4 GHz Wi-Fi share one band. A Wi-Fi network over a Zigbee or Thread channel can drown it out. "
+        + "This is what the server hears where it stands; a coordinator in another room can hear something else."),
+      why ? el("p", { class: "muted", style: "margin:0" }, why) : null);
+  }
+
   _paintNetworks() {
     const rows = (this._snapshot.networks && this._snapshot.networks.rows) || [];
     const simple = this._isSimple();
@@ -2512,7 +2584,9 @@ class DeviceSentinelPanel extends HTMLElement {
     const foot = el("p", { class: "muted", style: "margin:0;line-height:1.5" },
       "A network appears only where your house has it. Devices that reach Home Assistant through the MQTT broker, "
       + "such as Tasmota, are counted under the broker as well.");
-    this._pane.replaceChildren(intro, el("div", { class: "scroll" }, table), foot);
+    // The radio chart first: it is about every network at once.
+    const air = simple ? null : this._airChart(this._snapshot.networks.air);
+    this._pane.replaceChildren(...(air ? [air] : []), intro, el("div", { class: "scroll" }, table), foot);
   }
 
   // A network's page (rule DASH-17). Simple shows its state, its devices
@@ -2869,6 +2943,36 @@ class DeviceSentinelPanel extends HTMLElement {
             el("tbody", {}, ...page.wifi_changes.map((r) => el("tr", {},
               el("td", {}, this._link(r.name, this._devicePath(r.device_id))),
               el("td", {}, String(r.addresses)), el("td", {}, String(r.moves)), el("td", {}, r.last ? moment(r.last) : "")))))));
+      }
+      // Every Wi-Fi network the server heard at its last scan, and a
+      // Matter network's Thread channels (rule DASH-19).
+      const radio = page.radio || {};
+      if ((radio.heard || []).length) {
+        sections.push(el("h3", { class: "section" }, "Networks the Server Hears"),
+          el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" },
+            "Each Wi-Fi network the server heard at its last scan, strongest first on each channel. "
+            + "Red: your own Wi-Fi, or a neighbour's heard at 50% or more, over a Zigbee or Thread channel."),
+          el("div", { class: "scroll" }, el("table", { "data-shares": "heard" },
+            el("thead", {}, el("tr", {}, ...["NETWORK", "YOURS", "BAND", "CHANNEL", "SIGNAL"].map((h) => el("th", {}, h)))),
+            el("tbody", {}, ...radio.heard.map((r) => el("tr", {},
+              el("td", {}, r.ssid || el("span", { class: "muted" }, "Hidden network")),
+              el("td", {}, r.own ? "Yes" : ""),
+              el("td", {}, r.band),
+              el("td", { style: r.bad ? "color:var(--error-color, #db4437);font-weight:600" : null }, String(r.channel)),
+              el("td", {}, r.signal === null || r.signal === undefined ? "" : `${r.signal}%`)))))));
+      } else if (page.key === "wifi" && radio.scan && radio.scan !== "ok") {
+        sections.push(el("h3", { class: "section" }, "Networks the Server Hears"),
+          el("p", { class: "muted", style: "margin:0" }, radio.scan === "not_yet"
+            ? "The first scan has not run yet."
+            : radio.scan === "adapter_off"
+              ? "The server's Wi-Fi adapter is turned off in Settings, System, Network."
+              : "The server cannot scan for Wi-Fi: it has no Wi-Fi adapter, or it does not run Home Assistant OS or Supervised."));
+      }
+      if ((radio.thread || []).length) {
+        sections.push(el("h3", { class: "section" }, "Thread Channels"),
+          el("div", { class: "kv" }, ...radio.thread.flatMap((t) => [
+            el("span", { class: "k" }, `Channel ${t.channel}`),
+            el("span", {}, `${t.devices} ${t.devices === 1 ? "device reports" : "devices report"} it`)])));
       }
       if (page.noise && (page.noise.channels || []).length) {
         const dbm = (v) => (v === null || v === undefined ? "" : `${Math.round(v)} dBm`);
@@ -5064,6 +5168,11 @@ class DeviceSentinelPanel extends HTMLElement {
       ...(who.same_hardware ? [["Same hardware", this._sameHardwareCell(who)]] : []),
       ...(simple ? [] : addressRows),
       ...netRows,
+      // The channel its radio uses and where that was learned, with a
+      // warning where a strong network overlaps it. Advanced only
+      // (rule SIG-19).
+      ...(who.radio && !simple ? [["Radio Channel", el("span", {}, who.radio.words,
+        who.radio.warn ? el("div", { class: "recommended" }, who.radio.warn) : null)]] : []),
       // The person's own note, last in the first group, in Simple and
       // Advanced alike (rule DEV-19).
       ...(acts ? [["Notes", this._noteCell(who)]] : who.note ? [["Notes", who.note]] : []),
