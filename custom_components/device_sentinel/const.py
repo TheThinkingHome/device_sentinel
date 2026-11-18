@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.29.7 (2026-11-17)
+# File: const.py, Version: 0.29.7 (2026-11-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2064,6 +2064,13 @@ PERSISTENT_TARGETS = (PERSISTENT_TARGET, PERSISTENT_NOTIFY_TARGET)
 # those for SMTP in 2027.3, and until then both may exist side by side,
 # the old one chosen and working as before.
 SMTP_TARGET_PREFIX = "smtp:"
+# Any other notify entity, such as a Telegram chat, an ntfy topic or a
+# Discord channel, chosen where the integration has no old-style notify
+# action of its own (rule NOTE-02). Stored as "entity:notify.<entity>"
+# for the same reason as an SMTP recipient.
+ENTITY_TARGET_PREFIX = "entity:"
+TELEGRAM_BOT_DOMAIN = "telegram_bot"
+NOTIFY_ENTITY_SEND = "send_message"
 SMTP_DOMAIN = "smtp"
 SMTP_SEND_MESSAGE = "send_message"
 PERSISTENT_CREATE = "create"
@@ -3120,12 +3127,6 @@ DROP_DAY_SIGNAL_BACK_N = "signal_back_n"
 # Outages a person marked as expected, such as a nightly backup's
 # (rule DASH-18): one row per network and time of day, with the usual
 # length the pattern had when marked and when it was marked.
-# The channel cards a person dismissed (rule REC-13): one row a network,
-# with the reason the card gave, so a new reason brings it back.
-DATA_CHANNEL_DISMISSED = "channel_dismissed"
-DIS_NETWORK = "network"
-DIS_REASON = "reason"
-DIS_SET_AT = "set_at"
 DATA_EXPECTED_OUTAGES = "expected_outages"
 EXP_NETWORK = "network"
 EXP_MINUTE = "minute"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.29.7 (2026-11-17)
+# File: radio_channels.py, Version: 0.29.7 (2026-11-18)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 
@@ -34,10 +34,6 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DATA_CHANNEL_DISMISSED,
-    DIS_NETWORK,
-    DIS_REASON,
-    DIS_SET_AT,
     LOGGER,
     STACK_DISPLAY_NAMES,
     STACK_MATTER,
@@ -45,6 +41,7 @@ from .const import (
     STACK_ZHA,
     WIFI_KEY,
 )
+from .network_extras import network_ack_key
 from .study_stacks import _matter_attributes, _plain, _read, live_entries, node_devices
 from .wifi import SUPERVISOR, read_interfaces, scan_networks
 
@@ -65,7 +62,6 @@ WIFI_CHOICES = (1, 6, 11)
 ZIGBEE_CHOICES = (11, 15, 20, 25)
 ZIGBEE_STACKS = (STACK_Z2M, STACK_ZHA)
 NETWORK_NAME_MAX = 64
-REASON_MAX = 64
 
 
 def wifi_channel(mhz: int) -> int | None:
@@ -380,7 +376,7 @@ class RadioChannelsMixin:
             if net is None:
                 return None
             return self._judged({"kind": "zigbee", "channel": net["channel"],
-                                 "words": f"Zigbee channel {net['channel']}, from {net['name']}"})
+                                 "words": f"Zigbee channel {net['channel']}, from {net['name']}"}, stack)
         try:
             matter = self._matter_radios().get(device_id) if stack == STACK_MATTER else None
         except Exception:  # noqa: BLE001 - a library's objects may move
@@ -423,21 +419,35 @@ class RadioChannelsMixin:
                              "mhz": heard[0]["mhz"] if shown is not None else None,
                              "words": f"Wi-Fi channel {said}, {band_said}, {where}"})
 
-    def _judged(self, radio: dict[str, Any]) -> dict[str, Any]:
-        """The radio with a warning where a strong network overlaps it."""
+    def _open_card(self, key: str, test: Any) -> dict[str, Any] | None:
+        """A channel card of a network that is shown and not ticked."""
+        kept: dict[str, bool] = self._acks().get("lines") or {}  # type: ignore[attr-defined]
+        for card in self._channel_cards(key):
+            if test(card) and not kept.get(network_ack_key(key, card)):
+                return card
+        return None
+
+    def _judged(self, radio: dict[str, Any], network: str | None = None) -> dict[str, Any]:
+        """The radio with a warning where a strong network overlaps it,
+        only while the card that could clear it is shown and not ticked
+        (rule SIG-20): the house's Wi-Fi card for its own Wi-Fi, the
+        Zigbee network's card for a neighbour's."""
         radio["warn"] = None
+        if radio["kind"] not in ("zigbee", "thread"):
+            return radio
         rows = self._air_rows()
-        if radio["kind"] in ("zigbee", "thread"):
-            over = [r for r in rows if not r["own"] and (r["signal"] or 0) >= STRONG_PERCENT and covers(r["mhz"], radio["channel"])]
-            mine = [r for r in rows if r["own"] and covers(r["mhz"], radio["channel"])]
-            if mine:
+        over = [r for r in rows if not r["own"] and (r["signal"] or 0) >= STRONG_PERCENT and covers(r["mhz"], radio["channel"])]
+        mine = [r for r in rows if r["own"] and covers(r["mhz"], radio["channel"])]
+        if mine:
+            channels = {r["channel"] for r in mine}
+            if self._open_card(WIFI_KEY, lambda c: c.get("reason") in {f"wifi:{ch}:covered" for ch in channels}):
                 radio["warn"] = f"Your own Wi-Fi on channel {mine[0]['channel']} covers this channel."
-            elif over:
-                strongest = max(over, key=lambda r: r["signal"] or 0)
-                radio["warn"] = (
-                    f"A neighbour's Wi-Fi on channel {strongest['channel']}, heard at "
-                    f"{strongest['signal']}%, covers this channel."
-                )
+        elif over and network in ZIGBEE_STACKS and self._open_card(network, lambda c: True):
+            strongest = max(over, key=lambda r: r["signal"] or 0)
+            radio["warn"] = (
+                f"A neighbour's Wi-Fi on channel {strongest['channel']}, heard at "
+                f"{strongest['signal']}%, covers this channel."
+            )
         return radio
 
     def device_radio_safe(self, device_id: str) -> dict[str, Any] | None:
@@ -460,11 +470,7 @@ class RadioChannelsMixin:
         try:
             if key == WIFI_KEY:
                 view = self.air_view()
-                return {"scanned_at": view["scanned_at"], "scan": view["scan"], "heard": view["wifi"],
-                        "dismissed": self._dismissed_view(key)}
-            if key in ZIGBEE_STACKS:
-                dismissed = self._dismissed_view(key)
-                return {"dismissed": dismissed} if dismissed else None
+                return {"scanned_at": view["scanned_at"], "scan": view["scan"], "heard": view["wifi"]}
             if key == STACK_MATTER:
                 thread = self._thread_channels()
                 return {"thread": thread} if thread else None
@@ -542,11 +548,10 @@ class RadioChannelsMixin:
         """The Recommendations for a network's channel (rule REC-13): the
         house's Wi-Fi on a better channel, or a Zigbee network moved
         from under a neighbour's strong Wi-Fi."""
-        dismissed = self._dismissed_reason(key)
-        return [card for card in self._channel_cards(key) if card.get("reason") != dismissed]
+        return self._channel_cards(key)
 
     def _channel_cards(self, key: str) -> list[dict[str, Any]]:
-        """Every channel card for a network, dismissed or not."""
+        """Every channel card for a network."""
         try:
             if key == WIFI_KEY:
                 return self._wifi_channel_cards()
@@ -555,42 +560,6 @@ class RadioChannelsMixin:
         except Exception as err:  # noqa: BLE001 - a card never breaks a page
             LOGGER.debug("device_sentinel: channel card for %s not made: %s", key, err)
         return []
-
-    # ---------------------------------------------------- dismissing
-
-    def _dismissed_rows(self) -> list[dict[str, Any]]:
-        rows = self.data.get(DATA_CHANNEL_DISMISSED)  # type: ignore[attr-defined]
-        return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
-
-    def _dismissed_reason(self, key: str) -> str | None:
-        row = next((r for r in self._dismissed_rows() if r.get(DIS_NETWORK) == key), None)
-        reason = row.get(DIS_REASON) if row else None
-        return reason if isinstance(reason, str) else None
-
-    def set_channel_dismissed(self, key: str, reason: str, on: bool) -> None:
-        """Dismiss a network's channel card, or show it again (rule
-        REC-13). Kept with the reason the card gave: a card with another
-        reason is a new card and shows. Admin only, through the panel."""
-        if key not in (WIFI_KEY, *ZIGBEE_STACKS):
-            raise ValueError("This network has no channel card")
-        if not isinstance(reason, str) or not reason or len(reason) > REASON_MAX:
-            raise ValueError("That is not a card's reason")
-        if on and reason not in {card.get("reason") for card in self._channel_cards(key)}:
-            raise ValueError("That card is no longer shown")
-        table = [r for r in self._dismissed_rows() if r.get(DIS_NETWORK) != key]
-        if on:
-            table.append({DIS_NETWORK: key, DIS_REASON: reason, DIS_SET_AT: dt_util.utcnow().timestamp()})
-        self.data[DATA_CHANNEL_DISMISSED] = table  # type: ignore[attr-defined]
-        self._mark_cold_dirty()  # type: ignore[attr-defined]
-        self._mark_changed()  # type: ignore[attr-defined]
-
-    def _dismissed_view(self, key: str) -> dict[str, Any] | None:
-        """The network page's line for a dismissed card it is hiding."""
-        reason = self._dismissed_reason(key)
-        card = next((c for c in self._channel_cards(key) if c.get("reason") == reason), None) if reason else None
-        if card is None:
-            return None
-        return {"reason": reason, "returns": card["returns"]}
 
     def _busy(self, rows: list[dict[str, Any]], mhz: int) -> list[dict[str, Any]]:
         """The neighbours' networks a 2.4 GHz Wi-Fi channel at `mhz`
@@ -641,11 +610,9 @@ class RadioChannelsMixin:
             cards.append({
                 "kind": "channel", "channel": best,
                 # What the card is about: a new channel, or a new reason,
-                # is a new card, which a dismissal does not hide.
+                # is a new card, which an earlier tick does not cover
+                # (rule REC-07).
                 "reason": f"wifi:{channel}:{'covered' if covered else 'crowded'}",
-                "returns": (f"your Wi-Fi moves off channel {channel}" if covered else
-                            f"your Wi-Fi moves off channel {channel}, or starts covering one of "
-                            "your Zigbee or Thread channels"),
                 "sentence": sentence,
                 "question": "A mesh router that picks its own channel may change it back. Device Sentinel "
                             "only hears Wi-Fi where your server is.",
@@ -679,7 +646,6 @@ class RadioChannelsMixin:
         return [{
             "kind": "channel", "channel": best,
             "reason": f"{key}:{net['channel']}",
-            "returns": f"{net['name']} moves off channel {net['channel']}",
             "sentence": (
                 f"{net['name']} is on channel {net['channel']}, inside a neighbour's Wi-Fi on channel "
                 f"{top['channel']}, heard at {top['signal']}%, and {cost} of its devices "
@@ -711,5 +677,6 @@ class RadioChannelsMixin:
                 key: [{k: c[k] for k in ("kind", "channel", "reason", "sentence")} for c in self._channel_cards(key)]
                 for key in (WIFI_KEY, *ZIGBEE_STACKS)
             },
-            "dismissed": {r.get(DIS_NETWORK): r.get(DIS_REASON) for r in self._dismissed_rows()},
+            "acknowledged": sorted(k for k, on in (self._acks().get("lines") or {}).items()  # type: ignore[attr-defined]
+                                   if on and k.startswith("net:")),
         }

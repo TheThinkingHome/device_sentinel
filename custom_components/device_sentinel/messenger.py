@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.28.12 (2026-11-11)
+# File: messenger.py, Version: 0.29.7 (2026-11-18)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -27,8 +27,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .notifier import async_notify, fitted_for, notify_platform
+from .notifier import as_entity_target, async_notify, async_send, fitted_for, notify_platform
 from .const import (
+    ENTITY_TARGET_PREFIX,
     BRIEF_TITLE,
     CONF_BRIEF_TARGETS,
     CONF_REMINDER_MODE,
@@ -149,6 +150,8 @@ class MessengerMixin:
             return 0
         sent = 0
         for target in targets:
+            # A Telegram chat typed as "notify.<name>" is its entity.
+            target = as_entity_target(self.hass, target)
             if target.startswith(SMTP_TARGET_PREFIX):
                 # An SMTP recipient chosen as its entity: the page goes
                 # as the email's HTML body through smtp.send_message,
@@ -167,6 +170,22 @@ class MessengerMixin:
                         },
                         blocking=True,
                         target={"entity_id": target[len(SMTP_TARGET_PREFIX):]},
+                    )
+                except Exception as err:  # noqa: BLE001
+                    LOGGER.warning(
+                        "Daily brief to %s was not delivered: %s", target, err
+                    )
+                    continue
+                sent += 1
+                continue
+            if target.startswith(ENTITY_TARGET_PREFIX):
+                # A notify entity, such as a Telegram chat: the brief's
+                # text, fitted as for an old-style action of its kind
+                # (rule NOTE-02).
+                try:
+                    await async_send(
+                        self.hass, target,
+                        fitted_for(self.hass, target, self._brief_payload(target, text)),
                     )
                 except Exception as err:  # noqa: BLE001
                     LOGGER.warning(
@@ -250,7 +269,21 @@ class MessengerMixin:
         # reaches them (rule NOTE-07).
         targets.update(self._push_targets())
         for target in sorted(targets):
+            target = as_entity_target(self.hass, target)
             call: dict[str, Any] = {}
+            if target.startswith(ENTITY_TARGET_PREFIX):
+                try:
+                    await async_send(
+                        self.hass, target,
+                        fitted_for(self.hass, target, {"title": RESTORE_NOTICE_TITLE, "message": message}),
+                    )
+                except Exception as err:  # noqa: BLE001
+                    LOGGER.warning(
+                        "Restore notice to %s was not delivered: %s", target, err
+                    )
+                    continue
+                sent += 1
+                continue
             if target.startswith(SMTP_TARGET_PREFIX):
                 domain, service = SMTP_DOMAIN, SMTP_SEND_MESSAGE
                 call["target"] = {

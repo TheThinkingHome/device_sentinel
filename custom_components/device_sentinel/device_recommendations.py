@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.4 (2026-11-16)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.7 (2026-11-18)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -565,6 +565,8 @@ class DeviceRecommendationsMixin:
         }
         devices = {kind: ticks for kind, ticks in devices.items() if ticks}
         present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
+        # A network card's tick, kept while the card is shown (rule REC-07).
+        present |= self.network_ack_present()  # type: ignore[attr-defined]
         old_lines: dict[str, bool] = acks.get("lines") or {}
         lines = {key: on for key, on in old_lines.items() if key in present}
         # A library line's tick moves onto each card it answers, then
@@ -590,6 +592,9 @@ class DeviceRecommendationsMixin:
         acks = self._acks()
         if line is not None:
             present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
+            # A network card's tick, every recommendation having one
+            # (rule REC-07).
+            present |= self.network_ack_present()  # type: ignore[attr-defined]
             if line not in present:
                 raise ValueError("That recommendation is no longer shown")
             acks.setdefault("lines", {})[line] = bool(on)

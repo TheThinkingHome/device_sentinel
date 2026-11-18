@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.29.6 (2026-11-17)
+# File: network_extras.py, Version: 0.29.7 (2026-11-18)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -152,6 +152,27 @@ def _stamp(iso: Any) -> float | None:
     moment = dt_util.parse_datetime(iso)
     return moment.timestamp() if moment is not None else None
 
+
+
+# A network card's Acknowledged tick, kept with the written lines' ticks
+# (rule REC-07): the network, the kind of card and what it is about, so
+# a card about something else is a new card.
+NET_ACK_PREFIX = "net:"
+NET_ACK_KINDS = ("pattern", "longer", "noise", "channel")
+# A card only the dashboard sees, such as radio noise, keeps its tick at
+# midnight while it was shown within this long.
+NET_ACK_SEEN_SECONDS = 2 * 86400.0
+
+
+def network_ack_key(key: str, card: dict[str, Any]) -> str:
+    kind = str(card.get("kind"))
+    if kind == "channel":
+        about = card.get("reason")
+    elif kind == "noise":
+        about = card.get("channel")
+    else:
+        about = card.get("minute")
+    return f"{NET_ACK_PREFIX}{key}:{kind}:{about}"
 
 class NetworkExtrasMixin:
     """The parts of a network's page beyond its counts and outages."""
@@ -857,9 +878,34 @@ class NetworkExtrasMixin:
             out[entity_id] = means
         return out
 
+    def mark_network_cards(self, key: str, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Give each of a network's cards its tick key and whether it is
+        ticked (rule REC-07), and note it as shown."""
+        kept: dict[str, bool] = self._acks().get("lines") or {}  # type: ignore[attr-defined]
+        seen = getattr(self, "_net_ack_seen", None)
+        if not isinstance(seen, dict):
+            seen = {}
+            self._net_ack_seen = seen
+        now = dt_util.utcnow().timestamp()
+        for card in cards:
+            ack = network_ack_key(key, card)
+            card["ack_key"] = ack
+            card["acknowledged"] = bool(kept.get(ack, False))
+            seen[ack] = now
+        return cards
+
+    def network_ack_present(self) -> set[str]:
+        """The tick keys of the network cards shown now, or shown on the
+        dashboard lately, which midnight keeps (rule REC-07)."""
+        present = {card["ack_key"] for row in self.network_recommendations() for card in row["cards"]}
+        now = dt_util.utcnow().timestamp()
+        seen = getattr(self, "_net_ack_seen", None) or {}
+        return present | {k for k, at in seen.items() if now - at <= NET_ACK_SEEN_SECONDS}
+
     def network_recommendations(self) -> list[dict[str, Any]]:
         """Each network with a recommendation of its own: its outage
-        patterns and expected outages that ran long (rule DASH-18)."""
+        patterns and expected outages that ran long (rule DASH-18), each
+        with its Acknowledged tick (rule REC-07)."""
         rows = []
         self.forget_expected()
         for key in self.network_keys():  # type: ignore[attr-defined]
@@ -871,7 +917,8 @@ class NetworkExtrasMixin:
             # Its channel recommendation (rule REC-13).
             cards = [*cards, *self.channel_cards(key)]  # type: ignore[attr-defined]
             if cards:
-                rows.append({"key": key, "name": self.network_name(key), "cards": cards})  # type: ignore[attr-defined]
+                rows.append({"key": key, "name": self.network_name(key),  # type: ignore[attr-defined]
+                             "cards": self.mark_network_cards(key, cards)})
         return rows
 
     # ------------------------------------------------------------ page

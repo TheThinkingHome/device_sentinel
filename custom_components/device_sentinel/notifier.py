@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.29.4 (2026-11-16)
+# File: notifier.py, Version: 0.29.7 (2026-11-18)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -54,7 +54,10 @@ from homeassistant.util import dt as dt_util
 from .battery_level import level_text
 from .narrative import BRIEF_STATE_WORDS
 from .const import (
+    ENTITY_TARGET_PREFIX,
+    NOTIFY_ENTITY_SEND,
     PERSISTENT_TARGETS,
+    TELEGRAM_BOT_DOMAIN,
     BROKER_LABEL,
     BROKER_SCOPE,
     DATA_SYSTEM_EVENTS,
@@ -192,13 +195,85 @@ def _notify_service(hass: Any, service: str) -> tuple[str, Any] | None:
     return None
 
 
+def as_entity_target(hass: Any, target: str) -> str:
+    """A target typed or saved as "notify.<name>" that names no notify
+    action but a notify entity, such as a Telegram chat typed into the
+    list, is that entity (rule NOTE-02); any other target is itself."""
+    domain, _, name = target.partition(".")
+    has_service = getattr(getattr(hass, "services", None), "has_service", None)
+    if domain != "notify" or not name or not callable(has_service) or has_service(domain, name):
+        return target
+    from homeassistant.helpers import entity_registry as er
+
+    try:
+        entry = er.async_get(hass).async_get(target)
+    except Exception:  # noqa: BLE001 - no registry to ask: the target as it is
+        return target
+    return f"{ENTITY_TARGET_PREFIX}{target}" if entry is not None else target
+
+
+def entity_platform(hass: Any, target: str) -> str | None:
+    """The integration of a notify entity chosen as a target, or None."""
+    if not target.startswith(ENTITY_TARGET_PREFIX):
+        return None
+    from homeassistant.helpers import entity_registry as er
+
+    entry = er.async_get(hass).async_get(target[len(ENTITY_TARGET_PREFIX):])
+    return str(entry.platform) if entry is not None else None
+
+
+async def async_send(hass: Any, target: str, payload: dict[str, Any]) -> bool:
+    """Send one message to one target, and say whether it was a target
+    at all (rule NOTE-02).
+
+    An old-style notify action is called by its own name. A notify
+    entity goes through its integration's own action where that keeps
+    what the message needs (a Telegram chat: plain text, and silent for
+    a recovery), and through notify.send_message, which takes a title
+    and a message only, for any other."""
+    target = as_entity_target(hass, target)
+    if target.startswith(ENTITY_TARGET_PREFIX):
+        entity_id = target[len(ENTITY_TARGET_PREFIX):]
+        message = str(payload.get("message") or "")
+        title = payload.get("title")
+        if entity_platform(hass, target) == TELEGRAM_BOT_DOMAIN:
+            raw = payload.get("data")
+            data: dict[str, Any] = raw if isinstance(raw, dict) else {}
+            call: dict[str, Any] = {"entity_id": entity_id, "message": message,
+                                    "parse_mode": data.get("parse_mode", "plain_text")}
+            if title:
+                call["title"] = str(title)
+            if data.get("disable_notification"):
+                call["disable_notification"] = True
+            await hass.services.async_call(TELEGRAM_BOT_DOMAIN, "send_message", call, blocking=True)
+            return True
+        call = {"message": message}
+        if title:
+            call["title"] = str(title)
+        await hass.services.async_call(
+            "notify", NOTIFY_ENTITY_SEND, call, blocking=True, target={"entity_id": entity_id},
+        )
+        return True
+    domain, _, service = target.partition(".")
+    if not service:
+        return False
+    await async_notify(hass, domain, service, payload)
+    return True
+
+
 def notify_platform(hass: Any, target: str) -> str | None:
     """The integration behind a legacy notify action, such as mobile_app,
-    group, telegram or smtp; None when it cannot be told.
+    group, telegram or smtp; None when it cannot be told. A Telegram
+    chat chosen as its notify entity is told as Telegram, so it is
+    fitted the same.
 
     A group whose members are all of one kind, a group of phones say, is
     that kind, because each member gets the message as the group sends
     it (rule NOTE-02)."""
+    target = as_entity_target(hass, target)
+    if target.startswith(ENTITY_TARGET_PREFIX):
+        platform = entity_platform(hass, target)
+        return "telegram" if platform == TELEGRAM_BOT_DOMAIN else platform
     domain, _, service = target.partition(".")
     if domain != "notify" or not service:
         return None
@@ -590,14 +665,11 @@ class NotifierMixin:
             payload["data"].update(_ANDROID_SILENT)
             payload["data"].update(_APPLE_SILENT)
         for target in self._push_targets():
-            domain, _, service = target.partition(".")
-            if not service:
-                continue
             try:
-                await async_notify(
-                    self.hass, domain, service,
-                    fitted_for(self.hass, target, _shown_as_text(target, payload)),
-                )
+                if not await async_send(
+                    self.hass, target, fitted_for(self.hass, target, _shown_as_text(target, payload)),
+                ):
+                    continue
             except Exception as err:  # noqa: BLE001 - one bad target
                 LOGGER.warning(
                     "Device Sentinel could not push to %s: %s", target, err
@@ -615,18 +687,15 @@ class NotifierMixin:
         """
         payload = self._family_payload(family, event_line, recovery)
         for target in self._push_targets():
-            domain, _, service = target.partition(".")
-            if not service:
-                LOGGER.warning(
-                    "Push target %s is not a service, skipped",
-                    target,
-                )
-                continue
             try:
-                await async_notify(
-                    self.hass, domain, service,
-                    fitted_for(self.hass, target, _shown_as_text(target, payload)),
-                )
+                if not await async_send(
+                    self.hass, target, fitted_for(self.hass, target, _shown_as_text(target, payload)),
+                ):
+                    LOGGER.warning(
+                        "Push target %s is not a service, skipped",
+                        target,
+                    )
+                    continue
             except Exception as err:  # noqa: BLE001 - any notify platform error
                 LOGGER.warning(
                     "Device Sentinel event to %s was not delivered: %s",

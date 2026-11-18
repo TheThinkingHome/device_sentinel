@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.29.7 (2026-11-17)
+# File: normalise.py, Version: 0.29.7 (2026-11-18)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -155,10 +155,6 @@ from .const import (
     DATA_SHORT_DROPS,
     DATA_ADDRESS_CHANGES,
     DATA_EXPECTED_OUTAGES,
-    DATA_CHANNEL_DISMISSED,
-    DIS_NETWORK,
-    DIS_REASON,
-    DIS_SET_AT,
     EXP_LENGTH,
     EXP_MINUTE,
     EXP_NETWORK,
@@ -1027,11 +1023,6 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     # length was never recorded holds None.
     DATA_EXPECTED_OUTAGES: (
         {EXP_NETWORK: TEXT, EXP_MINUTE: INTEGER, EXP_LENGTH: SPAN, EXP_SET_AT: REAL_MOMENT},
-        frozenset(),
-    ),
-    # The channel cards a person dismissed (rule REC-13).
-    DATA_CHANNEL_DISMISSED: (
-        {DIS_NETWORK: TEXT, DIS_REASON: TEXT, DIS_SET_AT: REAL_MOMENT},
         frozenset(),
     ),
     # The shadow readers' two keys: absent from every older line,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: networks.py, Version: 0.29.6 (2026-11-17)
+# File: networks.py, Version: 0.29.7 (2026-11-18)
 
 """The Networks tab and each network's page (rule DASH-17).
 
@@ -506,7 +506,8 @@ class NetworksMixin:
             **extras,
             # A channel recommendation joins the network's own cards
             # (rule REC-13).
-            "cards": [*extras.get("cards", []), *self.channel_cards(key)],  # type: ignore[attr-defined]
+            "cards": self.mark_network_cards(  # type: ignore[attr-defined]
+                key, [*extras.get("cards", []), *self.channel_cards(key)]),  # type: ignore[attr-defined]
             "radio": self.network_radio(key),  # type: ignore[attr-defined]
             "notices": self._network_notices(key),
             "sensors": self._network_sensors(key, members),

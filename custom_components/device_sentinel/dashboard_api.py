@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.29.7 (2026-11-17)
+# File: dashboard_api.py, Version: 0.29.7 (2026-11-18)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -113,7 +113,6 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_networks)
     websocket_api.async_register_command(hass, ws_network)
     websocket_api.async_register_command(hass, ws_network_expected)
-    websocket_api.async_register_command(hass, ws_channel_dismiss)
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
@@ -395,7 +394,7 @@ async def ws_recommendations(
             if row is None:
                 row = {"key": STACK_ZWAVE, "name": coordinator.network_name(STACK_ZWAVE), "cards": []}
                 networks.append(row)
-            row["cards"].extend(noise["cards"])
+            row["cards"].extend(coordinator.mark_network_cards(STACK_ZWAVE, noise["cards"]))
     connection.send_result(
         msg["id"],
         {
@@ -498,6 +497,8 @@ async def ws_network(
         # statistics away from the event loop (rule DASH-18).
         try:
             page["noise"] = await coordinator.async_network_noise()
+            if page["noise"]:
+                coordinator.mark_network_cards(msg["key"], page["noise"]["cards"])
         except Exception as err:  # noqa: BLE001 - the page still shows without it
             LOGGER.debug("Radio noise not read: %s", err)
     connection.send_result(msg["id"], page)
@@ -526,35 +527,6 @@ def ws_network_expected(
         return
     try:
         coordinator.set_outage_expected(msg["key"], msg["minute"], msg["on"])
-    except ValueError as err:
-        connection.send_error(msg["id"], "not_found", str(err))
-        return
-    connection.send_result(msg["id"], {})
-
-
-@websocket_api.require_admin
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "device_sentinel/channel_dismiss",
-        vol.Required("key"): vol.All(str, vol.Length(max=80)),
-        vol.Required("reason"): vol.All(str, vol.Length(min=1, max=64)),
-        vol.Required("on"): bool,
-    }
-)
-@callback
-def ws_channel_dismiss(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Dismiss a network's channel card, or show it again (rule REC-13).
-    Admin only."""
-    coordinator = _coordinator(hass)
-    if coordinator is None:
-        _not_loaded(connection, msg["id"])
-        return
-    try:
-        coordinator.set_channel_dismissed(msg["key"], msg["reason"], msg["on"])
     except ValueError as err:
         connection.send_error(msg["id"], "not_found", str(err))
         return

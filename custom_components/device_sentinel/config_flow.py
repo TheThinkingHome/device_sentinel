@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.29.4 (2026-11-16)
+# File: config_flow.py, Version: 0.29.7 (2026-11-18)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -65,6 +65,8 @@ from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     SMTP_DOMAIN,
     SMTP_TARGET_PREFIX,
+    ENTITY_TARGET_PREFIX,
+    TELEGRAM_BOT_DOMAIN,
     CONF_REPORT_LINKS,
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
@@ -240,6 +242,53 @@ def _smtp_recipients(hass: Any) -> list[selector.SelectOptionDict]:
             )
         )
     return sorted(options, key=lambda option: option["label"].lower())
+
+
+def _notify_entities(hass: Any) -> list[selector.SelectOptionDict]:
+    """Return the notify entities that have no old-style action of their
+    own, such as a Telegram chat, an ntfy topic or a Discord channel,
+    each labeled by its integration and name (rule NOTE-02).
+
+    Home Assistant moves notify targets to entities; a Telegram chat now
+    has only its entity, so it was offered nowhere before. An SMTP
+    recipient is offered on its own, the Companion app keeps its own
+    action, and an entity whose old-style action of the same name
+    exists is that action, so none is offered twice.
+    """
+    options: list[selector.SelectOptionDict] = []
+    names: dict[str, str] = {}
+    for entry in er.async_get(hass).entities.values():
+        if entry.domain != NOTIFY_DOMAIN or entry.disabled_by is not None:
+            continue
+        if entry.platform in (SMTP_DOMAIN, "mobile_app"):
+            continue
+        object_id = entry.entity_id.split(".", 1)[1]
+        if hass.services.has_service(NOTIFY_DOMAIN, object_id):
+            continue
+        if entry.platform not in names:
+            names[entry.platform] = _integration_title(hass, entry.platform)
+        state = hass.states.get(entry.entity_id)
+        name = (entry.name or (state.attributes.get("friendly_name") if state else None)
+                or entry.original_name or object_id)
+        options.append(
+            selector.SelectOptionDict(
+                value=f"{ENTITY_TARGET_PREFIX}{entry.entity_id}",
+                label=f"{names[entry.platform]}: {name} ({entry.entity_id})",
+            )
+        )
+    return sorted(options, key=lambda option: option["label"].lower())
+
+
+def _integration_title(hass: Any, domain: str) -> str:
+    """An integration's name as Home Assistant shows it, or its domain."""
+    if domain == TELEGRAM_BOT_DOMAIN:
+        return "Telegram"
+    from homeassistant.loader import async_get_loaded_integration
+
+    try:
+        return str(async_get_loaded_integration(hass, domain).name)
+    except Exception:  # noqa: BLE001 - a name only; the domain will do
+        return domain
 
 
 def _device_options(
@@ -1904,9 +1953,18 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             place, so the screen shows what the setting holds.
             """
             held = saved if isinstance(saved, list) else []
+            entity_options = _notify_entities(self.hass)
+            offered = {option["value"] for option in entity_options}
             return selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[t for t in discovered if t not in PERSISTENT_TARGETS or t in held],
+                    options=[
+                        *(selector.SelectOptionDict(value=t, label=t)
+                          for t in discovered if t not in PERSISTENT_TARGETS or t in held),
+                        *entity_options,
+                        # One saved whose entity has gone keeps its place.
+                        *(selector.SelectOptionDict(value=t, label=t) for t in held
+                          if isinstance(t, str) and t.startswith(ENTITY_TARGET_PREFIX) and t not in offered),
+                    ],
                     multiple=True,
                     custom_value=True,
                     mode=selector.SelectSelectorMode.LIST,
@@ -1921,11 +1979,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             it holds, as the device pickers do.
             """
             smtp = _smtp_recipients(self.hass)
-            offered = {option["value"] for option in smtp}
+            entity_options = _notify_entities(self.hass)
+            offered = {option["value"] for option in [*smtp, *entity_options]}
             held = [
                 selector.SelectOptionDict(value=value, label=value)
                 for value in options.get(CONF_BRIEF_TARGETS, [])
-                if value.startswith(SMTP_TARGET_PREFIX) and value not in offered
+                if value.startswith((SMTP_TARGET_PREFIX, ENTITY_TARGET_PREFIX)) and value not in offered
             ]
             plain = [
                 selector.SelectOptionDict(value=value, label=value)
@@ -1933,7 +1992,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             ]
             return selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[*plain, *smtp, *held],
+                    options=[*plain, *smtp, *entity_options, *held],
                     multiple=True,
                     custom_value=True,
                     mode=selector.SelectSelectorMode.LIST,

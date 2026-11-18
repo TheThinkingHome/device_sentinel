@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.28.12 (2026-11-11)
+# File: repairs.py, Version: 0.29.7 (2026-11-18)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -71,10 +71,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
-from .notifier import _card_text
+from .notifier import _card_text, as_entity_target
 from .const import (
     SMTP_DOMAIN,
     SMTP_SEND_MESSAGE,
+    ENTITY_TARGET_PREFIX,
+    NOTIFY_ENTITY_SEND,
+    TELEGRAM_BOT_DOMAIN,
     SMTP_TARGET_PREFIX,
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -169,6 +172,16 @@ def missing_targets(hass: HomeAssistant, entry: Any) -> list[str]:
             if entities.async_get(entity_id) is None or not (
                 hass.services.has_service(SMTP_DOMAIN, SMTP_SEND_MESSAGE)
             ):
+                missing.append(target)
+            continue
+        # A Telegram chat typed as "notify.<name>" is its entity.
+        target = as_entity_target(hass, target)
+        if target.startswith(ENTITY_TARGET_PREFIX):
+            # A notify entity is present while it is and its
+            # integration's action, or notify.send_message, exists.
+            entry = entities.async_get(target[len(ENTITY_TARGET_PREFIX):])
+            action = (TELEGRAM_BOT_DOMAIN, "send_message") if entry is not None and entry.platform == TELEGRAM_BOT_DOMAIN else ("notify", NOTIFY_ENTITY_SEND)
+            if entry is None or entry.disabled_by is not None or not hass.services.has_service(*action):
                 missing.append(target)
             continue
         domain, _, service = target.partition(".")
