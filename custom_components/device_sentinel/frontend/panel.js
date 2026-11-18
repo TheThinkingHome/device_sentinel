@@ -771,7 +771,7 @@ const STYLE = `
   .rulebox { margin-bottom: 28px; }
   .ruletitle { font-weight: 500; font-size: 16px; margin-bottom: 4px; }
   .inuse { font-size: 11px; padding: 1px 8px; margin-left: 8px; border-radius: 10px; background: var(--success-color, #43a047); color: #fff; }
-  .kv tr.kvgroup td { padding-top: 14px; font-weight: 500; color: var(--primary-text-color); border-bottom: 1px solid var(--divider-color); }
+  .kv tr.kvgroup td { padding-top: 14px; font-size: 16px; font-weight: 500; color: var(--primary-text-color); border-bottom: 1px solid var(--divider-color); }
   .kv tr.kvsub td { background: var(--secondary-background-color, rgba(127,127,127,.06)); }
   .kv tr.kvsub td:first-child { padding-left: 10px; }
   .entitylink { font-family: var(--code-font-family, monospace); font-size: 12px; color: var(--primary-color); text-decoration: none; word-break: break-all; }
@@ -839,7 +839,9 @@ const STYLE = `
     font: inherit; cursor: pointer; text-align: left; }
   .tile strong { font-size: 18px; font-weight: 500; }
   .tile.some strong { color: var(--warning-color, #ffa600); }
-  .kv { display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 6px 16px; }
+  /* The two-column list on a network's page. Never the device page's
+     table: as a grid, its rows sat one column to the right of Identity. */
+  div.kv { display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 6px 16px; }
   .kv > .k { color: var(--secondary-text-color); }
   .notice { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--warning-color, #ffa600);
     line-height: 1.5; }
