@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -195,3 +195,14 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **Radio noise (Z-Wave):** for a controller with Z-Wave JS's noise sensors on, each channel's noise now, Z-Wave JS's own average, and its typical day: the middle of its daily means over the last 30 days, the newest 3 left out, from Home Assistant's long-term statistics, whole days only, once 14 days are recorded ("learning, 5 of 14 days" before). A channel whose last 3 daily means were each 10 dB or more above its typical is a recommendation naming likely sources of interference near the stick. No fixed level is judged: sticks differ, and Z-Wave JS turns a reading the radio could not make into unknown. Zigbee and Matter offer no such sensor.
 
 *Proof:* [`test_network_outage_patterns.py`](../tests/test_network_outage_patterns.py), [`test_network_page_extras.py`](../tests/test_network_page_extras.py), [`tools/panel_checks/check_network_page_extras.js`](../tools/panel_checks/check_network_page_extras.js).
+
+### DASH-19 The Radio Chart
+
+**Since 0.29.6, Advanced's Networks tab opens with a chart of the 2.4 GHz band as the server last heard it, above the networks, since it is about all the networks at once.**
+- **The chart:** "What the Server Hears", with the time of the last scan. Each 2.4 GHz Wi-Fi network is a shape as wide as its channel and as tall as its signal, the house's own in the theme's colour, a neighbour's in grey, and red where the overlap is bad ([SIG-20](Rulebook__10_SIG_Signal.md#sig-20-an-overlap-judged-bad)). Each Zigbee network and each Thread channel a Matter device reports is a bar, named with its channel. A dashed line at 50%. Wi-Fi channels 1 to 13 along the bottom. Hovering a shape names its network, whose it is, its channel and its signal; a hidden network reads "(hidden network)".
+- **No Wi-Fi heard:** a server with no Wi-Fi adapter, with its adapter turned off, or not on Home Assistant OS or Supervised, shows the bars alone and says why. The red key shows only when something is red. With no bar and no Wi-Fi there is no chart.
+- **The Wi-Fi page:** Networks the Server Hears, a table of each network at the last scan: NETWORK (or Hidden network), YOURS, BAND, CHANNEL, SIGNAL, strongest first on each channel, the channel red where the overlap is bad. With no scan it says why.
+- **The Matter page:** Thread Channels, each channel with the number of devices that report it.
+- **Simple:** none of it.
+
+*Proof:* [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_radio_channels.js`](../tools/panel_checks/check_radio_channels.js).

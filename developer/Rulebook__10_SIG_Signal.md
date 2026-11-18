@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 
@@ -155,3 +155,24 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 - **Muted for signal:** a device muted for signal or for everything is not listed, as on the regular page.
 
 *Proof:* [`test_learning_screens.py`](../tests/test_learning_screens.py), [`tools/panel_checks/check_learning_screens.js`](../tools/panel_checks/check_learning_screens.js).
+
+### SIG-19 Radio Channels
+
+**Since 0.29.6, each device page names the channel its radio uses and where that was learned, from what the house already reports. Nothing is measured: no noise reading, no new sensor.**
+- **Zigbee:** the network's channel. Zigbee2MQTT gives it in its bridge information; ZHA holds it in memory, read only, and a shape ZHA has changed reads as no channel, never an error. "Zigbee channel 11, from Zigbee2MQTT". The ZHA page's coordinator gains a Zigbee channel row, as Zigbee2MQTT's has.
+- **Matter:** a Thread device's own channel, "Thread channel 15, from the device", and a Wi-Fi device's own channel, "Wi-Fi channel 6, 2.4 GHz, from the device", from the diagnostics attributes it reports.
+- **Wi-Fi:** the access point the device reports it is joined to, found in the server's scan, "from its access point"; else the network and band its router reports (UniFi's network and radio, a TP-Link Deco's band) or the network it names itself, matched in the scan, "from its network Home"; else its router's band on the house's own networks, "from its band on your network". Two channels possible read "Wi-Fi channel 1 or 6".
+- **The scan:** the Supervisor's scan of each network the server hears, with its name, frequency, signal and access point. Where a Wi-Fi network is chosen, the minute's scan is used, with no second scan. Where none is chosen and the server has a Wi-Fi adapter, one scan an hour, for the channels alone. Only the latest is kept, in memory. Home Assistant OS and Supervised only. An adapter turned off is not scanned. A Supervisor that does not answer is asked again in five minutes.
+- **The house's own Wi-Fi:** the networks chosen in Settings, the one the server is joined to, and those its devices and router trackers name; then each access point on the same frequency whose address differs from one of those in one pair at most (a router's main, guest, IoT and hidden networks on one radio), each found through the next; then each of those names on each band. The rest are neighbours'.
+- **Advanced only:** the row, "Radio Channel", sits after the address rows. A device that says nothing has no row.
+
+*Proof:* [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_radio_channels.js`](../tools/panel_checks/check_radio_channels.js).
+
+### SIG-20 An Overlap Judged Bad
+
+**A 2.4 GHz Wi-Fi network covers a Zigbee or Thread channel when the Zigbee channel's centre lies within 11 MHz of the Wi-Fi channel's. The overlap is judged bad when the network is the house's own, or a neighbour's heard at 50% or more (since 0.29.6).**
+- **Covered:** Wi-Fi 1 covers Zigbee 11 to 14, Wi-Fi 6 covers 16 to 19, Wi-Fi 11 covers 21 to 24.
+- **Shown:** a bad overlap is red on the Networks tab's chart and in the heard-networks table ([DASH-19](Rulebook__14_DASH_Dashboard.md#dash-19-the-radio-chart)), and a device's Radio Channel row adds a warning in the warning colour: "Your own Wi-Fi on channel 4 covers this channel." first, or "A neighbour's Wi-Fi on channel 1, heard at 52%, covers this channel."
+- **What the server hears:** the signal is the server's, where it stands. A coordinator in another room can hear more or less.
+
+*Proof:* [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_radio_channels.js`](../tools/panel_checks/check_radio_channels.js).
