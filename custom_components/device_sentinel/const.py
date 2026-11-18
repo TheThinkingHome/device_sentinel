@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.29.3 (2026-11-15)
+# File: const.py, Version: 0.29.7 (2026-11-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -3120,6 +3120,12 @@ DROP_DAY_SIGNAL_BACK_N = "signal_back_n"
 # Outages a person marked as expected, such as a nightly backup's
 # (rule DASH-18): one row per network and time of day, with the usual
 # length the pattern had when marked and when it was marked.
+# The channel cards a person dismissed (rule REC-13): one row a network,
+# with the reason the card gave, so a new reason brings it back.
+DATA_CHANNEL_DISMISSED = "channel_dismissed"
+DIS_NETWORK = "network"
+DIS_REASON = "reason"
+DIS_SET_AT = "set_at"
 DATA_EXPECTED_OUTAGES = "expected_outages"
 EXP_NETWORK = "network"
 EXP_MINUTE = "minute"

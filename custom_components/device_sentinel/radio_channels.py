@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.29.6 (2026-11-17)
+# File: radio_channels.py, Version: 0.29.7 (2026-11-17)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 
@@ -33,7 +33,18 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import LOGGER, STACK_DISPLAY_NAMES, STACK_MATTER, STACK_Z2M, STACK_ZHA, WIFI_KEY
+from .const import (
+    DATA_CHANNEL_DISMISSED,
+    DIS_NETWORK,
+    DIS_REASON,
+    DIS_SET_AT,
+    LOGGER,
+    STACK_DISPLAY_NAMES,
+    STACK_MATTER,
+    STACK_Z2M,
+    STACK_ZHA,
+    WIFI_KEY,
+)
 from .study_stacks import _matter_attributes, _plain, _read, live_entries, node_devices
 from .wifi import SUPERVISOR, read_interfaces, scan_networks
 
@@ -54,6 +65,7 @@ WIFI_CHOICES = (1, 6, 11)
 ZIGBEE_CHOICES = (11, 15, 20, 25)
 ZIGBEE_STACKS = (STACK_Z2M, STACK_ZHA)
 NETWORK_NAME_MAX = 64
+REASON_MAX = 64
 
 
 def wifi_channel(mhz: int) -> int | None:
@@ -448,7 +460,11 @@ class RadioChannelsMixin:
         try:
             if key == WIFI_KEY:
                 view = self.air_view()
-                return {"scanned_at": view["scanned_at"], "scan": view["scan"], "heard": view["wifi"]}
+                return {"scanned_at": view["scanned_at"], "scan": view["scan"], "heard": view["wifi"],
+                        "dismissed": self._dismissed_view(key)}
+            if key in ZIGBEE_STACKS:
+                dismissed = self._dismissed_view(key)
+                return {"dismissed": dismissed} if dismissed else None
             if key == STACK_MATTER:
                 thread = self._thread_channels()
                 return {"thread": thread} if thread else None
@@ -526,6 +542,11 @@ class RadioChannelsMixin:
         """The Recommendations for a network's channel (rule REC-13): the
         house's Wi-Fi on a better channel, or a Zigbee network moved
         from under a neighbour's strong Wi-Fi."""
+        dismissed = self._dismissed_reason(key)
+        return [card for card in self._channel_cards(key) if card.get("reason") != dismissed]
+
+    def _channel_cards(self, key: str) -> list[dict[str, Any]]:
+        """Every channel card for a network, dismissed or not."""
         try:
             if key == WIFI_KEY:
                 return self._wifi_channel_cards()
@@ -534,6 +555,42 @@ class RadioChannelsMixin:
         except Exception as err:  # noqa: BLE001 - a card never breaks a page
             LOGGER.debug("device_sentinel: channel card for %s not made: %s", key, err)
         return []
+
+    # ---------------------------------------------------- dismissing
+
+    def _dismissed_rows(self) -> list[dict[str, Any]]:
+        rows = self.data.get(DATA_CHANNEL_DISMISSED)  # type: ignore[attr-defined]
+        return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+    def _dismissed_reason(self, key: str) -> str | None:
+        row = next((r for r in self._dismissed_rows() if r.get(DIS_NETWORK) == key), None)
+        reason = row.get(DIS_REASON) if row else None
+        return reason if isinstance(reason, str) else None
+
+    def set_channel_dismissed(self, key: str, reason: str, on: bool) -> None:
+        """Dismiss a network's channel card, or show it again (rule
+        REC-13). Kept with the reason the card gave: a card with another
+        reason is a new card and shows. Admin only, through the panel."""
+        if key not in (WIFI_KEY, *ZIGBEE_STACKS):
+            raise ValueError("This network has no channel card")
+        if not isinstance(reason, str) or not reason or len(reason) > REASON_MAX:
+            raise ValueError("That is not a card's reason")
+        if on and reason not in {card.get("reason") for card in self._channel_cards(key)}:
+            raise ValueError("That card is no longer shown")
+        table = [r for r in self._dismissed_rows() if r.get(DIS_NETWORK) != key]
+        if on:
+            table.append({DIS_NETWORK: key, DIS_REASON: reason, DIS_SET_AT: dt_util.utcnow().timestamp()})
+        self.data[DATA_CHANNEL_DISMISSED] = table  # type: ignore[attr-defined]
+        self._mark_cold_dirty()  # type: ignore[attr-defined]
+        self._mark_changed()  # type: ignore[attr-defined]
+
+    def _dismissed_view(self, key: str) -> dict[str, Any] | None:
+        """The network page's line for a dismissed card it is hiding."""
+        reason = self._dismissed_reason(key)
+        card = next((c for c in self._channel_cards(key) if c.get("reason") == reason), None) if reason else None
+        if card is None:
+            return None
+        return {"reason": reason, "returns": card["returns"]}
 
     def _busy(self, rows: list[dict[str, Any]], mhz: int) -> list[dict[str, Any]]:
         """The neighbours' networks a 2.4 GHz Wi-Fi channel at `mhz`
@@ -583,6 +640,12 @@ class RadioChannelsMixin:
             )
             cards.append({
                 "kind": "channel", "channel": best,
+                # What the card is about: a new channel, or a new reason,
+                # is a new card, which a dismissal does not hide.
+                "reason": f"wifi:{channel}:{'covered' if covered else 'crowded'}",
+                "returns": (f"your Wi-Fi moves off channel {channel}" if covered else
+                            f"your Wi-Fi moves off channel {channel}, or starts covering one of "
+                            "your Zigbee or Thread channels"),
                 "sentence": sentence,
                 "question": "A mesh router that picks its own channel may change it back. Device Sentinel "
                             "only hears Wi-Fi where your server is.",
@@ -615,6 +678,8 @@ class RadioChannelsMixin:
         top = max(strong, key=lambda r: r["signal"] or 0)
         return [{
             "kind": "channel", "channel": best,
+            "reason": f"{key}:{net['channel']}",
+            "returns": f"{net['name']} moves off channel {net['channel']}",
             "sentence": (
                 f"{net['name']} is on channel {net['channel']}, inside a neighbour's Wi-Fi on channel "
                 f"{top['channel']}, heard at {top['signal']}%, and {cost} of its devices "
@@ -638,7 +703,13 @@ class RadioChannelsMixin:
                  "signal": r["signal"], "own": r["own"]}
                 for r in self._air_rows()
             ],
-            "zigbee": self.zigbee_networks(),
+            # Keys and channels only: a network's display name can read
+            # as a device's and be taken for one.
+            "zigbee": [{"key": n["key"], "channel": n["channel"]} for n in self.zigbee_networks()],
             "thread": self._thread_channels(),
-            "cards": {key: self.channel_cards(key) for key in (WIFI_KEY, *ZIGBEE_STACKS)},
+            "cards": {
+                key: [{k: c[k] for k in ("kind", "channel", "reason", "sentence")} for c in self._channel_cards(key)]
+                for key in (WIFI_KEY, *ZIGBEE_STACKS)
+            },
+            "dismissed": {r.get(DIS_NETWORK): r.get(DIS_REASON) for r in self._dismissed_rows()},
         }
