@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 
@@ -172,7 +172,7 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 
 **A 2.4 GHz Wi-Fi network covers a Zigbee or Thread channel when the Zigbee channel's centre lies within 11 MHz of the Wi-Fi channel's. The overlap is judged bad when the network is the house's own, or a neighbour's heard at 50% or more (since 0.29.6).**
 - **Covered:** Wi-Fi 1 covers Zigbee 11 to 14, Wi-Fi 6 covers 16 to 19, Wi-Fi 11 covers 21 to 24.
-- **Shown:** a bad overlap is red on the Networks tab's chart and in the heard-networks table ([DASH-19](Rulebook__14_DASH_Dashboard.md#dash-19-the-radio-chart)), and a device's Radio Channel row adds a warning in the warning colour: "Your own Wi-Fi on channel 4 covers this channel." first, or "A neighbour's Wi-Fi on channel 1, heard at 52%, covers this channel."
+- **Shown:** a bad overlap is red on the Networks tab's chart and in the heard-networks table ([DASH-19](Rulebook__14_DASH_Dashboard.md#dash-19-the-radio-chart)), and a device's Radio Channel row adds a warning in the warning colour, but only while the card that could clear it is shown and not ticked ([REC-13](Rulebook__15_REC_Recommendations.md#rec-13-channel-cards); since 0.29.7): "Your own Wi-Fi on channel 4 covers this channel." while the house's Wi-Fi card says so, or "A neighbour's Wi-Fi on channel 1, heard at 52%, covers this channel." while the Zigbee network's card shows, which needs its devices to show weak links or short drop-outs. A Thread channel under a neighbour's Wi-Fi has no card, and no warning.
 - **What the server hears:** the signal is the server's, where it stands. A coordinator in another room can hear more or less.
 
 *Proof:* [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_radio_channels.js`](../tools/panel_checks/check_radio_channels.js).
