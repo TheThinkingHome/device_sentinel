@@ -227,8 +227,8 @@ const PAGES = [
   }
   // The Identity table lines up under its heading, and its four group
   // names (Power, Signal, Reporting, Actions) read at the heading's size
-  // (rule DASH-08). Before 0.29.7 the network page's two-column grid
-  // also caught this table and pushed its rows one column to the right.
+  // (rule DASH-08). The network page's two-column grid must not catch
+  // this table, or its rows sit one column to the right.
   {
     const { window, root } = await open({ tweak: PAGES[0][1] });
     const host = lightCopy(window, root);
