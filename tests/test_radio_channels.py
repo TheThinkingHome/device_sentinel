@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_radio_channels.py, Version: 0.29.6 (2026-11-17)
+# File: tests/test_radio_channels.py, Version: 0.29.7 (2026-11-17)
 
 """Radio channels (rules SIG-19, SIG-20, REC-13, DASH-19).
 
@@ -366,6 +366,9 @@ async def test_download_hides_every_name_and_address(hass: HomeAssistant, monkey
         assert mac not in text, mac
     radio = json.loads(text)["classification"]["radio_channels"]
     assert radio["scan"] == "ok"
+    # Keys only: a network's display name could read as a device's.
+    assert radio["zigbee"] == [{"key": "z2m", "channel": 11}]
+    assert all("question" not in c for c in radio["cards"]["wifi"])
     assert [r["channel"] for r in radio["heard"]] == [1, 4, 4, 4, 6, 11]
     assert [c["channel"] for c in radio["cards"]["wifi"]] == [6]
 
@@ -477,3 +480,100 @@ async def test_a_mesh_on_two_channels_gets_one_wifi_card(hass: HomeAssistant):
     cards = coord.channel_cards(WIFI_KEY)
     assert len(cards) == 1
     assert cards[0]["sentence"].startswith("Your Wi-Fi on channel 1 covers your Zigbee or Thread channel 11")
+
+
+# ------------------------------------------------------------ dismissing
+
+
+async def test_dismiss_hides_the_card_until_its_reason_changes(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    [card] = coord.channel_cards(WIFI_KEY)
+    assert card["reason"] == "wifi:4:crowded"
+    coord.set_channel_dismissed(WIFI_KEY, card["reason"], True)
+    assert coord.channel_cards(WIFI_KEY) == []
+    assert coord.network_recommendations() == [] or all(r["key"] != WIFI_KEY for r in coord.network_recommendations())
+    page = coord.network_radio(WIFI_KEY)["dismissed"]
+    assert page["reason"] == "wifi:4:crowded" and "moves off channel 4" in page["returns"]
+    # The router moves to channel 1, over Zigbee channel 11: a new card.
+    for row in coord._air:
+        if row["ssid"].startswith("Home") and row["mhz"] == 2427:
+            row.update(mhz=2412, channel=1)
+    [again] = coord.channel_cards(WIFI_KEY)
+    assert again["reason"] == "wifi:1:covered"
+    assert coord.network_radio(WIFI_KEY)["dismissed"] is None
+
+
+async def test_show_it_again(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", True)
+    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", False)
+    assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
+
+
+async def test_dismiss_refuses_what_is_not_a_card(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    for key, reason in (("mqtt", "wifi:4:crowded"), (WIFI_KEY, ""), (WIFI_KEY, "x" * 65), (WIFI_KEY, "wifi:9:crowded")):
+        with pytest.raises(ValueError):
+            coord.set_channel_dismissed(key, reason, True)
+    assert not coord.data.get("channel_dismissed")
+
+
+async def test_a_zigbee_card_is_dismissed_by_its_channel(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord._network_members = lambda: {STACK_Z2M: ["a", "b"]}
+    coord.is_flapping = lambda _d: True
+    [card] = coord.channel_cards(STACK_Z2M)
+    assert card["reason"] == "z2m:11"
+    coord.set_channel_dismissed(STACK_Z2M, card["reason"], True)
+    assert coord.channel_cards(STACK_Z2M) == []
+    assert coord.network_radio(STACK_Z2M) == {"dismissed": {"reason": "z2m:11", "returns": "Zigbee2MQTT moves off channel 11"}}
+    # The Wi-Fi card is its own.
+    assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
+
+
+async def test_a_dismissal_survives_a_restart(hass: HomeAssistant, supervisor: FakeSupervisor):
+    from tests.helpers import setup_entry
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.set_channel_dismissed(WIFI_KEY, "wifi:4:crowded", True)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    assert [r["reason"] for r in coord.data.get("channel_dismissed", [])] == ["wifi:4:crowded"]
+
+
+async def test_hostile_stored_dismissals_are_ignored(hass: HomeAssistant, supervisor: FakeSupervisor):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    for junk in (None, "text", {"network": "wifi"}, [None, 5, {"network": 3, "reason": None}]):
+        coord.data["channel_dismissed"] = junk
+        assert [c["channel"] for c in coord.channel_cards(WIFI_KEY)] == [6]
+
+
+async def test_the_dismiss_command_is_for_admins(hass: HomeAssistant, supervisor: FakeSupervisor, hass_ws_client, hass_admin_user):
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:4:crowded", "on": True})
+    assert (await client.receive_json())["success"]
+    assert coord.channel_cards(WIFI_KEY) == []
+    await client.send_json({"id": 2, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:9:crowded", "on": True})
+    reply = await client.receive_json()
+    assert not reply["success"] and reply["error"]["code"] == "not_found"
+    hass_admin_user.groups = []
+    await client.send_json({"id": 3, "type": "device_sentinel/channel_dismiss", "key": WIFI_KEY, "reason": "wifi:4:crowded", "on": False})
+    reply = await client.receive_json()
+    assert not reply["success"] and reply["error"]["code"] == "unauthorized"
