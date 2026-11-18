@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_radio_channels.js, Version: 0.29.7 (2026-11-17)
+// File: tools/panel_checks/check_radio_channels.js, Version: 0.29.7 (2026-11-18)
 // Panel checks: radio channels (rules SIG-19, DASH-19, REC-13).
 // The Networks tab's chart sits at the top, Advanced only, red where a
 // network overlaps a Zigbee or Thread channel. A device page's Radio
@@ -43,7 +43,7 @@ const NETWORKS = { rows: [
   { key: "z2m", name: "Zigbee2MQTT", kind: "z2m", status: { state: "ok", words: "Running", since: null }, watched: 2,
     with_problem: 0, counts: COUNTS, last_outage: null, outages: 0 },
 ], air: AIR };
-const WIFI_CARD = { kind: "channel", channel: 6, reason: "wifi:4:crowded", returns: "your Wi-Fi moves off channel 4",
+const WIFI_CARD = { kind: "channel", channel: 6, reason: "wifi:4:crowded", ack_key: "net:wifi:channel:wifi:4:crowded", acknowledged: false,
   sentence: "Your Wi-Fi on channel 4 overlaps a neighbour's network on channel 1, heard at 52%. If your router lets you choose, channel 6 is clearer: it covers none of your Zigbee or Thread channels, and the strongest network heard near it is at 34%.",
   question: "A mesh router that picks its own channel may change it back. Device Sentinel only hears Wi-Fi where your server is." };
 const PAGE = (key, extra = {}) => ({
@@ -175,21 +175,18 @@ const chart = (root) => root.querySelector(".pane [data-chart=air]");
   let sent = [];
   ({ root } = await open("/network/wifi?from=networks", "advanced", {
     network: async () => PAGE("wifi", { radio: { scanned_at: AIR.scanned_at, scan: "ok", heard: AIR.wifi }, cards: [WIFI_CARD] }),
-    channel_dismiss: async (m) => { sent.push(m); return {}; } }));
-  const dismiss = [...root.querySelectorAll(".pane button")].find((b) => b.textContent === "Dismiss");
-  check("the channel card has Dismiss", Boolean(dismiss));
-  if (dismiss) { dismiss.click(); await settle(); }
-  check("Dismiss sends the network and the card's reason", sent.length === 1 && sent[0].key === "wifi"
-    && sent[0].reason === "wifi:4:crowded" && sent[0].on === true, sent);
-  sent = [];
+    recommendation_ack: async (m) => { sent.push(m); return {}; } }));
+  const tick = root.querySelector(".pane article.rec input[type=checkbox][aria-label=Acknowledged]");
+  check("the channel card has the Acknowledged tick, as every recommendation has", Boolean(tick));
+  check("and no Dismiss button", ![...root.querySelectorAll(".pane button")].some((b) => b.textContent === "Dismiss"));
+  if (tick) { tick.checked = true; tick.dispatchEvent(new root.ownerDocument.defaultView.Event("change")); await settle(); }
+  check("ticking sends the card's own key", sent.length === 1 && sent[0].line === WIFI_CARD.ack_key && sent[0].on === true, sent);
   ({ root } = await open("/network/wifi?from=networks", "advanced", {
-    network: async () => PAGE("wifi", { radio: { scanned_at: AIR.scanned_at, scan: "ok", heard: AIR.wifi,
-      dismissed: { reason: "wifi:4:crowded", returns: "your Wi-Fi moves off channel 4" } }, cards: [] }),
-    channel_dismiss: async (m) => { sent.push(m); return {}; } }));
-  check("a dismissed card says when it comes back", text(root).includes("You dismissed the channel recommendation. It comes back if your Wi-Fi moves off channel 4."), text(root));
-  const again = [...root.querySelectorAll(".pane button")].find((b) => b.textContent === "Show it again");
-  if (again) { again.click(); await settle(); }
-  check("Show it again takes the dismissal back", sent.length === 1 && sent[0].on === false && sent[0].reason === "wifi:4:crowded", sent);
+    network: async () => PAGE("wifi", { radio: { scanned_at: AIR.scanned_at, scan: "ok", heard: AIR.wifi },
+      cards: [{ ...WIFI_CARD, acknowledged: true }] }) }));
+  const faded = root.querySelector(".pane article.rec");
+  check("a ticked card stays, faded, its box ticked", faded && faded.classList.contains("acked")
+    && faded.querySelector("input[type=checkbox]").checked);
   ({ root } = await open("/network/wifi?from=networks", "advanced", { network: async () => PAGE("wifi", {
     radio: { scanned_at: null, scan: "no_adapter", heard: [] } }) }));
   check("no scan says why", text(root).includes("cannot scan for Wi-Fi"), text(root));
@@ -205,6 +202,12 @@ const chart = (root) => root.querySelector(".pane [data-chart=air]");
   const card = root.querySelector(".pane article[data-kind='network-wifi-channel-6']");
   check("the channel card names its network", card && card.textContent.startsWith("Wi-Fi"), card && card.textContent);
   check("with its caveat", card && card.textContent.includes("may change it back"));
+  check("an unticked card counts in the tab", /Recommendations \(\d+\)/.test([...root.querySelectorAll(".tab")].map((t) => t.textContent).join()));
+  const countOf = (r) => Number(([...r.querySelectorAll(".tab")].map((t) => t.textContent).find((t) => t.startsWith("Recommendations")) || "").replace(/\D/g, "") || 0);
+  const before = countOf(root);
+  ({ root } = await open("/recommendations", "advanced", { recommendations: async () => ({
+    ...JSON.parse(JSON.stringify(payloads.recommendations)), networks: [{ key: "wifi", name: "Wi-Fi", cards: [{ ...WIFI_CARD, acknowledged: true }] }] }) }));
+  check("a ticked card leaves the count", countOf(root) === before - 1, [before, countOf(root)]);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_network_page_extras.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_network_page_extras.js, Version: 0.29.7 (2026-11-18)
 // Panel checks: more on a network's page (rules DASH-17, DASH-18). The
 // Open buttons for the network's own page and its app, its devices and
 // makeup, outage patterns with their one sentence used twice, Yes it is
@@ -244,10 +244,13 @@ const noStrays = (root) => !/\b(null|undefined|NaN)\b|\[object/.test(text(root))
   ({ root } = await open("/recommendations", { answers: { recommendations: () => ({ lines: [], devices: [], closing: "", networks: [{ key: "z2m", name: "Zigbee2MQTT", cards: [CARD] }] }) } }));
   check("a network card alone is not 'nothing to recommend'", !text(root).startsWith("Nothing to recommend") && root.querySelector(".pane article.rec"), text(root));
 
-  console.log("Network cards have no Acknowledged box (rule DASH-18)");
-  ({ root } = await open("/recommendations", { answers: { recommendations: () => clone(RECS) } }));
+  console.log("Network cards have the Acknowledged tick, as every recommendation (rule REC-07)");
+  const TICKED = clone(RECS);
+  for (const row of TICKED.networks) for (const c of row.cards) { c.ack_key = "net:z2m:pattern:220"; }
+  ({ root } = await open("/recommendations", { answers: { recommendations: () => clone(TICKED) } }));
   const netCard = [...root.querySelectorAll(".pane article.rec")].find((a) => a.textContent.includes(CARD.sentence));
-  check("no checkbox on a network card", netCard && !netCard.querySelector("input[type=checkbox]"));
+  check("a tick on a network card, beside its own button", netCard && netCard.querySelector("input[type=checkbox][aria-label=Acknowledged]")
+    && [...netCard.querySelectorAll("button")].some((b) => b.textContent === "Yes, it is expected"));
   const NOLEN = clone(PAGE);
   NOLEN.cards[0].usual_words = null;
   ({ root } = await open("/network/z2m?from=networks", { answers: { network: () => clone(NOLEN) } }));
