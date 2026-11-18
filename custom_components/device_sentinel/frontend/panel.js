@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.6 (2026-11-17)
+// File: panel.js, Version: 0.29.7 (2026-11-17)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -782,6 +782,10 @@ const STYLE = `
     flex-direction: column; gap: 8px; }
   .chart svg { width: 100%; height: auto; }
   .chart .axis { fill: var(--secondary-text-color); font-size: 11px; }
+  .airbox { max-width: 940px; }
+  .airchart .netname { font-size: 12px; font-weight: 500; paint-order: stroke;
+    stroke: var(--card-background-color, #1c1c1c); stroke-width: 3px; stroke-linejoin: round; }
+  .airchart text { font-family: inherit; }
   .chip[aria-disabled="true"] { opacity: 0.4; cursor: default; border-style: dashed; }
   /* A mute that is on (rule MUTE-09): filled, with its check mark, and
      still filled when it is set elsewhere and cannot be pressed here. */
@@ -2486,50 +2490,101 @@ class DeviceSentinelPanel extends HTMLElement {
   _airChart(air) {
     if (!air) return null;
     const wifi = (air.wifi || []).filter((r) => r.band === "2.4 GHz");
-    const bars = [...(air.zigbee || []).map((z) => ({ ...z, label: `${z.name} ${z.channel}`, colour: "var(--success-color, #43a047)" })),
-      ...(air.thread || []).map((t) => ({ ...t, label: `Thread ${t.channel}`, colour: "var(--info-color, #039be5)" }))];
+    const bars = [...(air.zigbee || []).map((z) => ({ ...z, label: z.name, colour: "var(--success-color, #43a047)" })),
+      ...(air.thread || []).map((t) => ({ ...t, label: "Thread", colour: "var(--info-color, #039be5)" }))];
     if (!wifi.length && !bars.length) return null;
-    const W = 720, H = 246, L = 34, R = 12, T = 40, B = 44;
+    // Drawn at its own size: wider than this, the lettering would grow
+    // with the page and the band would read thin.
+    const W = 900, H = 300, L = 40, R = 16, T = 58, B = 46;
     const lo = 2397, hi = 2486;
     const x = (mhz) => L + ((mhz - lo) / (hi - lo)) * (W - L - R);
     const y = (pct) => T + (1 - pct / 100) * (H - T - B);
     const own = "var(--primary-color, #03a9f4)";
     const other = "var(--secondary-text-color, #727272)";
     const bad = "var(--error-color, #db4437)";
+    const zigbeeColour = "var(--success-color, #43a047)";
     const parts = [];
     for (const pct of [0, 50, 100]) {
       parts.push(svg("line", { x1: L, x2: W - R, y1: y(pct), y2: y(pct), stroke: "var(--divider-color, #ccc)",
-        "stroke-dasharray": pct === 50 ? "4 3" : null }));
-      parts.push(svg("text", { class: "axis", x: L - 4, y: y(pct) + 4, "text-anchor": "end" }, `${pct}%`));
+        "stroke-width": 1, "stroke-dasharray": pct === 50 ? "4 3" : null }));
+      parts.push(svg("text", { class: "axis", x: L - 6, y: y(pct) + 4, "text-anchor": "end" }, `${pct}%`));
+    }
+    // Every Zigbee and Thread channel along the top, the ones in use
+    // named and in colour, so a free channel can be read off the chart.
+    const used = new Map(bars.map((b) => [b.channel, b]));
+    parts.push(svg("text", { class: "axis", x: L - 6, y: T - 10, "text-anchor": "end" }, "Zigbee"));
+    for (let c = 11; c <= 26; c += 1) {
+      const mhz = 2405 + 5 * (c - 11);
+      const bar = used.get(c);
+      parts.push(svg("text", { class: "axis", x: x(mhz), y: T - 10, "text-anchor": "middle",
+        style: bar ? `fill:${bar.colour};font-weight:600` : null }, String(c)));
+      parts.push(svg("line", { x1: x(mhz), x2: x(mhz), y1: T - 4, y2: T, stroke: "var(--divider-color, #ccc)", "stroke-width": 1 }));
     }
     for (let c = 1; c <= 13; c += 1) {
-      const mhz = 2407 + 5 * c;
-      parts.push(svg("text", { class: "axis", x: x(mhz), y: H - B + 14, "text-anchor": "middle" }, String(c)));
+      parts.push(svg("text", { class: "axis", x: x(2407 + 5 * c), y: H - B + 16, "text-anchor": "middle" }, String(c)));
     }
-    parts.push(svg("text", { class: "axis", x: (L + W - R) / 2, y: H - B + 30, "text-anchor": "middle" }, "Wi-Fi channel"));
-    // Weakest first, so a strong network is drawn over a weak one.
-    for (const r of [...wifi].sort((a, b) => (a.signal || 0) - (b.signal || 0))) {
+    parts.push(svg("text", { class: "axis", x: (L + W - R) / 2, y: H - B + 34, "text-anchor": "middle" }, "Wi-Fi channel"));
+    // One shape a network, weakest first so a strong one is drawn over a
+    // weak one; one name a channel and owner, over its highest shape.
+    // A router's main, guest, IoT and hidden networks on one radio come
+    // in a point or two apart: one shape, at the strongest, so their
+    // fills do not pile up and its tooltip names them all.
+    const groups = new Map();
+    const shapes = [];
+    for (const r of [...wifi].sort((a, b) => (b.signal || 0) - (a.signal || 0))) {
+      const shape = shapes.find((s) => s.mhz === r.mhz && s.own === r.own && s.bad === r.bad
+        && (s.signal || 0) - (r.signal || 0) <= 4);
+      if (shape) shape.names.push(r.ssid || "(hidden network)");
+      else shapes.push({ ...r, names: [r.ssid || "(hidden network)"] });
+    }
+    for (const r of [...shapes].sort((a, b) => (a.signal || 0) - (b.signal || 0))) {
       const top = y(r.signal || 0), base = y(0);
       const colour = r.bad ? bad : r.own ? own : other;
-      const name = r.ssid || "(hidden network)";
+      const name = r.names.join(", ");
       parts.push(svg("path", {
         d: `M${x(r.mhz - 11)},${base} L${x(r.mhz - 9)},${top} L${x(r.mhz + 9)},${top} L${x(r.mhz + 11)},${base} Z`,
-        fill: colour, "fill-opacity": r.own ? 0.18 : 0.08, stroke: colour, "stroke-width": r.bad ? 2 : 1.2,
+        fill: colour, "fill-opacity": r.own ? 0.14 : 0.06, stroke: colour, "stroke-width": r.bad ? 1.5 : 1,
+        "stroke-linejoin": "round",
       }, svg("title", {}, `${name}, ${r.own ? "yours" : "a neighbour's"}, channel ${r.channel}, ${r.signal ?? "?"}%`)));
+      const key = `${r.mhz}|${r.own ? 1 : 0}`;
+      const group = groups.get(key) || { mhz: r.mhz, own: r.own, bad: false, top: Infinity, names: [] };
+      group.top = Math.min(group.top, top);
+      group.bad = group.bad || r.bad;
+      group.names.push(...r.names.map((n) => (n === "(hidden network)" ? "" : n)));
+      groups.set(key, group);
     }
-    bars.forEach((b, i) => {
-      parts.push(svg("rect", { x: x(b.mhz) - 2, y: y(100), width: 4, height: y(0) - y(100), fill: b.colour },
-        svg("title", {}, b.label)));
-      // Labels alternate between two lines, so two close channels never overlap.
-      parts.push(svg("text", { class: "axis", x: x(b.mhz), y: i % 2 ? T - 8 : T - 24, "text-anchor": "middle" }, b.label));
-    });
-    const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    const placed = [];
+    const short = (s) => (s.length > 20 ? `${s.slice(0, 19)}…` : s);
+    for (const g of [...groups.values()].sort((a, b) => a.top - b.top)) {
+      // The shortest name leads, which for a router's main, guest and
+      // IoT networks is the main one; the rest are counted once each.
+      const named = [...new Set(g.names.filter(Boolean))].sort((a, b) => a.length - b.length || a.localeCompare(b));
+      const rest = named.length - 1 + (g.names.some((n) => !n) ? 1 : 0);
+      const words = named.length ? `${short(named[0])}${rest > 0 ? ` +${rest}` : ""}` : "(hidden)";
+      const width = words.length * 6.4;
+      const cx = Math.min(Math.max(x(g.mhz), L + width / 2), W - R - width / 2);
+      // Too near the top for the line above it: inside the shape instead.
+      let ty = g.top - 6 < T + 12 ? g.top + 16 : g.top - 6;
+      // A label that would sit on another moves down a line.
+      while (placed.some((p) => Math.abs(p.y - ty) < 13 && Math.abs(p.x - cx) < (p.w + width) / 2 + 4)) ty += 14;
+      placed.push({ x: cx, y: ty, w: width });
+      parts.push(svg("text", { class: "netname", x: cx, y: ty, "text-anchor": "middle",
+        style: `fill:${g.bad ? bad : g.own ? own : other}` }, words));
+    }
+    for (const b of bars) {
+      parts.push(svg("rect", { x: x(b.mhz) - 1.5, y: y(100), width: 3, height: y(0) - y(100), fill: b.colour },
+        svg("title", {}, `${b.label}, channel ${b.channel}`)));
+    }
+    // The names of the Zigbee and Thread networks, beside the row of channels.
+    const zNames = bars.map((b) => `${b.label} on ${b.channel}`).join(" · ");
+    parts.push(svg("text", { class: "axis", x: L, y: 14, style: `fill:${zigbeeColour}` }, zNames));
+    const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", class: "airchart",
       "aria-label": "The 2.4 GHz band as the server hears it: each Wi-Fi network, and each Zigbee and Thread channel" }, ...parts);
     const swatch = (colour, text, fill) => el("span", {},
-      el("span", { class: "swatch", style: `width:12px;height:10px;border:1.5px solid ${colour};background:${fill ? colour : "none"}` }), text);
+      el("span", { class: "swatch", style: `width:12px;height:10px;border:1px solid ${colour};background:${fill ? colour : "none"}` }), text);
     const legend = el("div", { class: "legend" },
       swatch(own, "Your Wi-Fi"), swatch(other, "A neighbour's Wi-Fi"),
-      ...(wifi.some((r) => r.bad) ? [swatch(bad, "Covers a Zigbee or Thread channel")] : []), swatch("var(--success-color, #43a047)", "Zigbee", true),
+      ...(wifi.some((r) => r.bad) ? [swatch(bad, "Covers a Zigbee or Thread channel")] : []), swatch(zigbeeColour, "Zigbee", true),
       ...((air.thread || []).length ? [swatch("var(--info-color, #039be5)", "Thread", true)] : []));
     const when = air.scanned_at ? new Date(air.scanned_at) : null;
     const note = air.scan === "ok" && when && Number.isFinite(when.getTime())
@@ -2541,12 +2596,13 @@ class DeviceSentinelPanel extends HTMLElement {
       no_supervisor: "Device Sentinel hears Wi-Fi only on Home Assistant OS or Supervised, so only the Zigbee and Thread channels are shown.",
       not_yet: "The first Wi-Fi scan has not run yet. It runs about a minute after Home Assistant starts.",
     }[air.scan];
-    return el("div", { class: "chart", "data-chart": "air" },
+    return el("div", { class: "chart airbox", "data-chart": "air" },
       el("div", { class: "statusline" }, el("strong", {}, "What the Server Hears"), el("span", { class: "small" }, note)),
       chart, legend,
       el("p", { class: "muted", style: "margin:0;line-height:1.5" },
         "Zigbee, Thread and 2.4 GHz Wi-Fi share one band. A Wi-Fi network over a Zigbee or Thread channel can drown it out. "
-        + "This is what the server hears where it stands; a coordinator in another room can hear something else."),
+        + "This is what the server hears where it stands; a coordinator in another room can hear something else. "
+        + "Point at a shape to see each network on it."),
       why ? el("p", { class: "muted", style: "margin:0" }, why) : null);
   }
 
@@ -2636,6 +2692,22 @@ class DeviceSentinelPanel extends HTMLElement {
         await this._refresh();
       } }, "Yes, it is expected"));
     }
+    // A channel the router will not change: dismissed until the reason
+    // for the card changes (rule REC-13).
+    if (card.kind === "channel") {
+      actions.push(el("button", { class: "chip", type: "button", onclick: async (ev) => {
+        const btn = ev.target;
+        btn.disabled = true;
+        try {
+          await this._call({ type: "device_sentinel/channel_dismiss", key: net.key, reason: card.reason, on: true });
+        } catch (err) {
+          btn.disabled = false;
+          btn.after(el("span", { class: "actnote refused" }, err.message || "That did not save."));
+          return;
+        }
+        await this._refresh();
+      } }, "Dismiss"));
+    }
     const book = card.logbook;
     if (book && book.start && book.end) {
       // Worded in the house's own time, as the sentence is.
@@ -2712,9 +2784,26 @@ class DeviceSentinelPanel extends HTMLElement {
     // ran long, radio noise. One sentence each, also on the
     // Recommendations tab (rule DASH-18).
     const recCards = [...(page.cards || []), ...((page.noise && page.noise.cards) || [])];
-    if (recCards.length) {
+    const dismissed = (page.radio && page.radio.dismissed) || null;
+    if (recCards.length || dismissed) {
       sections.push(el("h3", { class: "section" }, "Recommendations for This Network"),
         ...recCards.map((card) => this._networkCard(page, card)));
+    }
+    if (dismissed) {
+      sections.push(el("p", { class: "muted", style: "margin:0;line-height:1.5" },
+        `You dismissed the channel recommendation. It comes back if ${dismissed.returns}. `,
+        el("button", { class: "linkbtn", type: "button", onclick: async (ev) => {
+          const btn = ev.target;
+          btn.disabled = true;
+          try {
+            await this._call({ type: "device_sentinel/channel_dismiss", key: page.key, reason: dismissed.reason, on: false });
+          } catch (err) {
+            btn.disabled = false;
+            btn.after(el("span", { class: "actnote refused" }, err.message || "That did not save."));
+            return;
+          }
+          await this._refresh();
+        } }, "Show it again")));
     }
 
     // Its devices: a count per problem group, each opening the Devices
