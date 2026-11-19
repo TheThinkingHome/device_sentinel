@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.7 (2026-11-18)
+// File: panel.js, Version: 0.29.8 (2026-11-19)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -629,6 +629,9 @@ const STYLE = `
   .rec.acked > :not(:has(.ack)) { opacity: 0.75; }
   .rec.acked .actrow:has(> .ack) > :not(.ack) { opacity: 0.75; }
   label.ack { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+  /* A card's heading with the tick that silences the whole card (rule REC-07). */
+  .rechead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .rec.acked .rechead > h3 { opacity: 0.75; }
   .maint { display: flex; align-items: center; border: 1px solid var(--divider-color); border-radius: 22px;
     background: var(--card-background-color); }
   .maint .pill { border: 0; background: transparent; }
@@ -1529,7 +1532,7 @@ class DeviceSentinelPanel extends HTMLElement {
   _activeRecs() {
     const { lines, cards, networks } = this._recsInView();
     return lines.filter((line) => !line.acknowledged).length
-      + cards.reduce((n, card) => n + card.devices.filter((row) => !row.acknowledged).length, 0)
+      + cards.reduce((n, card) => n + (card.card_acknowledged ? 0 : card.devices.filter((row) => !row.acknowledged).length), 0)
       + networks.reduce((n, row) => n + row.cards.filter((card) => !card.acknowledged).length, 0);
   }
 
@@ -1847,7 +1850,9 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _recDeviceCard(card, open) {
     const ids = card.devices.map((row) => row.device_id);
-    const unticked = card.devices.filter((row) => !row.acknowledged).length;
+    // A whole card ticked counts nothing until it is unticked or opened
+    // (rule REC-07).
+    const unticked = card.card_acknowledged ? 0 : card.devices.filter((row) => !row.acknowledged).length;
     const from = TAB_SLUG.Recommendations;
     const nameLink = (row) => el("a", {
       href: `${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`,
@@ -1859,8 +1864,12 @@ class DeviceSentinelPanel extends HTMLElement {
       },
     }, row.name);
     // A save on a card reads everything again, so a new name, area or
-    // type shows on the other tabs at once (rule DASH-11).
-    const refresh = () => this._refresh();
+    // type shows on the other tabs at once (rule DASH-11). Working on a
+    // row takes the whole card's tick off (rule REC-07).
+    const refresh = async () => {
+      if (card.card_acknowledged) await this._untickCard(card);
+      return this._refresh();
+    };
     const rows = card.devices.map((row) => {
       const note = el("span", { class: "small" }, "");
       const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
@@ -1937,12 +1946,12 @@ class DeviceSentinelPanel extends HTMLElement {
           : this._ackBox(row.acknowledged, { kind: card.kind, device_id: row.device_id })));
     });
     if (card.grouped) return this._recModelCard(card, open, rows, nameLink, refresh);
-    return el("article", { class: "rec", "data-kind": card.kind },
+    return el("article", { class: card.card_acknowledged ? "rec acked" : "rec", "data-kind": card.kind },
       // The rows not yet ticked, as the tab and the button count them
       // (rule REC-08); no number once every row is ticked.
-      el("h3", {}, unticked ? `${card.title} (${unticked})` : card.title),
+      this._recHead(card, unticked ? `${card.title} (${unticked})` : card.title),
       card.body ? el("p", {}, card.body) : null,
-      this._recDetails(card.kind, open,
+      this._recDetails(card.kind, open, card,
         el("summary", {}, card.kind.startsWith("restart_") || card.kind === "firmware"
           ? `Show the ${card.devices.length} ${card.devices.length === 1 ? "model" : "models"}`
           : `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
@@ -2023,12 +2032,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const models = new Set(left.filter((row) => row.model_key).map((row) => row.model_key)).size;
     const all = new Set(card.devices.filter((row) => row.model_key).map((row) => row.model_key)).size;
     // The models to answer and the devices they cover (rule REC-08).
-    const counted = left.length
+    const counted = left.length && !card.card_acknowledged
       ? ` (${models ? `${plural(models, "model", "models")}, ` : ""}${plural(left.length, "device", "devices")})` : "";
-    return el("article", { class: "rec", "data-kind": card.kind },
-      el("h3", {}, `${card.title}${counted}`),
+    return el("article", { class: card.card_acknowledged ? "rec acked" : "rec", "data-kind": card.kind },
+      this._recHead(card, `${card.title}${counted}`),
       el("p", {}, card.body),
-      this._recDetails(card.kind, open,
+      this._recDetails(card.kind, open, card,
         el("summary", {}, `Show the ${all ? `${plural(all, "model", "models")} and ` : ""}${plural(card.devices.length, "device", "devices")}`),
         el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...drawn)))));
   }
@@ -2053,13 +2062,44 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // A card's device list, remembered open or closed as the person
   // leaves it (rule REC-11).
-  _recDetails(kind, open, ...children) {
+  _recDetails(kind, open, card, ...children) {
     const details = el("details", open ? { open: "" } : {}, ...children);
-    details.addEventListener("toggle", () => {
+    // A card drawn again already open reports a toggle in some browsers;
+    // only a card the person opens counts as opened.
+    let wasOpen = Boolean(open);
+    details.addEventListener("toggle", async () => {
+      const opened = details.open && !wasOpen;
+      wasOpen = details.open;
       if (details.open) this._openCards.add(kind);
       else this._openCards.delete(kind);
+      // Opening a ticked card is working on it again: the whole card's
+      // tick comes off and its count returns (rule REC-07).
+      if (opened && card && card.card_acknowledged) {
+        await this._untickCard(card);
+        this._paintActiveRecs();
+        if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+      }
     });
     return details;
+  }
+
+  // A card's heading, with the tick that silences the whole card, closed
+  // or open (rule REC-07). A battery replacement is answered, not ticked.
+  _recHead(card, title) {
+    const head = el("h3", {}, title);
+    if (card.kind === "battery_confirm") return head;
+    return el("div", { class: "rechead" }, head, this._ackBox(Boolean(card.card_acknowledged), { card: card.kind }));
+  }
+
+  async _untickCard(card) {
+    card.card_acknowledged = false;
+    try {
+      await this._call({ type: "device_sentinel/recommendation_ack", on: false, card: card.kind });
+      this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+    } catch (err) {
+      // The card was taken back on the server, or is gone: the next
+      // reading shows it as it is.
+    }
   }
 
   // The Power choices in a list row, as the device page's pencil
