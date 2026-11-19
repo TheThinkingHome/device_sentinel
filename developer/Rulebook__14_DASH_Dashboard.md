@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 19 November 2026, on Device Sentinel 0.29.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -78,6 +78,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 **Below the status, the Identity section lists who the device is. There is no separate Live readings section.**
 - **Identity rows:** Name, Type, Device ID, Area, Labels, Manufacturer, Model, Model ID, Hardware version, Firmware, Integration, Connects, Same hardware (for a device another integration also lists), its addresses, and, for a Wi-Fi device its router reports, IP Address and Access Point, each with when it last changed ([UP-19](Rulebook__07_UP_Upstream_Outages.md)).
 - **Then four groups:** Power: Battery level, Battery sensor, Powered by, Battery last replaced and Battery reports in. Signal: Signal, Signal sensor and Short drop-outs ([SIG-16](Rulebook__10_SIG_Signal.md)). Reporting: Last seen, Last seen sensor with a note saying how it tells the device is alive, Z-Wave status, Controller status for a Z-Wave controller, Last restart for a Tasmota device, First seen and Events seen. Actions: Muted and Excluded. A hub's own page leaves the Reporting group out.
+- **Lined up:** the table's rows start under the Identity heading, and the four group names read at its size, 16px (since 0.29.7; before, the rows sat one column to the right and the group names read 14px).
 - **The wait rule:** under the Its Rhythm heading, "Wait rule: 40-Day Log-Normal Percentile, 2.6h", with Use the 14-Day Trimmed Maximum at its own width beneath it, and a line under both before the charts. The charts' titles read at 16px, the size of Its Rhythm, with room between the two charts.
 - **The status line:** a reporting device reads "Last report 28s ago. Called frozen after 62m of silence." An unavailable or unknown device reads "Unavailable since 7:49 AM, 43m ago." (or "Unknown since"), with the date in front of the time when it went on an earlier day. The time is when the device itself went, so a device frozen first and unavailable later is dated from when it became unavailable. A hub's own page reads its own down moment the same way, even when its trouble began as a freeze (since 0.28.0). Without that moment, such a device keeps its freeze line rather than show the freeze's time. A time that cannot be read leaves the freeze line in place.
 - **The status bar:** it fills toward the freeze window. Green while the device is within its rhythm, yellow once it is past its rhythm and not yet called frozen, red when frozen. Unavailable is gray, its dot too, and its bar stops where it stood when the device became unavailable. A muted device's bar is gray.
@@ -86,7 +87,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **No readable Last seen sensor:** the device shows when Device Sentinel last heard it, which repeats the status line by choice.
 - **Below:** everything from the gaps table, "Gaps, Last 14 Days", down is unchanged by this order.
 
-*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`, `check_rhythm_words.js`, `check_status_bar.js`, [`test_device_page_words.py`](../tests/test_device_page_words.py), [`test_dashboard_devices.py`](../tests/test_dashboard_devices.py).
+*Proof:* [`tools/panel_checks/check_device_page_layout.js`](../tools/panel_checks/check_device_page_layout.js), `check_device_page_text.js`, `check_names_and_mutes.js`, `check_real_device.js`, `check_hub_pages.js`, `check_rhythm_words.js`, `check_status_bar.js`, [`test_device_page_words.py`](../tests/test_device_page_words.py), [`test_dashboard_devices.py`](../tests/test_dashboard_devices.py).
 
 ### DASH-09 Acting From the Device Page
 

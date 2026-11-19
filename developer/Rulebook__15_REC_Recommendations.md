@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 19 November 2026, on Device Sentinel 0.29.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -78,12 +78,13 @@ This section covers what Device Sentinel suggests a person change about their ow
 **Each row of a device card, each written recommendation and each network's card has an Acknowledged tick that can be taken off again (network cards since 0.29.7; James, 18 November 2026, 07:40: all recommendations dismiss with the same tick).**
 - **A ticked row:** stays listed, faded to 75%, and leaves the counts and the Daily Brief. The tick is kept in the answers file.
 - **The tick itself:** it and the word "Acknowledged" never fade, so it still reads as something to press, here and on the Daily Brief's Problem List. A ticked box's hover reads "Acknowledged. Press to take it back."
-- **At the midnight run:** a tick whose device has left the card, or whose line has gone, is forgotten. So a problem that comes back on a later day is active again. A network card's tick is kept with the network, the kind of card and what it is about (an outage pattern's time, a noise card's channel, a channel card's reason), and is kept at midnight while the card is shown, or was shown on the dashboard in the last two days, which covers radio noise, read only when the dashboard asks.
+- **At the midnight run:** a tick whose device has left the card, or whose line has gone, is forgotten. So a problem that comes back on a later day is active again. A network card's tick is kept with the network, the kind of card and what it is about (an outage pattern's time, a noise card's channel, a Zigbee channel card's reason, and for the house's Wi-Fi card since 0.29.8 its advice: the channel it names and whether the Wi-Fi covers a Zigbee or Thread channel or only sits in a crowd, never the channel the router is on, so a router that picks its own channel each night keeps the tick while the advice is the same; a tick given on 0.29.7 still holds), and is kept at midnight while the card is shown, or was shown on the dashboard in the last two days, which covers radio noise, read only when the dashboard asks.
 - **Back the same day:** one that leaves and comes back the same day, or across a restart, comes back ticked.
 - **Already ticked:** a sensor a person switched off themselves starts ticked.
 - **Battery replacements:** a Confirm Battery Replacement row is answered, not ticked.
+- **A whole card (since 0.29.8; asked for by Uncleabubear on the Home Assistant forum):** a device card's heading carries its own Acknowledged tick, which can be pressed with the card closed. Ticked, the card fades, its heading shows no count, and it leaves the counts and the Daily Brief, rows added later included. Its rows keep their own ticks underneath. Opening the card, or working on any of its rows, takes the card's tick off, and it can be ticked again. The tick is kept in the answers file while the card is shown, and forgotten at the midnight run once the card has gone. A Confirm Battery Replacement card has none.
 
-*Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_acknowledged_rows.js`.
+*Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_recommendation_card_tick.py`](../tests/test_recommendation_card_tick.py), [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), `check_acknowledged_rows.js`.
 
 ### REC-08 Counts
 

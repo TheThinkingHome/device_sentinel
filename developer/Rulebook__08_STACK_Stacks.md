@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 19 November 2026, on Device Sentinel 0.29.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -124,8 +124,9 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **SmartThings and Tuya:** they are there for a cloud outage. Once each has recorded a real one, one rule for cloud integrations is built from them and those probes retire.
 - **Tado (since 0.28.10):** read from the data Home Assistant's own coordinator holds, never from tado, whose free accounts have 100 requests a day. A line at each change of a device's Connection State, battery or firmware; one at each refresh with the interval set, whether it worked and the requests left; each room's link sensor when it changes; and one a day per device with how often its connection timestamp moved, which tells whether that timestamp is a clock each device could be judged by. The current values are in the download.
 - **Judging goes on:** whatever a studied library does, Device Sentinel goes on judging, listing, saving and folding.
+- **The page (since 0.29.8):** it opens with Share Names in Diagnostics ([STOR-21](Rulebook__18_STOR_Storage.md#stor-21-the-diagnostics-download)), then the list, with how to ask for support for listed hardware in the list's own help text.
 
-*Proof:* [`test_study.py`](../tests/test_study.py), [`test_stack_probes_hubs.py`](../tests/test_stack_probes_hubs.py), [`test_hue_smartthings_probe.py`](../tests/test_hue_smartthings_probe.py), [`test_probe_guard.py`](../tests/test_probe_guard.py), [`test_lutron_study_gating.py`](../tests/test_lutron_study_gating.py), [`test_tado_recording.py`](../tests/test_tado_recording.py), [`test_sonos_recording.py`](../tests/test_sonos_recording.py).
+*Proof:* [`test_study.py`](../tests/test_study.py), [`test_diagnostics_share_names.py`](../tests/test_diagnostics_share_names.py), [`test_stack_probes_hubs.py`](../tests/test_stack_probes_hubs.py), [`test_hue_smartthings_probe.py`](../tests/test_hue_smartthings_probe.py), [`test_probe_guard.py`](../tests/test_probe_guard.py), [`test_lutron_study_gating.py`](../tests/test_lutron_study_gating.py), [`test_tado_recording.py`](../tests/test_tado_recording.py), [`test_sonos_recording.py`](../tests/test_sonos_recording.py).
 
 ### STACK-12 The Stack Probe File
 
