@@ -398,10 +398,18 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
 # Exactly six pairs: a pair and a separator before the first, or a
 # separator and a pair after the sixth, means a longer run, such as
 # ZHA's eight-pair Zigbee address, which is kept whole rather than
-# half hidden (rule STOR-21).
+# half hidden. A neighbour counts as a pair only when it stands alone:
+# the "ac" of "mac:" and the "ad" of "-adapter" are parts of words, so
+# the address beside them is still hidden. Any character that is not a
+# hex digit may touch the address, so "_rssi" after it does not shield
+# it (rule STOR-21).
+_HEX_PAIR_ALONE_BEFORE = r"(?<![0-9A-Za-z_])[0-9A-Fa-f]{2}[:-]"
+_HEX_PAIR_ALONE_AFTER = r"[:-][0-9A-Fa-f]{2}(?![0-9A-Za-z_])"
 _MAC = re.compile(
-    r"(?<![0-9A-Fa-f]{2}[:-])\b([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})"
-    r"(?:\2[0-9A-Fa-f]{2}){3}\b(?![:-][0-9A-Fa-f]{2})"
+    r"(?<![0-9A-Fa-f])(?<!" + _HEX_PAIR_ALONE_BEFORE + r")"
+    r"([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})"
+    r"(?:\2[0-9A-Fa-f]{2}){3}"
+    r"(?![0-9A-Fa-f])(?!" + _HEX_PAIR_ALONE_AFTER + r")"
 )
 # The same address without separators, and in the dotted form, as some
 # integrations register a device. A bare token counts only with a
