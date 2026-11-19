@@ -252,12 +252,14 @@
       },
       "extended": {
         "title": "Extended Diagnostics",
-        "description": "Device Sentinel supports some hardware only after seeing how it behaves on a real system, and nobody working on Device Sentinel owns one of everything. Turning a toggle on here adds raw readings about that hardware to your diagnostics download. Nothing is transmitted. If you want support for hardware listed here, turn this toggle on and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, saying what you would like built. [Extended Diagnostics on the wiki]({wiki_link})",
+        "description": "The settings on this page change what goes into your diagnostics download. Share Names in Diagnostics decides whether your device, entity, area and label names are included. Hardware to Study adds raw readings about hardware Device Sentinel is still learning to support. [Extended Diagnostics on the wiki]({wiki_link})",
         "data": {
+          "share_names": "Share Names in Diagnostics",
           "study_hardware": "Hardware to Study"
         },
         "data_description": {
-          "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Problem Sensors and Polling appears on every system: it records each device's problem sensors and which integrations update all their devices at once. Choosing something changes nothing about how Device Sentinel behaves."
+          "share_names": "The authors of Device Sentinel respect your privacy. Your diagnostics download never includes your email addresses, your home network addresses, your Wi-Fi network names, or the full MAC address of any of your devices. But your device, entity, area and label names may be needed when asking for support, so sharing them is on by default.\n\nOn: sharing is turned on. Device, entity, area and label names will be visible in the diagnostics download.\n\nOff: device, entity, area and label names will be hidden. They will not appear in the diagnostics download. Instead, they will be replaced with anonymized placeholders, such as Device 12, Area 51 and Label 3. Asking for support may be more difficult.",
+          "study_hardware": "Device Sentinel needs to study the devices it watches and how they work in a real system before some of them can be fully supported, and nobody working on Device Sentinel owns one of everything. Only hardware found on your system appears here, and only where support is still being built. If you want support for hardware listed here, choose it and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, saying what you would like built. Problem Sensors and Polling appears on every system: it records each device's problem sensors and which integrations update all their devices at once. Choosing something changes nothing about how Device Sentinel behaves."
         }
       }
     },
