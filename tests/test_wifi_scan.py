@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_scan.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_wifi_scan.py, Version: 0.29.8 (2026-11-19)
 
 """WiFi detection read from the host's own radio (rule UP-12).
 
@@ -256,6 +256,47 @@ async def test_the_nightly_reboot_is_absorbed(
 
     assert coord.wifi_scan_down_at is None
     assert coord.wifi_scan_diagnostics["gone_at"] is None
+
+
+async def test_a_network_back_inside_the_wait_says_so_in_the_log(
+    hass: HomeAssistant, supervisor: FakeSupervisor, freezer, caplog
+):
+    """The log's "holding" line is never left without its ending: a
+    network heard again inside the wait says how long it was gone and
+    that no outage was reported."""
+    import logging
+    from datetime import timedelta
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.device_sentinel")
+    coord = await _coord(hass)
+    await coord.async_sweep_wifi()
+    supervisor.points = [OTHER]
+    await coord.async_sweep_wifi()
+    freezer.tick(timedelta(seconds=20))
+    supervisor.points = [NEAR, FAR, OTHER]
+    await coord.async_sweep_wifi()
+    assert f"{IOT} not heard, holding 60s before reporting" in caplog.text
+    assert f"{IOT} heard again after 20s, no outage" in caplog.text
+
+
+async def test_a_scan_cut_off_with_no_words_names_the_kind_of_error(
+    hass: HomeAssistant, supervisor: FakeSupervisor, caplog
+):
+    """As Home Assistant stops, a scan can be cut off by an error with no
+    words at all; the log names its kind rather than ending in a colon."""
+    import asyncio
+    import logging
+
+    from custom_components.device_sentinel.wifi import scan_networks
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.device_sentinel")
+
+    async def cut_off(path, method="get"):
+        raise asyncio.TimeoutError()
+
+    supervisor.send_command = cut_off
+    assert await scan_networks(hass, "wlo1") is None
+    assert "wifi scan failed: TimeoutError" in caplog.text
 
 
 async def test_the_delay_holds_across_repeated_sweeps(

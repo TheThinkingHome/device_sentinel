@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_recommendation_acknowledgement.py, Version: 0.29.8 (2026-11-19)
 
 """The switched-off cards and acknowledging a recommendation (rules
 REC-05, REC-07).
@@ -192,7 +192,7 @@ async def test_damaged_ticks_are_dropped_not_fatal(hass: HomeAssistant, hass_sto
         "data": {"power": {}, "types": {}, "acknowledged": {"devices": {"battery_off": {"x": "yes"}}, "lines": []}},
     }
     entry = await setup_entry(hass)
-    assert entry.runtime_data._acks() == {"devices": {}, "lines": {}}
+    assert entry.runtime_data._acks() == {"devices": {}, "lines": {}, "cards": {}}
 
 
 async def test_the_ws_command_ticks_and_refuses_a_stale_row(hass: HomeAssistant, hass_ws_client):

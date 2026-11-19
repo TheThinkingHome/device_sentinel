@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.29.5 (2026-11-17)
+# File: test_reports.py, Version: 0.29.8 (2026-11-19)
 
 """The diagnostic files: telemetry, classification and silence episodes
 (rules BRIEF-14, BRIEF-15, BRIEF-16, FRZ-08).
@@ -86,6 +86,7 @@ from custom_components.device_sentinel.coordinator import (
 from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
+from tests.helpers import share_names_off
 from tests.helpers import (
     register_device,
     setup_coordinator,
@@ -224,6 +225,10 @@ async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
     coordinator.data["devices"][device.id][DEV_DAILY_MAX] = [
         500.0, 550.0, 600.0, 520.0, 9000.0, 580.0, 560.0,
     ]
+
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+
+    share_names_off(hass, entry)
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -825,6 +830,8 @@ async def test_episodes_reach_diagnostics(hass: HomeAssistant):
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 2.0)
     coord._judge_all_devices()
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, entry)
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert "silence_episodes" in diag
     assert diag["silence_episodes"][0][EP_NAME] == diag["devices"][device.id]["name"] == "Device 1"

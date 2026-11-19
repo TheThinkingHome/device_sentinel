@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.29.5 (2026-11-17)
+# File: test_journal.py, Version: 0.29.8 (2026-11-19)
 
 """The record of incidents, episodes and system events, and what the
 brief says from it (rules LIST-09, LIST-11, BRIEF-16, STOR-18).
@@ -79,7 +79,7 @@ from custom_components.device_sentinel.const import (
     SYS_WHEN,
 )
 
-from tests.helpers import settle_parked, setup_coordinator
+from tests.helpers import settle_parked, setup_coordinator, share_names_off
 
 DOMAIN = "device_sentinel"
 
@@ -460,6 +460,8 @@ async def test_incidents_reach_diagnostics(hass: HomeAssistant):
     hass.states.async_set(entity_id, "21.5")
     _freeze(coord, device.id)
     coord._sync_problem_list()
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, entry)
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert "incidents" in diag
     # The name is the device's stand-in in the download (rule STOR-21).
@@ -585,6 +587,10 @@ async def test_diagnostics_carry_the_support_fields(
     await hass.async_block_till_done()
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "77")
+
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+
+    share_names_off(hass, entry)
 
     diag = await async_get_config_entry_diagnostics(hass, entry)
 

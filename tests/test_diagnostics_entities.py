@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_entities.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_diagnostics_entities.py, Version: 0.29.8 (2026-11-19)
 
 """Every entity of a device in the diagnostics download (rule DEV-10).
 
@@ -24,6 +24,7 @@ from custom_components.device_sentinel.diagnostics import (
 )
 
 from .helpers import register_device, setup_entry
+from tests.helpers import share_names_off
 
 
 async def test_every_entity_of_a_device_is_listed_with_what_type_rules_read(hass: HomeAssistant):
@@ -41,6 +42,8 @@ async def test_every_entity_of_a_device_is_listed_with_what_type_rules_read(hass
     )
     ent_reg.async_update_entity(leak.entity_id, device_class="moisture")
     entry = await setup_entry(hass)
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, entry)
     payload = await async_get_config_entry_diagnostics(hass, entry)
     rows = {row["entity_id"]: row for row in payload["devices"][device.id]["all_entities"]}
     # Each id under its device's stand-in, not its name (rule STOR-21).

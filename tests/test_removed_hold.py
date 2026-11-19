@@ -1,7 +1,7 @@
 """The 30-day hold of a removed device's record (rule WATCH-07).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_removed_hold.py, Version: 0.29.5 (2026-11-17)
+# File: test_removed_hold.py, Version: 0.29.8 (2026-11-19)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -60,6 +60,7 @@ from custom_components.device_sentinel.diagnostics import (
 from custom_components.device_sentinel.normalise import check_records
 
 from .helpers import MULTI_OWNER_GONE, MULTI_OWNER_POSSIBLE, registry_settled, setup_coordinator, setup_entry
+from tests.helpers import share_names_off
 
 DAY = 86400.0
 
@@ -235,6 +236,10 @@ async def test_the_diagnostics_list_the_held_records(hass: HomeAssistant):
     hardware = Hardware(hass, "rh8", "Office Sensor")
     entry = await setup_entry(hass)
     await _removed(hass, hardware)
+
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+
+    share_names_off(hass, entry)
 
     found = await async_get_config_entry_diagnostics(hass, entry)
 

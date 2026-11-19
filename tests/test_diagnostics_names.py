@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_names.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_diagnostics_names.py, Version: 0.29.8 (2026-11-19)
 
 """The diagnostics download names nothing of the house (rule STOR-21).
 
@@ -26,6 +26,7 @@ import os
 import re
 import stat
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -63,7 +64,11 @@ def _text(download) -> str:
 
 
 async def _download(hass: HomeAssistant, entry):
-    return await async_get_config_entry_diagnostics(hass, entry)
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    # Read as the setting, without saving it, so no listener redraws the
+    # rows a test has just laid down.
+    with patch("custom_components.device_sentinel.diagnostics.names_shared", return_value=False):
+        return await async_get_config_entry_diagnostics(hass, entry)
 
 
 def _key(hass: HomeAssistant) -> str:

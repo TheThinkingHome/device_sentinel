@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_radio_channels.py, Version: 0.29.7 (2026-11-18)
+# File: tests/test_radio_channels.py, Version: 0.29.8 (2026-11-19)
 
 """Radio channels (rules SIG-19, SIG-20, REC-13, DASH-19).
 
@@ -494,7 +494,7 @@ async def test_a_ticked_channel_card_stays_faded_and_leaves_the_count(hass: Home
     coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
     [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
     [card] = row["cards"]
-    assert card["ack_key"] == "net:wifi:channel:wifi:4:crowded" and card["acknowledged"] is False
+    assert card["ack_key"] == "net:wifi:channel:to:6:crowded" and card["acknowledged"] is False
     coord.set_recommendation_ack(True, line=card["ack_key"])
     [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
     assert row["cards"][0]["acknowledged"] is True, "still listed, ticked"
@@ -503,7 +503,42 @@ async def test_a_ticked_channel_card_stays_faded_and_leaves_the_count(hass: Home
         if air["ssid"].startswith("Home") and air["mhz"] == 2427:
             air.update(mhz=2412, channel=1)
     [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
-    assert row["cards"][0]["ack_key"] == "net:wifi:channel:wifi:1:covered"
+    assert row["cards"][0]["ack_key"] == "net:wifi:channel:to:6:covered"
+    assert row["cards"][0]["acknowledged"] is False
+
+
+async def test_a_router_that_moves_with_the_same_advice_keeps_its_tick(hass: HomeAssistant, supervisor: FakeSupervisor):
+    """A mesh router that picks its own channel each night moved from 4
+    to 3: the card still says channel 6, so the person's tick holds, and
+    the device pages stay quiet (rule REC-07)."""
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    coord.set_recommendation_ack(True, line=row["cards"][0]["ack_key"])
+    for air in coord._air:
+        if air["mhz"] == 2427:
+            air.update(mhz=2422, channel=3)
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    [card] = row["cards"]
+    assert card["reason"] == "wifi:3:crowded" and card["channel"] == 6
+    assert card["acknowledged"] is True
+
+
+async def test_a_tick_given_on_the_earlier_release_still_holds(hass: HomeAssistant, supervisor: FakeSupervisor):
+    """The tick was first kept under the router's channel. After the
+    update, with nothing changed, the card stays ticked; unticking it
+    clears it."""
+    coord = await setup_coordinator(hass)
+    _zigbee(coord, hass)
+    await _scanned(hass, coord)
+    coord.network_keys = lambda *a: [WIFI_KEY, STACK_Z2M]
+    coord._acks().setdefault("lines", {})["net:wifi:channel:wifi:4:crowded"] = True
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
+    assert row["cards"][0]["acknowledged"] is True
+    coord.set_recommendation_ack(False, line=row["cards"][0]["ack_key"])
+    [row] = [r for r in coord.network_recommendations() if r["key"] == WIFI_KEY]
     assert row["cards"][0]["acknowledged"] is False
 
 

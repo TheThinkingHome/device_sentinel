@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.28.12 (2026-11-11)
+# File: helpers.py, Version: 0.29.8 (2026-11-19)
 
 """Shared test helpers, one version of each.
 
@@ -403,3 +403,9 @@ async def settle_parked(hass, coordinator) -> None:
     with patch.object(dt_util, "utcnow", return_value=later):
         coordinator._sync_problem_list()
     await hass.async_block_till_done()
+
+
+def share_names_off(hass: HomeAssistant, entry) -> None:
+    """Turn Share Names in Diagnostics off, so the download shows each
+    device, entity, area and label by its stand-in (rule STOR-21)."""
+    hass.config_entries.async_update_entry(entry, options={**entry.options, "share_names": False})

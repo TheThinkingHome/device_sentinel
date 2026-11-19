@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_diagnostics_privacy.py, Version: 0.29.8 (2026-11-19)
 
 """Network addresses leave the diagnostics download (rule STOR-21).
 
@@ -30,6 +30,7 @@ from custom_components.device_sentinel.diagnostics import (
 )
 
 from .helpers import register_device, setup_entry
+from tests.helpers import share_names_off
 
 FULL_MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b")
 
@@ -81,6 +82,8 @@ async def test_the_download_carries_no_address(hass: HomeAssistant):
         configuration_url="http://192.168.68.40",
     )
     entry = await setup_entry(hass)
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, entry)
     text = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
     assert not FULL_MAC.search(text)
     assert "192.168.68.40" not in text

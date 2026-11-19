@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_infrastructure.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_infrastructure.py, Version: 0.29.8 (2026-11-19)
 
 """Diagnostics says what the plumbing is, not only how it behaved
 (rule DEV-16).
@@ -24,7 +24,7 @@ from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from tests.helpers import setup_entry
+from tests.helpers import setup_entry, share_names_off
 
 
 async def test_a_device_carries_its_make_and_model(hass: HomeAssistant):
@@ -41,6 +41,10 @@ async def test_a_device_carries_its_make_and_model(hass: HomeAssistant):
         model="3RDS17BZ",
         sw_version="1.0.9",
     )
+
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+
+    share_names_off(hass, entry)
 
     data = await async_get_config_entry_diagnostics(hass, entry)
 

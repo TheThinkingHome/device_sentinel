@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_child_devices.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_child_devices.py, Version: 0.29.8 (2026-11-19)
 
 """Child devices are watched like any other device (rules WATCH-01, GEN-07).
 
@@ -50,6 +50,7 @@ from custom_components.device_sentinel.const import (
 )
 
 from .helpers import flat_schema, setup_entry
+from tests.helpers import share_names_off
 
 pytestmark = pytest.mark.skipif(
     not hasattr(dr.DeviceRegistry, "async_get_or_create_child"),
@@ -520,5 +521,7 @@ async def test_a_child_in_its_parents_area_says_so_in_the_download(hass: HomeAss
     registry.async_update_device(parent.id, area_id=cellar.id)
     child, _, _ = _child(hass, source, registry, entities, parent)
     entry = await setup_entry(hass)
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, entry)
     rows = (await async_get_config_entry_diagnostics(hass, entry))["devices"]
     assert rows[child.id]["area"] == rows[parent.id]["area"] == "Area 1"

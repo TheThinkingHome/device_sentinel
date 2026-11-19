@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_answers_store.py, Version: 0.29.8 (2026-11-19)
 
 """The one file of pencil answers, its last-good copy, and the move
 from the old power file (rules STOR-20, STOR-01, WATCH-07).
@@ -43,6 +43,7 @@ from custom_components.device_sentinel.const import CONF_EXCLUDED_INTEGRATIONS, 
 from custom_components.device_sentinel.diagnostics import async_get_config_entry_diagnostics
 
 from .helpers import register_device, registry_settled, setup_coordinator, setup_entry
+from tests.helpers import share_names_off
 
 # Home Assistant's own storage functions, taken before the harness puts
 # its in-memory stand-ins in their place, for the tests on real files.
@@ -323,6 +324,8 @@ async def test_answers_for_unwatched_devices_are_kept_and_listed_in_one_place(ha
         "types": {"models": {lamp_key: _type("Lamp", lamp.id)},
                   "devices": {bare.id: {"type": "Hub", "set": SET}}}})
     coord = await setup_coordinator(hass, {CONF_EXCLUDED_INTEGRATIONS: ["hue"]})
+    # Stand-ins, as with Share Names in Diagnostics off (rule STOR-21).
+    share_names_off(hass, coord.entry)
     answers = (await async_get_config_entry_diagnostics(hass, coord.entry))["answers"]
     assert (answers["file"], answers["power_models"], answers["power_devices"],
             answers["type_models"], answers["type_devices"]) == ("device_sentinel.answers", 3, 1, 1, 1)
