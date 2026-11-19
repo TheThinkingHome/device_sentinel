@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_firmware_card.js, Version: 0.29.2 (2026-11-15)
+// File: tools/panel_checks/check_firmware_card.js, Version: 0.29.8 (2026-11-19)
 // Panel checks: the Firmware Updates card (rule REC-12). One row a
 // model with what is behind, or a device of its own when it names no
 // model, its devices linked to their Home Assistant pages, the
@@ -92,8 +92,9 @@ const Z2M_PANEL = { "45df7312_zigbee2mqtt": { url_path: "45df7312_zigbee2mqtt", 
   const z2m = card ? [...card.querySelectorAll("a")].find((a) => a.textContent === "Open the Zigbee2MQTT dashboard") : null;
   check("Its first words link to the Zigbee2MQTT panel", !!z2m && z2m.getAttribute("href") === "/45df7312_zigbee2mqtt", z2m && z2m.getAttribute("href"));
   check("Only the Zigbee2MQTT row says so", (text.match(/select OTA/g) || []).length === 1);
-  const boxes = card ? [...card.querySelectorAll('input[type="checkbox"]')] : [];
-  check("Each row has its own Acknowledged box", boxes.length === 2);
+  const boxes = card ? [...card.querySelectorAll('tbody input[type="checkbox"]')] : [];
+  check("Each row has its own Acknowledged box", boxes.length === 2, boxes.length);
+  check("The card's heading has one for the whole card", card && card.querySelectorAll('.rechead input[type="checkbox"]').length === 1);
   check("No null, undefined or NaN", !/null|undefined|NaN/.test(root.textContent));
 
   ({ root } = await open([FIRMWARE]));

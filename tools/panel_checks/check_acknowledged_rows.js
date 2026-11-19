@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.29.8 (2026-11-19)
 // Panel checks: an acknowledged row (rule REC-07). On the Daily Brief's Problem List,
 // the Daily Brief tab and the Recommendations cards the row fades to
 // 75%, all but its tick and the word beside it, so the tick still reads
-// as something to press; a ticked box says it can be taken back. Also
+// as something to press; a ticked box says it can be taken back. A whole
+// card can be ticked from its heading, closed or open, and comes back
+// when it is opened or a row is worked on. Also
 // the Maintenance Mode button's words (rule DASH-02).
 // Run with: LC_ALL=en_US.UTF-8 node check_acknowledged_rows.js [path/to/panel.js]
 const fs = require("fs");
@@ -40,7 +42,7 @@ async function open(path, answers = {}) {
     callWS: async (message) => {
       const kind = message.type.replace("device_sentinel/", "");
       const reply = JSON.parse(JSON.stringify(payloads[kind] || {}));
-      return answers[kind] ? answers[kind](reply) : reply;
+      return answers[kind] ? answers[kind](reply, message) : reply;
     },
     connection: { subscribeMessage: async () => () => {} },
     states: {},
@@ -91,6 +93,62 @@ const PROBLEM = (uid, name, acknowledged) => ({ uid, device_id: uid, name, integ
     recRows[0].classList.contains("acked") && tickCell.classList.contains("ackhold") && /Acknowledged/.test(tickCell.textContent));
   check("its tick says it can be taken back", tickCell.querySelector("label.ack").getAttribute("title") === HOVER);
   check("an open row's tick has no hover", !recRows[1].lastChild.querySelector("label.ack").hasAttribute("title"));
+
+  console.log("\nA whole card's tick");
+  const many = Array.from({ length: 12 }, (_, i) => ({ device_id: `n${i}`, name: `Shared Name ${i}`, area: "Hall", acknowledged: false }));
+  const named = { kind: "shared_names", title: "Devices Sharing A Name", body: "Two devices share a name.", devices: many };
+  const sent = [];
+  const record = { recommendation_ack: (reply, message) => { sent.push(message); return {}; } };
+  const closed = await open("/recommendations", { ...record, recommendations: (reply) => ({ ...reply, devices: [named] }) });
+  const art = closed.root.querySelector('article[data-kind="shared_names"]');
+  const headTick = art && art.querySelector(".rechead label.ack input");
+  check("the card's heading carries an Acknowledged tick while the card is closed",
+    Boolean(headTick) && !art.querySelector("details").open, art && art.innerHTML.slice(0, 200));
+  headTick.checked = true;
+  headTick.dispatchEvent(new closed.window.Event("change"));
+  await settle();
+  check("ticking it silences the whole card in one press", sent.some((m) => m.card === "shared_names" && m.on === true), sent);
+  closed.panel.remove();
+
+  // The sample data's own written recommendations, counted with no card.
+  const bare = await open("/recommendations", { recommendations: (reply) => ({ ...reply, devices: [] }) });
+  const base = bare.panel._activeRecs();
+  bare.panel.remove();
+  const ticked = await open("/recommendations", { ...record, recommendations: (reply) => ({ ...reply, devices: [{ ...named, card_acknowledged: true }] }) });
+  const tickedArt = ticked.root.querySelector('article[data-kind="shared_names"]');
+  check("a ticked card fades, keeps its tick, and its heading has no count",
+    tickedArt.classList.contains("acked") && tickedArt.querySelector(".rechead input").checked
+      && tickedArt.querySelector("h3").textContent === "Devices Sharing A Name", tickedArt.querySelector("h3").textContent);
+  check("a ticked card adds nothing to the recommendations count", ticked.panel._activeRecs() === base, [ticked.panel._activeRecs(), base]);
+  sent.length = 0;
+  const details = tickedArt.querySelector("details");
+  details.open = true;
+  details.dispatchEvent(new ticked.window.Event("toggle"));
+  await settle();
+  check("opening a ticked card takes its tick off", sent.some((m) => m.card === "shared_names" && m.on === false), sent);
+  ticked.panel.remove();
+
+  // Ticked again while open: drawing it again open is not opening it.
+  sent.length = 0;
+  const reticked = await open("/recommendations", { ...record, recommendations: (reply) => ({ ...reply, devices: [{ ...named, card_acknowledged: true }] }) });
+  reticked.panel._openCards.add("shared_names");
+  reticked.panel._paintRecommendations();
+  await settle();
+  const again = reticked.root.querySelector('article[data-kind="shared_names"] details');
+  again.dispatchEvent(new reticked.window.Event("toggle"));
+  await settle();
+  check("a ticked card drawn again open keeps its tick", again.open && !sent.some((m) => m.card === "shared_names"), sent);
+  reticked.panel.remove();
+
+  const counted = await open("/recommendations", { recommendations: (reply) => ({ ...reply, devices: [named] }) });
+  check("an unticked card counts each row", counted.panel._activeRecs() === base + 12, [counted.panel._activeRecs(), base]);
+  counted.panel.remove();
+  const confirm = { kind: "battery_confirm", title: "Battery Replaced?", body: "Was it replaced?",
+    devices: [{ device_id: "b1", name: "Door", area: "Hall", acknowledged: false }] };
+  const answered = await open("/recommendations", { recommendations: (reply) => ({ ...reply, devices: [confirm] }) });
+  check("a battery replacement card, answered rather than ticked, has no heading tick",
+    !answered.root.querySelector('article[data-kind="battery_confirm"] .rechead'));
+  answered.panel.remove();
 
   console.log("\nMaintenance Mode says what pressing it does");
   const off = await open("");
