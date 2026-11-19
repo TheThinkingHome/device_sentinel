@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.5 (2026-11-17)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.8 (2026-11-19)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -208,7 +208,7 @@ class AnswersMixin:
         self._power_reset()  # type: ignore[attr-defined]
         self._type_reset()  # type: ignore[attr-defined]
         self._restart_reset()  # type: ignore[attr-defined]
-        self._recommendation_acks: dict[str, Any] = {"devices": {}, "lines": {}}
+        self._recommendation_acks: dict[str, Any] = {"devices": {}, "lines": {}, "cards": {}}
         self._battery_replacement_answers: dict[str, dict[str, Any]] = {}
         # Sentences for the events log, recorded once the session has
         # loaded, because a repair nobody can see did not happen as far

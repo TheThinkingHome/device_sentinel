@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.29.7 (2026-11-18)
+# File: const.py, Version: 0.29.8 (2026-11-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2404,6 +2404,13 @@ WIFI_SCAN_SECONDS = 60.0
 # gathering for one integration or stack, in `study.py` and
 # `study_stacks.py`, for the diagnostics download (rule STACK-11).
 CONF_STUDY_HARDWARE = "study_hardware"
+
+# Whether the diagnostics download carries the house's device, entity,
+# area and label names. On, the default, they are shown as Home Assistant
+# names them; off, each is shown by a stand-in such as Device 12. Wi-Fi
+# network names and router trackers are stand-ins either way (rule STOR-21).
+CONF_SHARE_NAMES = "share_names"
+DEFAULT_SHARE_NAMES = True
 
 # The router integrations whose device trackers the tie reader can use,
 # named so the diagnostics can say which one a house runs (rule DEV-16).

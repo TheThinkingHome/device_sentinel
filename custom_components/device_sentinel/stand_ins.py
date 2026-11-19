@@ -3,22 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stand_ins.py, Version: 0.29.5 (2026-11-17)
+# File: stand_ins.py, Version: 0.29.8 (2026-11-19)
 
 """The numbers that stand in for names in the diagnostics download.
 
-A download is often attached to a public issue, so it names no device,
-area, label, Wi-Fi network or router tracker. Each is given a number
-the first time a download needs one, and keeps it: "Device 37" is the
-same device in every download this house makes, so two downloads can
-be compared. A number is never given to anything else, even after its
-device is removed (rule STOR-21).
+A download is often attached to a public issue. Wi-Fi network names
+and router trackers are always shown by a stand-in, and so are device,
+area, label and entity names when the person turns Share Names in
+Diagnostics off. Each is given a number the first time a download needs
+one, and keeps it: "Device 37" is the same device in every download
+this house makes, so two downloads can be compared. A number is never
+given to anything else, even after its device is removed (rule STOR-21).
+
+Each download writes the key, which tells the numbers back into names,
+to diagnostics_key.md in the reports folder, whatever the setting, so a
+person can read "your Device 57 is frozen" or "SSID-01". The key is
+never put in the download itself.
 
 The numbers are kept in their own file, device_sentinel.stand_ins, a
-table that only grows. An older release never reads it. Each download
-also writes the key, which tells the numbers back into names, to
-diagnostics_key.md in the reports folder: it stays on the person's
-system, and is sent only by private email.
+table that only grows. An older release never reads it.
 """
 
 from __future__ import annotations
@@ -169,6 +172,25 @@ def _cell(text: Any) -> str:
     return " ".join(str(text if text is not None else "").split()).replace("|", "\\|") or " "
 
 
+_TITLES = {
+    "device": "Devices",
+    "area": "Areas",
+    "label": "Labels",
+    "network": "Wi-Fi Networks",
+    "tracker": "Router Trackers",
+}
+def _rows(book: StandInBook, kind: str) -> list[tuple[str, str]]:
+    """Each stand-in of one kind and the name it stands for, in number order."""
+    out = []
+    for key, n in sorted(book.numbers[kind].items(), key=lambda item: item[1]):
+        if kind in ("network", "tracker"):
+            name = key
+        else:
+            name = book.names[kind].get(key) or ("(no name kept)" if not key.startswith("name:") else key[5:])
+        out.append((WORDS[kind](n), name))
+    return out
+
+
 def key_text(book: StandInBook, entities: dict[str, str], version: str, now: datetime) -> str:
     """The key, as Markdown: every number given and the name it stands for."""
     lines = [
@@ -176,29 +198,19 @@ def key_text(book: StandInBook, entities: dict[str, str], version: str, now: dat
         "",
         f"Device Sentinel {version}, written {now.strftime('%Y-%m-%d %H:%M')}.",
         "",
-        "Your diagnostics download names no device, area, label, Wi-Fi network or",
-        "router tracker. Each is shown by the stand-in on the left of this key,",
-        "and keeps its stand-in in each download. Keep this file on your",
-        "system. Send it only by private email, never with a public issue.",
+        "This key tells the stand-ins in your diagnostics download back into",
+        "names. Wi-Fi networks and router trackers are always shown by a",
+        "stand-in, such as SSID-01. Devices, areas, labels and entities are too",
+        "when Share Names in Diagnostics is off, such as Device 57. Each keeps",
+        "its stand-in in every download. Keep this file on your system.",
     ]
-    titles = {
-        "device": "Devices",
-        "area": "Areas",
-        "label": "Labels",
-        "network": "Wi-Fi Networks",
-        "tracker": "Router Trackers",
-    }
-    for kind, title in titles.items():
-        rows = sorted(book.numbers[kind].items(), key=lambda item: item[1])
+    for kind, title in _TITLES.items():
+        rows = _rows(book, kind)
         if not rows:
             continue
         lines += ["", f"## {title}", "", "| Stand-in | Name |", "|---|---|"]
-        for key, n in rows:
-            if kind in ("network", "tracker"):
-                name = key
-            else:
-                name = book.names[kind].get(key) or ("(no name kept)" if not key.startswith("name:") else key[5:])
-            lines.append(f"| {WORDS[kind](n)} | {_cell(name)} |")
+        for word, name in rows:
+            lines.append(f"| {word} | {_cell(name)} |")
     if entities:
         lines += [
             "",

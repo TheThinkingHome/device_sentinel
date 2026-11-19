@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.29.7 (2026-11-18)
+# File: config_flow.py, Version: 0.29.8 (2026-11-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -73,6 +73,8 @@ from .const import (
     REPORT_LINKS_INTERNAL,
     REPORT_LINKS_NONE,
     CONF_STUDY_HARDWARE,
+    CONF_SHARE_NAMES,
+    DEFAULT_SHARE_NAMES,
     CONF_CACHED_ADDED,
     CONF_CACHED_INTEGRATIONS,
     CONF_CACHED_REMOVED,
@@ -2195,6 +2197,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         changes no behaviour: it adds readings to the diagnostics
         download, which the person then attaches to an issue
         themselves. Nothing is transmitted.
+
+        Share Names in Diagnostics comes first, since it shapes every
+        download whatever hardware is chosen: on, the default, the
+        download carries the house's device, entity, area and label
+        names; off, each is shown by a stand-in (rule STOR-21).
         """
         if user_input is not None:
             return await self._save_and_return(dict(user_input))
@@ -2209,6 +2216,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_EXTENDED},
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_SHARE_NAMES,
+                        default=bool(options.get(CONF_SHARE_NAMES, DEFAULT_SHARE_NAMES)),
+                    ): selector.BooleanSelector(),
                     vol.Optional(
                         CONF_STUDY_HARDWARE, default=chosen
                     ): selector.SelectSelector(

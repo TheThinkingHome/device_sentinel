@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.29.6 (2026-11-17)
+# File: wifi.py, Version: 0.29.8 (2026-11-19)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -56,6 +56,14 @@ SUPERVISOR = "hassio"
 NETWORK_INFO = "/network/info"
 
 
+def said(err: BaseException) -> str:
+    """An error as the log can read it: its kind, and its words when it
+    has any. A request cut off as Home Assistant stops carries no words,
+    so its kind is all there is to say."""
+    text = str(err).strip()
+    return f"{type(err).__name__}: {text}" if text else type(err).__name__
+
+
 async def read_interfaces(hass) -> list[dict[str, Any]] | None:
     """Return the host's network interfaces, or None if it cannot be
     asked. Read-only: nothing here writes to the host."""
@@ -65,7 +73,7 @@ async def read_interfaces(hass) -> list[dict[str, Any]] | None:
     try:
         info = await handler.send_command(NETWORK_INFO, method="get")
     except Exception as err:  # noqa: BLE001 - absent is not broken
-        LOGGER.debug("device_sentinel: supervisor network read failed: %s", err)
+        LOGGER.debug("device_sentinel: supervisor network read failed: %s", said(err))
         return None
     payload = info.get("data") if isinstance(info, dict) else None
     return (payload or info or {}).get("interfaces") or []
@@ -93,7 +101,7 @@ async def scan_networks(hass, interface: str) -> list[dict[str, Any]] | None:
             f"/network/interface/{interface}/accesspoints", method="get"
         )
     except Exception as err:  # noqa: BLE001 - absent is not broken
-        LOGGER.debug("device_sentinel: wifi scan failed: %s", err)
+        LOGGER.debug("device_sentinel: wifi scan failed: %s", said(err))
         return None
     payload = result.get("data") if isinstance(result, dict) else None
     return (payload or result or {}).get("accesspoints") or []
@@ -209,6 +217,14 @@ class WifiScanMixin:
         if not missing:
             if self._wifi_scan_down_at is not None:
                 self._wifi_scan_restore(now)
+            elif self._wifi_scan_gone_at is not None:
+                # Back inside the wait: no outage, and the log says so, so
+                # a "holding" line is never left without its ending.
+                LOGGER.debug(
+                    "device_sentinel: %s heard again after %ds, no outage",
+                    ", ".join(chosen),
+                    int(max(0.0, now - self._wifi_scan_gone_at)),
+                )
             self._wifi_scan_gone_at = None
             return
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.7 (2026-11-18)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.8 (2026-11-19)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -484,7 +484,7 @@ class DeviceRecommendationsMixin:
         """The acknowledgements, read from the answers file (rule REC-07)."""
         found = getattr(self, "_recommendation_acks", None)
         if not isinstance(found, dict):
-            found = {"devices": {}, "lines": {}}
+            found = {"devices": {}, "lines": {}, "cards": {}}
             self._recommendation_acks = found
         return found
 
@@ -501,6 +501,7 @@ class DeviceRecommendationsMixin:
         Assistant's own thread, never changes them.
         """
         kept: dict[str, dict[str, bool]] = self._acks().get("devices") or {}
+        whole: dict[str, bool] = self._acks().get("cards") or {}
         for card in cards:
             kind = card["kind"]
             own = kept.get(kind) or {}
@@ -514,6 +515,12 @@ class DeviceRecommendationsMixin:
                 )
                 if not row["acknowledged"]:
                     active += 1
+            # The whole card ticked silences every row in it, rows added
+            # later included, until it is unticked or opened (rule
+            # REC-07). The rows keep their own ticks underneath.
+            card["card_acknowledged"] = kind != KIND_BATTERY_CONFIRM and bool(whole.get(kind, False))
+            if card["card_acknowledged"]:
+                active = 0
             card["active"] = active
             card["simple"] = kind in SIMPLE_CARDS
             words = card.pop("brief_words", None)
@@ -564,6 +571,9 @@ class DeviceRecommendationsMixin:
             for kind, ticks in old_devices.items()
         }
         devices = {kind: ticks for kind, ticks in devices.items() if ticks}
+        # A whole card's tick, kept while the card is shown.
+        old_cards: dict[str, bool] = acks.get("cards") or {}
+        whole = {kind: on for kind, on in old_cards.items() if kind in cards}
         present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
         # A network card's tick, kept while the card is shown (rule REC-07).
         present |= self.network_ack_present()  # type: ignore[attr-defined]
@@ -575,22 +585,31 @@ class DeviceRecommendationsMixin:
             carried = self._library_tick(key, old_lines)
             if carried is not None:
                 lines[key] = carried
-        if devices != old_devices or lines != old_lines:
+        if devices != old_devices or lines != old_lines or whole != old_cards:
             acks["devices"] = devices
             acks["lines"] = lines
+            acks["cards"] = whole
             self._answers_save()  # type: ignore[attr-defined]
 
     def set_recommendation_ack(
         self, on: bool, *, kind: str | None = None, device_id: str | None = None,
-        line: str | None = None,
+        line: str | None = None, card: str | None = None,
     ) -> None:
-        """Tick or untick one device on one card, or one written line.
+        """Tick or untick one device on one card, a whole card, or one
+        written line.
 
         Kept as the person left it, true or false, so a sensor they
-        switched off can be unticked to count again.
+        switched off can be unticked to count again. Ticking or unticking
+        one device takes the whole card's tick off, since the person is
+        working on that card again (rule REC-07).
         """
         acks = self._acks()
-        if line is not None:
+        if card is not None:
+            shown = {c["kind"] for c in self.device_recommendations()}
+            if card not in shown or card == KIND_BATTERY_CONFIRM:
+                raise ValueError("That recommendation is no longer shown")
+            acks.setdefault("cards", {})[card] = bool(on)
+        elif line is not None:
             present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
             # A network card's tick, every recommendation having one
             # (rule REC-07).
@@ -599,11 +618,12 @@ class DeviceRecommendationsMixin:
                 raise ValueError("That recommendation is no longer shown")
             acks.setdefault("lines", {})[line] = bool(on)
         else:
-            cards = {card["kind"]: card for card in self.device_recommendations()}
-            card = cards.get(kind or "")
-            if card is None or device_id not in {row["device_id"] for row in card["devices"]}:
+            cards = {c["kind"]: c for c in self.device_recommendations()}
+            shown = cards.get(kind or "")
+            if shown is None or device_id not in {row["device_id"] for row in shown["devices"]}:
                 raise ValueError("That device is no longer on that card")
             acks.setdefault("devices", {}).setdefault(str(kind), {})[str(device_id)] = bool(on)
+            acks.setdefault("cards", {}).pop(str(kind), None)
         self._answers_save()  # type: ignore[attr-defined]
         self._mark_changed()  # type: ignore[attr-defined]
 
@@ -638,7 +658,18 @@ class DeviceRecommendationsMixin:
                     dropped += 1
         else:
             dropped += 1
-        self._recommendation_acks = {"devices": devices, "lines": lines}
+        # Whole cards; a file written before they existed has none.
+        cards: dict[str, bool] = {}
+        raw_cards = payload.get("cards", {})
+        if isinstance(raw_cards, dict):
+            for key, value in raw_cards.items():
+                if isinstance(value, bool):
+                    cards[str(key)] = value
+                else:
+                    dropped += 1
+        else:
+            dropped += 1
+        self._recommendation_acks = {"devices": devices, "lines": lines, "cards": cards}
         return dropped
 
     def _acks_payload(self) -> dict[str, Any]:
@@ -646,6 +677,7 @@ class DeviceRecommendationsMixin:
         return {
             "devices": {kind: dict(ticks) for kind, ticks in acks.get("devices", {}).items() if ticks},
             "lines": dict(acks.get("lines", {})),
+            "cards": {kind: on for kind, on in (acks.get("cards") or {}).items()},
         }
 
     def _slow_reporter(self, device_id: str) -> bool:

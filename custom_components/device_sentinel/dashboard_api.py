@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.29.7 (2026-11-18)
+# File: dashboard_api.py, Version: 0.29.8 (2026-11-19)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -869,21 +869,26 @@ def ws_device_battery(
     )
 
 
+# One device on a card, a whole card, or one written line: one of the
+# three, never two (rule REC-07).
+_ACK_SCHEMA: dict[Any, Any] = {
+    vol.Required("type"): "device_sentinel/recommendation_ack",
+    vol.Required("on"): bool,
+    vol.Exclusive("line", "which"): str,
+    vol.Exclusive("kind", "which"): str,
+    vol.Exclusive("card", "which"): str,
+    vol.Optional("device_id"): str,
+}
+
+
 @websocket_api.require_admin
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "device_sentinel/recommendation_ack",
-        vol.Required("on"): bool,
-        vol.Exclusive("line", "which"): str,
-        vol.Exclusive("kind", "which"): str,
-        vol.Optional("device_id"): str,
-    }
-)
+@websocket_api.websocket_command(_ACK_SCHEMA)
 @callback
 def ws_recommendation_ack(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Tick or untick one device on one card, or one written line (rule REC-07)."""
+    """Tick or untick one device on one card, a whole card, or one
+    written line (rule REC-07)."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
@@ -891,6 +896,7 @@ def ws_recommendation_ack(
     try:
         coordinator.set_recommendation_ack(
             msg["on"], kind=msg.get("kind"), device_id=msg.get("device_id"), line=msg.get("line"),
+            card=msg.get("card"),
         )
     except ValueError as err:
         connection.send_error(msg["id"], "not_found", str(err))

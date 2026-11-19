@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.29.7 (2026-11-18)
+# File: radio_channels.py, Version: 0.29.8 (2026-11-19)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 
@@ -41,7 +41,7 @@ from .const import (
     STACK_ZHA,
     WIFI_KEY,
 )
-from .network_extras import network_ack_key
+from .network_extras import network_ack_ticked
 from .study_stacks import _matter_attributes, _plain, _read, live_entries, node_devices
 from .wifi import SUPERVISOR, read_interfaces, scan_networks
 
@@ -423,7 +423,7 @@ class RadioChannelsMixin:
         """A channel card of a network that is shown and not ticked."""
         kept: dict[str, bool] = self._acks().get("lines") or {}  # type: ignore[attr-defined]
         for card in self._channel_cards(key):
-            if test(card) and not kept.get(network_ack_key(key, card)):
+            if test(card) and not network_ack_ticked(kept, key, card):
                 return card
         return None
 

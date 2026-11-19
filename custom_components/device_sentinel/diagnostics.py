@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.29.6 (2026-11-17)
+# File: diagnostics.py, Version: 0.29.8 (2026-11-19)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -17,9 +17,13 @@ rather than description.
 
 It complements device_telemetry.md rather than repeating it: the
 Markdown file is human triage for the owner, this is the complete
-machine-readable record for the maintainer. Device names are included
-because a report without them is unreadable. Network addresses are
-not: the file is often attached to a public issue, so every MAC address
+machine-readable record for the maintainer. Device, entity, area and
+label names are included, since a report without them is hard to
+follow, unless the person turns Share Names in Diagnostics off; then
+each is shown by a stand-in, such as Device 57 (rule STOR-21). Wi-Fi
+network names and router trackers are always stand-ins, and network
+addresses are never included: the file is often attached to a public
+issue, so every MAC address
 keeps only its maker's half and every home-network address becomes a
 stand-in, the same one throughout the file (rule STOR-21). The config entry
 is redacted as a matter of course, since it carries the user's
@@ -28,6 +32,7 @@ notification targets.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import inspect
@@ -57,6 +62,8 @@ from .const import (
     REPORT_DIR,
     ROUTER_DOMAINS,
     CONF_STUDY_HARDWARE,
+    CONF_SHARE_NAMES,
+    DEFAULT_SHARE_NAMES,
     DATA_STORM_DAYS,
     DATA_STORMS,
     DATA_WIFI_MEDIUM,
@@ -612,23 +619,32 @@ def _addresses(device: Any, key: bytes) -> list[str]:
     return sorted(found)
 
 
+def names_shared(entry: Any) -> bool:
+    """Whether the person shares the house's names in the download (rule
+    STOR-21): on unless Share Names in Diagnostics was turned off."""
+    return bool((entry.options or {}).get(CONF_SHARE_NAMES, DEFAULT_SHARE_NAMES))
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
     """Return the integration's learned state as diagnostics, with no
-    address and no name of the house in it (rule STOR-21).
+    address, no Wi-Fi network name and no router tracker in it (rule STOR-21).
 
-    The stand-ins for names keep their numbers from one download to the
-    next, and the key to them is written to the reports folder, never
-    into the download.
+    The house's device, entity, area and label names are shown as Home
+    Assistant names them unless the person turned Share Names in
+    Diagnostics off; then each is shown by its stand-in, which keeps its
+    number from one download to the next. The names are worked out either
+    way, so the key in the reports folder is always whole and a number
+    never changes when the setting does.
     """
     coordinator = entry.runtime_data
     async with book_lock(hass):
         book = await async_load_book(hass)
         payload = await _learned_state(hass, entry, book)
         payload = _redact_addresses(payload, _network_names(coordinator), book)
-        payload, entity_words = hide_names(
-            hass, payload, book, coordinator._registry_devices(dr.async_get(hass))
+        hidden, entity_words = hide_names(
+            hass, copy.deepcopy(payload), book, coordinator._registry_devices(dr.async_get(hass))
         )
         try:
             await async_save_book(hass, book)
@@ -640,7 +656,7 @@ async def async_get_config_entry_diagnostics(
             await hass.async_add_executor_job(_write_key, coordinator, path, text)
         except OSError as err:
             LOGGER.warning("Device Sentinel could not write %s: %s", path, err)
-    return payload
+    return payload if names_shared(entry) else hidden
 
 
 def _write_key(coordinator: Any, path: str, text: str) -> None:

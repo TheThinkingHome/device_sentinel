@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.29.7 (2026-11-18)
+# File: network_extras.py, Version: 0.29.8 (2026-11-19)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -166,13 +166,42 @@ NET_ACK_SEEN_SECONDS = 2 * 86400.0
 
 def network_ack_key(key: str, card: dict[str, Any]) -> str:
     kind = str(card.get("kind"))
-    if kind == "channel":
+    about: Any
+    if kind == "channel" and key == WIFI_KEY:
+        # The house's Wi-Fi card is ticked for its advice, the channel it
+        # names and whether the Wi-Fi covers a Zigbee or Thread channel or
+        # only sits in a crowd, never for the channel the router is on: a
+        # router that picks its own channel each night would otherwise
+        # bring the card back each morning with the same advice (rule
+        # REC-07).
+        reason = str(card.get("reason") or "")
+        about = f"to:{card.get('channel')}:{reason.rsplit(':', 1)[-1]}"
+    elif kind == "channel":
         about = card.get("reason")
     elif kind == "noise":
         about = card.get("channel")
     else:
         about = card.get("minute")
     return f"{NET_ACK_PREFIX}{key}:{kind}:{about}"
+
+
+def legacy_ack_key(key: str, card: dict[str, Any]) -> str | None:
+    """The key the house's Wi-Fi card's tick was first kept under, the
+    router's own channel, so a tick given then still holds after the
+    update while nothing has changed."""
+    if card.get("kind") != "channel" or key != WIFI_KEY:
+        return None
+    return f"{NET_ACK_PREFIX}{key}:channel:{card.get('reason')}"
+
+
+def network_ack_ticked(kept: dict[str, bool], key: str, card: dict[str, Any]) -> bool:
+    """Whether a network card is ticked: its own key as the person left
+    it, else a tick kept under the key an earlier release used."""
+    ack = network_ack_key(key, card)
+    if ack in kept:
+        return bool(kept[ack])
+    legacy = legacy_ack_key(key, card)
+    return bool(kept.get(legacy, False)) if legacy else False
 
 class NetworkExtrasMixin:
     """The parts of a network's page beyond its counts and outages."""
@@ -890,8 +919,11 @@ class NetworkExtrasMixin:
         for card in cards:
             ack = network_ack_key(key, card)
             card["ack_key"] = ack
-            card["acknowledged"] = bool(kept.get(ack, False))
+            card["acknowledged"] = network_ack_ticked(kept, key, card)
             seen[ack] = now
+            legacy = legacy_ack_key(key, card)
+            if legacy:
+                seen[legacy] = now
         return cards
 
     def network_ack_present(self) -> set[str]:
