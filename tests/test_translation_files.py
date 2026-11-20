@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_translation_files.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_translation_files.py, Version: 0.29.8 (2026-11-20)
 
 """Each language file fits en.json, and Home Assistant shows it.
 
@@ -41,8 +41,8 @@ def _flat(node, path=""):
 ENGLISH = dict(_flat(json.loads((ROOT / "en.json").read_text(encoding="utf-8"))))
 
 
-def test_spanish_and_french_ship():
-    assert {p.name for p in LANGUAGES} >= {"es.json", "fr.json"}
+def test_spanish_french_and_polish_ship():
+    assert {p.name for p in LANGUAGES} >= {"es.json", "fr.json", "pl.json"}
 
 
 @pytest.mark.parametrize("file", LANGUAGES, ids=lambda f: f.name)
@@ -58,8 +58,9 @@ def test_a_language_file_fits_the_english(file: Path):
         assert "—" not in text, key
 
 
-def test_spanish_is_complete():
-    rows = dict(_flat(json.loads((ROOT / "es.json").read_text(encoding="utf-8"))))
+@pytest.mark.parametrize("name", ["es.json", "pl.json"])
+def test_a_complete_language_has_every_row(name: str):
+    rows = dict(_flat(json.loads((ROOT / name).read_text(encoding="utf-8"))))
     assert set(rows) == set(ENGLISH)
 
 
@@ -71,3 +72,13 @@ async def test_home_assistant_serves_spanish(hass: HomeAssistant, enable_custom_
     assert spanish[key] == "Integraciones que devuelven valores en caché"
     title = "component.device_sentinel.options.step.init.description"
     assert "aplicación" not in english[title] and "Notificaciones" in spanish[title]
+
+
+async def test_home_assistant_serves_polish(hass: HomeAssistant, enable_custom_integrations):
+    polish = await async_get_translations(hass, "pl", "options", ["device_sentinel"])
+    english = await async_get_translations(hass, "en", "options", ["device_sentinel"])
+    key = "component.device_sentinel.options.step.advanced.data.cached_integrations"
+    assert english[key] == "Integrations That Report Cached Values"
+    assert polish[key] == "Integracje raportujące wartości z pamięci podręcznej"
+    title = "component.device_sentinel.options.step.init.title"
+    assert polish[title] == "Konfiguracja Device Sentinel"
