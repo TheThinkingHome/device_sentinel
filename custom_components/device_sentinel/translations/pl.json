@@ -1,0 +1,410 @@
+{
+  "title": "Device Sentinel",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Device Sentinel",
+        "description": "Device Sentinel instaluje się z działającymi ustawieniami domyślnymi i od razu zaczyna obserwację. Konfiguracja znajduje się w opcjach po zakończeniu instalacji."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Konfiguracja Device Sentinel",
+        "description": "Domyślne ustawienia Device Sentinel wystarczą na początek. Gdy zaczniesz dostosowywać integrację do swojego systemu, przechodź od góry do dołu. Jeśli chcesz, aby alerty trafiały na telefon, zacznij od sekcji Powiadomienia.\n\n**Powiadomienia**: dokąd trafiają alerty, godziny ciszy i codzienne przypomnienie.\n\n**Wykluczenia i wyciszanie**: sprzęt, którego nie chcesz, aby cokolwiek oceniało lub zgłaszało. Aby wyciszyć tylko jeden rodzaj raportów dla urządzenia, użyj listy wyciszeń w odpowiedniej sekcji.\n\n**Niski poziom baterii**: próg niskiego poziomu i wyciszanie dotyczące wyłącznie baterii.\n\n**Siła sygnału**: jak słabnące łącza radiowe są oceniane względem normy każdego urządzenia.\n\n**Wykrywanie zawieszeń i niedostępności**: jak długo urządzenie może milczeć, zanim zostanie uznane za zawieszone (ustawiane dwoma suwakami tolerancji), oraz które urządzenia są wyciszone pod kątem zawieszenia lub niedostępności.\n\n**WiFi**: sieci obserwowane pod kątem awarii WiFi.\n\n**Zaawansowane**: przechowywanie i historia, okno konserwacji, tryb otwierania panelu (prosty lub zaawansowany) oraz narzędzie Przycinanie danych.\n\n**Rozszerzona diagnostyka**: sprzęt, który wybierzesz do szczegółowego rejestrowania, aby pomóc w opracowaniu jego obsługi.\n\n[Cała dokumentacja na wiki Device Sentinel]({wiki_link})\n\nKażda sekcja zapisuje się po zatwierdzeniu i wraca tutaj. Zamknięcie tego okna zachowuje wszystko, co zostało już zatwierdzone.",
+        "menu_options": {
+          "notifications": "Powiadomienia i dzienne podsumowanie",
+          "exclusions": "Wykluczenia i wyciszanie",
+          "battery": "Niski poziom baterii",
+          "signal": "Siła sygnału",
+          "freeze": "Wykrywanie zawieszeń i niedostępności",
+          "wifi": "WiFi",
+          "advanced": "Zaawansowane",
+          "extended": "Rozszerzona diagnostyka"
+        }
+      },
+      "notifications": {
+        "title": "Powiadomienia i dzienne podsumowanie",
+        "description": "Kto dowiaduje się o problemie i kiedy. [Powiadomienia i dzienne podsumowanie na wiki]({wiki_link})",
+        "sections": {
+          "instant": {
+            "name": "Powiadomienia natychmiastowe",
+            "data": {
+              "high_priority_targets": "Cele o wysokim priorytecie",
+              "normal_priority_targets": "Cele o normalnym priorytecie",
+              "persistent_enabled": "Utwórz powiadomienie trwałe"
+            },
+            "data_description": {
+              "high_priority_targets": "Otrzymują wszystkie alerty o każdej porze, także w godzinach ciszy. Dzienne podsumowanie nie jest tu wysyłane; trafia wyłącznie do celów wskazanych w polu Wyślij pełne podsumowanie do.",
+              "normal_priority_targets": "Otrzymują wszystkie alerty z wyjątkiem godzin ciszy. Dzienne podsumowanie nie jest tu wysyłane; trafia wyłącznie do celów wskazanych w polu Wyślij pełne podsumowanie do.",
+              "persistent_enabled": "Wyświetla na panelu jedną kartę z bieżącym stanem domu, pogrupowanym według rodzaju."
+            }
+          },
+          "quiet": {
+            "name": "Godziny ciszy",
+            "data": {
+              "quiet_hours_enabled": "Włącz godziny ciszy",
+              "quiet_hours_start": "Początek",
+              "quiet_hours_end": "Koniec"
+            },
+            "data_description": {
+              "quiet_hours_enabled": "W tych godzinach cele o normalnym priorytecie nie otrzymują niczego, a cele o wysokim priorytecie nadal otrzymują wszystkie alerty. Dzienne podsumowanie informuje, co się wydarzyło."
+            }
+          },
+          "brief": {
+            "name": "Dzienne podsumowanie",
+            "data": {
+              "daily_reminder_time": "Kiedy wysyłać",
+              "daily_reminder_mode": "Jak często",
+              "brief_document_targets": "Wyślij pełne podsumowanie do",
+              "report_link_address": "Linki w raportach"
+            },
+            "data_description": {
+              "daily_reminder_mode": "Plik podsumowania jest zapisywany w każdym przypadku; to ustawienie decyduje, czy zostanie wysłany.",
+              "brief_document_targets": "E-mail lub inne usługi, które posłużą do wysłania dziennego podsumowania. Wybierz je z listy. Wpisany tutaj adres e-mail nie zadziała: aby wysyłać pocztą, najpierw skonfiguruj integrację SMTP w Home Assistant, a jej odbiorcy pojawią się na liście. [Wysyłanie dziennego podsumowania e-mailem]({email_link})",
+              "report_link_address": "Nazwy urządzeń w dziennym podsumowaniu mogą stać się linkami do strony danego urządzenia na panelu Device Sentinel. Podsumowanie jest wysyłane e-mailem i można je przekazać dalej, więc link zawiera adres Twojego domu. Wybierz adres używany w linkach albo Brak, aby nie tworzyć linków. Jeśli adresy URL wewnętrzny lub zewnętrzny nie są ustawione, można je skonfigurować w [ustawieniach sieci](/config/network) Home Assistant."
+            }
+          }
+        }
+      },
+      "exclusions": {
+        "title": "Wykluczenia i wyciszanie",
+        "description": "Integracja oferuje dwa sposoby dostrajania, które urządzenia obserwuje i jak o nich raportuje. Wykluczanie odrzuca; wyciszanie jedynie wycisza.\n\n[Wykluczenia i wyciszanie na wiki]({wiki_link})",
+        "sections": {
+          "exclude": {
+            "name": "Integracje i urządzenia do wykluczenia",
+            "description": "Wykluczona integracja lub urządzenie jest całkowicie pomijane. Nic się nie uczy, żadne dane nie są przechowywane i nigdy nie pojawia się w raportach ani powiadomieniach. To, co zostało już zapisane, jest usuwane o najbliższej lokalnej północy, więc zdjęcie z listy przed tą chwilą przywraca je w nietkniętym stanie. Używaj tego tam, gdzie dane publikowane przez urządzenie nie są pomiarem Twojego domu: telefony, które go opuszczają, tablety ścienne na stałym zasilaniu, sondy odpowiadające przy każdym odpytaniu. Pojedyncze urządzenie można też wykluczyć na jego stronie w panelu Device Sentinel.",
+            "data": {
+              "excluded_integrations": "Integracje do wykluczenia",
+              "devices_to_exclude": "Urządzenia do wykluczenia"
+            },
+            "data_description": {
+              "excluded_integrations": "Każde urządzenie z zaznaczonej integracji jest pomijane.",
+              "devices_to_exclude": "Każde wybrane tutaj urządzenie jest pomijane osobno, według tych samych zasad."
+            }
+          },
+          "muting": {
+            "name": "Wyciszanie globalne",
+            "description": "Wyciszony element nadal jest obserwowany, a jego dane są przechowywane, ale nie trafia na Listę problemów ani do raportów i alertów. Po zdjęciu wyciszenia urządzenie od razu wznawia raportowanie, ponieważ jego historia jest już dostępna. Trzy listy idą od najszerszej do najwęższej: integracja, etykieta, urządzenie. Wycisz na wyższym poziomie i zapisz, a wszystko, co obejmuje, zniknie z wyboru na listach poniżej.",
+            "data": {
+              "muted_integrations": "Globalnie wyciszone integracje",
+              "muted_labels": "Globalnie wyciszone etykiety",
+              "muted_devices": "Globalnie wyciszone urządzenia"
+            },
+            "data_description": {
+              "muted_integrations": "Wycisza każde urządzenie należące do integracji. Jej urządzenia będą poznawane i rejestrowane, ale nie pojawią się na Liście problemów ani w żadnych raportach i powiadomieniach.",
+              "muted_labels": "System wycisza każde urządzenie z tymi etykietami. Etykieta na pojedynczej encji nie wycisza niczego. Możesz zarządzać tym wyciszeniem bez otwierania tego okna: wystarczy nadać etykietę na stronie urządzenia, a Device Sentinel przestanie o nim raportować.",
+              "muted_devices": "Stosuje dokładnie te same zasady wyciszania co powyższe listy, ale dotyczy pojedynczych urządzeń. Dodaj tu konkretne urządzenie, aby zdjąć je z Listy problemów i wyciszyć jego raporty i powiadomienia."
+            }
+          }
+        }
+      },
+      "battery": {
+        "title": "Niski poziom baterii",
+        "data": {
+          "low_threshold": "Próg niskiego poziomu baterii",
+          "battery_days_till_empty": "Dni do ostrzeżenia o niskim poziomie"
+        },
+        "data_description": {
+          "low_threshold": "Bateria na tym poziomie lub niższym jest oznaczana jako słaba.",
+          "battery_days_till_empty": "O słabnącej baterii ostrzegamy na tyle dni przed osiągnięciem przez nią progu niskiego poziomu. Oceniana jest tylko bateria na poziomie nie wyższym niż trzykrotność progu, a jej data wynika z własnej historii jako przedział: o baterii słabnącej coraz szybciej co tydzień ostrzegamy, gdy bliższy kraniec przedziału mieści się w tych dniach, a bateria słabnąca w stałym tempie trafia do sekcji Baterie do obserwacji w Dziennym podsumowaniu oraz do Trendów baterii. O baterii utrzymującej ładunek nigdy nie ostrzegamy, a ogniwo już poniżej progu nie jest oznaczane dwukrotnie."
+        },
+        "description": "Device Sentinel domyślnie obserwuje każdą znalezioną baterię. Próg odpowiada na pytanie, które ogniwa są słabe; dni ostrzeżenia – które wkrótce takie będą. Ogniwo jest uznawane za słabnące i dostaje szacowany czas do wyczerpania tylko na poziomie nie wyższym niż trzykrotność progu: wyżej żadna bateria nie była obserwowana dość długo, by powiedzieć, kiedy go osiągnie. Do oceny bateria potrzebuje czterech tygodni odczytów z ostatnich sześciu. Wiele urządzeń przestaje działać, zanim bateria dojdzie do 0%, dlatego pozostały czas liczony jest do Twojego progu. Gdy bateria raz była słaba, jej pozostały czas liczony jest do całkowitego rozładowania aż do jej wymiany, nawet jeśli odczyt znów przekroczy próg. Bateria jest oznaczana, gdy jest na poziomie progu lub niższym.\n\n[Niski poziom baterii na wiki]({wiki_link})",
+        "sections": {
+          "battery_muting": {
+            "name": "Wyciszanie baterii",
+            "description": "Wyciszenie baterii tutaj wstrzymuje raporty o baterii tylko dla tego urządzenia; wszystko inne w nim nadal jest obserwowane. Trzy listy idą od najszerszej do najwęższej: integracja, etykieta, urządzenie. Wycisz na wyższym poziomie i zapisz, a wszystko, co obejmuje, zniknie z wyboru na listach poniżej.",
+            "data": {
+              "battery_muted_integrations": "Integracje wyciszone w raportowaniu baterii",
+              "battery_muted_labels": "Etykiety wyciszone w raportowaniu baterii",
+              "battery_muted_devices": "Urządzenia wyciszone w raportowaniu baterii"
+            },
+            "data_description": {
+              "battery_muted_integrations": "Jedno zaznaczenie obejmuje każdą baterię należącą do integracji (na przykład telefony w mobile_app).",
+              "battery_muted_labels": "Każde urządzenie z jedną z tych etykiet przestaje być raportowane pod kątem niskiego poziomu baterii. Ustaw etykietę na stronie urządzenia, a zadziała tutaj bez otwierania tego okna.",
+              "battery_muted_devices": "Każde wymienione urządzenie ma śledzoną baterię. Zaznaczone urządzenia są wyciszone w raportowaniu baterii."
+            }
+          }
+        }
+      },
+      "signal": {
+        "title": "Siła sygnału",
+        "description": "Określa, jak integracja wykrywa zawodzące łącza radiowe. Zły dzień sygnału to spadek mierzony względem własnej niedawnej normy urządzenia, więc stabilny i niestabilny czujnik są oceniane według własnych standardów. [Siła sygnału na wiki]({wiki_link})",
+        "data": {
+          "badday_drop_lqi": "Spadek złego dnia, LQI",
+          "badday_drop_rssi": "Spadek złego dnia, RSSI",
+          "badday_sensitivity": "Czułość złego dnia",
+          "badday_baseline_days": "Dni historii sygnału",
+          "short_drop_limit": "Limit krótkiego zaniku (minuty)"
+        },
+        "data_description": {
+          "badday_drop_lqi": "Ustawia spadek w punktach LQI wymagany do oznaczenia złego dnia sygnału. Dzień jest zły tylko wtedy, gdy przekroczy zarówno ten próg, jak i ustawienie czułości poniżej. Zwiększ, aby oznaczać mniej dni.",
+          "badday_drop_rssi": "Ustawia taki sam spadek w decybelach dla urządzeń raportujących w dBm. Działa dokładnie jak suwak LQI powyżej.",
+          "badday_sensitivity": "Skaluje wymagany spadek względem własnej historycznej zmienności urządzenia, co chroni niestabilne czujniki przed codziennym oznaczaniem. Stabilny czujnik podlega suwakom spadku powyżej. Przy ustawieniu 4 niestabilny czujnik, który regularnie waha się o 10 punktów, potrzebuje 40-punktowego spadku, by wywołać oznaczenie. Zmniejsz, aby oznaczać więcej dni.",
+          "badday_baseline_days": "To ustawienie określa, ile minionych dni służy do obliczenia tego, co jest typowe dla urządzenia. Dzisiejszy sygnał jest porównywany z tym typowym poziomem, a spadek poniżej niego, zgodnie z ustawieniami powyżej, jest oznaczany.",
+          "short_drop_limit": "Urządzenie, które staje się niedostępne i samo wraca w ciągu tylu minut, miało krótki zanik. Dwa w ciągu 12 godzin dodają je do Listy problemów jako problem z sygnałem. Gdy urządzenie ma krótkie zaniki, dłuższy zanik jest zgłaszany jako niedostępność. Urządzenie raportujące często może używać własnego, krótszego limitu. Zmniejsz, aby szybciej dowiadywać się o awarii; zwiększ, jeśli zaniki urządzenia nadal są zgłaszane jako niedostępność."
+        },
+        "sections": {
+          "signal_muting": {
+            "name": "Wyciszanie sygnału",
+            "description": "Które urządzenia są pomijane w raportowaniu sygnału, razem z krótkimi zanikami. Sygnał jest nadal rejestrowany dla wszystkiego, co tu wymieniono, więc ponowne włączenie urządzenia od razu przywraca jego historię. Trzy listy idą od najszerszej do najwęższej: integracja, etykieta, urządzenie. Wycisz na wyższym poziomie i zapisz, a wszystko, co obejmuje, zniknie z wyboru na listach poniżej.",
+            "data": {
+              "signal_muted_integrations": "Integracje wyciszone w raportowaniu sygnału",
+              "signal_muted_labels": "Etykiety wyciszone w raportowaniu sygnału",
+              "signal_muted_devices": "Urządzenia wyciszone w raportowaniu sygnału"
+            },
+            "data_description": {
+              "signal_muted_integrations": "Każde urządzenie z zaznaczonej integracji przestaje być raportowane pod kątem sygnału.",
+              "signal_muted_labels": "Urządzenia z zaznaczoną etykietą przestają być raportowane pod kątem sygnału.",
+              "signal_muted_devices": "Zaznaczone urządzenie przestaje być raportowane pod kątem sygnału. Nadal jest rejestrowane, więc ponowne włączenie natychmiast przywraca jego historię."
+            }
+          }
+        }
+      },
+      "freeze": {
+        "title": "Wykrywanie zawieszeń i niedostępności",
+        "description": "Jak długo urządzenie może milczeć, zanim zostanie uznane za zawieszone, oraz które urządzenia są wyciszone pod kątem zawieszenia lub niedostępności. Każde urządzenie jest oceniane według własnego wyuczonego rytmu, więc nie ustawiasz jednego limitu czasu, lecz tolerancję ponad normę każdego urządzenia. Delta niska to tolerancja dla szybkiego urządzenia, delta wysoka – dla wolnego, a krzywa między nimi jest kształtowana przez obie. Zwiększ deltę niską, jeśli rozmowne urządzenie jest oznaczane zbyt wcześnie; zmniejsz deltę wysoką, jeśli wolne urządzenie powinno być wychwytywane szybciej. [Wykrywanie zawieszeń i niedostępności na wiki]({wiki_link})",
+        "data": {
+          "freeze_delta_low": "Delta niska (tolerancja szybkiego urządzenia, minuty)",
+          "freeze_delta_high": "Delta wysoka (tolerancja wolnego urządzenia, godziny)"
+        },
+        "data_description": {
+          "freeze_delta_low": "Tolerancja szybkiego urządzenia w minutach: jak długo ponad swoją normę może milczeć, zanim zostanie uznane za zawieszone.",
+          "freeze_delta_high": "Tolerancja wolnego urządzenia w godzinach. Obie delty kształtują całą krzywą między nimi, więc urządzenie ze środka stawki leży pomiędzy tymi wartościami."
+        },
+        "sections": {
+          "freeze_muting": {
+            "name": "Wyciszanie zawieszeń",
+            "description": "Które urządzenia nigdy nie są uznawane za zawieszone ani niezgłaszające się. Device Sentinel nadal zgłasza urządzenie wyciszone tutaj, gdy stanie się niedostępne; aby to wyłączyć, użyj Wyciszania niedostępności poniżej. Każde zachowuje swój zegar i wyuczony rytm, więc ponowne włączenie jest natychmiastowe. Trzy listy idą od najszerszej do najwęższej: integracja, etykieta, urządzenie. Wycisz na wyższym poziomie i zapisz, a wszystko, co obejmuje, zniknie z wyboru na listach poniżej.",
+            "data": {
+              "freeze_muted_integrations": "Integracje wyciszone w raportowaniu zawieszeń",
+              "freeze_muted_labels": "Etykiety wyciszone w raportowaniu zawieszeń",
+              "freeze_muted_devices": "Urządzenia wyciszone w raportowaniu zawieszeń"
+            },
+            "data_description": {
+              "freeze_muted_integrations": "Każde urządzenie z zaznaczonej integracji przestaje być uznawane za zawieszone lub niezgłaszające się.",
+              "freeze_muted_labels": "Urządzenia z zaznaczoną etykietą przestają być uznawane za zawieszone lub niezgłaszające się. Ustaw etykietę na stronie urządzenia, a zadziała tutaj.",
+              "freeze_muted_devices": "Zaznaczone urządzenie nigdy nie jest uznawane za zawieszone ani niezgłaszające się. Zachowuje zegar i rytm, więc ponowne włączenie jest natychmiastowe."
+            }
+          },
+          "unavailable_muting": {
+            "name": "Wyciszanie niedostępności",
+            "description": "Które urządzenia nigdy nie są uznawane za niedostępne. Użyj tego dla urządzenia, które staje się niedostępne celowo, na przykład telewizora wyłączonego z gniazdka. Device Sentinel nadal zgłasza urządzenie wyciszone tutaj, gdy jest zawieszone lub nigdy się nie zgłasza; aby to wyłączyć, użyj Wyciszania zawieszeń powyżej. Dwie listy idą od najszerszej do najwęższej: etykieta, urządzenie. Wycisz według etykiety i zapisz, a obejmowane przez nią urządzenia znikną z wyboru na liście poniżej. Lista urządzeń jest tą samą, którą ustawia przycisk Wycisz niedostępność na stronie urządzenia.",
+            "data": {
+              "unavailable_muted_labels": "Etykiety wyciszone w raportowaniu niedostępności",
+              "unavailable_muted_devices": "Urządzenia wyciszone w raportowaniu niedostępności"
+            },
+            "data_description": {
+              "unavailable_muted_labels": "Urządzenia z zaznaczoną etykietą przestają być uznawane za niedostępne. Ustaw etykietę na stronie urządzenia, a zadziała tutaj.",
+              "unavailable_muted_devices": "Zaznaczone urządzenie nigdy nie jest uznawane za niedostępne. Zachowuje zegar i rytm, więc ponowne włączenie jest natychmiastowe."
+            }
+          }
+        }
+      },
+      "advanced": {
+        "title": "Zaawansowane",
+        "description": "Ustawienia, których większość osób nigdy nie musi zmieniać. [Zaawansowane na wiki]({wiki_link})",
+        "data": {
+          "dashboard_mode": "Panel: prosty lub zaawansowany",
+          "repeat_floor": "Próg nawracających problemów",
+          "storage_write_minutes": "Interwał zapisu danych",
+          "history_days": "Ile historii przechowywać",
+          "maintenance_minutes": "Okno konserwacji w minutach",
+          "cached_integrations": "Integracje raportujące wartości z pamięci podręcznej"
+        },
+        "data_description": {
+          "dashboard_mode": "Tryb, w którym otwiera się panel w każdym oknie. Prosty pokazuje, co jest zepsute i co z tym zrobić; Zaawansowany dodaje trendy, wykresy i konfigurację. Przełącznik na panelu zmienia tryb do czasu opuszczenia panelu.",
+          "repeat_floor": "Ile niewyjaśnionych przerw w tygodniu umieszcza urządzenie w sekcji Nawracające problemy dziennego podsumowania. Przerwa jest niewyjaśniona, gdy nie tłumaczy jej żaden restart, awaria, przeładowanie ani okno parowania. Niższa wartość wskazuje urządzenia szybciej; wyższa czeka na wyraźniejszy wzorzec.",
+          "storage_write_minutes": "Czas, przez jaki rutynowa aktywność jest przechowywana w pamięci, zanim zostanie zapisana na dysku. Ustaw dłużej dla wolniejszego sprzętu i hubów zapisujących dane na karcie SD. Dłuższy czas grozi utratą danych liczników w razie zaniku zasilania. Zdarzenia są zapisywane w chwili wystąpienia, więc ryzyko jest minimalne.",
+          "history_days": "Ile dni dziennych rekordów baterii, sygnału oraz przerw w dostępności i zawieszeń jest przechowywanych do badania długoterminowych trendów. 30 dni to minimum, ale niektóre trendy widać dopiero w dłuższych okresach.",
+          "maintenance_minutes": "Jak długo przycisk Trybu konserwacji deklaruje, że pracujesz przy sprzęcie. Urządzenie, które odzyska sprawność w tym oknie, jest traktowane jako Twoja naprawa, a jego milczenie nie jest uczone jako norma.",
+          "cached_integrations": "Po restarcie te integracje mogą raportować ostatnie wartości urządzenia, zanim zdąży się ono obudzić i odezwać, więc urządzenie, które nie działało, nie jest uznawane za sprawne, dopóki jedna z jego wartości się nie zmieni. Odznacz integrację tylko wtedy, gdy masz pewność, że jej urządzenia raportują na żywo. Jeśli zaznaczysz ją przez pomyłkę, sprawne urządzenie, które nie działało podczas restartu, może pozostać na liście jako niedziałające. Producenta i model każdego urządzenia można ustawić na stronie jego szczegółów."
+        },
+        "sections": {
+          "data_trim": {
+            "name": "Przycinanie danych",
+            "description": "Użyj tego narzędzia na prośbę wsparcia lub gdy uszkodzone dane wymagają czystego startu. Zapisanie tego ekranu czyści statystyki, epizody ciszy, incydenty i wpisy Listy problemów dla wszystkiego, co wybierzesz poniżej. Zabezpieczeniem jest kopia zapasowa zapisywana w config/device_sentinel/trim_backups przed wymazaniem czegokolwiek; każda kopia jest usuwana po 30 dniach, z wyjątkiem najnowszej. Same urządzenia pozostają nietknięte. W ciągu kilku sekund pojawiają się ponownie i zaczynają uczyć nowej normy, a wszystkie istniejące wykluczenia i wyciszenia pozostają bez zmian. Oba pola wyboru opróżniają się po wykonaniu, aby zapobiec przypadkowemu podwójnemu wyczyszczeniu.",
+            "data": {
+              "trim_integrations": "Przytnij historię integracji",
+              "trim_devices": "Przytnij historię urządzeń"
+            },
+            "data_description": {
+              "trim_integrations": "Usuwa wyuczoną historię każdego urządzenia z wybranych integracji.",
+              "trim_devices": "Usuwa wyuczoną historię wszystkich wybranych tutaj urządzeń."
+            }
+          }
+        }
+      },
+      "wifi": {
+        "title": "WiFi",
+        "description": "Device Sentinel może obserwować dostępność Twojej sieci WiFi i zgłaszać awarię WiFi, która wyłącza kilka urządzeń, jako jedną zbiorczą liczbę zamiast zgłaszać każde urządzenie osobno. Aby to działało, serwer Home Assistant musi mieć adapter bezprzewodowy prawidłowo połączony z Twoją siecią. Skonfiguruj to najpierw w Ustawienia, System, Sieć, a potem wróć tutaj. [WiFi na wiki]({wiki_link})",
+        "data": {
+          "wifi_networks": "Twoje sieci WiFi dla IoT",
+          "wifi_confirm_seconds": "Opóźnienie potwierdzenia"
+        },
+        "data_description": {
+          "wifi_networks": "Sieci, których Twoje urządzenia i czujniki używają do komunikacji z Home Assistant. Device Sentinel nie jest w stanie stwierdzić, której sieci używa dane urządzenie. Jeśli wybierzesz więcej niż jedną, gdy któraś z nich przestanie działać, integracja zgłosi, że WiFi jest niedostępne. Dla najlepszej wydajności zalecane jest używanie jednej sieci dla wszystkich urządzeń.",
+          "wifi_confirm_seconds": "Liczba sekund, przez które sieć jest niedostępna, zanim zostanie zgłoszona awaria. Router restartujący się w nocy znika na około trzydzieści sekund."
+        }
+      },
+      "extended": {
+        "title": "Rozszerzona diagnostyka",
+        "description": "Ustawienia na tej stronie zmieniają zawartość pobieranej diagnostyki. Udostępnianie nazw w diagnostyce decyduje, czy nazwy Twoich urządzeń, encji, obszarów i etykiet są dołączane. Sprzęt do zbadania dodaje surowe odczyty dotyczące sprzętu, którego obsługi Device Sentinel dopiero się uczy. [Rozszerzona diagnostyka na wiki]({wiki_link})",
+        "data": {
+          "share_names": "Udostępniaj nazwy w diagnostyce",
+          "study_hardware": "Sprzęt do zbadania"
+        },
+        "data_description": {
+          "share_names": "Autorzy Device Sentinel szanują Twoją prywatność. Pobrana diagnostyka nigdy nie zawiera Twoich adresów e-mail, adresów Twojej sieci domowej, nazw Twoich sieci WiFi ani pełnego adresu MAC żadnego z Twoich urządzeń. Jednak nazwy urządzeń, encji, obszarów i etykiet mogą być potrzebne przy prośbie o wsparcie, dlatego udostępnianie ich jest domyślnie włączone.\n\nWłączone: udostępnianie jest włączone. Nazwy urządzeń, encji, obszarów i etykiet będą widoczne w pobranej diagnostyce.\n\nWyłączone: nazwy urządzeń, encji, obszarów i etykiet zostaną ukryte. Nie pojawią się w pobranej diagnostyce. Zamiast nich zostaną użyte zanonimizowane symbole zastępcze, takie jak Urządzenie 12, Obszar 51 i Etykieta 3. Uzyskanie wsparcia może być trudniejsze.",
+          "study_hardware": "Device Sentinel musi zbadać obserwowane urządzenia i sposób ich działania w prawdziwym systemie, zanim część z nich będzie mogła być w pełni obsługiwana, a nikt pracujący nad Device Sentinel nie ma wszystkiego, co istnieje. Tutaj pojawia się tylko sprzęt znaleziony w Twoim systemie i tylko tam, gdzie obsługa jest dopiero tworzona. Jeśli chcesz obsługi sprzętu z tej listy, wybierz go i poczekaj 48 godzin. Następnie pobierz diagnostykę ze strony integracji Device Sentinel i otwórz zgłoszenie z dołączonym plikiem diagnostycznym, pisząc, co chciałbyś, aby zostało zbudowane. Czujniki problemów i odpytywanie pojawia się w każdym systemie: rejestruje czujniki problemów każdego urządzenia oraz to, które integracje aktualizują wszystkie swoje urządzenia naraz. Wybranie czegokolwiek nie zmienia sposobu działania Device Sentinel."
+        }
+      }
+    },
+    "error": {
+      "internal_url_not_set": "Home Assistant nie ma wewnętrznego adresu URL, więc nic nie zostałoby podlinkowane. Ustaw go w Ustawienia, System, Sieć albo wybierz Brak.",
+      "external_url_not_set": "Home Assistant nie ma zewnętrznego adresu URL, więc nic nie zostałoby podlinkowane. Ustaw go w Ustawienia, System, Sieć albo wybierz Brak.",
+      "priority_target_is_address": "Cele o wysokim priorytecie i Cele o normalnym priorytecie wymagają akcji powiadomień (notify), na przykład aplikacji Companion na telefonie, a nie adresu e-mail. Wybierz je z listy.",
+      "priority_target_is_persistent": "Cele o wysokim priorytecie i Cele o normalnym priorytecie wymagają akcji powiadomień (notify), na przykład aplikacji Companion na telefonie. Alerty nie są wysyłane do powiadomienia trwałego; zamiast tego włącz poniżej opcję Utwórz powiadomienie trwałe.",
+      "brief_target_is_address": "Pole Wyślij pełne podsumowanie do wymaga usługi e-mail, a nie adresu e-mail. Skonfiguruj integrację SMTP w Home Assistant, a następnie wybierz jej odbiorcę z listy.",
+      "brief_target_is_phone": "Pełne podsumowanie trafia do poczty lub powiadomienia trwałego, a nie na telefon, który nie jest w stanie go wyświetlić. Telefon otrzymuje alerty na żywo z Celów o wysokim priorytecie i Celów o normalnym priorytecie."
+    }
+  },
+  "selector": {
+    "reminder_mode": {
+      "options": {
+        "daily": "Codziennie, z informacją o braku problemów, gdy nic nie wymaga uwagi",
+        "overnight": "Tylko gdy coś wymaga uwagi",
+        "none": "Nigdy"
+      }
+    },
+    "dashboard_mode": {
+      "options": {
+        "simple": "Prosty",
+        "advanced": "Zaawansowany"
+      }
+    }
+  },
+  "issues": {
+    "notify_target_missing": {
+      "title": "Cel powiadomień Device Sentinel nie istnieje",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Usuń nieistniejące cele powiadomień",
+            "description": "Cele powiadomień w ustawieniach Device Sentinel wskazują usługę, której Home Assistant nie ma ({count} {targets}): {detail}.\n\nPowiadomienia wysyłane do tych celów kończą się niepowodzeniem i są zapisywane w dzienniku, a Device Sentinel nie ma o tych błędach pojęcia. Zwykle oznacza to, że aplikację Companion usunięto lub zmieniono jej nazwę albo że wpisano adres e-mail tam, gdzie powinna być usługa. Wybierz usługę z listy w sekcji Powiadomienia i dzienne podsumowanie.\n\nUsuń je usuwa je z ustawień Device Sentinel i nie rusza istniejących celów. Jeśli nie zostanie Ci żaden, ustaw nowy w sekcji Powiadomienia i dzienne podsumowanie. Zignoruj ukrywa tę kartę, dopóki nie zdecydujesz się znów pokazywać zignorowane problemy.",
+            "menu_options": {
+              "confirm": "Usuń je",
+              "ignore": "Zignoruj"
+            }
+          },
+          "confirm": {
+            "title": "Usuń nieistniejące cele powiadomień",
+            "description": "Cele powiadomień w ustawieniach Device Sentinel wskazują usługę, której Home Assistant nie ma ({count} {targets}): {detail}.\n\nPowiadomienia wysyłane do tych celów kończą się niepowodzeniem i są zapisywane w dzienniku, a Device Sentinel nie ma o tych błędach pojęcia. Zwykle oznacza to, że aplikację Companion usunięto lub zmieniono jej nazwę albo że wpisano adres e-mail tam, gdzie powinna być usługa. Wybierz usługę z listy w sekcji Powiadomienia i dzienne podsumowanie.\n\nUsuń je usuwa je z ustawień Device Sentinel i nie rusza istniejących celów. Jeśli nie zostanie Ci żaden, ustaw nowy w sekcji Powiadomienia i dzienne podsumowanie. Zignoruj ukrywa tę kartę, dopóki nie zdecydujesz się znów pokazywać zignorowane problemy."
+          }
+        }
+      }
+    },
+    "storage_restored": {
+      "title": "Device Sentinel przywrócił swój magazyn danych",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel przywrócił swój magazyn danych",
+            "description": "{reason}\n\n{loss}\n\n{where}\n\nNie ma nic do naprawiania. Plik został już zastąpiony, a Device Sentinel już działa. Wybierz Zatwierdź, aby usunąć to powiadomienie."
+          }
+        }
+      }
+    },
+    "storage_repaired": {
+      "title": "Device Sentinel naprawił swój magazyn danych",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel naprawił swój magazyn danych",
+            "description": "Wykryto uszkodzone dane i naprawiono je automatycznie. Co naprawiono: {what}. Gdzie są oryginały: {where}. Nic nie jest od Ciebie wymagane; naciśnięcie Zatwierdź odnotowuje, że to przeczytałeś."
+          }
+        }
+      }
+    },
+    "containers_repaired": {
+      "title": "Device Sentinel naprawił strukturę swojego magazynu danych",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel naprawił strukturę swojego magazynu danych",
+            "description": "Część pliku magazynu zawierała wartość niewłaściwego rodzaju i uniemożliwiłaby uruchomienie Device Sentinel. Została naprawiona automatycznie, zanim cokolwiek innego się uruchomiło. Co naprawiono: {what}. Gdzie są oryginały: {where}. Nic nie jest od Ciebie wymagane; naciśnięcie Zatwierdź odnotowuje, że to przeczytałeś."
+          }
+        }
+      }
+    },
+    "shared_address": {
+      "title": "Dwa urządzenia współdzielą jeden adres sieciowy",
+      "description": "{detail}. Dwa urządzenia odpowiadające pod jednym adresem sprawiają, że każde z nich wygląda, jakby przestało działać. Aby to naprawić, zarezerwuj adres dla każdego urządzenia w ustawieniach DHCP routera, aby przydzielał każdemu własny. Ta karta zniknie sama, gdy każde urządzenie będzie miało własny adres."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Stan",
+        "state": {
+          "watching": "Obserwuje",
+          "learning": "Uczy się",
+          "problem": "Problem"
+        }
+      },
+      "devices_watched": {
+        "name": "Urządzenia: obserwowane"
+      },
+      "devices_learned": {
+        "name": "Urządzenia: poznane"
+      },
+      "devices_set_aside": {
+        "name": "Urządzenia: pominięte"
+      },
+      "signal_rails": {
+        "name": "Sygnał: skrajny"
+      },
+      "signal_weak": {
+        "name": "Sygnał: słaby"
+      },
+      "battery_low": {
+        "name": "Bateria: niska"
+      },
+      "device_frozen": {
+        "name": "Urządzenie: zawieszone"
+      },
+      "maintenance_ends": {
+        "name": "Konserwacja: koniec"
+      },
+      "broker": {
+        "name": "Broker: MQTT"
+      },
+      "bridge_wifi": {
+        "name": "Most: WiFi"
+      },
+      "bridge_zigbee2mqtt": {
+        "name": "Most: Zigbee2MQTT"
+      },
+      "bridge_zha": {
+        "name": "Most: ZHA"
+      },
+      "falling_batteries": {
+        "name": "Bateria: słabnąca"
+      }
+    },
+    "button": {
+      "regenerate_reports": {
+        "name": "Wygeneruj raporty ponownie"
+      },
+      "maintenance_mode": {
+        "name": "Tryb konserwacji"
+      }
+    },
+    "todo": {
+      "problem_list": {
+        "name": "Lista problemów"
+      }
+    }
+  }
+}
