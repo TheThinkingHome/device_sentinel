@@ -7,6 +7,8 @@ The people:
 - James Lander ([@TheThinkingHome](https://github.com/TheThinkingHome)), on his own house since July 2026. Each release runs here first.
 - Tim Plas ([@tplas](https://github.com/tplas)), on his house since August 2026.
 - Christopher Robert ([@Ranger2959](https://github.com/Ranger2959)), on his house in September 2026.
+- A friend of Tim Plas, on his house in the United States since October 2026.
+- Chris Jenkins ([@ChrisJ60](https://github.com/ChrisJ60)), on his house in the United Kingdom since November 2026, with Home Assistant in Docker.
 
 ## Zigbee2MQTT
 
@@ -74,6 +76,46 @@ The people:
 | Lutron Caséta hub, with Lutron lights, switches, Pico remotes and Serena shades | @Ranger2959 |
 
 **What was built from it:** Device Sentinel judges Lutron devices by their hub, so a light nobody uses is not a fault, and a Pico press counts as the remote reporting. A hub that goes down is one alert. Lutron support is experimental.
+
+## Alarm.com
+
+| Hardware | Tested by |
+|---|---|
+| An Alarm.com security system with its door, motion and freeze sensors and three cameras (ADC-V522IR, ADC-VC736), through the Alarm.com integration from HACS | a friend of @tplas |
+
+**What was seen:** Alarm.com updates every device together from its cloud, every few minutes. When those updates stopped while the integration stayed loaded, each device was reported as stopped reporting. When the integration failed to start after a Home Assistant update, it was one integration outage, with none of its devices listed.
+
+## Tado
+
+| Hardware | Tested by |
+|---|---|
+| Tado internet bridge, with smart thermostats, radiator thermostats and temperature sensors (RU02, VA01, VA02, SU02, BU01) | @ChrisJ60 |
+
+**What was seen:** Tado updates every device at once from its cloud. Device Sentinel recognizes it as a cloud integration that polls, and the burst of updates after a restart is not reported as a reload.
+
+## Lightwave Smart
+
+| Hardware | Tested by |
+|---|---|
+| Lightwave Link Plus (L2), with sockets (L42, L42MK3, L40MK2), dimmers (L21, L21MK2, L21MK3, L22, L22MK3, L23, L23MK3) and relays (L92) | @ChrisJ60 |
+
+**What was seen:** a socket with a load reports about once an hour and is watched by its own rhythm. A dimmer reports only when it is used, so one left alone for a day can be listed as stopped reporting; Mute freeze is the right setting for those. The Lightwave integration never marks a device unavailable, so a long silence is the only sign one has gone.
+
+## Philips Hue, SmartThings and Tuya
+
+| Hardware | Tested by |
+|---|---|
+| Philips Hue Bridge with Hue lamps; SmartThings Hub v3 with CentraLite sensors; Tuya Wi-Fi dimmers and temperature and humidity sensors | a friend of @tplas |
+
+**What was seen:** each hub's devices report on their own. A light that reports only when it is used can be listed as stopped reporting after a long quiet spell, as on Lightwave. Home Assistant lists each Tuya device twice; Device Sentinel watches it once and sets the empty copy aside.
+
+## Home Assistant in Docker
+
+| Install | Tested by |
+|---|---|
+| Home Assistant Container, in Docker | @ChrisJ60 |
+
+**What was seen:** since 0.28.12, Device Sentinel's stored data comes through restarts and updates intact, with nothing to repair.
 
 ## Add Your Own
 
