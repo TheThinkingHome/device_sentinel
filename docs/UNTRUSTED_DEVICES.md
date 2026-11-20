@@ -4,7 +4,7 @@ Some integrations report live for most of their devices, but have a few makes an
 
 A device on this list stays on the Problem List after a restart until one of its values changes, which proves the device itself answered. You can change that on the device's page, in the After a restart row: "Reports live" if your device of that model answers for itself, or "Device Sentinel's Setting" to go back to this list.
 
-Integrations whose devices all report cached values are listed in [Trusted Integrations](TRUSTED_INTEGRATIONS.md). A device with a Last Seen sensor is not affected by either list.
+Integrations whose devices all report cached values are listed in [Integrations That Report Cached Values](TRUSTED_INTEGRATIONS.md). A device with a Last Seen sensor is not affected by either list.
 
 How to read the tables:
 

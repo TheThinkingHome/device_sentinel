@@ -1,4 +1,4 @@
-# Trusted Integrations
+# Integrations That Report Cached Values
 
 After Home Assistant restarts, some integrations show a device's cached values before the device has spoken. Device Sentinel can't take those values as proof the device is working. This file lists every integration we have checked, whether Device Sentinel treats it as reporting cached values, and why.
 
