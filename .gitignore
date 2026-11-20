@@ -222,3 +222,10 @@ __marimo__/
 *.log
 .storage/
 config/
+
+# Private files. A house's real files and the alias key that turns the
+# anonymized test houses back into real names are never committed. A
+# diagnostics download from Home Assistant is named with the entry's
+# id, which starts 01; the test houses' files are named -fleet.
+fleet_aliases.json
+config_entry-device_sentinel-01*.json
