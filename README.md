@@ -12,7 +12,7 @@
 
 **Device Sentinel tells you when a device in your house has stopped reporting, has a falling battery, or a low signal, even while Home Assistant still shows its last value.**
 
-![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
+![A door sensor that stopped reporting: it usually reports about once an hour, and Device Sentinel calls it frozen after 2.4 hours of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20-%20Door%20Laundry%20Frozen.png)
 
 ## What It Does
 
