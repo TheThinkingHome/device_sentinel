@@ -112,12 +112,6 @@ The Same hardware row on a Bluetooth proxy's page. Two other integrations list t
 
 ![Dashboard Device Detail Clone Hardware](./Dashboard%20Device%20Detail%20Clone%20Hardware.png)
 
-### Dashboard Device Detail Rhythm.png
-
-The two freeze rules side by side: the 14-Day Trimmed Maximum and the 42-Day Log-Normal Percentile, each with the days it set aside and its result as a red line. The one in use is tagged.
-
-![Dashboard Device Detail Rhythm](./Dashboard%20Device%20Detail%20Rhythm.png)
-
 ### Dashboard Device Detail Rhythm Chart.png
 
 The rhythm graph: each day's longest gap, both rules' waits as dashed lines, the day that set the trimmed wait, days set aside, and a red dot where a gap ran past its window. Outages on the device's path are shaded behind it.
@@ -143,12 +137,6 @@ The signal graph: each day's median and low end against the device's own normal 
 The Bridge: Zigbee2MQTT and Broker: MQTT sensors with their attributes: the bridge's permit-join state and availability setting, and the broker's start time, uptime, cadence and threshold.
 
 ![sensor.device_sentinel_bridge & _broker](./sensor.device_sentinel_bridge%20&%20_broker.png)
-
-### sensor.device_sentinel_battery_low.png
-
-The Battery: Low sensor. Its attributes name each low battery, its level, its area, how long it has been low, and the threshold and clear margin in use.
-
-![sensor.device_sentinel_battery_low](./sensor.device_sentinel_battery_low.png)
 
 ## Repairs
 
