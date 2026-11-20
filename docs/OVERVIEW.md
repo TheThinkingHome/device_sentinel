@@ -41,7 +41,7 @@ There are no watch lists to maintain and no arbitrary timeouts to assign. A chat
 
 Device Sentinel applies the same logic to your batteries and radio links. A radio link is judged against the baseline *that specific device* normally holds. A battery is judged twice: once against a flat level you choose, and again against how fast it is actually draining. 
 
-If a battery is projected to reach empty inside your chosen horizon, say thirty days, Device Sentinel reports it, even if it still reads 80%.
+If a battery is projected to reach empty inside your chosen horizon, say thirty days, Device Sentinel reports it before it reaches your low threshold.
 
 ### What It Catches
 
@@ -49,9 +49,9 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 |---|---|
 | **Frozen** | Silent while still showing a healthy value. Your automations are acting on a dead reading. |
 | **Unavailable** | Home Assistant knows it's gone. You probably don't. |
-| **Flapping** | Drops out and comes back again and again. One alert, not dozens. |
+| **Short drop-outs** | Becomes unavailable for a few minutes and recovers, again and again. One alert, not dozens. |
 | **Never reported** | Devices that have never sent a reading, including ones that died before you installed Device Sentinel. |
-| **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
+| **Low or falling battery** | Warned while you can still act, before it reaches your low threshold. |
 | **Weak or stuck signal** | Links degrade before they fail. |
 
 ![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Accelerating%20-%20Door%202nd%20Bedroom.png)
