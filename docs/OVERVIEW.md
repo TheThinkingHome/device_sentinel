@@ -31,6 +31,10 @@ Home Assistant only reacts to what your devices tell it. When a device quietly d
 * A door sensor dies while the door is closed. Your security automations happily believe that door is secure, indefinitely.
 * The batteries in your smart lock have been draining for a month. Nothing warns you until you are standing outside, locked out.
 
+It happened in our own laundry room on 20 November 2026. The door stood open, and Home Assistant said it was closed. The sensor had last reported at 1:30 PM. Device Sentinel reported it frozen at 3:54 PM. Three hours later, Zigbee2MQTT still showed it online, because it waits 25 hours before it calls a battery device offline.
+
+![Zigbee2MQTT at 5:29 PM with the door open: battery 100%, last seen 3 hours ago, still online](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Zigbee2MQTT%20-%20Door%20Laundry%20Still%20Online.png)
+
 The early warning signs are usually there, in battery levels and radio signal data, but nobody acts on them, because a battery reading of 20% means "two weeks left" on one device and "dead this afternoon" on another. 
 
 ## The Solution
