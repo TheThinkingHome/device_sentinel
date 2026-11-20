@@ -130,6 +130,40 @@ The signal graph: each day's median and low end against the device's own normal 
 
 ![Dashboard Device Detail Signal Chart](./Dashboard%20Device%20Detail%20Signal%20Chart.png)
 
+## A Real Frozen Sensor
+
+The Door Laundry door sensor that stopped reporting on 20 November 2026, with notes added in magenta.
+
+### Zigbee2MQTT - Door Laundry Still Online.png
+
+Zigbee2MQTT's page for the sensor three hours after its last report: battery 100%, last seen 3 hours ago, and still online, since Zigbee2MQTT waits 25 hours before it calls a battery device offline.
+
+![Zigbee2MQTT - Door Laundry Still Online](./Zigbee2MQTT%20-%20Door%20Laundry%20Still%20Online.png)
+
+### Device Detail - Door Laundry Reporting.png
+
+The sensor's Power, Signal and Reporting rows: a coin cell reading 100% at 3.005 V, its last report at link quality 168, and its last seen time.
+
+![Device Detail - Door Laundry Reporting](./Device%20Detail%20-%20Door%20Laundry%20Reporting.png)
+
+### Device Detail - Door Laundry Gaps.png
+
+The Gaps, Last 14 Days table: the gap that began at 1:30 PM, and two earlier quiet spells of 1.7 hours that came back inside the window.
+
+![Device Detail - Door Laundry Gaps](./Device%20Detail%20-%20Door%20Laundry%20Gaps.png)
+
+### Device Detail - Door Laundry Signal.png
+
+The sensor's signal chart: its link quality dropped at the start of November, three weeks before it stopped reporting.
+
+![Device Detail - Door Laundry Signal](./Device%20Detail%20-%20Door%20Laundry%20Signal.png)
+
+### Device Detail - Door Laundry Rhythm.png
+
+The sensor's rhythm chart: on most days since July, its longest gap between reports was under an hour.
+
+![Device Detail - Door Laundry Rhythm](./Device%20Detail%20-%20Door%20Laundry%20Rhythm.png)
+
 ## Sensors
 
 ### sensor.device_sentinel_bridge & _broker.png
