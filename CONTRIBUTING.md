@@ -35,9 +35,9 @@ Nothing leaves your system unless you attach it yourself. Device Sentinel writes
 
 Before you post anything, open the file in a text editor and read it. Here is what to expect in the diagnostics download.
 
-**Never included:** passwords, tokens or other credentials, and the notification targets you set. Network addresses are replaced: a MAC address keeps only the half that names its maker, and your home network's IP addresses become stand-ins such as IP-01, the same one throughout the file.
+**Never included:** passwords, tokens or other credentials, your email addresses, the notification targets you set, your home network addresses, your Wi-Fi network names, or the full MAC address of any device.
 
-**Included:** device and area names, makers and models, the Wi-Fi network names you chose to watch, your time zone, and the readings themselves. Names stay because a name is often what lets someone match a reading to the problem you described. If a device name says more than you'd like to share, edit it in the file before you attach it.
+**Included:** makers and models, your time zone, the readings themselves, and your device, entity, area and label names. Names are included because a name is often what lets someone match a reading to the problem you described. To leave them out, turn off **Share Names in Diagnostics** on the **Extended Diagnostics** screen in settings. Each name is then replaced with a placeholder such as Device 12.
 
 The probe log and the other files in your `config/device_sentinel/` folder carry device names and readings, and no passwords or tokens. If you turned on links in reports, the daily brief's links carry your Home Assistant address.
 

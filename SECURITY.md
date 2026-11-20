@@ -22,5 +22,5 @@ the fix ships in the next release and the advisory is published after it; if
 it is declined, you will get the reasoning.
 
 Scope worth knowing: Device Sentinel runs entirely inside Home Assistant,
-takes no input from the network, and exposes no services to the outside
-world. Its attack surface is what Home Assistant grants any integration.
+makes no connections to the internet, and exposes no services to the
+outside world. Its attack surface is what Home Assistant grants any integration.
