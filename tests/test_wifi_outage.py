@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_wifi_outage.py, Version: 0.29.8 (2026-11-20)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim
 (rules UP-12, UP-13, UP-15, UP-16).
@@ -649,7 +649,7 @@ async def test_a_wired_tracker_is_never_tied(hass: HomeAssistant):
     source.add_to_hass(hass)
     camera = _wifi_device(
         hass, source, "cam0", "Camera Living Room",
-        "ec:71:db:98:ad:44",
+        "ec:71:db:65:43:21",
     )
     blind = _wifi_device(
         hass, source, "blind0", "Master City Blinds",
@@ -661,7 +661,7 @@ async def test_a_wired_tracker_is_never_tied(hass: HomeAssistant):
     hass.states.async_set(
         wired.entity_id, "home",
         {
-            "source_type": "router", "mac": "EC-71-DB-98-AD-44",
+            "source_type": "router", "mac": "EC-71-DB-65-43-21",
             "connection": "wired", "band": None,
         },
     )
@@ -780,12 +780,12 @@ async def test_a_tie_survives_the_outage_it_exists_to_detect(
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     device = _wifi_device(
-        hass, source, "sv0", "Voice Assistant", "20:f8:3b:09:97:53"
+        hass, source, "sv0", "Voice Assistant", "20:f8:3b:ab:cd:ef"
     )
     tracker = er.async_get(hass).async_get_or_create(
         "device_tracker", "tplink_router", "sv_t0"
     )
-    home_attrs = {"source_type": "router", "mac": "20-F8-3B-09-97-53",
+    home_attrs = {"source_type": "router", "mac": "20-F8-3B-AB-CD-EF",
                   "connection": "IoT", "band": "2G"}
     hass.states.async_set(tracker.entity_id, "home", home_attrs)
     coord = await setup_coordinator(hass)
@@ -797,7 +797,7 @@ async def test_a_tie_survives_the_outage_it_exists_to_detect(
     # attributes, as a router can.
     hass.states.async_set(
         tracker.entity_id, "not_home",
-        {"source_type": "router", "mac": "20-F8-3B-09-97-53",
+        {"source_type": "router", "mac": "20-F8-3B-AB-CD-EF",
          "connection": "wired", "band": None},
     )
     await hass.async_block_till_done()
@@ -858,14 +858,14 @@ async def test_an_away_wired_tracker_stays_skipped(hass: HomeAssistant):
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)
     device = _wifi_device(
-        hass, source, "aw0", "Wired Camera", "ec:71:db:98:ad:44"
+        hass, source, "aw0", "Wired Camera", "ec:71:db:65:43:21"
     )
     tracker = er.async_get(hass).async_get_or_create(
         "device_tracker", "tplink_router", "aw_t0"
     )
     hass.states.async_set(
         tracker.entity_id, "home",
-        {"source_type": "router", "mac": "EC-71-DB-98-AD-44",
+        {"source_type": "router", "mac": "EC-71-DB-65-43-21",
          "connection": "wired"},
     )
     coord = await setup_coordinator(hass)
@@ -876,7 +876,7 @@ async def test_an_away_wired_tracker_stays_skipped(hass: HomeAssistant):
     # The switch reboots and the camera goes away, losing its marker.
     hass.states.async_set(
         tracker.entity_id, "not_home",
-        {"source_type": "router", "mac": "EC-71-DB-98-AD-44"},
+        {"source_type": "router", "mac": "EC-71-DB-65-43-21"},
     )
     await hass.async_block_till_done()
     coord._rebuild_registry_view()

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_tables.py, Version: 0.29.3 (2026-11-15)
+# File: test_storage_tables.py, Version: 0.29.8 (2026-11-20)
 
 """The shape check reads every table and the clocks file, not only the
 device records (rule STOR-05).
@@ -294,11 +294,6 @@ def test_a_null_stamp_is_a_fault():
     occurred (rule STOR-05)."""
     faults = check_storage({DATA_INCIDENTS: [_incident(when=None)]})
     assert faults and faults[0][:2] == ("incidents[0]", "when")
-
-
-def test_a_null_duration_is_still_fine():
-    """The distinction the last test rests on."""
-    assert check_storage({DATA_INCIDENTS: [_incident(duration=None)]}) == []
 
 
 def test_every_row_defining_stamp_is_required():

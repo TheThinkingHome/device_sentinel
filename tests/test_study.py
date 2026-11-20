@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_study.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_study.py, Version: 0.29.8 (2026-11-20)
 
 """Volunteered hardware study (rule STACK-11).
 
@@ -34,15 +34,15 @@ UNIFI = "Router: UniFi"
 WIRELESS = {
     "source_type": "router", "essid": "IoT", "radio": "ng",
     "radio_proto": "ax", "ap_mac": "aa:bb:cc:00:11:22", "vlan": 30,
-    "ip": "10.0.30.14", "mac": "20:f8:3b:09:97:53", "oui": "Espressif",
+    "ip": "10.0.30.14", "mac": "20:f8:3b:ab:cd:ef", "oui": "Espressif",
 }
 # A connected wired client: no essid, no radio, no ap_mac.
 WIRED = {
     "source_type": "router", "vlan": 10, "ip": "10.0.10.5",
-    "mac": "ec:71:db:98:ad:44", "oui": "Reolink",
+    "mac": "ec:71:db:65:43:21", "oui": "Reolink",
 }
 # And what it drops to while away.
-AWAY = {"source_type": "router", "mac": "20:f8:3b:09:97:53",
+AWAY = {"source_type": "router", "mac": "20:f8:3b:ab:cd:ef",
         "oui": "Espressif"}
 
 

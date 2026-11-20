@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.29.8 (2026-11-19)
+# File: tests/test_diagnostics_privacy.py, Version: 0.29.8 (2026-11-20)
 
 """Network addresses leave the diagnostics download (rule STOR-21).
 
@@ -38,9 +38,9 @@ FULL_MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b")
 def test_a_mac_keeps_its_maker_and_one_stand_in_throughout():
     out = _redact_addresses(
         {
-            "a": "20:f8:3b:09:97:53",
-            "b": ["seen as 20:F8:3B:09:97:53", "20-F8-3B-09-97-53"],
-            "c": {"ec:71:db:98:ad:44": "another device"},
+            "a": "20:f8:3b:ab:cd:ef",
+            "b": ["seen as 20:F8:3B:AB:CD:EF", "20-F8-3B-AB-CD-EF"],
+            "c": {"ec:71:db:65:43:21": "another device"},
         }
     )
     assert out["a"] == "20:F8:3B:MAC-01"
@@ -75,10 +75,10 @@ def test_nothing_but_addresses_changes():
 
 
 async def test_the_download_carries_no_address(hass: HomeAssistant):
-    device, _ = register_device(hass, "net", name="Plug With A MAC 20:F8:3B:09:97:53")
+    device, _ = register_device(hass, "net", name="Plug With A MAC 20:F8:3B:AB:CD:EF")
     dr.async_get(hass).async_update_device(
         device.id,
-        new_connections={(dr.CONNECTION_NETWORK_MAC, "20:f8:3b:09:97:53")},
+        new_connections={(dr.CONNECTION_NETWORK_MAC, "20:f8:3b:ab:cd:ef")},
         configuration_url="http://192.168.68.40",
     )
     entry = await setup_entry(hass)
@@ -98,9 +98,9 @@ def test_every_spelling_of_one_mac_is_one_stand_in():
     """
     out = _redact_addresses(
         {
-            "colon": "20:F8:3B:09:97:53",
-            "bare": "20f83b099753",
-            "dotted": "20f8.3b09.9753",
+            "colon": "20:F8:3B:AB:CD:EF",
+            "bare": "20f83babcdef",
+            "dotted": "20f8.3bab.cdef",
             "digits": "123456789012",
             "device_id": "0da64bc9d25530d0f144e0b0bc8e2d11",
             "entry_id": "01KX781WVRSH9TNTNCD8R6DF09",
@@ -121,11 +121,11 @@ def test_a_zigbee_address_is_kept_whole():
     hidden nor readable (rule STOR-21)."""
     out = _redact_addresses(
         {
-            "mac": "20:F8:3B:09:97:53",
+            "mac": "20:F8:3B:AB:CD:EF",
             "zha": "00:12:4b:00:1c:a1:b2:c3",
             "zha_dashed": "00-12-4b-00-1c-a1-b2-c3",
             "z2m": "0x00124b001ca1b2c3",
-            "in_text": "seen as 00:12:4b:00:1c:a1:b2:c3 beside 20:F8:3B:09:97:53",
+            "in_text": "seen as 00:12:4b:00:1c:a1:b2:c3 beside 20:F8:3B:AB:CD:EF",
         }
     )
     assert out["mac"] == "20:F8:3B:MAC-01"
@@ -145,10 +145,10 @@ async def test_the_download_keeps_zigbee_addresses_and_hides_a_mac(hass: HomeAss
     entry = await setup_entry(hass)
     entry.runtime_data.data[DATA_TODO_ITEMS] = [{
         "uid": "u",
-        "description": "Seen at 20:F8:3B:09:97:53, then as 00:12:4b:00:1c:a1:b2:c3 and 0x00124b001ca1b2c4.",
+        "description": "Seen at 20:F8:3B:AB:CD:EF, then as 00:12:4b:00:1c:a1:b2:c3 and 0x00124b001ca1b2c4.",
     }]
     text = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
-    assert "20:f8:3b:09:97:53" not in text.lower()
+    assert "20:f8:3b:ab:cd:ef" not in text.lower()
     assert "Seen at 20:F8:3B:MAC-01, then as 00:12:4b:00:1c:a1:b2:c3 and 0x00124b001ca1b2c4." in text
     assert "MAC-02" not in text
 

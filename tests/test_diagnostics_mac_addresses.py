@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_mac_addresses.py, Version: 0.29.8 (2026-11-19)
+# File: tests/test_diagnostics_mac_addresses.py, Version: 0.29.8 (2026-11-20)
 
 """Every MAC address leaves the diagnostics download, however it is
 written beside other text (rule STOR-21).
@@ -34,7 +34,7 @@ from custom_components.device_sentinel.diagnostics import (
 
 from .helpers import register_device, setup_entry, share_names_off
 
-ADDRESSES = ("b4:22:00:91:15:17", "ec:71:db:98:ad:44", "20:f8:3b:09:97:53")
+ADDRESSES = ("b4:22:00:12:34:56", "ec:71:db:65:43:21", "20:f8:3b:ab:cd:ef")
 
 
 def _carries(text: str, address: str) -> bool:
@@ -46,13 +46,13 @@ def _carries(text: str, address: str) -> bool:
 @pytest.mark.parametrize(
     ("written", "hidden"),
     [
-        ("mac:b4:22:00:91:15:17", "mac:B4:22:00:MAC-01"),
-        ("(mac:b4:22:00:91:15:17)", "(mac:B4:22:00:MAC-01)"),
-        ("B4:22:00:91:15:17_rssi", "B4:22:00:MAC-01_rssi"),
-        ("b4-22-00-91-15-17-adapter", "B4:22:00:MAC-01-adapter"),
-        ("bluetooth:B4:22:00:91:15:17", "bluetooth:B4:22:00:MAC-01"),
-        ("B4:22:00:91:15:17:aid:1", "B4:22:00:MAC-01:aid:1"),
-        ("light_b4:22:00:91:15:17", "light_B4:22:00:MAC-01"),
+        ("mac:b4:22:00:12:34:56", "mac:B4:22:00:MAC-01"),
+        ("(mac:b4:22:00:12:34:56)", "(mac:B4:22:00:MAC-01)"),
+        ("B4:22:00:12:34:56_rssi", "B4:22:00:MAC-01_rssi"),
+        ("b4-22-00-12-34-56-adapter", "B4:22:00:MAC-01-adapter"),
+        ("bluetooth:B4:22:00:12:34:56", "bluetooth:B4:22:00:MAC-01"),
+        ("B4:22:00:12:34:56:aid:1", "B4:22:00:MAC-01:aid:1"),
+        ("light_b4:22:00:12:34:56", "light_B4:22:00:MAC-01"),
     ],
 )
 def test_an_address_beside_a_word_is_hidden(written: str, hidden: str):
