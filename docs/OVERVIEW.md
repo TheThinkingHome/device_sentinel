@@ -18,7 +18,7 @@ To install Device Sentinel, get help or report an issue, see the [README](../REA
 &nbsp;
 &nbsp;
 
-![A motion sensor that stopped reporting: it usually reports every 20 minutes, and Device Sentinel calls it frozen after 64 minutes of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20Motion%20Bath%20-%20Frozen.png)
+![A door sensor that stopped reporting: it usually reports about once an hour, and Device Sentinel calls it frozen after 2.4 hours of silence](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20-%20Door%20Laundry%20Frozen.png)
 
 &nbsp;
 &nbsp;
@@ -54,7 +54,7 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 | **Low or falling battery** | Warned while you can still act, before it reaches your low threshold. |
 | **Weak or stuck signal** | Links degrade before they fail. |
 
-![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Accelerating%20-%20Door%202nd%20Bedroom.png)
+![A door sensor's battery over 132 days: falling about 1.5 points a week, now under its 15% threshold, with about 5 to 7 weeks left](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Battery%20Chart%20-%20Below%20Threshold.png)
 
 ![The same device's radio link against its own normal and its bad-day line](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Signal%20Failing%20-%20Temperature%20Living%20Room.png)
 
@@ -69,6 +69,8 @@ Every fault lands in one Home Assistant to-do list. A device that is both frozen
 **One Alert When a Coordinator, Broker or Wi-Fi Network Goes Down**
 When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, Device Sentinel gives each device time to rejoin, then reports only the ones that didn't. 
 
+![The Networks tab: the Wi-Fi networks the server hears beside the Zigbee channels, and each network with its devices and last outage](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20-%20Network%20Tab.png)
+
 **A Dashboard in Your Sidebar**
 The daily brief, the problem list, battery and signal trends, and each device's own page, one click apart. Every device has a type, such as Leak Sensor, Plug or Camera, so you can look at all your door sensors at once, and a recommendations tab lists what you can set right there. Administrators only.
 
@@ -77,7 +79,7 @@ Live push notifications are sent for real faults, and quiet hours keep your phon
 
 Every screen and setting is explained in the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
 
-![A Device Sentinel daily brief as it arrives by email, listing the devices that need attention and what happened over the last day](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Sentinel%20Daily%20Brief%20Hard%20Copy.png)
+![The Daily Brief tab: today's Problem List, worst first, with Repeat Offenders and what happened since midnight](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20-%20Daily%20Brief.png)
 
 ## Installation
 
