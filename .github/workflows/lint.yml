@@ -1,4 +1,4 @@
-# File: .github/workflows/lint.yml, Version: 0.28.11 (2026-11-10)
+# File: .github/workflows/lint.yml, Version: 0.29.8 (2026-11-20)
 name: Lint
 
 # A rule nobody checks is not a rule. The tests, hassfest and HACS
@@ -30,8 +30,8 @@ jobs:
   ruff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.6"
       # Pinned rather than floating: a linter that changes its mind on
