@@ -26,11 +26,17 @@ The Exclusions and Muting screen. Excluded integrations are set aside entirely. 
 
 ## The Dashboard
 
-### Dashboard Daily Brief.png
+### Device Detail - Daily Brief.png
 
-The Daily Brief tab: one calendar day at a time, with the Now table, Repeat Offenders and the Last 24 Hours timeline. The status row across the top shows each bridge, the broker, the Wi-Fi network and Maintenance Mode, with the Active Recommendations button beside the controls when anything is left to look at.
+The Daily Brief tab: one calendar day at a time, with the Problem List worst first, its All, Open and Acknowledged chips, Repeat Offenders and What Happened. The status row across the top shows each bridge, the broker, the Wi-Fi network and Maintenance Mode.
 
-![Dashboard Daily Brief](./Dashboard%20Daily%20Brief.png)
+![Device Detail - Daily Brief](./Device%20Detail%20-%20Daily%20Brief.png)
+
+### Device Detail - Network Tab.png
+
+The Networks tab on Advanced: What the Server Hears, the Wi-Fi networks around the server drawn against the Zigbee channels, with the network names blurred; then each network your devices report through, its status, its devices, those with a problem and its last outage.
+
+![Device Detail - Network Tab](./Device%20Detail%20-%20Network%20Tab.png)
 
 ### Dashboard Battery Trends.png
 
@@ -62,25 +68,19 @@ The Devices tab: every device Device Sentinel found, opening on the watched ones
 
 ![Dashboard Devices](./Dashboard%20Devices.png)
 
-### Dashboard Recommendations.png
+### Device Detail - Recommendations Open.png
 
-The Recommendations tab: the changes you could make, the most important first. Each card says what it found and why it matters.
+The Recommendations tab with one card: the Wi-Fi channel overlapping a neighbour's network, and the clearer channel to move to. Each card has its Acknowledged box.
 
-![Dashboard Recommendations](./Dashboard%20Recommendations.png)
-
-### Dashboard Recommendations Open.png
-
-A recommendation card opened. Power Not Set lets you choose each device's battery or power source right in the list; No Area Assigned links each device to its page.
-
-![Dashboard Recommendations Open](./Dashboard%20Recommendations%20Open.png)
+![Device Detail - Recommendations Open](./Device%20Detail%20-%20Recommendations%20Open.png)
 
 ## A Device's Page
 
-### Dashboard Device Detail.png
+### Device Detail - Door Laundry Frozen.png
 
-A device's page: its status bar, with how long since its last report against its rhythm and its window, then its identity, power, signal and last-seen readings, its two freeze rules, its graphs and its silences.
+A device's page: a door sensor called frozen, its status bar showing the last report against its rhythm and its window, then its identity on the left and its two freeze rules on the right.
 
-![Dashboard Device Detail](./Dashboard%20Device%20Detail.png)
+![Device Detail - Door Laundry Frozen](./Device%20Detail%20-%20Door%20Laundry%20Frozen.png)
 
 ### Dashboard Device Detail Identity.png
 
@@ -118,11 +118,11 @@ The rhythm graph: each day's longest gap, both rules' waits as dashed lines, the
 
 ![Dashboard Device Detail Rhythm Chart](./Dashboard%20Device%20Detail%20Rhythm%20Chart.png)
 
-### Dashboard Device Detail Battery Chart.png
+### Battery Chart - Below Threshold.png
 
-The battery graph on Advanced: the level over three months, with five weekly averages, the reading and the time left above it. A steady battery gets no forecast; a falling one shows its time left as a range.
+The battery history on a device's page: the level over 132 days with its smoothed line and usual bounce, the weekly readings above it, the low threshold as a dashed line, and the time left.
 
-![Dashboard Device Detail Battery Chart](./Dashboard%20Device%20Detail%20Battery%20Chart.png)
+![Battery Chart - Below Threshold](./Battery%20Chart%20-%20Below%20Threshold.png)
 
 ### Dashboard Device Detail Signal Chart.png
 
@@ -146,13 +146,7 @@ A Repair card after Device Sentinel repaired a damaged data file. It says what w
 
 ![Repair Card Damaged Data File](./Repair%20Card%20Damaged%20Data%20File.png)
 
-## The Brief and Your Automations
-
-### Device Sentinel Daily Brief Hard Copy.png
-
-The daily brief as it arrives by email: In Short, Now, Repeat Offenders, Recommendations and Last 24 Hours, in the same layout as the dashboard's Daily Brief tab.
-
-![Device Sentinel Daily Brief Hard Copy](./Device%20Sentinel%20Daily%20Brief%20Hard%20Copy.png)
+## Your Automations
 
 ### Event Automation Example.png
 
