@@ -2,7 +2,7 @@
 # Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/update_battery_library.py, Version: 0.29.3 (2026-11-15)
+# File: tools/update_battery_library.py, Version: 0.30.0 (2026-11-21)
 
 """Refresh the Battery Notes library Device Sentinel ships (rule REL-15).
 
@@ -40,8 +40,8 @@ from pathlib import Path
 # The commit of Battery Notes' repository the library is taken from, and
 # the SHA-256 of its library.json, so a refresh brings exactly what was
 # reviewed, never whatever its main branch holds that day.
-COMMIT = "a25aa2cd1cc011676d44d2297473b310993edbdd"
-SHA256 = "b15d63d75eb1c1e0070f36684668b527ecdab3f1d23735dd00515681837a2133"
+COMMIT = "f8f0cbed81c32f7777472fc5a4a491695df758d8"
+SHA256 = "1bfb6c5ab6692a7c82619916ff0796e9e901ccda1abb3c385cba4d05ecb227eb"
 SOURCE = "https://raw.githubusercontent.com/andrew-codechimp/HA-Battery-Notes/{commit}/library/library.json"
 TARGET = Path("custom_components/device_sentinel/data/battery_library.json")
 KEY = ("manufacturer", "model", "model_id", "hw_version")
