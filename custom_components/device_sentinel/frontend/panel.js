@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.29.8 (2026-11-19)
+// File: panel.js, Version: 0.30.0 (2026-11-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -49,6 +49,9 @@ const NOT_KNOWN_TYPE = NOT_SET;
 // The Devices tab's TYPE for a device Device Sentinel does not watch and
 // knows no type for: nothing to set (rule DEV-12).
 const NOT_WATCHED = "Not Watched";
+// The empty Networks tab's pictures, read from the repository so nothing
+// more is served from Home Assistant (rule DASH-17).
+const NETWORK_IMAGES = "https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/";
 // How a battery's readings move, in words a reader can use (rule BAT-02).
 // A Z-Wave controller's Status, in Home Assistant's own words (rule
 // STACK-15).
@@ -2649,6 +2652,49 @@ class DeviceSentinelPanel extends HTMLElement {
       why ? el("p", { class: "muted", style: "margin:0" }, why) : null);
   }
 
+  // Why the Networks tab is empty, from what the server's Wi-Fi scan found,
+  // and how to let Device Sentinel hear Wi-Fi (rule DASH-17).
+  _emptyNetworks(air) {
+    const p = (text) => el("p", { style: "margin:0;line-height:1.5" }, text);
+    const pic = (file, alt) => el("img", { src: `${NETWORK_IMAGES}${encodeURIComponent(file)}`, alt,
+      loading: "lazy", style: "display:block;max-width:100%;width:560px;margin:8px 0;border-radius:8px" });
+    const steps = () => [
+      el("ol", { style: "margin:0;padding-left:20px;line-height:1.5" },
+        el("li", {}, "In Home Assistant, open Settings, System, Network, and choose your Wi-Fi interface, often named wlo1 or wlan0.",
+          pic("HA Network - Step 1 Choose the Wi-Fi Interface.png", "The Wi-Fi interface tab, wlo1, marked")),
+        el("li", {}, "Open the Wi-Fi section.", pic("HA Network - Step 2 Open Wi-Fi.png", "The Wi-Fi row, marked")),
+        el("li", {}, "Press Search networks, choose the network you are using for your IoT devices and enter its password.",
+          pic("HA Network - Step 3 Search Networks.png", "Search networks, marked, with the networks it found")),
+        el("li", {}, "Choose Static for its address, and press Save. Be sure that your wired network also uses Static.",
+          pic("HA Network - Step 4 Set a Static Address.png", "Static and Save, marked")),
+        el("li", {}, "Then choose your network in Device Sentinel's settings, under Wi-Fi.",
+          pic("HA Network - Step 5 Choose the Network in Device Sentinel.png",
+            "The network chosen under Your IoT Wi-Fi Networks, and Submit, marked")))];
+    const out = [p("No Wi-Fi or other networks found. Device Sentinel lists a Zigbee, Z-Wave, Matter or Thread network once its "
+      + "integration is found, and your Wi-Fi once your server reports it.")];
+    if (air.scan === "no_supervisor") {
+      out.push(p("Your Home Assistant server runs without the Supervisor, as a Container or Core install does, so Device "
+        + "Sentinel cannot use a Wi-Fi adapter. Install your router's integration. A router integration that tracks its "
+        + "clients, such as UniFi, TP-Link Router or FRITZ!Box, will allow Device Sentinel to report your Wi-Fi "
+        + "network's status."));
+    } else if (air.scan === "no_adapter") {
+      out.push(p("Your server has no Wi-Fi adapter. An inexpensive USB Wi-Fi adapter will allow Device Sentinel to monitor "
+        + "your Wi-Fi network and tell you when it goes down. Home Assistant OS works with adapters built on the MediaTek "
+        + "MT7601U, MT7612U, MT7663U or MT7921U, and Realtek RTL8188, RTL8192, RTL8812AU, RTL8821AU, RTL8821CU, "
+        + "RTL8822BU or RTL8822CU chip sets. Plug it in on an extension cable, "
+        + "away from a Zigbee USB stick, since both use 2.4 GHz. If Home Assistant runs in a virtual machine, pass the "
+        + "adapter through to it. Then set it up as below."),
+        pic("usb_wifi_adapter.png", "A USB Wi-Fi adapter with an external antenna"), ...steps());
+    } else if (air.scan === "adapter_off" || (air.scan === "ok" && air.connected === false)) {
+      out.push(p("Your server's Wi-Fi adapter is turned off or not connected to a network. Device Sentinel hears Wi-Fi "
+        + "only through a connected adapter:"), ...steps());
+    } else if (air.scan === "ok" && air.connected) {
+      out.push(p("Your server's Wi-Fi adapter is connected. Choose your network in Device Sentinel's settings, under "
+        + "Wi-Fi, and it appears here."));
+    }
+    return out;
+  }
+
   _paintNetworks() {
     const rows = (this._snapshot.networks && this._snapshot.networks.rows) || [];
     const simple = this._isSimple();
@@ -2661,8 +2707,7 @@ class DeviceSentinelPanel extends HTMLElement {
       return;
     }
     if (!rows.length) {
-      this._pane.replaceChildren(intro, el("p", { class: "muted", style: "margin:0" },
-        "No network found yet. A network appears here once a device reports through it."));
+      this._pane.replaceChildren(intro, ...this._emptyNetworks((this._snapshot.networks || {}).air || {}));
       return;
     }
     const heads = ["NETWORK", "STATUS", "DEVICES", "WITH A PROBLEM", ...(simple ? [] : ["LAST OUTAGE"])];
@@ -3476,20 +3521,26 @@ class DeviceSentinelPanel extends HTMLElement {
     // start, and the headline says only what is known (rule BAT-19).
     const learn = page.learning;
     const atOrUnder = low.length;
+    // Each battery type's low line (rule BAT-03): "10% for alkaline, 20% for
+    // lithium and other, 20% for rechargeable".
+    // An older server's answer carries one threshold for every type.
+    const th = page.thresholds;
+    const lines = th ? `${th.alkaline}% for alkaline, ${th.lithium}% for lithium and other, ${th.rechargeable}% for rechargeable`
+      : typeof page.threshold === "number" ? `${page.threshold}%` : "as set";
     const learnBox = learn ? this._learningBox(
       "Battery forecasts start on ", learn.start,
       ["Device Sentinel needs four weeks of readings to tell a battery that is falling from one that only "
         + "wobbles, and to forecast its time left. Until then each level is shown as it is read, and a "
-        + `battery at or under your threshold of ${page.threshold}% is reported from the first day: `,
+        + `battery at or under its type's threshold (${lines}) is reported from the first day: `,
       el("strong", {}, learn.low_now === 0 ? "none are now" : learn.low_now === 1 ? "1 is now" : `${learn.low_now} are now`), "."],
       learn.day, learn.need) : null;
     const summary = learn ? el("p", { style: "margin:0;line-height:1.5" },
-      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under your `
-      + `threshold of ${page.threshold}%, ${cellCount - atOrUnder} above it. ${noBattery} watched `
+      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under its `
+      + `type's threshold (${lines}), ${cellCount - atOrUnder} above it. ${noBattery} watched `
       + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all.`)
     : el("p", { style: "margin:0;line-height:1.5" },
       `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, `
-      + (lowOnly ? `${lowOnly} at or under your threshold of ${page.threshold}% and not falling, ` : "")
+      + (lowOnly ? `${lowOnly} at or under its type's threshold and not falling, ` : "")
       + `${steadyAll.length} not falling or not yet judged. ${noBattery} watched `
       + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and ${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
@@ -3607,7 +3658,7 @@ class DeviceSentinelPanel extends HTMLElement {
           el("td", { class: "num" }, levelText(row.level)),
           simpleView ? null : el("td", { class: "num" }, moved(row.month_drop)),
           el("td", {}, row.since ? moment(row.since) : ""))))))
-      : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under your threshold.");
+      : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under its type's threshold.");
     const steadySort = simpleView && ["days", "steps"].includes(this._steadySort.key) ? {} : this._steadySort;
     const steadyRows = this._sortRows(steadyAll, steadySort, { name: byName, type: byType,
       level: (row) => row.level, month: (row) => row.month_drop || 0, days: (row) => row.days || 0,
@@ -3673,8 +3724,8 @@ class DeviceSentinelPanel extends HTMLElement {
       // Judged only near the threshold (rules BAT-10, BAT-13): with no
       // battery yet watched from new to replaced, a date further out is
       // a guess.
-      typeof page.ceiling === "number" ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        `A cell is judged falling, and given a time left, at or under ${page.ceiling}%, three times your threshold. Above it, its last four weeks are shown under Other Cells.`) : null,
+      th || typeof page.threshold === "number" ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        `A cell is judged falling, and given a time left, at or under three times its type's threshold (${lines}). Above it, its last four weeks are shown under Other Cells.`) : null,
       fallingTable,
       el("h3", { class: "section" }, "Other Cells ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
       // One line each, shown when its rows are there, so the MODEL, A
