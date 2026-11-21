@@ -1,4 +1,4 @@
-<img alt="Device Sentinel. Finds the devices that have stopped reporting." src="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner.svg">
+<img alt="Device Sentinel. Finds the devices that have stopped reporting." src="https://xeazy.com/wp-content/uploads/device-sentinel-banner.svg">
 
 # Device Sentinel
 
