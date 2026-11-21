@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -25,14 +25,18 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 
 ### BAT-03 Low Battery
 
-**A battery is low when its reading is at or below the Low Battery Threshold, which defaults to 15 percent.** An install from before 0.20.11 that never chose a threshold keeps 20.
-- **Clearing:** a low battery clears when it reads above the threshold plus 3 (18 percent at the default 15). So a cell that hovers near the line, or sags under load and recovers at rest, does clear.
+**A battery is low when its reading is at or below the threshold for its battery type (since 0.30.0): Alkaline Batteries 10%, Lithium and Other Batteries 20%, Rechargeable Batteries 20%, each a setting on the Low Battery screen.**
+- **Which type:** from the owner's answer or Battery Notes' library ([DEV-08](Rulebook__04_DEV_Device_Identity.md)). Alkaline: AA, AAA, AAAA, C, D and their LR names. Rechargeable: anything named rechargeable, an LIR cell, an 18650, LiFePO4 or NiMH. Lithium and other: coin and CR cells, lithium AA and AAA, everything else, and a battery whose type is not known.
+- **Why these:** an alkaline cell at 10% still has weeks of use. A lithium cell holds near full and then falls fast, and a rechargeable is charged, not replaced.
+- **A coin cell's voltage:** a device with one coin or CR cell that reports its voltage is also low at a resting voltage of 2.9 V or under, wherever its percentage reads, and clears above 2.95 V. Its resting voltage is the higher of today's highest and the last day's, so a reading in a transmit's sag decides nothing. Not a setting.
+- **The upgrade (since 0.30.0):** every house moved to these defaults, whatever single threshold it had, a breaking change told once in the Daily Brief ([BRIEF-17](Rulebook__13_BRIEF_Daily_Brief.md#brief-17-a-breaking-change-told-once)).
+- **Clearing:** a low battery clears when it reads above its threshold plus 3 (23 percent at 20). So a cell that hovers near the line, or sags under load and recovers at rest, does clear.
 - **When a reading is judged:** as soon as it arrives. A value the device sends again unchanged after an outage is recorded and judged at its next change.
 - **Level only:** low is about the level only. A battery that stops reporting is judged by the freeze and unavailable rules, never as a battery problem.
 - **Startup grace:** a battery that first reads low inside the startup grace is held until the grace closes, then judged. A low that stood before the restart stays.
 - **The words:** while the level reads at or below the threshold plus 3, the brief, and the phone push that uses its words, say "battery crossed the threshold on <date>. Its current level is <N>%." Back above that, they say "battery read low, since recovered", or "battery read low, since replaced or recharged" at 95 percent or over, with no number.
 
-*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_level_text.py`](../tests/test_battery_level_text.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
+*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_thresholds_by_type.py`](../tests/test_battery_thresholds_by_type.py), [`test_battery_level_text.py`](../tests/test_battery_level_text.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
 
 ### BAT-04 Battery Mutes
 
@@ -104,7 +108,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 ### BAT-10 When a Battery Is Judged
 
 **A battery is judged for falling and given a time left only when all three hold:**
-- **Level:** it reads at or under three times the low threshold (45 percent at the default 15).
+- **Level:** it reads at or under three times its battery type's low threshold (30 percent for alkaline at the default 10, 60 percent for lithium, other and rechargeable at the default 20).
 - **History:** it was heard on at least 28 of the last 42 days.
 - **Steps:** it is smooth ([BAT-09](#bat-09-coarse-batteries)).
 - **Otherwise:** its page and Battery Trends row show the level and the weekly averages, and say nothing more.
@@ -137,7 +141,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **Where it starts (since 0.29.3):** from the fitted line's value today, not today's reading. A reading a step off the line, as a battery gives from one day to the next, moved the date by weeks when the reading started it. Today's reading still decides the target: a battery reading under the threshold runs to empty.
 - **When the reading moves it:** the start is never further over today's reading than the six weeks' second deepest day under the line, and at least one point, so one stray low day never hides a collapse. A reading further under than that is a collapse the line has not caught up with, and the start follows it down without a jump. When the line is under the reading, the start is held one point over the target while the reading is still over it, so the time left never drops to nothing before the battery has crossed, and there is no jump where the line crosses.
 - **Which line:** the curve of [BAT-12](#bat-12-accelerating) when it passes, the straight line otherwise.
-- **To the threshold:** the time left runs to the low threshold and reads "reaches 15% in about 3 to 5 weeks".
+- **To the threshold:** the time left runs to the low threshold and reads "reaches 10% in about 3 to 5 weeks".
 - **To empty:** a battery already under the threshold, or one that has been low and not yet replaced, runs to empty and reads "empty in about …".
 - **Units:** each end is said in its own unit. A near end under 13 weeks is said in weeks, and so is a far end beside it that rounds to under four months.
 - **The caution:** where a time left shows, Device Sentinel says many devices stop working before 0 percent.
@@ -184,8 +188,8 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **Simple, and Advanced's Future range:** draw each kept day as light dots under a smoothed line, and today's reading as a solid dot ringed in white with its level beside it, "today 10%", drawn over the lines. Since 0.29.5 the reading moves below the dot where it would land on the chart's own word "today". Since 0.29.4 the scale runs from empty to the highest kept day, today's reading, the start of the fall or the low line, rounded up to the next 20%, rather than to 100% always. Where a range shows, the smoothed line runs to where the expected fall starts ([BAT-13](#bat-13-how-long-a-battery-has-left)); otherwise to today's reading. The expected fall is two red lines that end where they reach the target, with the range shaded between and the day each reaches it under the axis. The low line shows only where the history or the range reaches it.
 - **In Simple:** the expected fall is drawn only when the near end is inside Days Till Low Warning.
 - **Future's limit:** the longer of half the days held and Days Till Low Warning.
-- **Past the limit:** when the near end is past that limit, nothing is drawn and it reads "Reaches 15% after N days." or "Empty after N days.", with N the limit.
-- **Otherwise:** the lines reach the far end's day, cut at twice the limit, and the words read "Expected to reach 15% in …".
+- **Past the limit:** when the near end is past that limit, nothing is drawn and it reads "Reaches 10% after N days." or "Empty after N days.", with N the limit.
+- **Otherwise:** the lines reach the far end's day, cut at twice the limit, and the words read "Expected to reach 10% in …".
 
 *Proof:* [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_battery_chart.js`, `check_battery_future.js`, `check_battery_steps.js`.
 
@@ -203,8 +207,8 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 ### BAT-19 Battery Trends While Learning
 
 **While no battery has four weeks heard, Battery Trends opens with a box saying when forecasts start (since 0.29.2).**
-- **The box:** "Battery forecasts start on December 4", then "Device Sentinel needs four weeks of readings to tell a battery that is falling from one that only wobbles, and to forecast its time left. Until then each level is shown as it is read, and a battery at or under your threshold of 15% is reported from the first day: 2 are now." ("1 is now", "none are now"), and a bar, "Day 7 of 28" and "21 days to go". The count is of batteries marked low, as the Problem List and the headline count them. The day counted is the most days any battery has been heard; the start is today plus the days still to go. A battery heard only every other day gets there too, more slowly.
-- **The headline:** "54 batteries report a level: 2 at or under your threshold of 15%, 52 above it. 51 watched devices report no battery at all."
+- **The box:** "Battery forecasts start on December 4", then "Device Sentinel needs four weeks of readings to tell a battery that is falling from one that only wobbles, and to forecast its time left. Until then each level is shown as it is read, and a battery at or under its type's threshold (10% for alkaline, 20% for lithium and other, 20% for rechargeable) is reported from the first day: 2 are now." ("1 is now", "none are now"), and a bar, "Day 7 of 28" and "21 days to go". The count is of batteries marked low, as the Problem List and the headline count them. The day counted is the most days any battery has been heard; the start is today plus the days still to go. A battery heard only every other day gets there too, more slowly.
+- **The headline:** "54 batteries report a level: 2 at or under its type's threshold (10% for alkaline, 20% for lithium and other, 20% for rechargeable), 52 above it. 51 watched devices report no battery at all."
 - **By Model:** a model whose batteries all have under four weeks heard reads "learning" for its rate.
 - **It ends:** the box and the headline go once one battery has its four weeks, and with no battery reporting a level there is no box.
 

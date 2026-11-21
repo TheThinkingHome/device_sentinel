@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -169,3 +169,11 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Keeping:** rows are kept fourteen days, and the header names when the newest row opened, so an empty stretch reads differently from a stopped recorder.
 
 *Proof:* [`test_reports.py`](../tests/test_reports.py), [`test_journal.py`](../tests/test_journal.py), [`test_silence_episode_rhythm.py`](../tests/test_silence_episode_rhythm.py).
+
+### BRIEF-17 A Breaking Change Told Once
+
+**Since 0.30.0, a change an upgrade made to a person's settings is told once, in the next Daily Brief, as a breaking change.**
+- **When:** at the first start after the upgrade, as a house event, so the next brief's events carry it. A new install is not told.
+- **The battery thresholds:** "Breaking change: alkaline batteries, and lithium and rechargeable batteries, now have their own low thresholds, 10% and 20% respectively. Changes can be made in Settings, Low Battery." ([BAT-03](Rulebook__09_BAT_Battery.md#bat-03-low-battery)).
+
+*Proof:* [`test_battery_thresholds_by_type.py`](../tests/test_battery_thresholds_by_type.py).

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Repairs (REP)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel raises in Home Assistant's Settings, Repairs, and how those cards behave. What is wrong with a device goes on the Problem List (LIST), never here. How storage is checked, repaired and restored is under [STOR](Rulebook__18_STOR_Storage.md). A lost clocks file is in [LIST-12](Rulebook__11_LIST_Problem_List.md#list-12-a-lost-clocks-file). Switched-off sensors are a recommendation under [REC](Rulebook__15_REC_Recommendations.md).
 
@@ -17,7 +17,7 @@ This section covers what Device Sentinel raises in Home Assistant's Settings, Re
 
 **Device Sentinel raises five cards: A Device Sentinel Notification Target No Longer Exists, Device Sentinel Restored Its Storage, Device Sentinel Repaired Its Storage, Device Sentinel Repaired Its Storage Structure, and (since 0.28.0) Two Devices Share One Network Address.**
 - **The shared address card:** it names the devices and the address, says why it matters, and advises reserving an address for each device in the router's DHCP settings. It has no fix; a person can only acknowledge it, and it carries a link to the wiki's Wi-Fi page. It goes away by itself once each device has its own address.
-- **The target card:** its fix removes the targets whose service is gone from the high-priority, normal-priority and Daily Brief lists, and leaves the rest alone.
+- **The target card:** its fix removes the targets whose service is gone from the high-priority, normal-priority and Daily Brief lists, and leaves the rest alone. A target stored as text rather than a list, as a hand-edited file can hold, is read as one target (since 0.30.0).
 - **The three storage cards:** they say what was done and where the originals are, and ask nothing.
 - **Retired cards:** four older cards are retired and cleared for an install that still holds one: Cannot See Everything It Watches, Has Nowhere to Send Anything, The System Clock Was Reset or Paused, and Activity Clocks Were Reset.
 

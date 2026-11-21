@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: What Is Watched (WATCH)
 
-*Version: rulebook, 15 November 2026, on Device Sentinel 0.29.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers which devices Device Sentinel watches and what it reads them through. It also covers which devices it sets aside and why, what happens to a device that is removed or taken back, and the quiet first minutes after a start. Excluding and muting, the two choices a person makes, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). What is judged once a device is watched is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. The stack readers are under [STACK](Rulebook__08_STACK_Stacks.md).
 
@@ -34,8 +34,8 @@ This section covers which devices Device Sentinel watches and what it reads them
 
 ### WATCH-04 Notices and Buttons Are Never the Device
 
-**A firmware update notice, a command button, the Hue bridge's Zigbee connectivity sensor and the Z-Wave node status never count as the device reporting.**
-- **The one exception:** a Z-Wave node status that changes from dead to alive or awake, with nothing else heard from the device, counts as contact.
+**A firmware update notice, a command button, the Hue bridge's Zigbee connectivity sensor, the Z-Wave node status and a Lightwave device's Connectivity sensor never count as the device reporting.**
+- **The exceptions:** a Z-Wave node status that changes from dead to alive or awake, with nothing else heard from the device, counts as contact, and so does a Lightwave Connectivity sensor that turns on after off ([STACK-16](Rulebook__08_STACK_Stacks.md#stack-16-lightwave-devices-and-their-connectivity-sensor)).
 - **Nothing else switched on:** a device with nothing but notices, buttons or the Hue connectivity sensor switched on is set aside, "Set aside: nothing switched on that can report". An ESPHome device is the exception, judged by its connection ("Judged by its connection: connected."), and so is a Lutron Pico, judged by its hub.
 - **Z-Wave node status alone:** a Z-Wave device whose only switched-on entity is its node status is not set aside. It stays watched and is judged by its clock.
 - **Everything switched off:** a device with everything switched off and nothing on stays watched (see [WATCH-03](#watch-03-set-aside)).

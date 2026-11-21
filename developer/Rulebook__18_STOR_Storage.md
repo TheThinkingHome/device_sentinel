@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 19 November 2026, on Device Sentinel 0.29.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -140,7 +140,8 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 
 ### STOR-14 How Much History Is Kept
 
-**How Much History to Keep sets how many days of battery, signal and gap history are kept, from 30 to 360 days in steps of 30, default 90.**
+**How Much History to Keep sets how many days of battery, signal and gap history are kept, from 30 to 360 days in steps of 30, default 180 since 0.30.0.**
+- **The upgrade to 0.30.0:** a house that kept less than 180 days is raised to 180, and one that kept more keeps its own, so every house has room for a battery's daily curve.
 - **What it judges:** one thing only. A device's longest silence is learned at most as long as the retention (FRZ). Each other verdict reads its own fixed window, so on everything else two houses with different settings detect alike.
 - **Lowering it:** a lower setting trims at the next midnight rather than on save, so a mistake can be undone.
 - **House events and signal stress rows:** kept for the same retention.
