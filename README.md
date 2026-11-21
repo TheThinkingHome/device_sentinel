@@ -4,7 +4,6 @@
 
 ![Active Installs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.device_sentinel.total&label=Active%20Installs&color=41BDF5&logo=home-assistant&logoColor=white)
 ![Stars](https://img.shields.io/github/stars/TheThinkingHome/device_sentinel?label=Stars&color=41BDF5&logo=github)
-![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)
 ![Version](https://img.shields.io/github/v/release/TheThinkingHome/device_sentinel)
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![Tests](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/test.yml/badge.svg)
