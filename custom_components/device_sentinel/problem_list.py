@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.29.4 (2026-11-16)
+# File: problem_list.py, Version: 0.30.0 (2026-11-21)
 
 """The problem list: the single memory every channel renders.
 
@@ -659,14 +659,14 @@ class ProblemListMixin:
         left = max(fell - back, 0)
         names = list(self.wifi_networks)
         if not names:
-            subject = "Home Assistant's WiFi network"
+            subject = "Home Assistant's Wi-Fi network"
         elif len(names) == 1:
-            subject = f"The '{names[0]}' WiFi network"
+            subject = f"The '{names[0]}' Wi-Fi network"
         else:
             quoted = [f"'{one}'" for one in names]
             subject = (
                 f"The {', '.join(quoted[:-1])} and {quoted[-1]} "
-                f"WiFi networks"
+                f"Wi-Fi networks"
             )
         when = self._format_report_time(
             dt_util.as_local(
@@ -674,9 +674,9 @@ class ProblemListMixin:
             )
         )
         verb = "networks came" if len(names) > 1 else "network came"
-        opening = f"{subject.rsplit(' WiFi network', 1)[0]} WiFi {verb} back"
+        opening = f"{subject.rsplit(' Wi-Fi network', 1)[0]} Wi-Fi {verb} back"
         return self._recovering_words(
-            "WiFi network", f"{opening} at {when}", left, fell
+            "Wi-Fi network", f"{opening} at {when}", left, fell
         )
 
     def _wifi_item_text(
@@ -697,14 +697,14 @@ class ProblemListMixin:
             return self._wifi_recovering_text(devices)
         names = list(self.wifi_networks)
         if not names:
-            subject = "Home Assistant's WiFi network"
+            subject = "Home Assistant's Wi-Fi network"
         elif len(names) == 1:
-            subject = f"The '{names[0]}' WiFi network"
+            subject = f"The '{names[0]}' Wi-Fi network"
         else:
             quoted = [f"'{one}'" for one in names]
             subject = (
                 f"The {', '.join(quoted[:-1])} and {quoted[-1]} "
-                f"WiFi networks"
+                f"Wi-Fi networks"
             )
         many = len(names) > 1
         verb = "networks" if many else "network"
@@ -717,7 +717,7 @@ class ProblemListMixin:
             else f"{subject} is unavailable."
         )
         return (
-            f"WiFi {verb} unavailable: {devices} of {behind} total "
+            f"Wi-Fi {verb} unavailable: {devices} of {behind} total "
             f"devices down",
             f"{opening} Currently, {devices} of {whose} {behind} total "
             f"devices became unavailable. Device Sentinel is tracking "

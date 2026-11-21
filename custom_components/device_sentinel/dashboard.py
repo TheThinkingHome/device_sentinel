@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.29.6 (2026-11-17)
+# File: dashboard.py, Version: 0.30.0 (2026-11-21)
 
 """What the dashboard reads from the coordinator.
 
@@ -195,6 +195,7 @@ from .outage_detail import STALLED, pair_key, parse_detail
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import area_name_of, device_field
 from .power_source import stands_for_none
+from .stacks import shows_status_row
 
 
 
@@ -1828,9 +1829,10 @@ class DeviceViewMixin:
         page: dict[str, Any] = {
             "daily": battery_calendar(record),
             "now": level,
-            "threshold": self.low_threshold,
+            # Its battery type's low line (rule BAT-03).
+            "threshold": self.threshold_for(device_id),  # type: ignore[attr-defined]
             # The level a cell is judged falling at or under (rule BAT-10).
-            "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
+            "ceiling": self.battery_ceiling_for(device_id),  # type: ignore[attr-defined]
             # Under four weeks of readings in the last six: not judged,
             # and the page says nothing about it (rule BAT-10).
             "short": battery_heard_days(series) < BATTERY_FIT_MIN_DAYS,
@@ -1856,11 +1858,11 @@ class DeviceViewMixin:
         # and the fitted line when the cell falls.
         trend = battery_trend(
             series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH,
-            self.battery_ceiling,  # type: ignore[attr-defined]
+            self.battery_ceiling_for(device_id),  # type: ignore[attr-defined]
         )
         # A coarse cell is never read as falling (rule BAT-10).
         falling = bool(trend["reading"] and trend["pace"]) and not page["coarse"]
-        target = self.battery_target(current, record)  # type: ignore[attr-defined]
+        target = self.battery_target(current, record, device_id)  # type: ignore[attr-defined]
         days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
         # The range a falling cell reaches the low threshold in; the
         # near end decides Days Till Low, as on the Problem List (rules
@@ -1893,9 +1895,13 @@ class DeviceViewMixin:
         return on_calendar(record, FAMILY_SIGNAL, values, end)
 
     def _node_status_view(self, device_id: str) -> str | None:
-        """The device's node status as its page shows it (rule STACK-05)."""
+        """The device's node status as its page shows it (rule STACK-05).
+
+        Z-Wave's alone: a link sensor read the same way, as Lightwave's
+        is, has no Z-Wave status row (rule STACK-16).
+        """
         entity_id = self._node_status_entity.get(device_id)
-        if entity_id is None:
+        if entity_id is None or not shows_status_row(self._watched.get(device_id)):
             return None
         entry = er.async_get(self.hass).async_get(entity_id)
         if entry is not None and entry.disabled_by is not None:
@@ -2464,9 +2470,9 @@ class TrendsViewMixin:
             # The same, by type, for the tab narrowed to one.
             "no_battery_types": _count_types(type_of(row.get("device_id")) for row in report["absent"]),
             "cell_rows": cell_rows,
-            "threshold": self.low_threshold,
-            # The level a cell is judged falling at or under (rule BAT-10).
-            "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
+            # Each battery type's low line, and the level a cell of each
+            # is judged falling at or under (rules BAT-03, BAT-10).
+            "thresholds": self.low_thresholds,  # type: ignore[attr-defined]
             "learning": self._battery_learning(),
         }
 

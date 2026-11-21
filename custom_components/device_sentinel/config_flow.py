@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.29.8 (2026-11-19)
+# File: config_flow.py, Version: 0.30.0 (2026-11-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -59,7 +59,7 @@ from homeassistant.helpers import selector
 
 from .naming import display_name
 from .notifier import notify_platform
-from .wifi import scan_networks, wireless_interfaces
+from .wifi import pick_adapter, scan_networks, wireless_interfaces
 
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
@@ -115,7 +115,6 @@ from .const import (
     CONF_FREEZE_MUTED_LABELS,
     CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
-    CONF_LOW_THRESHOLD,
     CONF_MAINTENANCE_MINUTES,
     CONF_NORMAL_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
@@ -145,7 +144,6 @@ from .const import (
     DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
-    DEFAULT_LOW_THRESHOLD,
     DEFAULT_MAINTENANCE_MINUTES,
     DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
@@ -163,6 +161,7 @@ from .const import (
     FREEZE_DELTA_HIGH_HR_MIN,
     FREEZE_DELTA_LOW_MIN_MAX,
     FREEZE_DELTA_LOW_MIN_MIN,
+    LOW_THRESHOLD_KEYS,
     LOW_THRESHOLD_MAX,
     LOW_THRESHOLD_MIN,
     MAINTENANCE_MINUTES_MAX,
@@ -943,20 +942,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_BATTERY},
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_LOW_THRESHOLD,
-                        default=options.get(
-                            CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=LOW_THRESHOLD_MIN,
-                            max=LOW_THRESHOLD_MAX,
-                            step=1,
-                            unit_of_measurement="%",
-                            mode=selector.NumberSelectorMode.SLIDER,
+                    # One low line for each battery type (rule BAT-03).
+                    **{
+                        vol.Required(key, default=options.get(key, default)): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=LOW_THRESHOLD_MIN,
+                                max=LOW_THRESHOLD_MAX,
+                                step=1,
+                                unit_of_measurement="%",
+                                mode=selector.NumberSelectorMode.SLIDER,
+                            )
                         )
-                    ),
+                        for key, default in LOW_THRESHOLD_KEYS.values()
+                    },
                     # The second question the screen answers. The
                     # threshold says which cells are low; this says
                     # how far ahead a falling one is called out
@@ -2131,11 +2129,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         options = self.config_entry.options
         chosen = list(options.get(CONF_WIFI_NETWORKS) or [])
-        interfaces = await wireless_interfaces(self.hass)
+        adapter = pick_adapter(await wireless_interfaces(self.hass))
         heard: list[str] = []
-        if interfaces:
+        if adapter is not None:
             points = await scan_networks(
-                self.hass, interfaces[0].get("interface") or ""
+                self.hass, adapter.get("interface") or ""
             )
             heard = sorted(
                 {
@@ -2153,7 +2151,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             step_id="wifi",
             description_placeholders={
                 "wiki_link": WIKI_LINK_WIFI,
-                "state": "ready" if interfaces else "unconfigured",
+                "state": "ready" if adapter is not None else "unconfigured",
             },
             data_schema=vol.Schema(
                 {

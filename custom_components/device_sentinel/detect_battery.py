@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.29.4 (2026-11-16)
+# File: detect_battery.py, Version: 0.30.0 (2026-11-21)
 
 """Battery: the level threshold and what is tracked.
 
@@ -90,9 +90,10 @@ from .const import (
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
-    DEFAULT_LOW_THRESHOLD,
+    LITHIUM_CLEAR_VOLTS,
+    LITHIUM_LOW_VOLTS,
+    LOW_THRESHOLD_KEYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_LOW,
@@ -691,13 +692,32 @@ class BatteryMixin:
         return ent.entity_id.startswith(("sensor.", "binary_sensor."))
 
     @property
-    def low_threshold(self) -> float:
-        """Return the configured low threshold (options flow, live)."""
-        return float(
-            self.entry.options.get(
-                CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD
-            )
-        )
+    def low_thresholds(self) -> dict[str, float]:
+        """Each battery type's low line, as set or by default (rule BAT-03)."""
+        options = self.entry.options
+        return {
+            group: float(options.get(key, default))
+            for group, (key, default) in LOW_THRESHOLD_KEYS.items()
+        }
+
+    def threshold_for(self, device_id: str | None) -> float:
+        """The low line this device's battery is judged by: alkaline,
+        lithium and other, or rechargeable (rule BAT-03)."""
+        return self.low_thresholds[self.battery_group_of(device_id)]  # type: ignore[attr-defined]
+
+    def resting_volts(self, device_id: str | None, record: dict[str, Any]) -> float | None:
+        """A coin cell's resting voltage: the higher of today's highest and
+        the last day's, so a reading taken in a transmit's sag decides
+        nothing. None for a device that is not one coin cell, or reports
+        no voltage (rule BAT-03)."""
+        if not self.coin_cell(device_id):  # type: ignore[attr-defined]
+            return None
+        heard = [record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)]
+        rows = _rows(record)
+        if rows:
+            heard.append(rows[-1][RANGE_VOLTS_HIGH])
+        volts = [float(v) for v in heard if _level(v)]
+        return max(volts) if volts else None
 
     @callback
     def _evaluate_battery(
@@ -784,13 +804,19 @@ class BatteryMixin:
                     state.state,
                 )
                 return
-            threshold = self.low_threshold
+            threshold = self.threshold_for(device_id)
             if was_low:
                 # Clears only above the threshold plus 3 (rule BAT-03):
-                # 18 percent at the default 15 still reads low.
+                # 22 percent at a threshold of 20 still reads low.
                 is_low = level <= threshold + BATTERY_CLEAR_MARGIN
             else:
                 is_low = level <= threshold
+            # A coin cell is also low at its resting voltage of about
+            # 2.9 V, near where its cliff starts, whatever percentage
+            # its integration works out (rule BAT-03).
+            volts = self.resting_volts(device_id, record)
+            if volts is not None and volts <= LITHIUM_LOW_VOLTS + (LITHIUM_CLEAR_VOLTS if was_low else 0.0):
+                is_low = True
 
         new_level = record.get(DEV_BATTERY_VALUE) != level
         changed = is_low != was_low or new_level
@@ -831,7 +857,7 @@ class BatteryMixin:
                 "Battery low: %s at %s (threshold %s)",
                 battery_entity_id,
                 "on" if is_binary else level,
-                self.low_threshold,
+                self.threshold_for(device_id),
             )
         elif was_low and not is_low:
             record[DEV_BATTERY_LOW] = False

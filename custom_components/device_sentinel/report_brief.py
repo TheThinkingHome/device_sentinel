@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.29.5 (2026-11-17)
+# File: report_brief.py, Version: 0.30.0 (2026-11-21)
 
 """The daily brief: the one report written for a person.
 
@@ -115,7 +115,9 @@ from .const import (
     SYS_DEVICE_HANDLED,
     SYS_PAIRING_OPEN,
     SYS_RELOAD,
+    SETTINGS_BATTERY_BY_TYPE,
     SYS_RESTART,
+    SYS_SETTINGS_CHANGED,
     SYS_SCOPE,
     SYS_SCOPE_SYSTEM,
     SYS_UNCLEAN_RESTART,
@@ -496,6 +498,15 @@ class BriefMixin:
         span = row.get(SYS_DURATION)
         held = self._human_span(span) if span else None
         kind = row.get(SYS_KIND)
+        if kind == SYS_SETTINGS_CHANGED:
+            # Told once, the morning after the upgrade (rule BRIEF-17).
+            if detail == SETTINGS_BATTERY_BY_TYPE:
+                return (
+                    "Breaking change: alkaline batteries, and lithium and rechargeable "
+                    "batteries, now have their own low thresholds, 10% and 20% "
+                    "respectively. Changes can be made in Settings, Low Battery."
+                )
+            return f"Breaking change: the update changed your settings at {when}."
         if kind == SYS_RELOAD:
             return f"Device Sentinel was reloaded at {when}."
         if kind == SYS_RESTART:
@@ -586,27 +597,27 @@ class BriefMixin:
             count = row.get(SYS_DEVICES)
             if count:
                 return (
-                    f"The WiFi network went down at {when}, "
+                    f"The Wi-Fi network went down at {when}, "
                     f"{_plural(count)} behind it."
                 )
-            return f"The WiFi network went down at {when}."
+            return f"The Wi-Fi network went down at {when}."
         if kind == SYS_WIFI_RECOVERING:
             return (
-                f"The WiFi network came back at {when}, and its devices "
+                f"The Wi-Fi network came back at {when}, and its devices "
                 f"began reconnecting."
             )
         if kind == SYS_WIFI_RECOVERY_WITHDRAWN:
             return (
-                f"The WiFi recovery stalled at {when} as devices dropped "
+                f"The Wi-Fi recovery stalled at {when} as devices dropped "
                 f"again, so the outage continues."
             )
         if kind == SYS_WIFI_UP and worst:
             # The network came back when the recovery began, which has
             # its own line now; this one is the outage ending.
             said = (
-                f"The WiFi outage ended at {when} after {held}."
+                f"The Wi-Fi outage ended at {when} after {held}."
                 if held
-                else f"The WiFi outage ended at {when}."
+                else f"The Wi-Fi outage ended at {when}."
             )
             return f"{said} {worst}"
         if kind == SYS_WIFI_UP:
@@ -614,10 +625,10 @@ class BriefMixin:
             tail = f", {_plural(count)} behind it" if count else ""
             if held:
                 return (
-                    f"The WiFi network came back at {when} after "
+                    f"The Wi-Fi network came back at {when} after "
                     f"{held}{tail}."
                 )
-            return f"The WiFi network came back at {when}{tail}."
+            return f"The Wi-Fi network came back at {when}{tail}."
         if kind == SYS_BROKER_DOWN:
             return f"The MQTT broker went down at {when}."
         if kind == SYS_BROKER_UP:
@@ -876,6 +887,13 @@ class BriefMixin:
         kind = row.get(SYS_KIND)
         worst = self._worst_words(row, sentence=False)
         tail = f", {worst}" if worst else ""
+        if kind == SYS_SETTINGS_CHANGED:
+            # The table's words for a breaking change (rule BRIEF-17).
+            return (
+                "battery thresholds set by battery type"
+                if detail == SETTINGS_BATTERY_BY_TYPE
+                else "settings changed by the update"
+            )
         device = self.outage_device_name(detail)
         if device is not None and kind in (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP):
             title = self._integration_title(str(scope))
@@ -934,22 +952,22 @@ class BriefMixin:
         if kind == SYS_STORM_CLOSED:
             return ""
         if kind == SYS_WIFI_DOWN:
-            return "WiFi network went down"
+            return "Wi-Fi network went down"
         if kind == SYS_WIFI_RECOVERING:
-            return "WiFi network came back, devices reconnecting"
+            return "Wi-Fi network came back, devices reconnecting"
         if kind == SYS_WIFI_RECOVERY_WITHDRAWN:
-            return "WiFi recovery stalled, outage continues"
+            return "Wi-Fi recovery stalled, outage continues"
         if kind == SYS_WIFI_UP and worst:
             return (
-                f"WiFi outage ended after {held}"
+                f"Wi-Fi outage ended after {held}"
                 if held
-                else "WiFi outage ended"
+                else "Wi-Fi outage ended"
             ) + tail
         if kind == SYS_WIFI_UP:
             return (
-                f"WiFi network came back after {held}"
+                f"Wi-Fi network came back after {held}"
                 if held
-                else "WiFi network came back"
+                else "Wi-Fi network came back"
             )
         if kind == SYS_BROKER_DOWN:
             return "MQTT broker went down"
@@ -1287,7 +1305,7 @@ class BriefMixin:
             line = (
                 f"Your server is equipped with a Wi-Fi adapter ({adapter}), "
                 f"but no Wi-Fi network is chosen. Choose your network under "
-                f"WiFi in settings, and Device Sentinel will be able to "
+                f"Wi-Fi in settings, and Device Sentinel will be able to "
                 f"detect Wi-Fi outages directly instead of deducing outages "
                 f"from devices dropping off your router."
             )

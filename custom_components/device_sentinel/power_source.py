@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.29.5 (2026-11-17)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.30.0 (2026-11-21)
 
 """What powers each device (rule DEV-06).
 
@@ -39,7 +39,13 @@ from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
-from .const import DATA_DEVICES, LOGGER
+from .const import (
+    BATTERY_GROUP_ALKALINE,
+    BATTERY_GROUP_LITHIUM,
+    BATTERY_GROUP_RECHARGEABLE,
+    DATA_DEVICES,
+    LOGGER,
+)
 from .device_fields import device_field
 
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
@@ -103,6 +109,31 @@ def lithium_cell(battery_type: Any) -> bool:
     whole time, often exactly 100% for months. A steady reading from
     one says nothing about how long it has left (rule BAT-16)."""
     return isinstance(battery_type, str) and battery_type.strip().upper().startswith("CR")
+
+
+# Alkaline cells, by the names the library and people give them.
+ALKALINE_TYPES = frozenset({"AA", "AAA", "AAAA", "C", "D", "LR6", "LR03", "LR14", "LR20"})
+RECHARGEABLE_TYPES = frozenset({"18650", "LIFEPO4", "NIMH"})
+
+
+def battery_group(battery_type: Any) -> str:
+    """Which low line a battery type is judged by (rule BAT-03).
+
+    Alkaline: AA, AAA and their kin. Rechargeable: anything named
+    rechargeable, an LIR cell, an 18650, LiFePO4 or NiMH. Lithium and
+    other: coin cells, lithium AA and AAA, everything else, and a
+    battery whose type is not known.
+    """
+    if not isinstance(battery_type, str):
+        return BATTERY_GROUP_LITHIUM
+    folded = " ".join(battery_type.upper().split())
+    if "RECHARGEABLE" in folded or folded.startswith("LIR") or folded in RECHARGEABLE_TYPES:
+        return BATTERY_GROUP_RECHARGEABLE
+    if "LITHIUM" in folded:
+        return BATTERY_GROUP_LITHIUM
+    if folded in ALKALINE_TYPES:
+        return BATTERY_GROUP_ALKALINE
+    return BATTERY_GROUP_LITHIUM
 
 
 def power_words(battery_type: str, quantity: int | None) -> str:
@@ -623,6 +654,26 @@ class PowerMixin:
         if known and known.get("kind") == KIND_BATTERY and lithium_cell(known.get("type")):
             return str(known["type"])
         return None
+
+    def battery_group_of(self, device_id: str | None) -> str:
+        """Which low line the device's battery is judged by, from the
+        owner's answer or the library; lithium and other when neither
+        knows it (rule BAT-03)."""
+        known = self.power_of(device_id) if device_id else None
+        if not known or known.get("kind") != KIND_BATTERY:
+            return BATTERY_GROUP_LITHIUM
+        return battery_group(known.get("type"))
+
+    def coin_cell(self, device_id: str | None) -> bool:
+        """Whether the device takes one lithium coin cell or CR cell, whose
+        resting voltage also says when it is low (rule BAT-03)."""
+        known = self.power_of(device_id) if device_id else None
+        return bool(
+            known
+            and known.get("kind") == KIND_BATTERY
+            and lithium_cell(known.get("type"))
+            and known.get("quantity") in (None, 1)
+        )
 
     def battery_cell(self, device_id: str) -> tuple[str | None, str | None]:
         """The battery a device takes as its Power row says it, "2× AAA",

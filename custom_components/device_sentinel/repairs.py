@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.29.7 (2026-11-18)
+# File: repairs.py, Version: 0.30.0 (2026-11-21)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -143,8 +143,11 @@ def _configured_targets(entry: Any) -> list[str]:
         CONF_NORMAL_PRIORITY_TARGETS,
         CONF_BRIEF_TARGETS,
     ):
-        for target in entry.options.get(key) or []:
-            if target and target not in seen:
+        stored = entry.options.get(key) or []
+        # One target stored as text rather than a list, as a hand-edited
+        # file can hold, is one target, never one per letter (rule REP-02).
+        for target in [stored] if isinstance(stored, str) else stored:
+            if isinstance(target, str) and target and target not in seen:
                 seen.append(target)
     return seen
 

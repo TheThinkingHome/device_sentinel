@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.29.5 (2026-11-17)
+# File: __init__.py, Version: 0.30.0 (2026-11-21)
 
 """The Device Sentinel integration.
 
@@ -48,6 +48,8 @@ from .const import (
     MUTING_KEY_RENAMES,
     LOGGER,
     CONF_LOW_THRESHOLD,
+    CONF_RETENTION_DAYS,
+    DEFAULT_RETENTION_DAYS,
     LEGACY_LOW_THRESHOLD,
     OPTIONS_MINOR_VERSION,
     PANEL_URL_PATH,
@@ -120,6 +122,8 @@ async def async_migrate_entry(
         options = _migrate_unavailable_mutes(options)
     if entry.minor_version < 7:
         options = _migrate_dashboard_mode(options)
+    if entry.minor_version < 8:
+        options = _migrate_history_floor(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
@@ -165,6 +169,27 @@ def _string_list(value: Any) -> list[str]:
         if isinstance(item, str) and item not in out:
             out.append(item)
     return out
+
+
+def _migrate_history_floor(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 8: every house keeps at least six months of history.
+
+    How Much History to Keep defaults to 180 days, room for a battery's
+    daily curve. A house that saved less is raised to it, and one that
+    saved more keeps its own; one that never saved reads the new default
+    (rule STOR-14). The single battery threshold this release replaces
+    is retired at setup with the other dead keys (rule BAT-03).
+    """
+    migrated = dict(options)
+    stored = migrated.get(CONF_RETENTION_DAYS)
+    if isinstance(stored, (int, float)) and not isinstance(stored, bool) and stored < DEFAULT_RETENTION_DAYS:
+        migrated[CONF_RETENTION_DAYS] = DEFAULT_RETENTION_DAYS
+        LOGGER.info(
+            "Options migration step 8: history raised from %s to %s days",
+            stored,
+            DEFAULT_RETENTION_DAYS,
+        )
+    return migrated
 
 
 def _migrate_dashboard_mode(options: dict[str, Any]) -> dict[str, Any]:

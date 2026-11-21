@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.29.8 (2026-11-19)
+# File: wifi.py, Version: 0.30.0 (2026-11-21)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -54,6 +54,7 @@ from .const import (
 
 SUPERVISOR = "hassio"
 NETWORK_INFO = "/network/info"
+OS_INFO = "/os/info"
 
 
 def said(err: BaseException) -> str:
@@ -64,19 +65,30 @@ def said(err: BaseException) -> str:
     return f"{type(err).__name__}: {text}" if text else type(err).__name__
 
 
-async def read_interfaces(hass) -> list[dict[str, Any]] | None:
-    """Return the host's network interfaces, or None if it cannot be
-    asked. Read-only: nothing here writes to the host."""
+async def read_interfaces_why(hass) -> tuple[list[dict[str, Any]] | None, str]:
+    """The host's network interfaces, or None, with why none came back:
+    "no_supervisor" where Home Assistant runs without the Supervisor, as
+    a Container or Core install does, or the kind of error the
+    Supervisor gave. Read-only: nothing here writes to the host
+    (rule UP-12)."""
     handler = hass.data.get(SUPERVISOR)
     if handler is None:
-        return None
+        return None, "no_supervisor"
     try:
         info = await handler.send_command(NETWORK_INFO, method="get")
     except Exception as err:  # noqa: BLE001 - absent is not broken
         LOGGER.debug("device_sentinel: supervisor network read failed: %s", said(err))
-        return None
+        return None, f"supervisor_error: {type(err).__name__}"
     payload = info.get("data") if isinstance(info, dict) else None
-    return (payload or info or {}).get("interfaces") or []
+    rows = (payload or info or {}).get("interfaces") or []
+    return [row for row in rows if isinstance(row, dict)], "ok"
+
+
+async def read_interfaces(hass) -> list[dict[str, Any]] | None:
+    """Return the host's network interfaces, or None if it cannot be
+    asked. Read-only: nothing here writes to the host."""
+    rows, _why = await read_interfaces_why(hass)
+    return rows
 
 
 async def wireless_interfaces(hass) -> list[dict[str, Any]]:
@@ -85,6 +97,56 @@ async def wireless_interfaces(hass) -> list[dict[str, Any]]:
         row for row in (await read_interfaces(hass) or [])
         if row.get("type") == "wireless"
     ]
+
+
+def pick_adapter(wireless: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The wireless adapter to scan with: the one connected to a network,
+    then one switched on, then the first listed (rule UP-12).
+
+    A server can have two, its own and a USB adapter plugged in for
+    range, and the Supervisor lists them in no promised order. An
+    adapter switched off, or on but joined to no network, hears
+    nothing, so the first listed alone can be the wrong one.
+    """
+    for wanted in (
+        lambda row: row.get("connected") is True,
+        lambda row: row.get("enabled") is not False,
+    ):
+        for row in wireless:
+            if wanted(row):
+                return row
+    return wireless[0] if wireless else None
+
+
+def adapter_rows(wireless: list[dict[str, Any]], used: str | None) -> list[dict[str, Any]]:
+    """Each wireless adapter for the diagnostics download: its name,
+    whether it is switched on and connected, and whether it is the one
+    in use. Never its network's name or its address (rule STOR-21)."""
+    return [
+        {
+            "interface": row.get("interface"),
+            "enabled": row.get("enabled"),
+            "connected": row.get("connected"),
+            "used": used is not None and row.get("interface") == used,
+        }
+        for row in wireless
+    ]
+
+
+async def read_board(hass) -> str | None:
+    """The hardware Home Assistant OS reports, such as "rpi4-64", "green"
+    or "generic-x86-64", or None where it cannot be asked."""
+    handler = hass.data.get(SUPERVISOR)
+    if handler is None:
+        return None
+    try:
+        info = await handler.send_command(OS_INFO, method="get")
+    except Exception as err:  # noqa: BLE001 - absent is not broken
+        LOGGER.debug("device_sentinel: supervisor os read failed: %s", said(err))
+        return None
+    payload = info.get("data") if isinstance(info, dict) else None
+    board = (payload or info or {}).get("board")
+    return board if isinstance(board, str) and board else None
 
 
 async def scan_networks(hass, interface: str) -> list[dict[str, Any]] | None:
@@ -150,13 +212,13 @@ class WifiScanMixin:
         self._wifi_adapter_off = False
         if self.wifi_networks:
             return
-        found = await wireless_interfaces(self.hass)
-        if found:
-            self._wifi_adapter_unused = found[0].get("interface") or "wireless"
+        adapter = pick_adapter(await wireless_interfaces(self.hass))
+        if adapter is not None:
+            self._wifi_adapter_unused = adapter.get("interface") or "wireless"
             # The Supervisor says whether the interface is switched on.
             # Only a plain False reads as off: a field it leaves out
             # says nothing (rule REC-02).
-            self._wifi_adapter_off = found[0].get("enabled") is False
+            self._wifi_adapter_off = adapter.get("enabled") is False
 
     @property
     def wifi_scan_down_at(self) -> float | None:
@@ -186,10 +248,10 @@ class WifiScanMixin:
         if not chosen:
             return
         if self._wifi_scan_interface is None:
-            found = await wireless_interfaces(self.hass)
-            if not found:
+            adapter = pick_adapter(await wireless_interfaces(self.hass))
+            if adapter is None:
                 return
-            self._wifi_scan_interface = found[0].get("interface")
+            self._wifi_scan_interface = adapter.get("interface")
             if self._wifi_scan_interface is None:
                 return
 
@@ -278,6 +340,24 @@ class WifiScanMixin:
         """Every chosen network is heard again."""
 
     # ---------------------------------------------------- diagnostics
+
+    async def async_adapter_diagnostics(self) -> dict[str, Any]:
+        """Why the server can or cannot watch Wi-Fi, read fresh for the
+        download: whether the Supervisor answered, every wireless adapter
+        it listed and which one is in use, and the hardware (rule UP-12)."""
+        rows, why = await read_interfaces_why(self.hass)
+        wireless = [row for row in rows or [] if row.get("type") == "wireless"]
+        if rows is not None and not wireless:
+            why = "no_adapter"
+        used = self._wifi_scan_interface
+        if used is None:
+            picked = pick_adapter(wireless)
+            used = picked.get("interface") if picked is not None else None
+        return {
+            "why": why,
+            "adapters": adapter_rows(wireless, used),
+            "board": await read_board(self.hass),
+        }
 
     @property
     def wifi_scan_diagnostics(self) -> dict[str, Any]:

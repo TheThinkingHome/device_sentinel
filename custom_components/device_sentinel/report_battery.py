@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.27.10 (2026-10-27)
+# File: report_battery.py, Version: 0.30.0 (2026-11-21)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -371,7 +371,7 @@ class BatteryReportMixin:
             row["steps"] = self.battery_steps(record)
             trend = battery_trend(
                 series, row["level"], row["steps"] == BATTERY_STEPS_SMOOTH,
-                self.battery_ceiling,
+                self.battery_ceiling_for(device_id),
             )
             row["weeks"] = trend["weeks"]
             row["reading"] = trend["reading"]
@@ -384,7 +384,7 @@ class BatteryReportMixin:
                 # A cell with too few heard days for the fit keeps its
                 # straight pace, one figure.
                 row["slope"] = -trend["pace"] / BATTERY_WEEK_DAYS
-                target = self.battery_target(row["level"], record)
+                target = self.battery_target(row["level"], record, device_id)
                 row["target"] = target
                 straight = (row["level"] - target) / (trend["pace"] / BATTERY_WEEK_DAYS)
                 projection = battery_projection(series, row["level"], target)
@@ -409,7 +409,7 @@ class BatteryReportMixin:
             "absent": sorted(absent, key=lambda r: r["name"] or ""),
         }
 
-    def battery_trend_summary(self, record: dict[str, Any]) -> dict[str, Any] | None:
+    def battery_trend_summary(self, record: dict[str, Any], device_id: str | None = None) -> dict[str, Any] | None:
         """A cell's weekly averages and trend, for the diagnostics
         download, so a capture shows the rule working without opening
         the dashboard. None for a device with no readable battery."""
@@ -419,7 +419,7 @@ class BatteryReportMixin:
         series = battery_calendar(record)
         trend = battery_trend(
             series, float(level), self.battery_steps(record) == BATTERY_STEPS_SMOOTH,  # type: ignore[attr-defined]
-            self.battery_ceiling,
+            self.battery_ceiling_for(device_id),
         )
         return {
             # A week the device was never heard has no average, and
@@ -429,21 +429,22 @@ class BatteryReportMixin:
             "pace_per_week": round(trend["pace"], 2) if trend["pace"] else None,
         }
 
-    def battery_target(self, level: float, record: dict[str, Any] | None = None) -> float:
-        """Where a cell's time left ends: the low threshold, the level a
-        person acts on and can see arrive; 0 for a cell at or under it,
-        and for one judged low since its last replacement, even if it
-        reads above the threshold again (rule BAT-13)."""
-        threshold = float(self.low_threshold)  # type: ignore[attr-defined]
+    def battery_target(
+        self, level: float, record: dict[str, Any] | None = None, device_id: str | None = None
+    ) -> float:
+        """Where a cell's time left ends: its battery type's low threshold,
+        the level a person acts on and can see arrive; 0 for a cell at or
+        under it, and for one judged low since its last replacement, even
+        if it reads above the threshold again (rules BAT-03, BAT-13)."""
+        threshold = float(self.threshold_for(device_id))  # type: ignore[attr-defined]
         if level <= threshold or (record is not None and battery_latched(record)):
             return 0.0
         return threshold
 
-    @property
-    def battery_ceiling(self) -> float:
+    def battery_ceiling_for(self, device_id: str | None) -> float:
         """The level at or under which a cell is judged falling and given
-        a time left: three times the low threshold (rule BAT-10)."""
-        return BATTERY_REPORT_CEILING_FACTOR * self.low_threshold  # type: ignore[attr-defined]
+        a time left: three times its type's low threshold (rule BAT-10)."""
+        return BATTERY_REPORT_CEILING_FACTOR * self.threshold_for(device_id)  # type: ignore[attr-defined]
 
     def _battery_days(self) -> float:
         """Return how far ahead a falling cell is called out."""
@@ -514,7 +515,7 @@ class BatteryReportMixin:
             and row["days"] <= self._battery_days() and not row["low"]
         ]
 
-    def _format_battery_cell(self, record: dict[str, Any]) -> str:
+    def _format_battery_cell(self, record: dict[str, Any], device_id: str | None = None) -> str:
         """Render the battery as a level and its recent trend.
 
         Ninety daily levels will not fit in a table cell and would not
@@ -539,7 +540,7 @@ class BatteryReportMixin:
         if level > 100 or level < 0:
             return f"{level:g} out of range"
         parts = [level_text(level)]
-        if level <= self.low_threshold:
+        if level <= self.threshold_for(device_id):  # type: ignore[attr-defined]
             parts = [f"**{level_text(level)}**"]
         for days, label in ((7, "wk"), (30, "mo")):
             if len(levels) >= days + 1:

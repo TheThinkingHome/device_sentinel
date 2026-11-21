@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.29.1 (2026-11-14)
+# File: detect_freeze.py, Version: 0.30.0 (2026-11-21)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -42,7 +42,7 @@ from .device_fields import device_field
 from .device_type import SOURCE_OWNER, TYPES_THAT_REPORT_ON_USE, list_name, measures
 from .records import BAD_STATES, restart_lognormal
 from .outage_detail import parse_detail
-from .stacks import available_speaks, node_dead, node_up, reader_for_domain
+from .stacks import available_speaks, node_dead, node_up, reader_for_domain, spares_while_up
 
 from .removed_days import REMOVED, counted_gaps, set_removed
 from .rhythm_rules import lognormal_days, lognormal_rhythm
@@ -265,6 +265,27 @@ class FreezeMixin:
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, True)
+
+    def _link_up(self, device_id: str) -> bool:
+        """Whether the device's link sensor reads up and speaks for it.
+
+        A Lightwave device whose Connectivity sensor reads on, or a light
+        or socket following its radio device's, is never newly judged
+        frozen: its hub can reach it, and a dimmer used once a week says
+        nothing between uses. A sensor switched off, unavailable or not
+        yet known says nothing, and the freeze rule stands (rule STACK-16).
+        """
+        domain = self._watched.get(device_id)
+        if not spares_while_up(domain):
+            return False
+        entity_id = self._node_status_entity.get(device_id)
+        if entity_id is None:
+            return False
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is None or entry.disabled_by is not None:
+            return False
+        state = self.hass.states.get(entity_id)
+        return state is not None and node_up(domain, state.state)
 
     def _awake_matter(self, device_id: str) -> bool:
         """Whether this is a Matter device whose being available speaks for it.
@@ -844,16 +865,25 @@ class FreezeMixin:
                 # disabled still qualifies: those entities exist, and the row is the
                 # prompt to switch them on (rule FRZ-09).
                 return None
-            first = record.get(DEV_FIRST_OBSERVED)
-            if first is not None:
-                try:
-                    observed = dt_util.parse_datetime(first)
-                    age = now - observed.timestamp() if observed else 0.0
-                except (ValueError, AttributeError):
-                    age = 0.0
-                if age >= FREEZE_NOT_REPORTED_SECONDS:
-                    return FREEZE_CATEGORY_NEVER_REPORTED
-            return None
+            # A link sensor speaks for the device either way (rule STACK-16):
+            # on, its hub reaches it, so a Lightwave radio device whose only
+            # reading is its link, or a socket nobody has switched since it
+            # was added, has not gone unheard; off, it is unavailable, read
+            # below with any node its stack calls dead.
+            if self._link_up(device_id):
+                return None
+            linked_down = spares_while_up(self._watched.get(device_id)) and self._dead_node(device_id)
+            if not linked_down:
+                first = record.get(DEV_FIRST_OBSERVED)
+                if first is not None:
+                    try:
+                        observed = dt_util.parse_datetime(first)
+                        age = now - observed.timestamp() if observed else 0.0
+                    except (ValueError, AttributeError):
+                        age = 0.0
+                    if age >= FREEZE_NOT_REPORTED_SECONDS:
+                        return FREEZE_CATEGORY_NEVER_REPORTED
+                return None
 
         window = self._freeze_window(record)
 
@@ -919,7 +949,11 @@ class FreezeMixin:
             if (
                 frozen
                 and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
-                and (self._awake_esphome(device_id) or self._matter_available_now(device_id))
+                and (
+                    self._awake_esphome(device_id)
+                    or self._matter_available_now(device_id)
+                    or self._link_up(device_id)
+                )
             ):
                 frozen = False
             if known:
@@ -963,13 +997,18 @@ class FreezeMixin:
         # live. Unless the device's own connection says otherwise: an awake
         # ESPHome device whose connection is up has nothing new to say, which is
         # not a freeze, and an available Matter device of a type that reports
-        # only on use is the same (rules FRZ-07, STACK-06, STACK-07). A verdict
+        # only on use is the same, as is a Lightwave device its hub can reach
+        # (rules FRZ-07, STACK-06, STACK-07, STACK-16). A verdict
         # already standing is kept until the device reports, so a device is not
         # told as recovered because a rule changed (rule UNAV-02).
         if (
             frozen
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
-            and (self._awake_esphome(device_id) or self._awake_matter(device_id))
+            and (
+                self._awake_esphome(device_id)
+                or self._awake_matter(device_id)
+                or self._link_up(device_id)
+            )
         ):
             return None
         if frozen:

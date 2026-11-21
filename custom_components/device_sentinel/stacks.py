@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.28.5 (2026-11-08)
+# File: stacks.py, Version: 0.30.0 (2026-11-21)
 
 """The one place a coordinator stack is registered.
 
@@ -28,10 +28,14 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
-from . import stack_matter, stack_z2m, stack_zha, stack_zwave
+from . import lightwave, stack_matter, stack_z2m, stack_zha, stack_zwave
 
 # The one line of registration (rule STACK-01).
 STACK_MODULES = (stack_zha, stack_zwave, stack_matter, stack_z2m)
+
+# Integrations that are not stacks but give each device a link sensor
+# read as a node status is (rule STACK-16).
+STATUS_MODULES = (lightwave,)
 
 
 def detect(domain: str, device: dr.DeviceEntry) -> str | None:
@@ -183,12 +187,14 @@ def is_node_status(domain: str | None, ent: Any) -> bool:
     """Whether this entity is the stack's own status for its node (rule STACK-05).
 
     A stack that keeps a per-node status sensor, as Z-Wave JS does,
-    answers through its module's `is_node_status`; every other stack
-    has none, and nothing is read for it.
+    answers through its module's `is_node_status`, and so does an
+    integration with a link sensor for each device, as Lightwave has
+    (rule STACK-16); every other stack has none, and nothing is read
+    for it.
     """
     if not domain:
         return False
-    for module in STACK_MODULES:
+    for module in STACK_MODULES + STATUS_MODULES:
         if not module.owns_domain(domain):
             continue
         check = getattr(module, "is_node_status", None)
@@ -268,7 +274,7 @@ def node_dead(domain: str | None, state: str | None) -> bool:
     """Whether a node status reading says the node is dead (rule STACK-05)."""
     if not domain or state is None:
         return False
-    for module in STACK_MODULES:
+    for module in STACK_MODULES + STATUS_MODULES:
         if not module.owns_domain(domain):
             continue
         check = getattr(module, "node_dead", None)
@@ -280,7 +286,7 @@ def node_heard(domain: str | None, state: str | None) -> bool:
     """Whether a node status reading says the stack has heard the node (rule STACK-05)."""
     if not domain or state is None:
         return False
-    for module in STACK_MODULES:
+    for module in STACK_MODULES + STATUS_MODULES:
         if not module.owns_domain(domain):
             continue
         check = getattr(module, "node_heard", None)
@@ -292,9 +298,35 @@ def node_up(domain: str | None, state: str | None) -> bool:
     """Whether a node status reading says the node is not dead (rule STACK-05)."""
     if not domain or state is None:
         return False
-    for module in STACK_MODULES:
+    for module in STACK_MODULES + STATUS_MODULES:
         if not module.owns_domain(domain):
             continue
         check = getattr(module, "node_up", None)
         return bool(check(state)) if check is not None else False
     return False
+
+
+def _status_module(domain: str | None) -> object | None:
+    for module in STACK_MODULES + STATUS_MODULES:
+        if domain and module.owns_domain(domain):
+            return module
+    return None
+
+
+def status_followed(domain: str | None) -> bool:
+    """Whether a device registered via one with a link sensor follows it,
+    as a Lightwave light follows its radio device (rule STACK-16)."""
+    return bool(getattr(_status_module(domain), "FOLLOWERS", False))
+
+
+def spares_while_up(domain: str | None) -> bool:
+    """Whether a link sensor reading up means the device is never newly
+    called frozen (rule STACK-16)."""
+    return bool(getattr(_status_module(domain), "SPARES_WHILE_UP", False))
+
+
+def shows_status_row(domain: str | None) -> bool:
+    """Whether the device page shows the node status as the Z-Wave
+    status row, and the Recommendations tab asks for it switched on
+    (rules STACK-05, STACK-16)."""
+    return bool(getattr(_status_module(domain), "SHOWS_STATUS_ROW", True))

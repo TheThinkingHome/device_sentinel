@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.29.8 (2026-11-19)
+# File: radio_channels.py, Version: 0.30.0 (2026-11-21)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 
@@ -43,7 +43,7 @@ from .const import (
 )
 from .network_extras import network_ack_ticked
 from .study_stacks import _matter_attributes, _plain, _read, live_entries, node_devices
-from .wifi import SUPERVISOR, read_interfaces, scan_networks
+from .wifi import SUPERVISOR, pick_adapter, read_interfaces, scan_networks
 
 # Where no Wi-Fi network is chosen, the scan made for the channels alone.
 AIR_SCAN_SECONDS = 3600.0
@@ -51,6 +51,12 @@ AIR_RETRY_SECONDS = 300.0
 # A network heard at this signal or more, covering a Zigbee or Thread
 # channel, is an overlap judged bad (rule SIG-20).
 STRONG_PERCENT = 50
+# The Wi-Fi channel card, once shown for a crowd, stays while a
+# neighbour is heard at this or more, and until a day has passed under
+# it, so a neighbour wavering about 50% neither drops a ticked card nor
+# brings it back (rule REC-13).
+HOLD_PERCENT = 40
+HOLD_SECONDS = 86400.0
 # Half a 20 MHz Wi-Fi channel's width plus half a Zigbee channel's: a
 # Wi-Fi channel covers a Zigbee channel whose centre lies within it.
 COVER_MHZ = 11
@@ -142,7 +148,14 @@ class RadioChannelsMixin:
     _air_next: float = 0.0
     _air_interface: str | None = None
     _air_joined: str | None = None
+    # Whether the adapter in use is connected to a network: the empty
+    # Networks tab says how to connect one that is not (rule DASH-17).
+    _air_connected: bool | None = None
     _air_why: str = "not_yet"
+    # Each Wi-Fi card held for a crowd, by its advice: when its neighbours
+    # were last heard at HOLD_PERCENT or more, and the loudest then
+    # (rule REC-13).
+    _wifi_held: dict[str, tuple[float, dict[str, Any]]] | None = None
 
     # ------------------------------------------------------------- scan
 
@@ -199,12 +212,16 @@ class RadioChannelsMixin:
         if not wireless:
             self._air_why = "no_adapter"
             return
-        first = wireless[0]
+        # The adapter connected to a network, then one switched on, as the
+        # Wi-Fi sweep picks it (rule UP-12).
+        first = pick_adapter(wireless) or wireless[0]
         if first.get("enabled") is False:
             # Turned off in Settings: nothing to hear until it is on.
             self._air_why = "adapter_off"
+            self._air_connected = False
             return
         self._air_interface = first.get("interface") if isinstance(first.get("interface"), str) else None
+        self._air_connected = first.get("connected") is True
         wifi = first.get("wifi")
         joined = wifi.get("ssid") if isinstance(wifi, dict) and first.get("connected") else None
         self._air_joined = joined if isinstance(joined, str) and joined else None
@@ -529,6 +546,7 @@ class RadioChannelsMixin:
         return {
             "scanned_at": dt_util.utc_from_timestamp(self._air_at).isoformat() if self._air_at else None,
             "scan": self._air_why if self._air is None else "ok",
+            "connected": self._air_connected,
             "wifi": heard,
             "zigbee": zigbee,
             "thread": thread,
@@ -566,11 +584,58 @@ class RadioChannelsMixin:
         would share the air with: any whose 22 MHz overlaps it."""
         return [r for r in rows if not r["own"] and r["band"] == "2.4 GHz" and abs(r["mhz"] - mhz) < 22]
 
+    def _crowd(
+        self,
+        rows: list[dict[str, Any]],
+        mhz: int,
+        best: int | None,
+        now: float,
+        kept: dict[str, bool],
+    ) -> list[dict[str, Any]]:
+        """The neighbours that make the Wi-Fi card's crowd (rules SIG-20, REC-13).
+
+        At 50% or more a card is made. A card made, or one ticked, keeps
+        its crowd down to 40%, and below that for a day: the advice is
+        the card's, so a router moving itself from channel 4 to 3 keeps
+        the same card while the neighbours stay. Held in memory; after a
+        restart a ticked card is held from its tick, and an unticked one
+        waits for 50% again.
+        """
+        held = self._wifi_held if self._wifi_held is not None else {}
+        self._wifi_held = held
+        busy = self._busy(rows, mhz)
+        strong = [r for r in busy if (r["signal"] or 0) >= STRONG_PERCENT]
+        if best is None:
+            return strong
+        advice = f"to:{best}:crowded"
+        near = [r for r in busy if (r["signal"] or 0) >= HOLD_PERCENT]
+        if strong:
+            held[advice] = (now, max(strong, key=lambda r: r["signal"] or 0))
+            return strong
+        if advice not in held:
+            ticked = network_ack_ticked(
+                kept, WIFI_KEY, {"kind": "channel", "channel": best, "reason": "wifi:0:crowded"}
+            )
+            if not (ticked and near):
+                return []
+        if near:
+            held[advice] = (now, max(near, key=lambda r: r["signal"] or 0))
+            return near
+        since, loudest = held[advice]
+        if now - since < HOLD_SECONDS:
+            # A day under the line before the card goes, told with the
+            # neighbour as last heard over it.
+            return [loudest]
+        held.pop(advice, None)
+        return []
+
     def _wifi_channel_cards(self) -> list[dict[str, Any]]:
         rows = self._air_rows()
         mine = [r for r in rows if r["own"] and r["band"] == "2.4 GHz"]
         if not mine:
             return []
+        now = dt_util.utcnow().timestamp()
+        kept: dict[str, bool] = self._acks().get("lines") or {}  # type: ignore[attr-defined]
         ours = [n["channel"] for n in self.zigbee_networks()] + [t["channel"] for t in self._thread_channels()]
 
         def score(mhz: int) -> int:
@@ -586,14 +651,16 @@ class RadioChannelsMixin:
                 break
             mhz = wifi_mhz(channel)
             covered = [c for c in ours if covers(mhz, c)]
-            strong = [r for r in self._busy(rows, mhz) if (r["signal"] or 0) >= STRONG_PERCENT]
-            if not covered and not strong:
-                continue
             choices = [c for c in WIFI_CHOICES if not any(covers(wifi_mhz(c), z) for z in ours)]
             best = min(choices, key=lambda c: (score(wifi_mhz(c)), c), default=None)
+            strong = self._crowd(rows, mhz, best, now, kept)
+            if not covered and not strong:
+                continue
             # Moving off a Zigbee or Thread channel is the gain on its
             # own; otherwise the new channel must be quieter.
-            if best is None or best == channel or (not covered and score(wifi_mhz(best)) >= score(mhz)):
+            # A held card is weighed by its crowd as last heard over the line.
+            crowd = max([score(mhz), *(r["signal"] or 0 for r in strong)])
+            if best is None or best == channel or (not covered and score(wifi_mhz(best)) >= crowd):
                 continue
             why = []
             if covered:

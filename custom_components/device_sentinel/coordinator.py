@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.29.6 (2026-11-17)
+# File: coordinator.py, Version: 0.30.0 (2026-11-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -295,7 +295,9 @@ from .const import (
     SYS_OPTIONS_CHANGED,
     SYS_CLOCK_RESET,
     SYS_RELOAD,
+    SETTINGS_BATTERY_BY_TYPE,
     SYS_RESTART,
+    SYS_SETTINGS_CHANGED,
     SYS_TRIMMED,
     SYS_UNCLEAN_RESTART,
     SYS_CLOCKS_LOST,
@@ -364,7 +366,14 @@ from .records import (
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
-from .stacks import is_node_status, node_dead, node_heard, node_up
+from .stacks import (
+    is_node_status,
+    node_dead,
+    node_heard,
+    node_up,
+    shows_status_row,
+    status_followed,
+)
 from .stacks import controller_status as stack_controller_status
 from .stacks import is_controller_status
 from .status_readings import (
@@ -647,6 +656,10 @@ class DeviceSentinelCoordinator(
         # connectivity sensors (rules STACK-05, WATCH-04).
         self._node_status_entity: dict[str, str] = {}
         self._node_status_ids: set[str] = set()
+        # A link sensor -> the devices registered via its device that
+        # follow it, as a Lightwave light follows its radio device
+        # (rule STACK-16).
+        self._status_followers: dict[str, list[str]] = {}
         # Readings recorded and shown, never judged: a Z-Wave
         # controller's own Status (rule STACK-15) and a Tasmota device's
         # restart sensors (rule DEV-17). Entity id -> (device id, which).
@@ -2025,6 +2038,13 @@ class DeviceSentinelCoordinator(
         # exclusion list keeps the default it had: read here, before
         # the stamp moves on (rule MUTE-02).
         came_from = loaded.get(DATA_LAST_VERSION)
+        # A house upgraded from a release with one battery threshold has its batteries judged by
+        # type now: told once in the next Daily Brief (rule BRIEF-17).
+        self._battery_types_notice = (
+            isinstance(came_from, str)
+            and _store_version_tuple(came_from) < (0, 30, 0)
+            and bool(loaded.get(DATA_DEVICES))
+        )
         self._pin_before_0277 = (
             isinstance(came_from, str)
             and _store_version_tuple(came_from) < (0, 27, 7)
@@ -2261,6 +2281,9 @@ class DeviceSentinelCoordinator(
             duration=self._downtime if self._downtime > 0.0 else None,
             when=self._started_at,
         )
+        if getattr(self, "_battery_types_notice", False):
+            self._battery_types_notice = False
+            self._record_system_event(SYS_SETTINGS_CHANGED, detail=SETTINGS_BATTERY_BY_TYPE)
         if self._pending_unclean is not None:
             # Every clock restarting at one moment needs its reason
             # beside it, or the reset reads as an unexplained jump
@@ -3089,6 +3112,26 @@ class DeviceSentinelCoordinator(
             for platform in counts
         } - owning_domains
         self._last_seen_entity = last_seen_entity
+        # A light or socket registered via a device with a link sensor
+        # follows that sensor, as a Lightwave light follows its radio
+        # device (rule STACK-16). Its own entities stay its reports.
+        followers: dict[str, list[str]] = {}
+        for device in all_devices:
+            follower = getattr(device, "id", None)
+            if not isinstance(follower, str) or follower in node_status_entity:
+                continue
+            domain = watched.get(follower)
+            if not status_followed(domain):
+                continue
+            via = device_field(device, "via_device_id")
+            if not isinstance(via, str) or via == follower or watched.get(via) != domain:
+                continue
+            link = node_status_entity.get(via)
+            if link is None:
+                continue
+            node_status_entity[follower] = link
+            followers.setdefault(link, []).append(follower)
+        self._status_followers = followers
         self._node_status_entity = node_status_entity
         self._status_reading_entities = status_reading_entities
         # What each reads now, recorded where it differs from the last
@@ -4075,6 +4118,41 @@ class DeviceSentinelCoordinator(
         if changed:
             self._mark_cold_dirty()
 
+    def _on_node_status(
+        self,
+        device_id: str,
+        entry_id: str | None,
+        entity_id: str,
+        old_state: Any,
+        new_state: Any,
+    ) -> None:
+        """Settle a device's outage from its node status (rules STACK-05, STACK-16)."""
+        domain = self._watched.get(device_id)
+        record = self.data[DATA_DEVICES].get(device_id)
+        saved = self._saved_down_since(record) if isinstance(record, dict) else None
+        # Back from dead even through a reload or a restart, where
+        # the sensor passes through unavailable on the way (rule
+        # STACK-05).
+        was_dead = (
+            (old_state is not None and node_dead(domain, old_state.state))
+            or device_id in self._dead_nodes
+            or (saved is not None and saved[1] == NODE_DEAD_STATE)
+        )
+        back = was_dead and node_heard(domain, new_state.state)
+        if back:
+            self._dead_nodes.discard(device_id)
+        recorded = self._settle_down(device_id, entity_id)
+        if back and not recorded:
+            # Z-Wave JS calls a dead node alive only once it has
+            # heard it, so that change is the device speaking, the
+            # one status change that is: a node can come back on
+            # "alive" alone, with no value changing, and a device
+            # whose only enabled entity is the status sensor has
+            # nothing else to come back through (rule STACK-05).
+            # Lightwave's link turning on is its hub hearing the
+            # device again (rule STACK-16).
+            self._record_activity(device_id, entry_id, entity_id, new_state.state)
+
     @callback
     def _on_state_changed(self, event: Event) -> None:
         """Handle a state change for a watched device's entity."""
@@ -4112,30 +4190,14 @@ class DeviceSentinelCoordinator(
             # reach the node, and "alive" can come from the stack before
             # any value does. A Hue bridge's connectivity sensor takes
             # this branch too and only settles the outage (rule WATCH-04).
+            # A link sensor speaks for the devices that follow it too
+            # (rule STACK-16).
             old_state = event.data.get("old_state")
-            domain = self._watched.get(device_id)
-            record = self.data[DATA_DEVICES].get(device_id)
-            saved = self._saved_down_since(record) if isinstance(record, dict) else None
-            # Back from dead even through a reload or a restart, where
-            # the sensor passes through unavailable on the way (rule
-            # STACK-05).
-            was_dead = (
-                (old_state is not None and node_dead(domain, old_state.state))
-                or device_id in self._dead_nodes
-                or (saved is not None and saved[1] == NODE_DEAD_STATE)
-            )
-            back = was_dead and node_heard(domain, new_state.state)
-            if back:
-                self._dead_nodes.discard(device_id)
-            recorded = self._settle_down(device_id, entity_id)
-            if back and not recorded:
-                # Z-Wave JS calls a dead node alive only once it has
-                # heard it, so that change is the device speaking, the
-                # one status change that is: a node can come back on
-                # "alive" alone, with no value changing, and a device
-                # whose only enabled entity is the status sensor has
-                # nothing else to come back through (rule STACK-05).
-                self._record_activity(device_id, entry_id, entity_id, new_state.state)
+            self._on_node_status(device_id, entry_id, entity_id, old_state, new_state)
+            for follower in self._status_followers.get(entity_id, ()):
+                self._on_node_status(
+                    follower, self._entry_of_device.get(follower), entity_id, old_state, new_state
+                )
             return
         if entity_id in self._renamed_entities:
             self._renamed_entities.discard(entity_id)
@@ -6731,9 +6793,9 @@ class DeviceSentinelCoordinator(
                 SYS_OPTIONS_CHANGED, detail=", ".join(moved)
             )
         LOGGER.debug(
-            "Options updated: low threshold now %s, %d devices "
+            "Options updated: low thresholds now %s, %d devices "
             "muted; re-evaluating",
-            self.low_threshold,
+            self.low_thresholds,
             len(self._muted_devices),
         )
         self._schedule_brief()
@@ -6850,8 +6912,13 @@ class DeviceSentinelCoordinator(
         return {"regenerated": 2}
 
     def _is_node_status_entry(self, ent: er.RegistryEntry) -> bool:
-        """Whether this is a watched device's node status sensor (rule STACK-05)."""
-        return is_node_status(self._watched.get(ent.device_id or ""), ent)
+        """Whether this is a watched device's Z-Wave status sensor (rule STACK-05).
+
+        A link sensor read the same way, as Lightwave's is, is not asked
+        for on the Recommendations tab (rule STACK-16).
+        """
+        domain = self._watched.get(ent.device_id or "")
+        return shows_status_row(domain) and is_node_status(domain, ent)
 
     # ----------------------------------------------- maintenance mode
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.29.0 (2026-11-14)
+# File: report_maintainer.py, Version: 0.30.0 (2026-11-21)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -106,6 +106,11 @@ class MaintainerReportMixin:
     # Set in the coordinator; whether stack_probe.md has refused a
     # write this start.
     _probe_write_failed: bool
+
+    def _floors_text(self) -> str:
+        """Each battery type's low line, for the telemetry header (rule BAT-03)."""
+        floors = self.low_thresholds  # type: ignore[attr-defined]
+        return " / ".join(f"{group} {floors[group]:g}%" for group in floors)
 
     @staticmethod
     def _episode_duration(seconds: float | None) -> str:
@@ -723,7 +728,7 @@ class MaintainerReportMixin:
             f"DAYS READ / SET ASIDE | TYPICAL / SPREAD | "
             f"CLOCK | EVENTS | SIGNAL | "
             f"ITS NORMAL | BAD-DAY LINE | "
-            f"BAT LEVEL (floor {self.low_threshold:g}%) |",
+            f"BAT LEVEL (floors {self._floors_text()}) |",
             # One cell per column, matching the header and every data
             # row. A separator one cell too long makes every renderer
             # print the table as plain text; a test counts the pipes.
@@ -756,7 +761,7 @@ class MaintainerReportMixin:
                     # whatever record the first loop left behind and
                     # prints one device's figure on every row.
                     *self._signal_today_cells(record),
-                    self._format_battery_cell(record),
+                    self._format_battery_cell(record, device_id),
                     self.signal_railed(record),
                     self._signal_muted(device_id),
                 )

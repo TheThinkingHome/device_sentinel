@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.27.10 (2026-10-27)
+# File: sensor.py, Version: 0.30.0 (2026-11-21)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -482,7 +482,7 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk
     # there.
-    _unrecorded_attributes = frozenset({"clear_margin", "devices", "low_threshold"})
+    _unrecorded_attributes = frozenset({"clear_margin", "devices", "low_thresholds"})
     _attr_icon = "mdi:battery-alert"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -503,7 +503,8 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
         return {
             **self._identity(),
             "devices": self._coordinator.battery_low_list,
-            "low_threshold": self._coordinator.low_threshold,
+            # Each battery type's low line (rule BAT-03).
+            "low_thresholds": self._coordinator.low_thresholds,
             "clear_margin": BATTERY_CLEAR_MARGIN,
         }
 
