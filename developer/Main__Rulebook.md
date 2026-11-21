@@ -27,7 +27,7 @@
 | UNAV | Unavailable | 8 | [`Rulebook__06_UNAV_Unavailable.md`](Rulebook__06_UNAV_Unavailable.md) |
 | UP | Upstream Outages | 19 | [`Rulebook__07_UP_Upstream_Outages.md`](Rulebook__07_UP_Upstream_Outages.md) |
 | STACK | Stacks | 16 | [`Rulebook__08_STACK_Stacks.md`](Rulebook__08_STACK_Stacks.md) |
-| BAT | Battery | 19 | [`Rulebook__09_BAT_Battery.md`](Rulebook__09_BAT_Battery.md) |
+| BAT | Battery | 20 | [`Rulebook__09_BAT_Battery.md`](Rulebook__09_BAT_Battery.md) |
 | SIG | Signal | 20 | [`Rulebook__10_SIG_Signal.md`](Rulebook__10_SIG_Signal.md) |
 | LIST | Problem List | 14 | [`Rulebook__11_LIST_Problem_List.md`](Rulebook__11_LIST_Problem_List.md) |
 | NOTE | Notifications | 13 | [`Rulebook__12_NOTE_Notifications.md`](Rulebook__12_NOTE_Notifications.md) |

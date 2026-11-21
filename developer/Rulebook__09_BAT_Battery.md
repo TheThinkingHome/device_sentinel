@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -213,3 +213,15 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 - **It ends:** the box and the headline go once one battery has its four weeks, and with no battery reporting a level there is no box.
 
 *Proof:* [`test_learning_screens.py`](../tests/test_learning_screens.py), [`tools/panel_checks/check_learning_screens.js`](../tools/panel_checks/check_learning_screens.js).
+
+### BAT-20 Keep the Curve
+
+**Since 0.30.1, each battery's weeks are kept for good, and a battery that ends leaves its curve.** Nothing reads them yet; they are the data a later forecast is built from.
+- **A week's row:** the week's Monday, the day the battery went in, the middle level of its days, its lowest and highest (from the day ranges where kept), its lowest and highest voltage where the device reports one, the messages the device sent that week where its running count never fell, and its mean temperature where it reports one.
+- **Kept for good:** in the history file, under a key of its own, never trimmed by How Much History to Keep; up to 520 weeks a device. The weeks still held day by day are worked out again at each midnight; an older week stays as written. A house that upgrades gets the weeks of the days it holds at its first start. A replacement taken back, or moved to another day, takes its weeks with it, and each week is kept once. A device gone from the house takes its weeks with it.
+- **The curve:** when a battery's life row is written ([BAT-08](#bat-08-each-batterys-life-is-kept)), its weeks, the daily level, range and voltage of its last 42 days, its threshold then, the first day it read at or under it and at 0, the voltage on that day and on the last day heard, and how it ended: ran out (the device silent two days or more before the replacement) or replaced (still reporting, so stopped early).
+- **Kept when good:** its kept readings reach back to three times its threshold, where a time left begins ([BAT-10](#bat-10-when-a-battery-is-judged)), and from the last week at or over that line to the end it has readings in at least four weeks out of five. It is **full** when Device Sentinel also saw the battery go in (a replacement on record) and its whole life is covered the same way. A device keeps its newest kept curve, except that a full curve is not given up for one that is not full; a curve made again for the same replacement always replaces it. The house keeps up to 2,000. Cancel takes the curve its replacement made back.
+- **In the download:** each battery's weeks and each kept curve, by device id, maker and model, never a name, and for each make and model: the number of curves and of full ones, the middle weeks lasted (full curves only), the middle weeks from three times the threshold to the threshold and to the end, and the middle level of each week counted back from the end, with how many curves reach it.
+- **An older release** reads the history file without them and drops them at its next save.
+
+*Proof:* [`test_battery_curves.py`](../tests/test_battery_curves.py).
