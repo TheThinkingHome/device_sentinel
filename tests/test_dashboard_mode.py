@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_mode.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_mode.py, Version: 0.30.0 (2026-11-21)
 
 """Which dashboard a window opens in (rule DASH-03).
 
@@ -41,7 +41,7 @@ async def test_an_upgrade_opens_in_advanced(hass: HomeAssistant, hass_ws_client)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == OPTIONS_MINOR_VERSION == 7
+    assert entry.minor_version == OPTIONS_MINOR_VERSION == 8
     assert entry.options[CONF_DASHBOARD_MODE] == "advanced"
     assert (await _status(hass, hass_ws_client))["dashboard"] == "advanced"
 

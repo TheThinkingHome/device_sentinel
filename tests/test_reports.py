@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.29.8 (2026-11-19)
+# File: test_reports.py, Version: 0.30.0 (2026-11-21)
 
 """The diagnostic files: telemetry, classification and silence episodes
 (rules BRIEF-14, BRIEF-15, BRIEF-16, FRZ-08).
@@ -51,7 +51,6 @@ from custom_components.device_sentinel.const import (
     CONF_SIGNAL_MUTED_DEVICES,
     DATA_EPISODES,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
-    DEFAULT_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -380,7 +379,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     # The trim word left with the ladder (rule SIG-13).
     assert "SIGNAL |" in header
     assert "GAPS (K=" in header
-    assert f"BAT LEVEL (floor {DEFAULT_LOW_THRESHOLD}%)" in header
+    assert "BAT LEVEL (floors alkaline 10% / lithium 20% / rechargeable 20%)" in header
     # The retired columns are gone.
     # The retired LINE column, by its own name: BAD-DAY LINE is the
     # dashboard's line, not that one.

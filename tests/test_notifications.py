@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.28.10 (2026-11-10)
+# File: test_notifications.py, Version: 0.30.0 (2026-11-21)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -278,10 +278,10 @@ async def test_thresholds_still_work_through_menu(hass: HomeAssistant):
     assert result["step_id"] == "battery"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {"low_threshold": 30, "battery_muting": {}},
+        {"low_threshold_alkaline": 30, "battery_muting": {}},
     )
     assert result["type"] is FlowResultType.MENU
-    assert entry.runtime_data.low_threshold == 30.0
+    assert entry.runtime_data.low_thresholds["alkaline"] == 30.0
 
 
 # ==================================================================

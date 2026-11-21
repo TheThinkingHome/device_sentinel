@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.27.10 (2026-10-27)
+# File: test_repairs.py, Version: 0.30.0 (2026-11-21)
 
 """What reaches the Repairs panel, and what is kept out of it
 (rules REP-01 to REP-07).
@@ -499,3 +499,18 @@ def test_the_two_string_files_agree():
     assert json.loads((root / "strings.json").read_text()) == json.loads(
         (root / "translations/en.json").read_text()
     )
+
+
+def test_a_target_stored_as_text_is_one_target() -> None:
+    """A hand-edited file can hold one target as text: it is one target,
+    never one per letter (rule REP-02)."""
+    from types import SimpleNamespace
+
+    entry = SimpleNamespace(options={
+        "high_priority_targets": "notify.mobile_app_phone",
+        "normal_priority_targets": ["notify.mobile_app_phone", "notify.mobile_app_tablet"],
+        "brief_document_targets": None,
+    })
+    assert repairs_module._configured_targets(entry) == [
+        "notify.mobile_app_phone", "notify.mobile_app_tablet",
+    ]

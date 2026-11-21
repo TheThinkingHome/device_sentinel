@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.29.3 (2026-11-15)
+# File: tests/test_battery_projection.py, Version: 0.30.0 (2026-11-21)
 
 """When a falling cell runs empty, as a range (rule BAT-13).
 
@@ -34,7 +34,7 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_VALUE,
 )
 
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import register_device, setup_coordinator, thresholds
 
 # A real door sensor's last 63 kept days: flat near 25 for weeks, then
 # bending down. The straight pace read about 91 days left.
@@ -113,7 +113,7 @@ async def test_the_near_end_decides_the_falling_forecast(hass: HomeAssistant):
     on, with the range in words. At 16.5 percent its time left runs to
     the 15 percent threshold, not to empty (rule BAT-13)."""
     device, (entity_id,) = register_device(hass, "door", name="Door 2nd Bedroom")
-    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    coord = await setup_coordinator(hass, {**thresholds(15), CONF_BATTERY_DAYS: 30})
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_BATTERY_DAILY] = list(DOOR)
     record[DEV_BATTERY_VALUE] = 16.5
@@ -174,7 +174,7 @@ async def test_a_forecast_alone_is_not_counted_among_listed_faults(hass: HomeAss
     forecast has no line there. The Problem List's own set keeps it
     (rule BAT-14)."""
     device, _ = register_device(hass, "door", name="Door 2nd Bedroom")
-    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    coord = await setup_coordinator(hass, {**thresholds(15), CONF_BATTERY_DAYS: 30})
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_BATTERY_DAILY] = list(DOOR)
     record[DEV_BATTERY_VALUE] = 16.5

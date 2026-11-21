@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_battery.py, Version: 0.30.0 (2026-11-21)
 
 """Battery detection: the low verdict and the daily recorder
 (rules BAT-01, BAT-02, BAT-03, BAT-06).
@@ -25,10 +25,11 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DATA_SYSTEM_EVENTS,
-    DEFAULT_LOW_THRESHOLD,
+    DEFAULT_LOW_THRESHOLD_ALKALINE,
+    DEFAULT_LOW_THRESHOLD_LITHIUM,
+    DEFAULT_LOW_THRESHOLD_RECHARGEABLE,
     DEFAULT_RETENTION_DAYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -41,7 +42,7 @@ from custom_components.device_sentinel.const import (
 )
 from custom_components.device_sentinel.detect_battery import BatteryMixin
 from custom_components.device_sentinel.detect_signal import SignalMixin
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import setup_coordinator, setup_entry, thresholds
 
 from .helpers import register_device
 
@@ -126,7 +127,7 @@ async def test_threshold_and_hysteresis(hass: HomeAssistant):
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 3)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 20})
+    coord = await setup_coordinator(hass, {**thresholds(20)})
     # Threshold mechanics, not restart behavior: the startup
     # window the harness opens is shut so flags apply at once (rule BAT-03).
     coord._grace_until = 0.0
@@ -195,13 +196,13 @@ async def test_options_change_applies_live(hass: HomeAssistant):
     assert coord.battery_low_count == 0
 
     hass.config_entries.async_update_entry(
-        entry, options={CONF_LOW_THRESHOLD: 35}
+        entry, options={**thresholds(35)}
     )
     await hass.async_block_till_done()
     assert coord.battery_low_count == 1
 
     hass.config_entries.async_update_entry(
-        entry, options={CONF_LOW_THRESHOLD: 20}
+        entry, options={**thresholds(20)}
     )
     await hass.async_block_till_done()
     assert coord.battery_low_count == 0
@@ -249,7 +250,11 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert row["level"] == 10.0
     assert row["since"] is not None
     assert row["area"] == "Unassigned"
-    assert state.attributes["low_threshold"] == DEFAULT_LOW_THRESHOLD
+    assert state.attributes["low_thresholds"] == {
+        "alkaline": DEFAULT_LOW_THRESHOLD_ALKALINE,
+        "lithium": DEFAULT_LOW_THRESHOLD_LITHIUM,
+        "rechargeable": DEFAULT_LOW_THRESHOLD_RECHARGEABLE,
+    }
     assert state.attributes["clear_margin"] == 3
 
 
@@ -292,10 +297,10 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     # Battery screen (rule CFG-02).
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={**coord.entry.options, CONF_LOW_THRESHOLD: 35},
+        options={**coord.entry.options, **thresholds(35)},
     )
     await hass.async_block_till_done()
-    assert coord.low_threshold == 35.0
+    assert coord.threshold_for(device.id) == 35.0
     assert coord.battery_low_count == 1
 
 

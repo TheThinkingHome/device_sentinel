@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.29.8 (2026-11-19)
+# File: helpers.py, Version: 0.30.0 (2026-11-21)
 
 """Shared test helpers, one version of each.
 
@@ -409,3 +409,11 @@ def share_names_off(hass: HomeAssistant, entry) -> None:
     """Turn Share Names in Diagnostics off, so the download shows each
     device, entity, area and label by its stand-in (rule STOR-21)."""
     hass.config_entries.async_update_entry(entry, options={**entry.options, "share_names": False})
+
+
+def thresholds(level: float) -> dict:
+    """Every battery type's low line set to one level, for a test that
+    judges one cell against a line it chose (rule BAT-03)."""
+    from custom_components.device_sentinel.const import LOW_THRESHOLD_KEYS
+
+    return {key: level for key, _default in LOW_THRESHOLD_KEYS.values()}

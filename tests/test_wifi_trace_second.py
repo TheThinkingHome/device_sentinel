@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_trace_second.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_wifi_trace_second.py, Version: 0.30.0 (2026-11-21)
 
 """A staged outage recorded on a real house, replayed through the whole
 tick (rule UP-15).
@@ -159,7 +159,7 @@ async def _replay(hass, freezer):
                 ),
                 "wifi": [
                     item["summary"] for item in items
-                    if "WiFi" in (item.get("summary") or "")
+                    if "Wi-Fi" in (item.get("summary") or "")
                 ],
             })
     return minutes
@@ -187,5 +187,5 @@ async def test_the_row_follows_the_outage_to_its_end(
     minutes = await _replay(hass, freezer)
     rows = [row for m in minutes for row in m["wifi"]]
     assert any(" total devices down" in row for row in rows)
-    assert any(row.startswith("WiFi network is back: waiting for") for row in rows)
+    assert any(row.startswith("Wi-Fi network is back: waiting for") for row in rows)
     assert minutes[-1]["wifi"] == []

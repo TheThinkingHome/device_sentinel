@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_trend.py, Version: 0.30.0 (2026-11-21)
 
 """The battery trend by the week, and accelerating on a curve
 (rules BAT-10, BAT-11, BAT-12).
@@ -234,7 +234,6 @@ from homeassistant.core import HomeAssistant  # noqa: E402
 
 from custom_components.device_sentinel.const import (  # noqa: E402
     CONF_BATTERY_DAYS,
-    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
@@ -242,7 +241,7 @@ from custom_components.device_sentinel.diagnostics import (  # noqa: E402
     async_get_config_entry_diagnostics,
 )
 
-from .helpers import registry_settled, register_device, setup_coordinator  # noqa: E402
+from .helpers import registry_settled, register_device, setup_coordinator, thresholds  # noqa: E402
 
 # S63's shape carried down to 21.5 percent, so it reaches the low
 # threshold inside a month, which belongs on the Problem List (rule BAT-14).
@@ -257,7 +256,7 @@ def _seed(coord, device_id, series):
 
 
 async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
-    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    coord = await setup_coordinator(hass, {**thresholds(15), CONF_BATTERY_DAYS: 30})
     fast, _ = register_device(hass, "bw1", "Garage Door")
     even, _ = register_device(hass, "bw2", "Radar Presence")
     wobble, _ = register_device(hass, "bw3", "Door Master Shower")
@@ -272,9 +271,9 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     assert set(rows) == {"Garage Door"}
     assert rows["Garage Door"]["reading"] == "accelerating"
     above = coord._page_battery(coord.data["devices"][even.id])
-    assert above["reading"] == "" and above["left"] is None and above["ceiling"] == 45.0
+    assert above["reading"] == "" and above["left"] is None and above["ceiling"] == 45.0, "three times 15"
     hass.config_entries.async_update_entry(
-        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 45}
+        coord.entry, options={**coord.entry.options, **thresholds(45)}
     )
     rows = {row["name"]: row for row in coord._battery_rows()["falling"]}
     assert set(rows) == {"Garage Door", "Radar Presence"}

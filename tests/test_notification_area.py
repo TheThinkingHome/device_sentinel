@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_notification_area.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_notification_area.py, Version: 0.30.0 (2026-11-21)
 
 """A phone message says where the device is (rules NOTE-13, BRIEF-13).
 
@@ -25,14 +25,13 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     REPORT_BRIEF_HTML,
     REPORT_DIR,
     TODO_KIND_LOW_BATTERY,
 )
 from custom_components.device_sentinel.naming import area_is_said, with_area
 
-from .helpers import setup_coordinator
+from .helpers import setup_coordinator, thresholds
 from .test_falling_surfaces import _battery_device
 
 NAME = "TIMMERFLOTTE temp/hmd sensor"
@@ -77,7 +76,7 @@ def _room(hass: HomeAssistant, device_id: str, name: str) -> None:
 async def test_the_phone_summary_names_the_room(hass: HomeAssistant):
     device, entity_id = _battery_device(hass, NAME, 12)
     _room(hass, device.id, "Kitchen")
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(15.0), "persistent_enabled": True})
     coord._grace_until = 0.0
     hass.states.async_set(entity_id, "12", {"device_class": "battery", "unit_of_measurement": "%"})
     await hass.async_block_till_done()
@@ -99,7 +98,7 @@ async def test_the_phone_message_names_the_room(hass: HomeAssistant):
 async def test_a_name_holding_its_room_is_not_told_it_twice(hass: HomeAssistant):
     device, entity_id = _battery_device(hass, "Kitchen leak sensor", 12)
     _room(hass, device.id, "Kitchen")
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(15.0), "persistent_enabled": True})
     coord._grace_until = 0.0
     hass.states.async_set(entity_id, "12", {"device_class": "battery", "unit_of_measurement": "%"})
     await hass.async_block_till_done()
@@ -117,7 +116,7 @@ async def test_a_name_holding_its_room_is_not_told_it_twice(hass: HomeAssistant)
 
 async def test_a_device_with_no_area_reads_as_before(hass: HomeAssistant):
     _device, entity_id = _battery_device(hass, NAME, 12)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(15.0), "persistent_enabled": True})
     coord._grace_until = 0.0
     hass.states.async_set(entity_id, "12", {"device_class": "battery", "unit_of_measurement": "%"})
     await hass.async_block_till_done()

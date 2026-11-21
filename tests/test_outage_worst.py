@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.28.0 (2026-11-03)
+# File: tests/test_outage_worst.py, Version: 0.30.0 (2026-11-21)
 
 """The daily brief tells an outage by its worst moment (rule UP-11).
 
@@ -108,13 +108,13 @@ async def test_the_brief_says_the_worst_beside_the_total(hass: HomeAssistant):
     # The network came back when its recovery began, which has its own line
     # (rule BRIEF-07); this one is the outage ending.
     assert coord._system_event_sentence(wifi).startswith(
-        "The WiFi outage ended at"
+        "The Wi-Fi outage ended at"
     )
     assert coord._system_event_sentence(wifi).endswith(
         "after 10m. 56 of its 74 devices went down."
     )
     assert coord._system_event_phrase(wifi) == (
-        "WiFi outage ended after 10m, 56 of 74 devices went down"
+        "Wi-Fi outage ended after 10m, 56 of 74 devices went down"
     )
     bridge = {**base, SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "zha",
               SYS_DEVICES: 55, SYS_WORST: 14}
@@ -153,7 +153,7 @@ async def test_an_older_row_reads_as_it_always_did(hass: HomeAssistant):
     assert coord._system_event_sentence(row).endswith(
         "after 10m, 74 devices behind it."
     )
-    assert coord._system_event_phrase(row) == "WiFi network came back after 10m"
+    assert coord._system_event_phrase(row) == "Wi-Fi network came back after 10m"
 
 
 # ------------------------------------------------------ hostile rows

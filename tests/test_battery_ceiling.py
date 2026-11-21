@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_ceiling.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_ceiling.py, Version: 0.30.0 (2026-11-21)
 
 """A cell is judged falling only at or under three times the low
 threshold (rule BAT-10).
@@ -21,13 +21,12 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
-    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
 from custom_components.device_sentinel.report_battery import battery_trend
 
-from .helpers import register_device, registry_settled, setup_coordinator
+from .helpers import register_device, registry_settled, setup_coordinator, thresholds
 
 # Down about a point every two days for six weeks, ending at 45.
 FALLING = [round(66.0 - 0.5 * day, 1) for day in range(43)]
@@ -42,7 +41,7 @@ def test_the_trend_judges_nothing_above_the_ceiling():
 
 
 async def _house(hass: HomeAssistant, threshold: float, days: int = 30):
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: threshold, CONF_BATTERY_DAYS: days})
+    coord = await setup_coordinator(hass, {**thresholds(threshold), CONF_BATTERY_DAYS: days})
     device, _ = register_device(hass, "ceil1", "Back Door")
     await registry_settled(hass)
     record = coord.data["devices"][device.id]

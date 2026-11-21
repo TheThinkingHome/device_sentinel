@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.29.8 (2026-11-20)
+# File: tests/test_wifi_outage.py, Version: 0.30.0 (2026-11-21)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim
 (rules UP-12, UP-13, UP-15, UP-16).
@@ -144,7 +144,7 @@ async def test_the_mac_rung_ties_across_spellings(hass: HomeAssistant):
 
 
 async def test_the_status_band_says_wi_fi(hass: HomeAssistant):
-    """The band says Wi-Fi, not the sensor's entity name "Bridge: WiFi";
+    """The band says Wi-Fi, as the sensor's entity name "Bridge: Wi-Fi" does;
     the sensor keeps its name, so nothing reading it breaks
     (rule DASH-16)."""
     coord, _, _, _ = await _house(hass, 3)

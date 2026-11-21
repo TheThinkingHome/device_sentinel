@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hostile_names.py, Version: 0.28.11 (2026-11-10)
+# File: tests/test_hostile_names.py, Version: 0.30.0 (2026-11-21)
 
 """Names and typed text that could break a page (rules CODE-10, DEV-05).
 
@@ -22,12 +22,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
-from custom_components.device_sentinel.const import CONF_LOW_THRESHOLD
+
 from custom_components.device_sentinel.notifier import _card_text
 from custom_components.device_sentinel.report_brief import _markdown_unescaped
 from custom_components.device_sentinel.reports import ReportWritingMixin
 
-from .helpers import card_message, register_device, setup_coordinator
+from .helpers import card_message, register_device, setup_coordinator, thresholds
 from .test_falling_surfaces import _battery_device, _seed
 
 HOSTILE = ["Pipe | Split", "Line\nBreak", "<script>alert(1)</script>", "[Pay](https://evil.example)",
@@ -99,7 +99,7 @@ async def test_the_last_24_hours_keeps_three_cells_whatever_is_typed(hass: HomeA
 
 async def test_the_card_shows_names_as_text(hass: HomeAssistant):
     device, _ = _battery_device(hass, "![pic](https://evil.example/p.png)", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(18.0), "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
     await coord.async_update_card()

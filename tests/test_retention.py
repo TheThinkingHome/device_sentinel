@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.27.10 (2026-10-27)
+# File: test_retention.py, Version: 0.30.0 (2026-11-21)
 
 """How much is kept, and what reads only a window of it (rule STOR-14).
 
@@ -69,7 +69,7 @@ from custom_components.device_sentinel.const import (
 )
 
 
-from tests.helpers import setup_entry
+from tests.helpers import setup_entry, thresholds
 
 DOMAIN = "device_sentinel"
 
@@ -535,7 +535,7 @@ async def test_changing_a_setting_records_which_one(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     hass.config_entries.async_update_entry(
-        entry, options={**dict(entry.options), CONF_LOW_THRESHOLD: 42}
+        entry, options={**dict(entry.options), **thresholds(42)}
     )
     await coord.async_options_updated()
 

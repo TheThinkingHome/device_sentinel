@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_options_migration.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_options_migration.py, Version: 0.30.0 (2026-11-21)
 
 """The options migration, entry shape by entry shape (rules STOR-19,
 MUTE-01).
@@ -35,7 +35,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     CONF_LOW_THRESHOLD,
-    LEGACY_LOW_THRESHOLD,
+    CONF_RETENTION_DAYS,
     RETIRED_SLIDER_KEYS,
     DATA_DEVICES,
     DATA_LAST_VERSION,
@@ -132,7 +132,9 @@ async def test_settings_that_are_not_muting_are_untouched(
     assert entry.options["excluded_integrations"] == ["mobile_app"]
     assert "ignored_integrations" not in entry.options
     assert entry.options["muted_integrations"] == ["tplink_router", "ping"]
-    assert entry.options["low_threshold"] == 20
+    # The single battery threshold is retired at setup: each battery
+    # type has its own now (rule BAT-03).
+    assert "low_threshold" not in entry.options
 
 
 async def test_the_retired_signal_keys_are_swept(hass: HomeAssistant):
@@ -161,7 +163,8 @@ async def test_an_untouched_install_gains_no_keys(hass: HomeAssistant):
     # old default, so the new default of off reaches new installs only
     # (rule NOTE-11), and another keeps Advanced for an upgrade
     # (rule DASH-03).
-    assert entry.options == {"low_threshold": 15, "persistent_enabled": True, "dashboard_mode": "advanced"}
+    # The old threshold is retired at setup (rule BAT-03).
+    assert entry.options == {"persistent_enabled": True, "dashboard_mode": "advanced"}
     assert entry.minor_version == OPTIONS_MINOR_VERSION
 
 
@@ -434,25 +437,27 @@ async def test_the_retired_sliders_are_dropped(hass: HomeAssistant):
     assert entry.minor_version == OPTIONS_MINOR_VERSION
 
 
-async def test_a_threshold_nobody_set_is_pinned_at_twenty(
+async def test_every_house_moves_to_the_thresholds_by_type(
     hass: HomeAssistant,
 ):
-    """The new default is for new installs, not for existing houses.
+    """The single threshold, set or never set, gives way to one for each
+    battery type at their defaults, the release's breaking change (rule
+    BAT-03)."""
+    for stored, minor in (({}, 3), ({CONF_LOW_THRESHOLD: 12}, 3), ({CONF_LOW_THRESHOLD: 15}, 7)):
+        entry = await _migrated(hass, dict(stored), minor_version=minor)
+        assert CONF_LOW_THRESHOLD not in entry.options
+        assert entry.runtime_data.low_thresholds == {"alkaline": 10.0, "lithium": 20.0, "rechargeable": 20.0}
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
 
-    Older releases defaulted to twenty and newer ones to fifteen. An
-    entry that never stored one would otherwise start judging batteries
-    differently on upgrade, without its owner asking for that
-    (rule BAT-03).
-    """
-    entry = await _migrated(hass, {}, minor_version=3)
 
-    assert entry.options[CONF_LOW_THRESHOLD] == LEGACY_LOW_THRESHOLD
-
-
-async def test_a_threshold_somebody_chose_is_left_alone(
-    hass: HomeAssistant,
-):
-    """A stored value is a decision and the migration never edits it."""
-    entry = await _migrated(hass, {CONF_LOW_THRESHOLD: 12}, minor_version=3)
-
-    assert entry.options[CONF_LOW_THRESHOLD] == 12
+async def test_history_comes_up_to_six_months_never_down(hass: HomeAssistant):
+    """Ninety or sixty days is raised to 180, 360 is kept, and a house that
+    never saved the setting reads the new default (rule STOR-14)."""
+    for stored, kept in ((60, 180), (90, 180), (180, 180), (360, 360), (None, None)):
+        options = {} if stored is None else {CONF_RETENTION_DAYS: stored}
+        entry = await _migrated(hass, options, minor_version=7)
+        assert entry.options.get(CONF_RETENTION_DAYS) == kept
+        assert entry.runtime_data.retention_days == (180 if stored is None else kept)
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()

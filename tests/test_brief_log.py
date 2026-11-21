@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_log.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_brief_log.py, Version: 0.30.0 (2026-11-21)
 
 """The brief's Last 24 Hours table as a tester's log (rule BRIEF-07).
 
@@ -85,13 +85,13 @@ async def test_the_new_lines_read_as_sentences(hass: HomeAssistant):
     stalled = {SYS_WHEN: 1789595580.0,
                SYS_KIND: SYS_WIFI_RECOVERY_WITHDRAWN, SYS_SCOPE: "wifi"}
     assert coord._system_event_phrase(began) == (
-        "WiFi network came back, devices reconnecting"
+        "Wi-Fi network came back, devices reconnecting"
     )
     assert coord._system_event_sentence(began).startswith(
-        "The WiFi network came back at"
+        "The Wi-Fi network came back at"
     )
     assert coord._system_event_phrase(stalled) == (
-        "WiFi recovery stalled, outage continues"
+        "Wi-Fi recovery stalled, outage continues"
     )
     assert "outage continues" in coord._system_event_sentence(stalled)
 

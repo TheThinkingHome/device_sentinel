@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.28.9 (2026-11-10)
+# File: test_hardening.py, Version: 0.30.0 (2026-11-21)
 
 """Report edges, old-field cleanup, and the per-screen wiki links hold
 (rules CODE-06, CODE-07, CODE-10, CODE-14, STOR-19, CFG-03).
@@ -42,7 +42,7 @@ from custom_components.device_sentinel.coordinator import (
 )
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
-    CONF_LOW_THRESHOLD,
+    LOW_THRESHOLD_KEYS,
     DEAD_ENTITY_SENTINEL_TYPES,
     DEV_DAILY_MAX,
     DEV_FROZEN_CATEGORY,
@@ -601,8 +601,8 @@ async def test_the_battery_screen_carries_both_questions(
     result = await _open(hass, entry, "battery")
     offered = [str(key) for key in result["data_schema"].schema]
 
-    assert offered[0] == CONF_LOW_THRESHOLD
-    assert offered[1] == CONF_BATTERY_DAYS
+    assert offered[:3] == [key for key, _default in LOW_THRESHOLD_KEYS.values()]
+    assert offered[3] == CONF_BATTERY_DAYS
     labels = _strings()["options"]["step"]["battery"]["data"]
     # The label says what the setting does rather than naming a
     # quantity, so a reader can tell it warns rather than reports
@@ -620,12 +620,13 @@ async def test_the_threshold_range_comes_from_the_constants(
     """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, "battery")
-    dialog = next(
-        v for k, v in result["data_schema"].schema.items()
-        if str(k) == CONF_LOW_THRESHOLD
-    )
-    assert dialog.config["min"] == LOW_THRESHOLD_MIN
-    assert dialog.config["max"] == LOW_THRESHOLD_MAX
+    for key, _default in LOW_THRESHOLD_KEYS.values():
+        dialog = next(
+            v for k, v in result["data_schema"].schema.items()
+            if str(k) == key
+        )
+        assert dialog.config["min"] == LOW_THRESHOLD_MIN
+        assert dialog.config["max"] == LOW_THRESHOLD_MAX
 
 
 async def test_the_number_platform_is_gone(hass: HomeAssistant):

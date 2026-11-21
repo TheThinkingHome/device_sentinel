@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_empty_forecasts.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_empty_forecasts.py, Version: 0.30.0 (2026-11-21)
 
 """Forecasts to empty after a cell's first low (rules BAT-13, BAT-15).
 
@@ -22,7 +22,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DATA_BATTERY_EMPTY_TALLY,
     DATA_BATTERY_FORECAST_TALLY,
     DEV_BATTERY_DAILY,
@@ -38,7 +37,7 @@ from custom_components.device_sentinel.daily_dates import FAMILY_BATTERY_PREVIOU
 from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.report_battery import battery_latched
 
-from .helpers import register_device, registry_settled, setup_coordinator
+from .helpers import register_device, registry_settled, setup_coordinator, thresholds
 from .test_falling_surfaces import _battery_device
 
 # A real S63 cell carried down: steady, then speeding up.
@@ -60,7 +59,7 @@ async def test_the_first_low_holds_the_target_at_empty(hass: HomeAssistant):
     """Low once, the target is 0 until a new battery goes in, even back
     above the threshold; a second low keeps the first time."""
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 25.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {**thresholds(18.0)})
     coord._grace_until = 0.0
     record = coord.data["devices"][device.id]
     assert coord.battery_target(25.0, record) == 18.0
@@ -88,7 +87,7 @@ async def test_the_first_low_holds_the_target_at_empty(hass: HomeAssistant):
 
 
 async def _cell(hass: HomeAssistant, series: list[float], key: str = "e1"):
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15})
+    coord = await setup_coordinator(hass, {**thresholds(15)})
     device, _ = register_device(hass, key, "Back Door")
     await registry_settled(hass)
     record = coord.data["devices"][device.id]

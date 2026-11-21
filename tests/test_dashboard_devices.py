@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_dashboard_devices.py, Version: 0.30.0 (2026-11-21)
 
 """The Devices tab and each device's page (rules DASH-08, DASH-16).
 
@@ -247,7 +247,7 @@ async def test_a_devices_page_carries_everything_known(hass: HomeAssistant, hass
     assert page["silences"][0]["ended"] == EPISODE_ENDED_RESUMED
 
     assert page["battery"]["daily"] == [100.0] * 63
-    assert page["battery"]["threshold"] == coord.low_threshold
+    assert page["battery"]["threshold"] == coord.threshold_for(device.id)
     assert page["signal"]["p50"] == [233.0] * 38
     assert page["signal"]["railed_days"][16] == 2
     assert page["signal"]["scale"] == "lqi"

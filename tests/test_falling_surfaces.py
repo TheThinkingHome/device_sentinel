@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.28.10 (2026-11-10)
+# File: tests/test_falling_surfaces.py, Version: 0.30.0 (2026-11-21)
 
 """The falling battery on the phone and the card, and the crossing
 (rules LIST-02, NOTE-03, NOTE-10).
@@ -33,7 +33,6 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.device_sentinel.const import (
     EVENT_FAULT,
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
     DEV_EVENT_COUNT,
@@ -51,7 +50,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
-from tests.helpers import card_message, record_events, setup_coordinator
+from tests.helpers import card_message, record_events, setup_coordinator, thresholds
 
 # Every kind, and the list row that puts it on the card. Iterated
 # against TODO_KINDS_ALL below, so a kind added without a route to the
@@ -156,7 +155,7 @@ def _events(coord, later=False) -> list[tuple[str, str, bool]]:
 async def test_the_falling_push_reads_as_a_sentence(hass: HomeAssistant):
     """The line a person gets, with the projection in it."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {**thresholds(18.0)})
     _seed(coord, device.id, 24.0)
 
     events = _events(coord)
@@ -175,7 +174,7 @@ async def test_the_falling_recovery_names_the_kind_that_lifted(
 ):
     """Not "recovered", which would not say which of two ended."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {**thresholds(18.0)})
     _seed(coord, device.id, 24.0)
     _events(coord)
 
@@ -204,7 +203,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     cell went low (rule LIST-06).
     """
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {**thresholds(18.0)})
     # Battery mechanics, not restart behavior: the startup window the
     # harness opens is shut so flags apply at once.
     coord._grace_until = 0.0
@@ -247,7 +246,7 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     """The card names a falling cell, never an all-clear while the list
     says otherwise (rule NOTE-10)."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(18.0), "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
 
@@ -336,7 +335,7 @@ async def test_an_acknowledged_falling_cell_leaves_the_card(
 ):
     """Acknowledgment silences the phone for the new kind too (rule NOTE-08)."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(18.0), "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
     assert TODO_KIND_FALLING_BATTERY in coord.data["todo_items"][0]["kinds"]

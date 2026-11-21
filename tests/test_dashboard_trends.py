@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dashboard_trends.py, Version: 0.30.0 (2026-11-21)
 
 """The Battery Trends and Signal Trends tabs (rules BAT-18, SIG-12).
 
@@ -25,7 +25,6 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_SIGNAL_DAILY_COUNT,
@@ -35,7 +34,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_VALUE,
 )
 
-from tests.helpers import setup_coordinator
+from tests.helpers import setup_coordinator, thresholds
 
 
 async def _call(client, **message):
@@ -115,10 +114,10 @@ async def test_battery_trends_carry_the_reports_own_groups(hass: HomeAssistant, 
     # Judged only at or under three times the low threshold, so the
     # threshold is raised and the high cells here are judged too
     # (rule BAT-10).
-    coord, holding, falling, unreadable, _ = await _fleet(hass, {CONF_LOW_THRESHOLD: 49})
+    coord, holding, falling, unreadable, _ = await _fleet(hass, {**thresholds(49)})
     client = await hass_ws_client(hass)
     page = (await _call(client, type="device_sentinel/battery_trends"))["result"]
-    assert page["ceiling"] == 147.0
+    assert page["thresholds"] == {"alkaline": 49.0, "lithium": 49.0, "rechargeable": 49.0}
     report = coord._battery_rows()
     assert [row["device_id"] for row in page["falling"]] == [row["device_id"] for row in report["falling"]]
     assert page["falling"][0]["reading"] == report["falling"][0]["reading"]

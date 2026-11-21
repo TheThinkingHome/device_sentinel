@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_watch.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_watch.py, Version: 0.30.0 (2026-11-21)
 
 """Two warning levels for a falling battery, and a time left that runs to
 the low threshold (rules BAT-14, BAT-13).
@@ -21,12 +21,11 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
-    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
 
-from .helpers import register_device, registry_settled, setup_coordinator
+from .helpers import register_device, registry_settled, setup_coordinator, thresholds
 
 # A straight half point a day for six weeks, ending at 40.
 STEADY = [round(61.0 - 0.5 * day, 1) for day in range(43)]
@@ -40,7 +39,7 @@ SPEEDING = [round(level - 36.0, 1) for level in S63]
 
 
 async def _house(hass: HomeAssistant, series: list[float]):
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15, CONF_BATTERY_DAYS: 365})
+    coord = await setup_coordinator(hass, {**thresholds(15), CONF_BATTERY_DAYS: 365})
     device, _ = register_device(hass, "watch1", "Back Door")
     await registry_settled(hass)
     record = coord.data["devices"][device.id]
@@ -78,7 +77,8 @@ def test_a_battery_under_the_threshold_runs_to_empty():
     from custom_components.device_sentinel.report_battery import BatteryReportMixin
 
     class Probe(BatteryReportMixin):
-        low_threshold = 15
+        def threshold_for(self, _device_id):
+            return 15
 
     probe = Probe()
     assert probe.battery_target(16.0) == 15.0

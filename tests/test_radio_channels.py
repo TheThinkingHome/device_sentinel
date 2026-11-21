@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_radio_channels.py, Version: 0.29.8 (2026-11-19)
+# File: tests/test_radio_channels.py, Version: 0.30.0 (2026-11-21)
 
 """Radio channels (rules SIG-19, SIG-20, REC-13, DASH-19).
 
@@ -563,7 +563,9 @@ async def test_a_tick_needs_a_card_that_is_shown(hass: HomeAssistant, supervisor
             coord.set_recommendation_ack(True, line=line)
 
 
-async def test_midnight_keeps_a_shown_cards_tick_and_forgets_a_gone_one(hass: HomeAssistant, supervisor: FakeSupervisor):
+async def test_midnight_keeps_a_shown_cards_tick_and_forgets_a_gone_one(
+    hass: HomeAssistant, supervisor: FakeSupervisor, freezer
+):
     coord = await setup_coordinator(hass)
     _zigbee(coord, hass)
     await _scanned(hass, coord)
@@ -572,8 +574,13 @@ async def test_midnight_keeps_a_shown_cards_tick_and_forgets_a_gone_one(hass: Ho
     coord.set_recommendation_ack(True, line=key)
     coord.prune_recommendation_acks()
     assert coord._acks()["lines"].get(key) is True
-    # The neighbour goes quiet: no card, and two days on, no tick.
+    # The neighbour goes quiet: the card is held a day (rule REC-13),
+    # then gone, and two days on, no tick.
     coord._air = [r for r in coord._air if r["mhz"] != 2412]
+    coord.prune_recommendation_acks()
+    assert coord._acks()["lines"].get(key) is True, "held for a day"
+    freezer.tick(86400 + 60)
+    coord.network_recommendations()
     coord._net_ack_seen = {}
     coord.prune_recommendation_acks()
     assert key not in coord._acks()["lines"]

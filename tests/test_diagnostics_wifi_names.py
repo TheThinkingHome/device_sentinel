@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_wifi_names.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_diagnostics_wifi_names.py, Version: 0.30.0 (2026-11-21)
 
 """The house's Wi-Fi name must not reach the
 diagnostics download through the Problem List (rule STOR-21, since
@@ -57,7 +57,7 @@ async def test_a_wifi_outage_row_does_not_carry_the_network_name_into_the_downlo
         {
             TODO_UID: "upstream:wifi",
             TODO_DEVICE_ID: "upstream:wifi",
-            TODO_SORT_NAME: "WiFi network",
+            TODO_SORT_NAME: "Wi-Fi network",
             TODO_SUMMARY: summary,
             TODO_DESCRIPTION: description,
             TODO_KINDS: {"upstream": 1.0},

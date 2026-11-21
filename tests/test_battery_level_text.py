@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_level_text.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_level_text.py, Version: 0.30.0 (2026-11-21)
 
 """One battery level, said the same way everywhere (rule BAT-03).
 
@@ -21,13 +21,12 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.battery_level import level_text
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     REPORT_BRIEF_HTML,
     REPORT_DIR,
     TODO_KIND_LOW_BATTERY,
 )
 
-from .helpers import setup_coordinator
+from .helpers import setup_coordinator, thresholds
 from .test_falling_surfaces import _battery_device
 
 
@@ -43,7 +42,7 @@ def test_a_level_reads_as_reported(level, words):
 
 async def test_every_surface_says_15_5(hass: HomeAssistant):
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 15.5)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 16.0, "persistent_enabled": True})
+    coord = await setup_coordinator(hass, {**thresholds(16.0), "persistent_enabled": True})
     coord._grace_until = 0.0
     hass.states.async_set(entity_id, "15.5", {"device_class": "battery", "unit_of_measurement": "%"})
     await hass.async_block_till_done()

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_steps.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_steps.py, Version: 0.30.0 (2026-11-21)
 
 """A battery that reports in coarse steps is not forecast (rule BAT-09).
 
@@ -22,13 +22,12 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
 
-from .helpers import register_device, setup_coordinator
+from .helpers import register_device, setup_coordinator, thresholds
 
 S02 = [40.0] * 9 + [30.0] * 5
 TWO_STEPS = [50.0] * 6 + [40.0] * 6 + [30.0] * 5
@@ -68,7 +67,7 @@ async def test_a_smooth_fall_is_still_forecast(hass: HomeAssistant):
     # threshold is raised and the high cells here are judged too
     # (rule BAT-10).
     hass.config_entries.async_update_entry(
-        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+        coord.entry, options={**coord.entry.options, **thresholds(49)}
     )
     assert coord.battery_steps(record) == "smooth"
     assert [row["name"] for row in coord._battery_rows()["falling"]] == [

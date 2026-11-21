@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_event_loop.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_dashboard_event_loop.py, Version: 0.30.0 (2026-11-21)
 
 """The dashboard never touches a file on the event loop (rule CODE-06).
 
@@ -165,5 +165,5 @@ async def test_the_labels_are_read_while_starting(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     labels = getattr(coord, "_option_label_cache", None)
     assert labels, "the setting labels are read during setup"
-    assert labels.get("low_threshold") == "Low Battery Threshold"
-    assert "Low Battery Threshold" in coord._changed_labels("low_threshold")
+    assert labels.get("low_threshold_alkaline") == "Alkaline Batteries"
+    assert "Alkaline Batteries" in coord._changed_labels("low_threshold_alkaline")

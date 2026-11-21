@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dated_histories.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_dated_histories.py, Version: 0.30.0 (2026-11-21)
 
 """The daily histories keep their calendar (rules FRZ-02, STOR-16).
 
@@ -219,7 +219,7 @@ async def test_the_retired_rhythm_shadow_file_is_removed(hass: HomeAssistant):
 # date on the day the limit was reached and slide every entry a day
 # earlier each night (rule STOR-16).
 
-LIMIT = 90  # the default History days
+LIMIT = 180  # the default History days
 
 
 def _yesterday_of_the_first_fold():
@@ -268,7 +268,7 @@ async def test_a_full_gap_history_with_no_dates_dates_its_first_night(hass: Home
 async def test_a_full_battery_history_dates_each_night(hass: HomeAssistant, freezer):
     coord, record, _ = await _device(hass)
     _midnight(freezer, 0)
-    _full(record, FAMILY_BATTERY, DEV_BATTERY_DAILY, 90)
+    _full(record, FAMILY_BATTERY, DEV_BATTERY_DAILY, 90)  # a level of 90%
     days = []
     for ahead, level in ((1, 89), (2, 88), (3, 87)):
         freezer.move_to(_BASE[0][1] + timedelta(days=ahead) - timedelta(hours=1))

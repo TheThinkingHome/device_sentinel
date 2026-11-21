@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.29.5 (2026-11-17)
+# File: tests/test_entity_defaults.py, Version: 0.30.0 (2026-11-21)
 
 """Which entities a first install presents, and what removal leaves
 (rules CFG-08, CFG-09, STOR-24).
@@ -235,7 +235,7 @@ def test_lists_and_setting_mirrors_are_kept_out_of_history():
         s.DeviceSentinelClassificationSensor: {"by_integration"},
         s.DeviceSentinelSignalRailsSensor: {"devices"},
         s.DeviceSentinelSignalWeakSensor: {"devices", "drop_lqi", "drop_rssi", "sensitivity"},
-        s.DeviceSentinelLowBatteriesSensor: {"devices", "clear_margin", "low_threshold"},
+        s.DeviceSentinelLowBatteriesSensor: {"devices", "clear_margin", "low_thresholds"},
         s.DeviceSentinelFallingBatteriesSensor: {"devices", "days_till_empty"},
         s.DeviceSentinelFrozenDevicesSensor: {"devices"},
     }

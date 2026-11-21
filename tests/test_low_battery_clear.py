@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_low_battery_clear.py, Version: 0.27.10 (2026-10-27)
+# File: test_low_battery_clear.py, Version: 0.30.0 (2026-11-21)
 
 """A low battery clears only above the threshold plus 3, and says when it
 crossed (rule BAT-03): 18 percent at the default 15 still reads low, and
@@ -15,14 +15,13 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
 )
 
-from .helpers import setup_coordinator
+from .helpers import setup_coordinator, thresholds
 from .test_battery import _battery_device
 
 
@@ -30,7 +29,7 @@ async def _low(hass, uid):
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, uid)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15})
+    coord = await setup_coordinator(hass, {**thresholds(15)})
     coord._grace_until = 0.0
     hass.states.async_set(eids["pct"], "15")
     await hass.async_block_till_done()

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_wifi_row.py, Version: 0.30.0 (2026-11-21)
 
 """The row a Wi-Fi outage writes (rules UP-11, UP-15).
 
@@ -275,8 +275,8 @@ async def test_the_row_names_the_network(hass: HomeAssistant, freezer):
     summary, description = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
-    assert summary == "WiFi network unavailable: 7 of 14 total devices down"
-    assert "'Harbor-IoT' WiFi network became unavailable" in description
+    assert summary == "Wi-Fi network unavailable: 7 of 14 total devices down"
+    assert "'Harbor-IoT' Wi-Fi network became unavailable" in description
     assert "7 of its 14 total devices" in description
 
 
@@ -291,7 +291,7 @@ async def test_the_wording_without_a_network(hass: HomeAssistant, freezer):
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
     assert description.startswith(
-        "Home Assistant's WiFi network became unavailable"
+        "Home Assistant's Wi-Fi network became unavailable"
     )
 
 
@@ -314,7 +314,7 @@ async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
     assert (
-        "The 'Harbor-IoT' and 'Harbor' WiFi networks became "
+        "The 'Harbor-IoT' and 'Harbor' Wi-Fi networks became "
         "unavailable" in description
     )
     # "its" has no referent with two named.
@@ -412,7 +412,7 @@ async def test_the_count_is_the_devices_the_outage_took(
     summary, _body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 10
     )
-    assert summary == "WiFi network unavailable: 10 of 12 total devices down"
+    assert summary == "Wi-Fi network unavailable: 10 of 12 total devices down"
 
 
 async def test_the_scan_route_builds_a_fallen_set_too(
@@ -485,10 +485,10 @@ async def test_the_row_says_recovering_once_the_network_is_back(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == (
-        "WiFi network recovering: 3 of the 11 devices that went down "
+        "Wi-Fi network recovering: 3 of the 11 devices that went down "
         "remain unavailable"
     )
-    assert "'Harbor-IoT' WiFi network came back at" in body
+    assert "'Harbor-IoT' Wi-Fi network came back at" in body
     assert "8 of the 11 devices that went down have already recovered" in body
     assert "Device Sentinel is monitoring the recovery" in body
     assert "reported as its own problem" in body
@@ -505,7 +505,7 @@ async def test_the_row_still_says_unavailable_before_any_return(
     summary, _body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
-    assert summary.startswith("WiFi network unavailable:")
+    assert summary.startswith("Wi-Fi network unavailable:")
 
 
 async def test_forty_percent_starts_recovering_without_a_scan(
@@ -608,7 +608,7 @@ async def test_the_recovering_row_counts_down_live(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == (
-        "WiFi network recovering: 6 of the 11 devices that went down "
+        "Wi-Fi network recovering: 6 of the 11 devices that went down "
         "remain unavailable"
     )
 
@@ -619,7 +619,7 @@ async def test_the_recovering_row_counts_down_live(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == (
-        "WiFi network recovering: 2 of the 11 devices that went down "
+        "Wi-Fi network recovering: 2 of the 11 devices that went down "
         "remain unavailable"
     )
 
@@ -645,8 +645,8 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
     summary, body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
-    assert summary == "WiFi network is back: waiting for 11 devices to reconnect"
-    assert "'Harbor-IoT' WiFi network came back at" in body
+    assert summary == "Wi-Fi network is back: waiting for 11 devices to reconnect"
+    assert "'Harbor-IoT' Wi-Fi network came back at" in body
     assert "waiting for the 11 devices that went down to reconnect" in body
     assert "already recovered" not in body
     assert "reported as its own problem" in body
@@ -656,7 +656,7 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == (
-        "WiFi network recovering: 10 of the 11 devices that went down "
+        "Wi-Fi network recovering: 10 of the 11 devices that went down "
         "remain unavailable"
     )
 
@@ -676,7 +676,7 @@ async def test_one_device_left_reads_in_the_singular(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == (
-        "WiFi network recovering: 1 of the 11 devices that went down "
+        "Wi-Fi network recovering: 1 of the 11 devices that went down "
         "remains unavailable"
     )
     assert "10 of the 11 devices that went down have already recovered" in body

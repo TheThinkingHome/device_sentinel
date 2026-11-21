@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.29.3 (2026-11-15)
+# File: test_battery_report.py, Version: 0.30.0 (2026-11-21)
 
 """Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
@@ -27,7 +27,6 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
-    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DATA_TODO_ITEMS,
@@ -39,7 +38,7 @@ from custom_components.device_sentinel.const import (
     REPORT_DIR,
 )
 
-from .helpers import registry_settled, register_device, setup_coordinator
+from .helpers import registry_settled, register_device, setup_coordinator, thresholds
 
 # The dying cell, exactly as recorded: flat, then the sag and rebound,
 # then the fall.
@@ -104,11 +103,11 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     paces are within two points a week of each other, and time
     remaining still tells them apart (rule BAT-13).
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     # Judged only at or under three times the low threshold (rule BAT-10):
     # raised so the high cells here are judged too.
     hass.config_entries.async_update_entry(
-        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+        coord.entry, options={**coord.entry.options, **thresholds(49)}
     )
     dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
     healthy, _ = register_device(hass, "bat2", "Soil Moisture")
@@ -146,7 +145,7 @@ async def test_the_sag_and_rebound_do_not_move_the_slope(
     in the tails, so the answer is what the rest of the window
     agrees on.
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     with_spike = coord._battery_slope(DYING[-7:])
     without = coord._battery_slope([30.0, 28.0, 23.5, 22.0, 21.0])
     assert with_spike == -1.75
@@ -160,7 +159,7 @@ async def test_a_falling_cell_raises_nothing(
     Problem List's forecast item is its own rule and is asserted where
     it is built (rule BAT-14).
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     device, _ = register_device(hass, "bat6", "Door 2nd Bedroom")
     await registry_settled(hass)
     _seed(coord, device.id, DYING, 12.0)
@@ -179,7 +178,7 @@ async def test_time_left_is_said_in_words_that_widen_with_distance(
     percent in one afternoon, which on a reading of 1122 days is a true
     value somewhere between 670 and 1570 (rule BAT-13).
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     said = coord.battery_time_left
     assert said(3) == "under a week"
     assert said(7) == "under a week"
@@ -204,7 +203,7 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     falling and nowhere else. A cell falling at a steady pace is a
     battery to watch, not on the sensor.
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     low, _ = register_device(hass, "fs1", "Already Low")
     soon, _ = register_device(hass, "fs2", "Nearly Out")
     far, _ = register_device(hass, "fs3", "Months Away")
@@ -229,7 +228,7 @@ async def test_a_steady_fall_is_watched_not_counted(hass: HomeAssistant):
     ten points, where a seven-day slope would be flattened by the last
     three days' 20.5, 20 and 20. Sixteen days is too short to call it
     speeding up, so it is a battery to watch (rule BAT-14)."""
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     soon, _ = register_device(hass, "fs2", "Nearly Out")
     await registry_settled(hass)
     _seed(coord, soon.id, TWO_WEEKS, 20.0)
@@ -243,7 +242,7 @@ async def test_an_interrupted_write_leaves_no_fragment(
     hass: HomeAssistant,
 ):
     """The helper itself, on a write that fails part way."""
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     directory = hass.config.path(REPORT_DIR)
     os.makedirs(directory, exist_ok=True)
     target = os.path.join(directory, "atomic_probe.html")
@@ -267,7 +266,7 @@ async def test_a_steady_cell_is_not_projected(hass: HomeAssistant):
     """A cell holds its level for most of its life and then falls, so
     steady is the healthy state rather than a stale reading.
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     device, _ = register_device(hass, "bat3", "Motion Hall")
     await registry_settled(hass)
     _seed(coord, device.id, STEADY, 100.0)
@@ -282,7 +281,7 @@ async def test_a_reading_above_100_is_called_unreadable(hass: HomeAssistant):
     not a percentage. It can never cross the low threshold, and counted
     as a level it would look healthier than anything else (rule BAT-02).
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     device, _ = register_device(hass, "bat4", "LUX Outdoors")
     await registry_settled(hass)
     _seed(coord, device.id, [196.0] * 16, 186.0)
@@ -298,7 +297,7 @@ async def test_a_device_with_no_battery_is_counted_not_listed_as_zero(
     """A watched device with no battery entity is mains powered or
     has one switched off. Either way it is not a cell at zero.
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     register_device(hass, "bat5", "Wired Thing")
     await registry_settled(hass)
 
@@ -311,7 +310,7 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
     """The brief names what is close and sends the reader to Battery
     Trends on the dashboard (rules BAT-14, BAT-18).
     """
-    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    coord = await setup_coordinator(hass, {**thresholds(15), CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
     steady, _ = register_device(hass, "brf2", "Nearly Out")
     await registry_settled(hass)
@@ -336,12 +335,12 @@ async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
     document that arrives whether it was wanted or not, where an
     unfiltered list can run to sixteen devices (rule BAT-14).
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     # Judged only at or under three times the low threshold (rule BAT-10):
     # raised to 28 so the 82 percent cell is judged, and its time left to
     # 28 is still months.
     hass.config_entries.async_update_entry(
-        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 28}
+        coord.entry, options={**coord.entry.options, **thresholds(28)}
     )
     near, _ = register_device(hass, "brf2", "Nearly Out")
     far, _ = register_device(hass, "brf3", "Months Away")
@@ -361,7 +360,7 @@ async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
 
 async def test_a_cell_already_low_is_not_said_twice(hass: HomeAssistant):
     """It has a row in Now already. One document, one mention."""
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     device, _ = register_device(hass, "brf4", "Door 2nd Bedroom")
     await registry_settled(hass)
     _seed(coord, device.id, DYING, 12.0, low=True,
@@ -373,7 +372,7 @@ async def test_a_cell_already_low_is_not_said_twice(hass: HomeAssistant):
 
 async def test_a_quiet_fleet_adds_no_line(hass: HomeAssistant):
     """Nothing to say means nothing said."""
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, thresholds(15))
     device, _ = register_device(hass, "brf5", "Motion Hall")
     await registry_settled(hass)
     _seed(coord, device.id, STEADY, 100.0)

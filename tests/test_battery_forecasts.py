@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_forecasts.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_forecasts.py, Version: 0.30.0 (2026-11-21)
 
 """The forecast log: each battery forecast kept at the midnight fold, and
 scored when the battery reaches its threshold (rule BAT-15).
@@ -22,7 +22,6 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.battery_forecasts import score_row
 from custom_components.device_sentinel.const import (
-    CONF_LOW_THRESHOLD,
     DATA_BATTERY_FORECAST_TALLY,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_FORECASTS,
@@ -31,7 +30,7 @@ from custom_components.device_sentinel.const import (
 )
 from custom_components.device_sentinel.normalise import check_records
 
-from .helpers import register_device, registry_settled, setup_coordinator
+from .helpers import register_device, registry_settled, setup_coordinator, thresholds
 
 # A recorded cell, moved down to end at 21.5 percent: steady, then
 # speeding up.
@@ -70,7 +69,7 @@ def test_an_outcome_is_inside_earlier_or_later():
 
 
 async def _house(hass: HomeAssistant, series: list[float]):
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 15})
+    coord = await setup_coordinator(hass, {**thresholds(15)})
     device, _ = register_device(hass, "fc1", "Back Door")
     await registry_settled(hass)
     record = coord.data["devices"][device.id]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_forward_outage_shape.py, Version: 0.29.4 (2026-11-16)
+# File: tests/test_forward_outage_shape.py, Version: 0.30.0 (2026-11-21)
 
 """Forward simulation of the stored outage shape on both captured
 houses (rules UP-11, BRIEF-05).
@@ -107,9 +107,9 @@ async def test_the_new_shape_renders_on_the_fleet(
     _check_pages(pages)
 
     brief = pages["daily_brief.html"]
-    assert "WiFi network came back, devices reconnecting" in brief
-    assert "WiFi recovery stalled, outage continues" in brief
-    assert "WiFi outage ended after 10m, 56 of 74 devices went down" in brief
+    assert "Wi-Fi network came back, devices reconnecting" in brief
+    assert "Wi-Fi recovery stalled, outage continues" in brief
+    assert "Wi-Fi outage ended after 10m, 56 of 74 devices went down" in brief
     assert "ZHA bridge came back after" in brief
     assert "14 of 55 devices went down" in brief
     # The table gives its times to the second.
