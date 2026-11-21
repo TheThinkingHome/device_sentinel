@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_learning_screens.js, Version: 0.29.2 (2026-11-15)
+// File: tools/panel_checks/check_learning_screens.js, Version: 0.30.0 (2026-11-21)
 // Panel checks: Battery Trends and Signal Trends on a new install
 // (rules BAT-19, SIG-18). While no device has enough days, each tab
 // opens with a box saying when its trends start, why there is a wait,
@@ -110,7 +110,7 @@ const text = (root) => root.querySelector(".pane").textContent.replace(/\s+/g, "
   console.log("Battery Trends while learning (rule BAT-19)");
   const cell = (over) => ({ device_id: "c", name: "Door 2nd Bedroom", level: 12, rate: 0, type: "Door/Window Sensor", maker: "Aqara", model: "Door", alone: false, learning: true, ...over });
   ({ root } = await open(`${PREFIX}/battery-trends`, {
-    battery_trends: (reply) => ({ ...reply, threshold: 15,
+    battery_trends: (reply) => ({ ...reply, thresholds: { alkaline: 10, lithium: 20, rechargeable: 20 },
       cell_rows: [cell({}), cell({ device_id: "k", name: "Kitchen Motion", level: 80, model: "Motion" })],
       models: [{ maker: "Aqara", model: "Door", cells: 1, rate: 0, typical: 12, lowest: 12, lowest_name: "Door 2nd Bedroom", lowest_id: "c", learning: true, types: [["Door/Window Sensor", 1]] },
         { maker: "Aqara", model: "Motion", cells: 1, rate: 0, typical: 80, lowest: 80, lowest_name: "Kitchen Motion", lowest_id: "k", learning: true, types: [["Motion Sensor", 1]] }],
@@ -125,10 +125,10 @@ const text = (root) => root.querySelector(".pane").textContent.replace(/\s+/g, "
   check("It names the day forecasts start", /Battery forecasts start on December 4/.test(shown), shown.slice(0, 120));
   check("It says why and what works now, with the count at or under the threshold",
     /needs four weeks of readings to tell a battery that is falling from one that only wobbles/.test(shown)
-    && /threshold of 15% is reported from the first day: 1 is now\./.test(shown));
+    && /at or under its type's threshold \(10% for alkaline, 20% for lithium and other, 20% for rechargeable\) is reported from the first day: 1 is now\./.test(shown));
   check("Day 7 of 28, 21 days to go", /Day 7 of 28/.test(shown) && /21 days to go/.test(shown));
   check("The headline says only what is known",
-    /2 batteries report a level: 1 at or under your threshold of 15%, 1 above it\. 51 watched devices report no battery at all\./.test(shown), shown.slice(0, 600));
+    /2 batteries report a level: 1 at or under its type's threshold \(10% for alkaline, 20% for lithium and other, 20% for rechargeable\), 1 above it\. 51 watched devices report no battery at all\./.test(shown), shown.slice(0, 600));
   const rates = [...root.querySelectorAll(".pane td")].map((td) => td.textContent.trim());
   check("The rate column reads learning", rates.filter((t) => t === "learning").length === 2 && !rates.includes("level"), rates.slice(0, 20));
   check("No null, undefined or NaN", !/null|undefined|NaN/.test(shown));

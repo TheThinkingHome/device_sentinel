@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.0 (2026-11-21)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -103,7 +103,7 @@ const steady = {
 };
 const trends = {
   battery_trends: (page) => {
-    page.ceiling = 45;
+    page.thresholds = { alkaline: 10, lithium: 15, rechargeable: 20 };
     page.falling = [{
       device_id: DEVICE, name: "Garage Door", level: 37.5, since: null, steps: "Smooth",
       weeks: [54.64, 53.71, 51.21, 46.0, 39.64], reading: "accelerating", pace: 5.9,
@@ -282,7 +282,7 @@ const trends = {
   });
   const countedLine = (counted.root.querySelector(".pane > p") || {}).textContent || "";
   check("the summary counts a low cell that is not falling on its own, and a falling one once",
-    countedLine.startsWith(`4 cells report a level. 2 falling, 1 at or under your threshold of ${payloads.battery_trends.threshold}% and not falling, 1 not falling or not yet judged.`),
+    countedLine.startsWith("4 cells report a level. 2 falling, 1 at or under its type's threshold and not falling, 1 not falling or not yet judged."),
     countedLine);
   const tabText = text(tab.root);
   check("a level reads as reported there too, 37.5%", tabText.includes("37.5%") && !tabText.includes("38%"), tabText.slice(0, 1600));
@@ -290,7 +290,7 @@ const trends = {
   check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
   check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 1600));
   check("the Falling list says where judging starts",
-    tabText.includes("A cell is judged falling, and given a time left, at or under 45%, three times your threshold."), tabText.slice(0, 900));
+    tabText.includes("A cell is judged falling, and given a time left, at or under three times its type's threshold (10% for alkaline, 15% for lithium and other, 20% for rechargeable)."), tabText.slice(0, 900));
   check("a steady fall inside the warning days is named under Batteries to Watch",
     tabText.includes("Batteries to Watch") && tabText.includes("Back Door (reaches 15% in about 3 to 5 weeks)."), tabText.slice(0, 1200));
   const leftCells = [...tab.root.querySelectorAll("td")].filter((td) => td.textContent.startsWith("reaches 15% in"));
