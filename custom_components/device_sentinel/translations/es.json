@@ -12,14 +12,14 @@
     "step": {
       "init": {
         "title": "Configuración de Device Sentinel",
-        "description": "Los valores predeterminados de Device Sentinel bastan para empezar. Cuando empieces a adaptar la integración a tu sistema, ve de arriba abajo. Si quieres que las alertas lleguen a tu teléfono, empieza por Notificaciones.\n\n**Notificaciones**: a dónde van las alertas, las horas de silencio y el recordatorio diario.\n\n**Exclusiones y silencio**: el hardware que nunca quieres que se evalúe ni se informe, por nada. Para silenciar un solo tipo de informe de un dispositivo, usa en su lugar la lista de silencio de esa sección.\n\n**Batería baja**: el umbral bajo y el silencio solo de batería.\n\n**Intensidad de la señal**: cómo se evalúan los enlaces de radio que se debilitan frente al mínimo propio de cada dispositivo.\n\n**Detección de congelados y no disponibles**: cuánto tiempo puede estar callado un dispositivo antes de considerarse congelado, fijado con dos controles de margen de gracia, y qué dispositivos están silenciados para «congelado» o para «no disponible».\n\n**WiFi**: las redes vigiladas para detectar una caída del WiFi.\n\n**Avanzado**: almacenamiento e historial, la ventana de mantenimiento, si el panel se abre en Simple o Avanzado, y la herramienta de limpieza de datos.\n\n**Diagnóstico ampliado**: el hardware que eliges registrar en detalle, para ayudar a darle soporte.\n\n[Toda la documentación en la wiki de Device Sentinel]({wiki_link})\n\nCada sección se guarda al enviarla y te devuelve aquí. Cerrar este cuadro conserva todo lo que ya has enviado.",
+        "description": "Los valores predeterminados de Device Sentinel bastan para empezar. Cuando empieces a adaptar la integración a tu sistema, ve de arriba abajo. Si quieres que las alertas lleguen a tu teléfono, empieza por Notificaciones.\n\n**Notificaciones y resumen diario**: a dónde van las alertas, las horas de silencio y el resumen diario.\n\n**Exclusiones y silencio**: el hardware que nunca quieres que se evalúe ni se informe, por nada. Para silenciar un solo tipo de informe de un dispositivo, usa en su lugar la lista de silencio de esa sección.\n\n**Batería baja**: el umbral bajo de cada tipo de batería y el silencio solo de batería.\n\n**Intensidad de la señal**: cómo se evalúan los enlaces de radio que se debilitan frente al mínimo propio de cada dispositivo.\n\n**Detección de congelados y no disponibles**: cuánto tiempo puede estar callado un dispositivo antes de considerarse congelado, fijado con dos controles de margen de gracia, y qué dispositivos están silenciados para «congelado» o para «no disponible».\n\n**Wi-Fi**: las redes vigiladas para detectar una caída del Wi-Fi.\n\n**Avanzado**: almacenamiento e historial, la ventana de mantenimiento, si el panel se abre en Simple o Avanzado, y la herramienta de limpieza de datos.\n\n**Diagnóstico ampliado**: si los nombres se comparten en tu descarga de diagnóstico, y el hardware que eliges registrar en detalle, para ayudar a darle soporte.\n\n[Toda la documentación en la wiki de Device Sentinel]({wiki_link})\n\nCada sección se guarda al enviarla y te devuelve aquí. Cerrar este cuadro conserva todo lo que ya has enviado.",
         "menu_options": {
           "notifications": "Notificaciones y resumen diario",
           "exclusions": "Exclusiones y silencio",
           "battery": "Batería baja",
           "signal": "Intensidad de la señal",
           "freeze": "Detección de congelados y no disponibles",
-          "wifi": "WiFi",
+          "wifi": "Wi-Fi",
           "advanced": "Avanzado",
           "extended": "Diagnóstico ampliado"
         }
@@ -103,11 +103,15 @@
       "battery": {
         "title": "Batería baja",
         "data": {
-          "low_threshold": "Umbral de batería baja",
+          "low_threshold_alkaline": "Pilas alcalinas",
+          "low_threshold_lithium": "Pilas de litio y otras",
+          "low_threshold_rechargeable": "Baterías recargables",
           "battery_days_till_empty": "Días de aviso antes del umbral"
         },
         "data_description": {
-          "low_threshold": "Una batería en este nivel o por debajo se marca como baja.",
+          "low_threshold_alkaline": "Las pilas AA, AAA y otras pilas alcalinas se marcan como bajas en este nivel o por debajo.",
+          "low_threshold_lithium": "Las pilas de botón, las pilas AA y AAA de litio, otras baterías y cualquier batería cuyo tipo no esté indicado se marcan como bajas en este nivel o por debajo. Una pila de botón que informa de su tensión también se marca como baja hacia 2,9 V.",
+          "low_threshold_rechargeable": "Las baterías recargables integradas y las pilas NiMH se marcan como bajas en este nivel o por debajo.",
           "battery_days_till_empty": "Una batería que baja recibe un aviso este número de días antes de llegar a tu umbral bajo. Solo se evalúa una batería que está a tres veces el umbral o menos, y su fecha sale de su propio historial como un rango: una batería que baja cada semana más deprisa recibe el aviso cuando el extremo cercano del rango cae dentro de estos días, y una que baja a ritmo constante aparece en Batteries to Watch del resumen diario y en Battery Trends. Una batería que mantiene su carga nunca recibe aviso, y una pila que ya está por debajo de tu umbral no se marca dos veces."
         },
         "description": "Device Sentinel vigila por defecto cada batería que encuentra. El umbral dice qué pilas están bajas; los días de aviso, cuáles están a punto de estarlo. Una pila se considera en descenso, con un tiempo restante, solo cuando está a tres veces el umbral o menos: más arriba, ninguna batería se ha vigilado el tiempo suficiente para decir cuándo llegará. Una batería necesita cuatro semanas de lecturas en las últimas seis antes de evaluarse. Muchos dispositivos dejan de funcionar antes de que su batería llegue al 0 %, así que el tiempo restante se cuenta hasta tu umbral. Cuando una batería ha estado baja, su tiempo restante se cuenta hasta vaciarse hasta que la cambies, aunque vuelva a leer por encima del umbral. Una batería se marca cuando está en el umbral o por debajo.\n\n[Batería baja en la wiki]({wiki_link})",
@@ -237,14 +241,14 @@
         }
       },
       "wifi": {
-        "title": "WiFi",
-        "description": "Device Sentinel puede vigilar la disponibilidad de tu red WiFi e informar de una caída del WiFi como un solo recuento de los dispositivos afectados, en lugar de informar de cada dispositivo por separado. Para que funcione, tu servidor de Home Assistant debe tener un adaptador inalámbrico bien conectado a tu red. Configúralo primero en Ajustes, Sistema, Red, y luego vuelve aquí. [WiFi en la wiki]({wiki_link})",
+        "title": "Wi-Fi",
+        "description": "Device Sentinel puede vigilar la disponibilidad de tu red Wi-Fi e informar de una caída del Wi-Fi como un solo recuento de los dispositivos afectados, en lugar de informar de cada dispositivo por separado. Para que funcione, tu servidor de Home Assistant debe tener un adaptador inalámbrico bien conectado a tu red. Configúralo primero en Ajustes, Sistema, Red, y luego vuelve aquí. [Wi-Fi en la wiki]({wiki_link})",
         "data": {
-          "wifi_networks": "Tus redes WiFi de IoT",
+          "wifi_networks": "Tus redes Wi-Fi de IoT",
           "wifi_confirm_seconds": "Retardo de confirmación"
         },
         "data_description": {
-          "wifi_networks": "Las redes que usan tus dispositivos y sensores para comunicarse con Home Assistant. Device Sentinel no puede saber qué red usa cada uno de tus dispositivos. Si eliges más de una, cuando cualquiera de ellas caiga, la integración informará de que el WiFi no está disponible. Para un mejor funcionamiento se recomienda usar una sola red para todos tus dispositivos.",
+          "wifi_networks": "Las redes que usan tus dispositivos y sensores para comunicarse con Home Assistant. Device Sentinel no puede saber qué red usa cada uno de tus dispositivos. Si eliges más de una, cuando cualquiera de ellas caiga, la integración informará de que el Wi-Fi no está disponible. Para un mejor funcionamiento se recomienda usar una sola red para todos tus dispositivos.",
           "wifi_confirm_seconds": "Los segundos que una red debe estar no disponible antes de informar de una caída. Un router que se reinicia por la noche desaparece unos treinta segundos."
         }
       },
@@ -381,7 +385,7 @@
         "name": "Broker: MQTT"
       },
       "bridge_wifi": {
-        "name": "Puente: WiFi"
+        "name": "Puente: Wi-Fi"
       },
       "bridge_zigbee2mqtt": {
         "name": "Puente: Zigbee2MQTT"

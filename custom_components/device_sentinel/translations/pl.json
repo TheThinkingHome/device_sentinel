@@ -12,14 +12,14 @@
     "step": {
       "init": {
         "title": "Konfiguracja Device Sentinel",
-        "description": "Domyślne ustawienia Device Sentinel wystarczą na początek. Gdy zaczniesz dostosowywać integrację do swojego systemu, przechodź od góry do dołu. Jeśli chcesz, aby alerty trafiały na telefon, zacznij od sekcji Powiadomienia.\n\n**Powiadomienia**: dokąd trafiają alerty, godziny ciszy i codzienne przypomnienie.\n\n**Wykluczenia i wyciszanie**: sprzęt, którego nie chcesz, aby cokolwiek oceniało lub zgłaszało. Aby wyciszyć tylko jeden rodzaj raportów dla urządzenia, użyj listy wyciszeń w odpowiedniej sekcji.\n\n**Niski poziom baterii**: próg niskiego poziomu i wyciszanie dotyczące wyłącznie baterii.\n\n**Siła sygnału**: jak słabnące łącza radiowe są oceniane względem normy każdego urządzenia.\n\n**Wykrywanie zawieszeń i niedostępności**: jak długo urządzenie może milczeć, zanim zostanie uznane za zawieszone (ustawiane dwoma suwakami tolerancji), oraz które urządzenia są wyciszone pod kątem zawieszenia lub niedostępności.\n\n**WiFi**: sieci obserwowane pod kątem awarii WiFi.\n\n**Zaawansowane**: przechowywanie i historia, okno konserwacji, tryb otwierania panelu (prosty lub zaawansowany) oraz narzędzie Przycinanie danych.\n\n**Rozszerzona diagnostyka**: sprzęt, który wybierzesz do szczegółowego rejestrowania, aby pomóc w opracowaniu jego obsługi.\n\n[Cała dokumentacja na wiki Device Sentinel]({wiki_link})\n\nKażda sekcja zapisuje się po zatwierdzeniu i wraca tutaj. Zamknięcie tego okna zachowuje wszystko, co zostało już zatwierdzone.",
+        "description": "Domyślne ustawienia Device Sentinel wystarczą na początek. Gdy zaczniesz dostosowywać integrację do swojego systemu, przechodź od góry do dołu. Jeśli chcesz, aby alerty trafiały na telefon, zacznij od sekcji Powiadomienia.\n\n**Powiadomienia i dzienne podsumowanie**: dokąd trafiają alerty, godziny ciszy i dzienne podsumowanie.\n\n**Wykluczenia i wyciszanie**: sprzęt, którego nie chcesz, aby cokolwiek oceniało lub zgłaszało. Aby wyciszyć tylko jeden rodzaj raportów dla urządzenia, użyj listy wyciszeń w odpowiedniej sekcji.\n\n**Niski poziom baterii**: próg niskiego poziomu dla każdego typu baterii i wyciszanie dotyczące wyłącznie baterii.\n\n**Siła sygnału**: jak słabnące łącza radiowe są oceniane względem normy każdego urządzenia.\n\n**Wykrywanie zawieszeń i niedostępności**: jak długo urządzenie może milczeć, zanim zostanie uznane za zawieszone (ustawiane dwoma suwakami tolerancji), oraz które urządzenia są wyciszone pod kątem zawieszenia lub niedostępności.\n\n**Wi-Fi**: sieci obserwowane pod kątem awarii Wi-Fi.\n\n**Zaawansowane**: przechowywanie i historia, okno konserwacji, tryb otwierania panelu (prosty lub zaawansowany) oraz narzędzie Przycinanie danych.\n\n**Rozszerzona diagnostyka**: czy nazwy są udostępniane w pobieranej diagnostyce, oraz sprzęt, który wybierzesz do szczegółowego rejestrowania, aby pomóc w opracowaniu jego obsługi.\n\n[Cała dokumentacja na wiki Device Sentinel]({wiki_link})\n\nKażda sekcja zapisuje się po zatwierdzeniu i wraca tutaj. Zamknięcie tego okna zachowuje wszystko, co zostało już zatwierdzone.",
         "menu_options": {
           "notifications": "Powiadomienia i dzienne podsumowanie",
           "exclusions": "Wykluczenia i wyciszanie",
           "battery": "Niski poziom baterii",
           "signal": "Siła sygnału",
           "freeze": "Wykrywanie zawieszeń i niedostępności",
-          "wifi": "WiFi",
+          "wifi": "Wi-Fi",
           "advanced": "Zaawansowane",
           "extended": "Rozszerzona diagnostyka"
         }
@@ -103,11 +103,15 @@
       "battery": {
         "title": "Niski poziom baterii",
         "data": {
-          "low_threshold": "Próg niskiego poziomu baterii",
+          "low_threshold_alkaline": "Baterie alkaliczne",
+          "low_threshold_lithium": "Baterie litowe i inne",
+          "low_threshold_rechargeable": "Akumulatory",
           "battery_days_till_empty": "Dni do ostrzeżenia o niskim poziomie"
         },
         "data_description": {
-          "low_threshold": "Bateria na tym poziomie lub niższym jest oznaczana jako słaba.",
+          "low_threshold_alkaline": "Baterie AA, AAA i inne ogniwa alkaliczne są oznaczane jako słabe na tym poziomie lub niższym.",
+          "low_threshold_lithium": "Baterie pastylkowe, litowe AA i AAA, inne baterie oraz każda bateria bez ustawionego typu są oznaczane jako słabe na tym poziomie lub niższym. Bateria pastylkowa, która podaje swoje napięcie, jest też oznaczana jako słaba przy około 2,9 V.",
+          "low_threshold_rechargeable": "Wbudowane akumulatory i ogniwa NiMH są oznaczane jako słabe na tym poziomie lub niższym.",
           "battery_days_till_empty": "O słabnącej baterii ostrzegamy na tyle dni przed osiągnięciem przez nią progu niskiego poziomu. Oceniana jest tylko bateria na poziomie nie wyższym niż trzykrotność progu, a jej data wynika z własnej historii jako przedział: o baterii słabnącej coraz szybciej co tydzień ostrzegamy, gdy bliższy kraniec przedziału mieści się w tych dniach, a bateria słabnąca w stałym tempie trafia do sekcji Baterie do obserwacji w Dziennym podsumowaniu oraz do Trendów baterii. O baterii utrzymującej ładunek nigdy nie ostrzegamy, a ogniwo już poniżej progu nie jest oznaczane dwukrotnie."
         },
         "description": "Device Sentinel domyślnie obserwuje każdą znalezioną baterię. Próg odpowiada na pytanie, które ogniwa są słabe; dni ostrzeżenia – które wkrótce takie będą. Ogniwo jest uznawane za słabnące i dostaje szacowany czas do wyczerpania tylko na poziomie nie wyższym niż trzykrotność progu: wyżej żadna bateria nie była obserwowana dość długo, by powiedzieć, kiedy go osiągnie. Do oceny bateria potrzebuje czterech tygodni odczytów z ostatnich sześciu. Wiele urządzeń przestaje działać, zanim bateria dojdzie do 0%, dlatego pozostały czas liczony jest do Twojego progu. Gdy bateria raz była słaba, jej pozostały czas liczony jest do całkowitego rozładowania aż do jej wymiany, nawet jeśli odczyt znów przekroczy próg. Bateria jest oznaczana, gdy jest na poziomie progu lub niższym.\n\n[Niski poziom baterii na wiki]({wiki_link})",
@@ -237,14 +241,14 @@
         }
       },
       "wifi": {
-        "title": "WiFi",
-        "description": "Device Sentinel może obserwować dostępność Twojej sieci WiFi i zgłaszać awarię WiFi, która wyłącza kilka urządzeń, jako jedną zbiorczą liczbę zamiast zgłaszać każde urządzenie osobno. Aby to działało, serwer Home Assistant musi mieć adapter bezprzewodowy prawidłowo połączony z Twoją siecią. Skonfiguruj to najpierw w Ustawienia, System, Sieć, a potem wróć tutaj. [WiFi na wiki]({wiki_link})",
+        "title": "Wi-Fi",
+        "description": "Device Sentinel może obserwować dostępność Twojej sieci Wi-Fi i zgłaszać awarię Wi-Fi, która wyłącza kilka urządzeń, jako jedną zbiorczą liczbę zamiast zgłaszać każde urządzenie osobno. Aby to działało, serwer Home Assistant musi mieć adapter bezprzewodowy prawidłowo połączony z Twoją siecią. Skonfiguruj to najpierw w Ustawienia, System, Sieć, a potem wróć tutaj. [Wi-Fi na wiki]({wiki_link})",
         "data": {
-          "wifi_networks": "Twoje sieci WiFi dla IoT",
+          "wifi_networks": "Twoje sieci Wi-Fi dla IoT",
           "wifi_confirm_seconds": "Opóźnienie potwierdzenia"
         },
         "data_description": {
-          "wifi_networks": "Sieci, których Twoje urządzenia i czujniki używają do komunikacji z Home Assistant. Device Sentinel nie jest w stanie stwierdzić, której sieci używa dane urządzenie. Jeśli wybierzesz więcej niż jedną, gdy któraś z nich przestanie działać, integracja zgłosi, że WiFi jest niedostępne. Dla najlepszej wydajności zalecane jest używanie jednej sieci dla wszystkich urządzeń.",
+          "wifi_networks": "Sieci, których Twoje urządzenia i czujniki używają do komunikacji z Home Assistant. Device Sentinel nie jest w stanie stwierdzić, której sieci używa dane urządzenie. Jeśli wybierzesz więcej niż jedną, gdy któraś z nich przestanie działać, integracja zgłosi, że Wi-Fi jest niedostępne. Dla najlepszej wydajności zalecane jest używanie jednej sieci dla wszystkich urządzeń.",
           "wifi_confirm_seconds": "Liczba sekund, przez które sieć jest niedostępna, zanim zostanie zgłoszona awaria. Router restartujący się w nocy znika na około trzydzieści sekund."
         }
       },
@@ -256,7 +260,7 @@
           "study_hardware": "Sprzęt do zbadania"
         },
         "data_description": {
-          "share_names": "Autorzy Device Sentinel szanują Twoją prywatność. Pobrana diagnostyka nigdy nie zawiera Twoich adresów e-mail, adresów Twojej sieci domowej, nazw Twoich sieci WiFi ani pełnego adresu MAC żadnego z Twoich urządzeń. Jednak nazwy urządzeń, encji, obszarów i etykiet mogą być potrzebne przy prośbie o wsparcie, dlatego udostępnianie ich jest domyślnie włączone.\n\nWłączone: udostępnianie jest włączone. Nazwy urządzeń, encji, obszarów i etykiet będą widoczne w pobranej diagnostyce.\n\nWyłączone: nazwy urządzeń, encji, obszarów i etykiet zostaną ukryte. Nie pojawią się w pobranej diagnostyce. Zamiast nich zostaną użyte zanonimizowane symbole zastępcze, takie jak Urządzenie 12, Obszar 51 i Etykieta 3. Uzyskanie wsparcia może być trudniejsze.",
+          "share_names": "Autorzy Device Sentinel szanują Twoją prywatność. Pobrana diagnostyka nigdy nie zawiera Twoich adresów e-mail, adresów Twojej sieci domowej, nazw Twoich sieci Wi-Fi ani pełnego adresu MAC żadnego z Twoich urządzeń. Jednak nazwy urządzeń, encji, obszarów i etykiet mogą być potrzebne przy prośbie o wsparcie, dlatego udostępnianie ich jest domyślnie włączone.\n\nWłączone: udostępnianie jest włączone. Nazwy urządzeń, encji, obszarów i etykiet będą widoczne w pobranej diagnostyce.\n\nWyłączone: nazwy urządzeń, encji, obszarów i etykiet zostaną ukryte. Nie pojawią się w pobranej diagnostyce. Zamiast nich zostaną użyte zanonimizowane symbole zastępcze, takie jak Urządzenie 12, Obszar 51 i Etykieta 3. Uzyskanie wsparcia może być trudniejsze.",
           "study_hardware": "Device Sentinel musi zbadać obserwowane urządzenia i sposób ich działania w prawdziwym systemie, zanim część z nich będzie mogła być w pełni obsługiwana, a nikt pracujący nad Device Sentinel nie ma wszystkiego, co istnieje. Tutaj pojawia się tylko sprzęt znaleziony w Twoim systemie i tylko tam, gdzie obsługa jest dopiero tworzona. Jeśli chcesz obsługi sprzętu z tej listy, wybierz go i poczekaj 48 godzin. Następnie pobierz diagnostykę ze strony integracji Device Sentinel i otwórz zgłoszenie z dołączonym plikiem diagnostycznym, pisząc, co chciałbyś, aby zostało zbudowane. Czujniki problemów i odpytywanie pojawia się w każdym systemie: rejestruje czujniki problemów każdego urządzenia oraz to, które integracje aktualizują wszystkie swoje urządzenia naraz. Wybranie czegokolwiek nie zmienia sposobu działania Device Sentinel."
         }
       }
@@ -381,7 +385,7 @@
         "name": "Broker: MQTT"
       },
       "bridge_wifi": {
-        "name": "Most: WiFi"
+        "name": "Most: Wi-Fi"
       },
       "bridge_zigbee2mqtt": {
         "name": "Most: Zigbee2MQTT"

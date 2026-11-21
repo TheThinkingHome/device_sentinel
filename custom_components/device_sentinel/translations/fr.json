@@ -12,14 +12,14 @@
     "step": {
       "init": {
         "title": "Configuration de Device Sentinel",
-        "description": "Les réglages par défaut de Device Sentinel suffisent pour démarrer. Quand vous commencerez à adapter l'intégration à votre installation, procédez de haut en bas. Si vous voulez recevoir les alertes sur votre téléphone, commencez par Notifications.\n\n**Notifications** : destinataires des alertes, heures calmes et rappel quotidien.\n\n**Exclusions et sourdine** : le matériel que vous ne voulez jamais voir évalué ni signalé, par aucune fonction. Pour faire taire un seul type de rapport pour un appareil, utilisez plutôt la liste de sourdine de la section concernée.\n\n**Batterie faible** : le seuil bas, et la sourdine propre aux batteries.\n\n**Force du signal** : comment l'affaiblissement des liaisons radio est évalué par rapport au plancher propre à chaque appareil.\n\n**Appareils figés et indisponibles** : combien de temps un appareil peut rester silencieux avant d'être déclaré figé, réglé par deux curseurs de délai de grâce, et quels appareils sont en sourdine pour « figé » ou pour « indisponible ».\n\n**WiFi** : les réseaux surveillés pour détecter une panne Wi-Fi.\n\n**Avancé** : stockage et historique, fenêtre de maintenance, ouverture du tableau de bord en mode Simple ou Avancé, et outil de nettoyage des données.\n\n**Diagnostics étendus** : le matériel que vous choisissez d'enregistrer en détail, pour aider à le prendre en charge.\n\n[Toute la documentation sur le wiki de Device Sentinel]({wiki_link})\n\nChaque section est enregistrée quand vous la validez et vous ramène ici. Fermer cette fenêtre conserve tout ce que vous avez déjà validé.",
+        "description": "Les réglages par défaut de Device Sentinel suffisent pour démarrer. Quand vous commencerez à adapter l'intégration à votre installation, procédez de haut en bas. Si vous voulez recevoir les alertes sur votre téléphone, commencez par Notifications.\n\n**Notifications et bilan quotidien** : destinataires des alertes, heures calmes et bilan quotidien.\n\n**Exclusions et sourdine** : le matériel que vous ne voulez jamais voir évalué ni signalé, par aucune fonction. Pour faire taire un seul type de rapport pour un appareil, utilisez plutôt la liste de sourdine de la section concernée.\n\n**Batterie faible** : le seuil bas de chaque type de batterie, et la sourdine propre aux batteries.\n\n**Force du signal** : comment l'affaiblissement des liaisons radio est évalué par rapport au plancher propre à chaque appareil.\n\n**Appareils figés et indisponibles** : combien de temps un appareil peut rester silencieux avant d'être déclaré figé, réglé par deux curseurs de délai de grâce, et quels appareils sont en sourdine pour « figé » ou pour « indisponible ».\n\n**Wi-Fi** : les réseaux surveillés pour détecter une panne Wi-Fi.\n\n**Avancé** : stockage et historique, fenêtre de maintenance, ouverture du tableau de bord en mode Simple ou Avancé, et outil de nettoyage des données.\n\n**Diagnostics étendus** : le partage des noms dans votre téléchargement de diagnostics, et le matériel que vous choisissez d'enregistrer en détail, pour aider à le prendre en charge.\n\n[Toute la documentation sur le wiki de Device Sentinel]({wiki_link})\n\nChaque section est enregistrée quand vous la validez et vous ramène ici. Fermer cette fenêtre conserve tout ce que vous avez déjà validé.",
         "menu_options": {
           "notifications": "Notifications et bilan quotidien",
           "exclusions": "Exclusions et sourdine",
           "battery": "Batterie faible",
           "signal": "Force du signal",
           "freeze": "Appareils figés et indisponibles",
-          "wifi": "WiFi",
+          "wifi": "Wi-Fi",
           "advanced": "Avancé",
           "extended": "Diagnostics étendus"
         }
@@ -103,11 +103,15 @@
       "battery": {
         "title": "Batterie faible",
         "data": {
-          "low_threshold": "Seuil de batterie faible",
+          "low_threshold_alkaline": "Piles alcalines",
+          "low_threshold_lithium": "Piles lithium et autres",
+          "low_threshold_rechargeable": "Batteries rechargeables",
           "battery_days_till_empty": "Préavis batterie faible (jours)"
         },
         "data_description": {
-          "low_threshold": "Une batterie à ce niveau ou en dessous est signalée faible.",
+          "low_threshold_alkaline": "Les piles AA, AAA et autres piles alcalines sont signalées faibles à ce niveau ou en dessous.",
+          "low_threshold_lithium": "Les piles bouton, les piles AA et AAA au lithium, les autres batteries et toute batterie dont le type n'est pas renseigné sont signalées faibles à ce niveau ou en dessous. Une pile bouton qui indique sa tension est aussi signalée faible vers 2,9 V.",
+          "low_threshold_rechargeable": "Les batteries rechargeables intégrées et les piles NiMH sont signalées faibles à ce niveau ou en dessous.",
           "battery_days_till_empty": "Une batterie en baisse fait l'objet d'une alerte ce nombre de jours avant d'atteindre votre seuil bas. Seule une batterie à trois fois le seuil ou moins est évaluée, et sa date est estimée à partir de son propre historique, sous forme de fourchette : une batterie qui baisse de plus en plus vite chaque semaine fait l'objet d'une alerte quand le début de la fourchette tombe dans ce nombre de jours ; une batterie qui baisse à rythme régulier est listée sous Batteries to Watch dans le bilan quotidien et dans Battery Trends. Une batterie qui garde sa charge ne déclenche jamais d'alerte, et une pile déjà sous votre seuil n'est pas signalée deux fois."
         },
         "description": "Device Sentinel surveille par défaut chaque batterie qu'il trouve. Le seuil indique quelles piles sont faibles ; les jours de préavis, lesquelles sont sur le point de l'être. Une pile n'est jugée en baisse, avec une estimation du temps restant, qu'à trois fois le seuil ou moins : plus haut, aucune batterie n'a été suivie assez longtemps pour dire quand elle l'atteindra. Une batterie a besoin de quatre semaines de relevés sur les six dernières avant d'être évaluée. Beaucoup d'appareils cessent de fonctionner avant que leur batterie n'atteigne 0 %, le temps restant est donc calculé jusqu'à votre seuil. Une fois qu'une batterie a été faible, son temps restant est calculé jusqu'à épuisement tant que vous ne l'avez pas remplacée, même si elle repasse au-dessus du seuil. Une batterie est signalée quand elle est au niveau du seuil ou en dessous.\n\n[Batterie faible sur le wiki]({wiki_link})",
@@ -235,14 +239,14 @@
         }
       },
       "wifi": {
-        "title": "WiFi",
-        "description": "Device Sentinel peut surveiller la disponibilité de votre réseau WiFi et signaler une panne WiFi en un seul décompte des appareils touchés, au lieu de signaler chaque appareil séparément. Pour cela, votre serveur Home Assistant doit disposer d'un adaptateur sans fil correctement connecté à votre réseau. Configurez-le d'abord dans Paramètres, Système, Réseau, puis revenez ici. [WiFi sur le wiki]({wiki_link})",
+        "title": "Wi-Fi",
+        "description": "Device Sentinel peut surveiller la disponibilité de votre réseau Wi-Fi et signaler une panne Wi-Fi en un seul décompte des appareils touchés, au lieu de signaler chaque appareil séparément. Pour cela, votre serveur Home Assistant doit disposer d'un adaptateur sans fil correctement connecté à votre réseau. Configurez-le d'abord dans Paramètres, Système, Réseau, puis revenez ici. [Wi-Fi sur le wiki]({wiki_link})",
         "data": {
-          "wifi_networks": "Vos réseaux WiFi IoT",
+          "wifi_networks": "Vos réseaux Wi-Fi IoT",
           "wifi_confirm_seconds": "Délai de confirmation"
         },
         "data_description": {
-          "wifi_networks": "Les réseaux que vos appareils et capteurs utilisent pour communiquer avec Home Assistant. Device Sentinel ne peut pas savoir quel réseau utilise chacun de vos appareils. Si vous en choisissez plusieurs, dès que l'un d'eux tombe, l'intégration signalera que le WiFi est indisponible. Pour de meilleures performances, il est recommandé d'utiliser un seul réseau pour tous vos appareils.",
+          "wifi_networks": "Les réseaux que vos appareils et capteurs utilisent pour communiquer avec Home Assistant. Device Sentinel ne peut pas savoir quel réseau utilise chacun de vos appareils. Si vous en choisissez plusieurs, dès que l'un d'eux tombe, l'intégration signalera que le Wi-Fi est indisponible. Pour de meilleures performances, il est recommandé d'utiliser un seul réseau pour tous vos appareils.",
           "wifi_confirm_seconds": "Nombre de secondes d'indisponibilité d'un réseau avant qu'une panne soit signalée. Un routeur qui redémarre la nuit disparaît environ trente secondes."
         }
       },
@@ -379,7 +383,7 @@
         "name": "Broker : MQTT"
       },
       "bridge_wifi": {
-        "name": "Pont : WiFi"
+        "name": "Pont : Wi-Fi"
       },
       "bridge_zigbee2mqtt": {
         "name": "Pont : Zigbee2MQTT"
