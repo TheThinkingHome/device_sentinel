@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.29.3 (2026-11-15)
+# File: history_file.py, Version: 0.30.1 (2026-11-21)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -61,6 +61,8 @@ from .const import (
     DROP_WENT,
     DATA_ADDRESS_CHANGES,
     ADDR_WHEN,
+    DATA_BATTERY_CURVES,
+    DATA_BATTERY_WEEKS,
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -82,7 +84,7 @@ from .const import (
     SYS_WHEN,
 )
 from .backup import keep_as_last_good
-from .normalise import EXPECTED, damaged_rows, day_range_row_ok, series_fault
+from .normalise import EXPECTED, check_storage, damaged_rows, day_range_row_ok, series_fault
 
 # The daily signal series, on the record and in its second scale.
 SIGNAL_SERIES_FIELDS = (
@@ -120,6 +122,10 @@ H_DEVICES = "devices"
 # know them reads the rest of the file and leaves them out, where a field
 # it does not know in the device map makes it refuse the whole file.
 H_DAY_RANGES = "battery_day_ranges"
+# Each battery's weeks and each device's newest good curve (rule BAT-20):
+# kept whole in the history file and never trimmed, under keys of their
+# own for the same reason.
+KEPT_WHOLE = (DATA_BATTERY_WEEKS, DATA_BATTERY_CURVES)
 
 LAST_GOOD = f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
 
@@ -213,6 +219,10 @@ def split(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     part: dict[str, Any] = {H_DEVICES: older_devices}
     if older_ranges:
         part[H_DAY_RANGES] = older_ranges
+    for key in KEPT_WHOLE:
+        if data.get(key):
+            part[key] = data[key]
+            view.pop(key, None)
     line = data.get(DATA_HISTORY_LINE)
     for table, field in ROW_TABLES:
         rows = data.get(table)
@@ -227,7 +237,7 @@ def is_empty(part: dict[str, Any]) -> bool:
     """Say whether a history part holds nothing at all."""
     return not part.get(H_DEVICES) and not part.get(H_DAY_RANGES) and not any(
         part.get(table) for table, _field in ROW_TABLES
-    )
+    ) and not any(part.get(key) for key in KEPT_WHOLE)
 
 
 def digest(part: dict[str, Any]) -> str:
@@ -301,6 +311,11 @@ def check_payload(payload: Any) -> str | None:
         for device_id, rows in ranges.items():
             if not isinstance(rows, list) or not all(day_range_row_ok(row) for row in rows):
                 return f"{device_id}: {H_DAY_RANGES} holds a damaged row"
+    whole = {key: payload[key] for key in KEPT_WHOLE if key in payload}
+    if whole:
+        faults = check_storage(whole)
+        if faults:
+            return f"{faults[0][0]}: {faults[0][2]}"
     for table, _field in ROW_TABLES:
         rows = payload.get(table)
         if rows is None:
@@ -360,6 +375,11 @@ def join(loaded: dict[str, Any], payload: dict[str, Any]) -> dict[str, int]:
         current = loaded.get(table)
         loaded[table] = list(rows) + (current if isinstance(current, list) else [])
         counts["rows"] += len(rows)
+    for key in KEPT_WHOLE:
+        # Kept whole here; a main file written whole after a history file
+        # failed holds them too, and the newer of the two is the main file's.
+        if isinstance(payload.get(key), dict) and not loaded.get(key):
+            loaded[key] = payload[key]
     return counts
 
 

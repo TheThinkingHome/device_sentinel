@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_evidence.py, Version: 0.27.10 (2026-10-27)
+# File: battery_evidence.py, Version: 0.30.1 (2026-11-21)
 
 """What a better battery forecast will need, kept from now.
 
@@ -209,9 +209,12 @@ class BatteryEvidenceMixin:
         lives = self._lives()
         lives.append(row)
         del lives[:-BATTERY_LIVES_KEEP]
+        # Its curve, kept when it is good and full (rule BAT-20).
+        self.battery_curve_ended(device_id, record, row)  # type: ignore[attr-defined]
 
     def battery_life_withdrawn(self, device_id: str, stamp: Any) -> None:
-        """A replacement taken back takes its row with it."""
+        """A replacement taken back takes its row with it, and its curve."""
+        self.battery_curve_withdrawn(device_id, stamp)  # type: ignore[attr-defined]
         lives = self._lives()
         for index in range(len(lives) - 1, -1, -1):
             row = lives[index]
@@ -248,9 +251,11 @@ class BatteryEvidenceMixin:
             return
         if correcting and newest is not None:
             lives[newest] = row
-            return
-        lives.append(row)
-        del lives[:-BATTERY_LIVES_KEEP]
+        else:
+            lives.append(row)
+            del lives[:-BATTERY_LIVES_KEEP]
+        # Its curve, made again to the person's day (rule BAT-20).
+        self.battery_curve_ended(device_id, record, row)  # type: ignore[attr-defined]
 
     def _life_row(
         self, device_id: str, record: dict[str, Any], end_day: date | None, start: tuple[date, bool] | None,

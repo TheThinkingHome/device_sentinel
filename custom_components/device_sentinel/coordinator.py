@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.0 (2026-11-21)
+# File: coordinator.py, Version: 0.30.1 (2026-11-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -132,6 +132,7 @@ from .power_source import PowerMixin
 from .device_type import TypeMixin
 from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
+from .battery_curves import BatteryCurvesMixin
 from .battery_evidence import BatteryEvidenceMixin
 from .battery_forecasts import BatteryForecastMixin
 from .battery_replacement import BatteryReplacementMixin
@@ -447,6 +448,7 @@ class DeviceSentinelCoordinator(
     BatteryReplacementMixin,
     BatteryForecastMixin,
     BatteryEvidenceMixin,
+    BatteryCurvesMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -2281,6 +2283,12 @@ class DeviceSentinelCoordinator(
             duration=self._downtime if self._downtime > 0.0 else None,
             when=self._started_at,
         )
+        # Each battery's weeks from the days already kept, so a house that
+        # upgrades has them from its first start (rule BAT-20).
+        try:
+            self.battery_weeks_fold()
+        except Exception as err:  # noqa: BLE001 - the start goes on without them
+            LOGGER.debug("device_sentinel: battery weeks not built at start: %s", err)
         if getattr(self, "_battery_types_notice", False):
             self._battery_types_notice = False
             self._record_system_event(SYS_SETTINGS_CHANGED, detail=SETTINGS_BATTERY_BY_TYPE)
@@ -6087,6 +6095,9 @@ class DeviceSentinelCoordinator(
         self.battery_forecasts_fold(day)
         # What a better forecast will need, kept from now (rule BAT-16).
         self.battery_evidence_fold(day)
+        # Each battery's weeks, kept for good (rule BAT-20), from the
+        # day ranges and evidence just closed.
+        self.battery_weeks_fold()
         # A new day's figures are something the dashboard should offer.
         self._mark_changed()
         # The roll is what confirms a rail (three consecutive days

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.29.7 (2026-11-18)
+# File: normalise.py, Version: 0.30.1 (2026-11-21)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -49,7 +49,9 @@ from .records import _new_device_record
 from .const import (
     DATA_BATTERY_FORECAST_TALLY,
     DATA_BATTERY_EMPTY_TALLY,
+    DATA_BATTERY_CURVES,
     DATA_BATTERY_LIVES,
+    DATA_BATTERY_WEEKS,
     FORECAST_OUTCOMES,
     DEV_LOGNORMAL_DAYS,
     DEV_LOGNORMAL_REASON,
@@ -273,6 +275,8 @@ EVIDENCE_LOG = "list of battery evidence rows"
 DAY_RANGE_LOG = "list of battery day ranges"
 VOLTS = "a battery voltage or None"
 LIVES_LOG = "list of battery lives"
+WEEKS_MAP = "map of battery weeks"
+CURVES_MAP = "map of battery curves"
 # A Wi-Fi outage still open (rule UP-04).
 WIFI_OUTAGE = "a stored Wi-Fi outage"
 # A forecast's days are held to three years, as PROJECTION_LONGEST
@@ -458,6 +462,71 @@ def _life_row_ok(row: Any) -> bool:
         and isinstance(start_seen, bool)
         and _is_number(first_level) and 0 <= first_level <= 100
         and _is_number(last_level) and 0 <= last_level <= 100
+    )
+
+
+def week_row_ok(row: Any) -> bool:
+    """One week of one battery (rule BAT-20): [week start, battery start,
+    median, lowest, highest, lowest volts, highest volts, messages,
+    mean temperature]."""
+    if not isinstance(row, list) or len(row) != 9:
+        return False
+    week, battery, middle, low, high, volts_low, volts_high, messages, temperature = row
+
+    def level(value: Any) -> bool:
+        return _is_number(value) and 0 <= value <= 100
+
+    def maybe(value: Any, low_end: float, high_end: float) -> bool:
+        return value is None or _within(value, low_end, high_end)
+
+    return (
+        _is_day(week) and _is_day(battery)
+        and level(middle) and level(low) and level(high) and low <= middle <= high
+        and maybe(volts_low, 0.0, 50.0) and maybe(volts_high, 0.0, 50.0)
+        and (volts_low is None or volts_high is None or volts_low <= volts_high)
+        and (messages is None or (isinstance(messages, int) and not isinstance(messages, bool) and 0 <= messages <= COUNT_HIGHEST))
+        and maybe(temperature, -50.0, 80.0)
+    )
+
+
+CURVE_ENDINGS = ("ran_out", "replaced")
+
+
+def curve_ok(curve: Any) -> bool:
+    """One finished battery's curve (rule BAT-20)."""
+    if not isinstance(curve, dict):
+        return False
+    text = ("device_id", "start", "end", "last_heard")
+    if not all(isinstance(curve.get(k), str) and curve.get(k) for k in text):
+        return False
+    if not all(_is_day(curve[k]) for k in ("start", "end", "last_heard")):
+        return False
+    if not all(curve.get(k) is None or isinstance(curve.get(k), str) for k in ("maker", "model", "battery_type", "stamp")):
+        return False
+    quantity = curve.get("quantity")
+    if quantity is not None and not (isinstance(quantity, int) and not isinstance(quantity, bool) and 0 < quantity < 100):
+        return False
+    if not all(isinstance(curve.get(k), bool) for k in ("start_seen", "good", "full")):
+        return False
+    if curve.get("from_week") is not None and not _is_day(curve.get("from_week")):
+        return False
+    if curve.get("ended") not in CURVE_ENDINGS or not _within(curve.get("threshold"), 0.0, 100.0):
+        return False
+    for key in ("first_under", "first_empty"):
+        if curve.get(key) is not None and not _is_day(curve.get(key)):
+            return False
+    for key in ("volts_under", "volts_last"):
+        if curve.get(key) is not None and not _within(curve.get(key), 0.0, 50.0):
+            return False
+    weeks, tail = curve.get("weeks"), curve.get("tail")
+    if not isinstance(weeks, list) or not weeks or not all(week_row_ok(row) for row in weeks):
+        return False
+    return isinstance(tail, list) and all(
+        isinstance(row, list) and len(row) == 6 and _is_day(row[0])
+        and _within(row[1], 0.0, 100.0)
+        and all(v is None or _within(v, 0.0, 100.0) for v in row[2:4])
+        and all(v is None or _within(v, 0.0, 50.0) for v in row[4:6])
+        for row in tail
     )
 
 
@@ -706,6 +775,21 @@ def _fault(kind: str, value: Any) -> str | None:
         return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
     if kind == WIFI_OUTAGE:
         return None if wifi_outage_ok(value) else _describe(value)
+    if kind == WEEKS_MAP:
+        # Each battery's weeks, by device (rule BAT-20).
+        if not isinstance(value, dict):
+            return _describe(value)
+        bad = [
+            device for device, rows in value.items()
+            if not isinstance(device, str) or not isinstance(rows, list) or not all(week_row_ok(r) for r in rows)
+        ]
+        return None if not bad else f"{len(bad)} bad device(s), first {_describe(bad[0])}"
+    if kind == CURVES_MAP:
+        # Each device's newest good curve (rule BAT-20).
+        if not isinstance(value, dict):
+            return _describe(value)
+        bad = [device for device, curve in value.items() if not isinstance(device, str) or not curve_ok(curve)]
+        return None if not bad else f"{len(bad)} bad curve(s), first {_describe(bad[0])}"
     if kind == LIVES_LOG:
         # One row per battery replaced (rule BAT-08).
         if not isinstance(value, list):
@@ -1091,6 +1175,10 @@ SCALARS: dict[str, str] = {
     DATA_BATTERY_EMPTY_TALLY: MAPPING,
     # Each battery replaced, kept for good (rule BAT-08).
     DATA_BATTERY_LIVES: LIVES_LOG,
+    # Each battery's weeks, and each device's newest good curve, kept for
+    # good in the history file (rule BAT-20).
+    DATA_BATTERY_WEEKS: WEEKS_MAP,
+    DATA_BATTERY_CURVES: CURVES_MAP,
 }
 
 # How many rows of one table are reported before the rest are counted.

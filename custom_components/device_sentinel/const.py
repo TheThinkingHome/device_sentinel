@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.0 (2026-11-21)
+# File: const.py, Version: 0.30.1 (2026-11-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1505,6 +1505,25 @@ EVIDENCE_TEMPERATURE_RANGE = (-50.0, 80.0)
 # One row per battery replaced, for the house, kept for good (rule BAT-08).
 DATA_BATTERY_LIVES = "battery_lives"
 BATTERY_LIVES_KEEP = 5000
+# Each battery's weekly summary, kept for good in the history file, never
+# trimmed by How Much History to Keep, so a battery of any length keeps
+# its whole shape: device id -> rows (rule BAT-20). Ten years a device.
+DATA_BATTERY_WEEKS = "battery_weeks"
+BATTERY_WEEKS_KEEP = 520
+# Each device's newest good, full battery curve, kept when the battery
+# ends: device id -> curve (rule BAT-20).
+DATA_BATTERY_CURVES = "battery_curves"
+BATTERY_CURVES_KEEP = 2000
+# A curve is kept when its start was seen and it has readings in at least
+# this share of its weeks: four of every five (rule BAT-20).
+CURVE_WEEKS_SHARE = 0.8
+# The daily detail kept at a curve's end, where its fall is steepest: the
+# forecast's own window (rule BAT-20).
+CURVE_TAIL_DAYS = 42
+# A battery whose device went silent this many days before the
+# replacement ran out; one replaced while still reporting was stopped
+# early (rule BAT-20).
+CURVE_RAN_OUT_DAYS = 2
 # The house's tally of forecasts to empty, kept apart from the tally of
 # forecasts to the threshold, so each says how good its own are (rule
 # BAT-15).
