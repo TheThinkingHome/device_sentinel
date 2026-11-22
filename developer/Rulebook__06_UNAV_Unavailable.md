@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Unavailable (UNAV)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 When a device is unavailable, when its outage began and ended, how a device that keeps dropping out is told, and how long a recovered device is said to have been down. Frozen and never reported devices, and what an outage does to learning, are under [FRZ](Rulebook__05_FRZ_Freeze.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). A bridge, broker or integration going down is under [UP](Rulebook__07_UP_Upstream_Outages.md), and the mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -26,9 +26,11 @@ When a device is unavailable, when its outage began and ended, how a device that
 
 ### UNAV-03 The Three-Minute Debounce
 
-**A device turns unavailable only after it has read down for three minutes, so a device passing through a quick change of state is not reported. A frozen device waits the same three minutes before it turns unavailable, so an integration restart holds it frozen. A hub's lost connection is published at once, because two checks have already confirmed it (STACK).**
+**A device turns unavailable only after it has read down for three minutes, so a device passing through a quick change of state is not reported. A frozen device waits the same three minutes before it turns unavailable, so an integration restart holds it frozen. A verdict the device's stack has already confirmed over time is published at once, dated from when it began.**
+- **Published at once:** a hub's lost connection, which two checks a minute apart confirm ([STACK-09](Rulebook__08_STACK_Stacks.md), [STACK-17](Rulebook__08_STACK_Stacks.md#stack-17-lightwave-hubs-and-their-cloud-link)), and, since 0.30.2, a Lightwave device's Connectivity sensor turning off, which Lightwave turns off only after about 30 minutes without hearing the device ([STACK-16](Rulebook__08_STACK_Stacks.md#stack-16-lightwave-devices-and-their-connectivity-sensor)).
+- **Keeps the wait:** a Z-Wave node its stack calls dead, which Z-Wave does at the first command that fails, so a node can read dead and come back within seconds ([STACK-05](Rulebook__08_STACK_Stacks.md#stack-05-z-wave)).
 
-*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_main_entities_decide_unavailable.py`](../tests/test_main_entities_decide_unavailable.py), [`test_lutron_hub.py`](../tests/test_lutron_hub.py).
+*Proof:* [`test_freeze.py`](../tests/test_freeze.py), [`test_main_entities_decide_unavailable.py`](../tests/test_main_entities_decide_unavailable.py), [`test_lutron_hub.py`](../tests/test_lutron_hub.py), [`test_lightwave_hub.py`](../tests/test_lightwave_hub.py).
 
 ### UNAV-04 The Saved Outage Start
 

@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Daily Brief (BRIEF)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Daily Brief: what it says and in what order, how In Short tells a day, the tables, how causes are named, when and where it is sent, the links in it, and the maintainer files written beside it in `/config/device_sentinel/`. The brief's battery lines (Batteries falling faster each week, Batteries to Watch) are under [BAT](Rulebook__09_BAT_Battery.md), and its Recommendations section is under [REC](Rulebook__15_REC_Recommendations.md). Phone pushes and the Problem List are under [NOTE](Rulebook__12_NOTE_Notifications.md) and LIST. What a mute covers is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -115,8 +115,9 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **Mail:** it goes through Home Assistant's own services, never by Device Sentinel itself. An SMTP recipient is offered as its notify entity and sent the page through smtp.send_message. An old-style notify action already chosen keeps working until Home Assistant removes it. Any other notify entity, such as a Telegram chat, is offered too and gets the brief's text ([NOTE-02](Rulebook__12_NOTE_Notifications.md#note-02-two-priority-tiers)).
 - **Daylight saving:** a brief time inside the hour daylight saving repeats sends one brief, and one inside the hour it skips still sends that day's.
 - **Not to a phone (since 0.28.12):** a phone chosen in Send the Full Brief To is refused on Submit, with an error above the Daily Brief section saying the brief goes to mail or a persistent notification and the phone gets the live alerts. A phone's push relay will not carry the brief, and it was counted as sent. One saved before is skipped when the brief is sent, with a warning in the log, and the rest of the screen still saves.
+- **A target saved as one piece of text (since 0.30.2):** as a hand-edited file can hold, it is one target, never a target per letter.
 
-*Proof:* [`test_brief_email.py`](../tests/test_brief_email.py), [`test_brief_targets.py`](../tests/test_brief_targets.py), [`test_smtp_brief.py`](../tests/test_smtp_brief.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_brief_window.py`](../tests/test_brief_window.py), [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_brief_not_to_phone.py`](../tests/test_brief_not_to_phone.py).
+*Proof:* [`test_brief_email.py`](../tests/test_brief_email.py), [`test_brief_targets.py`](../tests/test_brief_targets.py), [`test_smtp_brief.py`](../tests/test_smtp_brief.py), [`test_notifications.py`](../tests/test_notifications.py), [`test_brief_window.py`](../tests/test_brief_window.py), [`test_priority_targets.py`](../tests/test_priority_targets.py), [`test_brief_not_to_phone.py`](../tests/test_brief_not_to_phone.py), [`test_send_brief_now.py`](../tests/test_send_brief_now.py).
 
 ### BRIEF-12 One Page, Sent as Written
 
@@ -177,3 +178,16 @@ The Daily Brief: what it says and in what order, how In Short tells a day, the t
 - **The battery thresholds:** "Breaking change: alkaline batteries, and lithium and rechargeable batteries, now have their own low thresholds, 10% and 20% respectively. Changes can be made in Settings, Low Battery." ([BAT-03](Rulebook__09_BAT_Battery.md#bat-03-low-battery)).
 
 *Proof:* [`test_battery_thresholds_by_type.py`](../tests/test_battery_thresholds_by_type.py).
+
+### BRIEF-18 Send Brief From the Dashboard
+
+**Since 0.30.2, Send Brief in the dashboard's ⋮ menu sends the brief as its file holds it, the last 24 hours, at once ([DASH-20](Rulebook__14_DASH_Dashboard.md#dash-20-the-menu)).**
+- **What it sends:** every device judged and the reports written first, then the brief's rolling day ([BRIEF-10](#brief-10-the-window)), its first line marked "(in progress)" as the file always is between sends.
+- **Its title:** "Device Sentinel Daily Brief, Last 24 Hours (22 Nov 2026, 14:20)", the date and time it was sent. The time follows the clock in the Home Assistant profile of the person who pressed it, as Home Assistant reads it: 24-hour, or 12-hour with AM or PM ("22 Nov 2026, 2:20 PM"), or what their language uses. The month is named, so the date reads the same in any order of day and month (James, 22 November 2026).
+- **To whom:** the Daily Brief targets, never a phone ([BRIEF-11](#brief-11-when-and-where-it-is-sent)).
+- **When:** at once, in Quiet Hours too and whatever How Often says, because a person asked for it.
+- **The day stays open:** the scheduled brief still goes at its time, covering its whole window.
+- **The event:** every brief sent, scheduled or from the menu, fires `device_sentinel_brief_sent` ([NOTE-12](Rulebook__12_NOTE_Notifications.md#note-12-the-bus-events)).
+- **No action for automations:** only a person sends it, from the dashboard.
+
+*Proof:* [`test_send_brief_now.py`](../tests/test_send_brief_now.py).

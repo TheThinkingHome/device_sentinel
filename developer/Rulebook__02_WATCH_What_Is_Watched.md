@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: What Is Watched (WATCH)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers which devices Device Sentinel watches and what it reads them through. It also covers which devices it sets aside and why, what happens to a device that is removed or taken back, and the quiet first minutes after a start. Excluding and muting, the two choices a person makes, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). What is judged once a device is watched is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. The stack readers are under [STACK](Rulebook__08_STACK_Stacks.md).
 
@@ -25,12 +25,13 @@ This section covers which devices Device Sentinel watches and what it reads them
 
 **A device that is set aside is never judged or reported. It keeps its record unless it was excluded.**
 - **The reason shown:** the Devices tab's Set aside chip and classification.md give one reason, the first that fits in this order: excluded (see [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md)), service, disabled, duplicate coordinator, clone, nothing switched on that can report, no entities.
-- **Service:** a device Home Assistant marks as one, such as an add-on.
+- **Service:** a device Home Assistant marks as one, such as an add-on. Since 0.30.2, a service that carries a hub's own link sensor, as a Lightwave hub carries its Cloud Link, is watched as a hub ([STACK-17](Rulebook__08_STACK_Stacks.md#stack-17-lightwave-hubs-and-their-cloud-link)).
+- **In the download (since 0.30.2):** each device set aside, with its id, name, integration, model and reason, last in the file. Its name follows Share Names in Diagnostics, as every name does.
 - **Disabled:** a device disabled by a person, by its integration or with its config entry.
 - **No entities:** the device has no entities of its own that could report (firmware notices and buttons do not count, switched on or off). So it is never judged never reported.
 - **All switched off:** a device whose entities exist but are all switched off is not set aside. It stays watched, and its never-reported row is the prompt to switch them on.
 
-*Proof:* [`test_set_aside.py`](../tests/test_set_aside.py), [`test_classification.py`](../tests/test_classification.py), [`test_set_aside_verdict.py`](../tests/test_set_aside_verdict.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
+*Proof:* [`test_set_aside.py`](../tests/test_set_aside.py), [`test_classification.py`](../tests/test_classification.py), [`test_set_aside_verdict.py`](../tests/test_set_aside_verdict.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py), [`test_lightwave_hub.py`](../tests/test_lightwave_hub.py).
 
 ### WATCH-04 Notices and Buttons Are Never the Device
 

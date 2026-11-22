@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -13,7 +13,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 ### DASH-02 The Top Band and the Tabs
 
 **The status tiles and the action buttons sit in a band of their own above the tabs, and the tabs read as tabs.**
-- **In the band:** Refresh, the Maintenance Mode button with its length list, the Active Recommendations button (REC), the Simple and Advanced switch, and the time the figures were read.
+- **In the band:** Refresh, the ⋮ menu ([DASH-20](#dash-20-the-menu)), the Maintenance Mode button with its length list, the Active Recommendations button (REC), the Simple and Advanced switch, and the time the figures were read.
 - **One row (since 0.28.0):** the status tiles and the buttons sit in one row, each part as wide as its words, wrapping onto a second row only on a narrow screen. "As of" sits under the band, at its right edge, in small text.
 - **The Maintenance Mode button:** it says what pressing it does. Off, it reads "Start Maintenance Mode". Open, it reads "End Maintenance Mode" with the minutes left, counted down while the page is open.
 - **The tabs:** Daily Brief, Battery Trends, Signal Trends, Integrations, Networks ([DASH-17](#dash-17-the-networks-tab)), Devices and Recommendations, each with its own address. Since 0.28.8 there is no Classification tab: the Devices tab shows every device found ([DASH-12](#dash-12-finding-a-device)), and Classification's old address opens it on the Set aside chip. Since 0.28.9 there is no Problem List tab: it heads the Daily Brief, and the Problem List's old address opens the Daily Brief.
@@ -208,3 +208,14 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 - **Simple:** none of it.
 
 *Proof:* [`test_radio_channels.py`](../tests/test_radio_channels.py), [`tools/panel_checks/check_radio_channels.js`](../tools/panel_checks/check_radio_channels.js).
+
+### DASH-20 The Menu
+
+**Since 0.30.2, a ⋮ button after Refresh opens a menu of what writes or sends: Send Brief and Regenerate Reports.**
+- **Send Brief:** sends the brief now ([BRIEF-18](Rulebook__13_BRIEF_Daily_Brief.md#brief-18-send-brief-from-the-dashboard)). Greyed out when no Daily Brief target can take it, with the reason beneath: "No Daily Brief target is set. Choose one in Notifications and Daily Brief." An older server's reply carries no count, and the item stays offered.
+- **Regenerate Reports:** judges every device and writes the reports, as the Regenerate Reports button entity does.
+- **The note:** beside the menu, what is happening and then what happened: "Sent to 2 targets.", "Sent to 1 of 2 targets.", "Not sent: no target took it. See Settings, System, Logs.", "Reports regenerated." or what refused it. It clears after 30 seconds.
+- **Who:** admins only, as Maintenance Mode. A press elsewhere or Escape closes the menu.
+- **Refresh stays:** the dashboard is still a picture taken when it opens or is refreshed, with Refresh lighting up when there is something new (James, 22 November 2026).
+
+*Proof:* [`tools/panel_checks/check_more_menu.js`](../tools/panel_checks/check_more_menu.js), [`test_send_brief_now.py`](../tests/test_send_brief_now.py).

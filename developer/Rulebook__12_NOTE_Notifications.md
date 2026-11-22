@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -111,14 +111,15 @@ This section covers how Device Sentinel tells people and automations about the P
 
 ### NOTE-12 The Bus Events
 
-**Device Sentinel puts six events on the Home Assistant bus, at the edge of the Problem List and nowhere else:**
+**Device Sentinel puts seven events on the Home Assistant bus, six at the edge of the Problem List and one when a Daily Brief is sent:**
 - **`device_sentinel_fault`** when a device's line is added, gains a family it did not have, or carries a battery running down that crosses into low. It fires once per device, with its kinds worst first, "renewed" when an unticked item comes back, and the battery level and battery type or the signal value when a kind needs them.
 - **`device_sentinel_recovered`** when the worst kind on a line clears, with how long it lasted and what ended it. The next kind fires in turn when it clears. A device that has stopped reporting recovers only when it reports again: frozen giving way to unavailable, or unavailable to frozen, while it stays silent fires no recovery. The event means the worst thing is no longer wrong, not that the device is well.
 - **`device_sentinel_acknowledged`** when a person ticks the item. Unticking has no event of its own; the fault fires again, renewed.
 - **`device_sentinel_withdrawn`** when a line leaves without a recovery, with its kinds and the reason: set_aside, muted or removed.
 - **`device_sentinel_upstream_down` and `device_sentinel_upstream_restored`** for an outage (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
+- **`device_sentinel_brief_sent`** (since 0.30.2) when a Daily Brief is sent, on its schedule or from the dashboard's menu ([BRIEF-18](Rulebook__13_BRIEF_Daily_Brief.md#brief-18-send-brief-from-the-dashboard)), with `on_demand`, `from` and `to` (the hours it covers), `targets` and `sent`. Never the brief's text.
 
-**Quiet Hours never hold an event.** Nothing fires inside the startup grace, except a withdrawal and a restore owed to an outage announced before the restart. A device that really reports inside the grace leaves the Problem List at once, and its recovery event is held and fired when the grace closes (see [WATCH-10](Rulebook__02_WATCH_What_Is_Watched.md#watch-10-the-startup-grace)).
+**Quiet Hours never hold an event.** Nothing fires inside the startup grace, except a withdrawal, a restore owed to an outage announced before the restart, and a brief sent. A device that really reports inside the grace leaves the Problem List at once, and its recovery event is held and fired when the grace closes (see [WATCH-10](Rulebook__02_WATCH_What_Is_Watched.md#watch-10-the-startup-grace)).
 
 *Proof:* [`test_todo.py`](../tests/test_todo.py), [`test_set_aside_silent.py`](../tests/test_set_aside_silent.py), [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py), [`test_events_hostile.py`](../tests/test_events_hostile.py).
 

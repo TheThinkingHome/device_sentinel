@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -55,15 +55,15 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-05 Switched-Off Sensors
 
 **A sensor is switched on one device at a time, by an administrator.** Nothing switches on a whole kind at once.
-- **Where:** from its card, or in Advanced from the device's page. A battery voltage sensor is switched on from its card only.
-- **The cards:** Last Seen Sensor Switched Off, Battery Sensor Switched Off, Z-Wave Status Switched Off, Signal Sensor Switched Off and Battery Voltage Switched Off.
-- **The chips:** each card has a chip per device that names the sensor and what it reports: "Turn on its Last Seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor" and "Turn on its battery voltage sensor".
+- **Where:** from its card, or in Advanced from the device's page. A battery voltage sensor and a Lightwave hub's Cloud Link are switched on from their cards only.
+- **The cards:** Last Seen Sensor Switched Off, Battery Sensor Switched Off, Z-Wave Status Switched Off, Signal Sensor Switched Off, Battery Voltage Switched Off and, since 0.30.2, Cloud Link Switched Off ([STACK-17](Rulebook__08_STACK_Stacks.md#stack-17-lightwave-hubs-and-their-cloud-link)).
+- **The chips:** each card has a chip per device that names the sensor and what it reports: "Turn on its Last Seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor", "Turn on its battery voltage sensor" and "Turn on its Cloud Link".
 - **Firmware update checks:** since 0.28.7 a device's own firmware update entity is switched on the same way, from its network's page only, never a beta channel's ([DASH-17](Rulebook__14_DASH_Dashboard.md#dash-17-the-networks-tab)). No card asks for it (James, 15 November 2026, 12:13): an integration that ships it switched off doesn't push its updates, and a device with it off is judged as one with none ([REC-12](#rec-12-firmware-updates)).
 - **Which entities count:** only a device's own entities, never one another integration added, such as Battery Notes'. A device is listed only when none of its own entities of that kind is on.
 - **Battery Voltage Switched Off:** lists only a device with a battery reading, whose power is not set to mains, USB or PoE, and whose voltage nothing else already reports.
 - **Its wording:** "These devices have battery voltage entities which can be used for more accurate battery reporting and forecasting." With one device listed it reads "This device has a battery voltage entity which can be used for more accurate battery reporting and forecasting."
 
-*Proof:* [`test_switched_off_sensors.py`](../tests/test_switched_off_sensors.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js).
+*Proof:* [`test_switched_off_sensors.py`](../tests/test_switched_off_sensors.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`test_lightwave_hub.py`](../tests/test_lightwave_hub.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js).
 
 ### REC-06 Slow Reporting Devices
 
@@ -99,7 +99,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 ### REC-09 What Simple Shows
 
 **Simple shows what Device Sentinel needs to work at its best, and nothing extra.** All other cards and lines are Advanced only. The test, ruled by James, 15 November 2026, 10:30: if it affects how Device Sentinel or the device works, it goes in both. If it is cosmetic, or only makes the dashboard better to use (adding battery types, adding types, anything that makes navigating the dashboard easier), it is Advanced only, because it is not used in Simple ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)).
-- **In Simple:** Firmware Updates (since 0.29.2: a firmware update changes how the device works), Models That May Report Live and Models That May Report Cached Values (since 0.29.1: a wrong setting lists a working device or misses a dead one), Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor and Battery Voltage Switched Off, Slow Reporting Devices, Devices Sharing a Network Address, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), the Wi-Fi adapter with no network chosen (since 0.29.0: how Device Sentinel hears a Wi-Fi outage at all), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
+- **In Simple:** Firmware Updates (since 0.29.2: a firmware update changes how the device works), Models That May Report Live and Models That May Report Cached Values (since 0.29.1: a wrong setting lists a working device or misses a dead one), Notifications Recipient Not Valid and Not Set, Last Seen, Battery, Z-Wave Status, Signal Sensor, Battery Voltage and Cloud Link Switched Off, Slow Reporting Devices, Devices Sharing a Network Address, Devices Sharing A Name, a family muted for all its devices ("All devices are muted..."), the Wi-Fi adapter with no network chosen (since 0.29.0: how Device Sentinel hears a Wi-Fi outage at all), each integration recommended for exclusion ([REC-03](#rec-03-integrations-worth-excluding)), and Confirm Battery Replacement.
 - **Why the sensor cards:** Simple's device page offers no sensor to turn on, so each such sensor has its card here.
 
 *Proof:* [`test_recommendation_acknowledgement.py`](../tests/test_recommendation_acknowledgement.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`tools/panel_checks/check_recommendations.js`](../tools/panel_checks/check_recommendations.js), [`tools/panel_checks/check_simple_dashboard.js`](../tools/panel_checks/check_simple_dashboard.js).

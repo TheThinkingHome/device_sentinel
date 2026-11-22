@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -176,13 +176,29 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 ### STACK-16 Lightwave Devices and Their Connectivity Sensor
 
 **Since 0.30.0, a Lightwave Smart Series device is judged by its Connectivity sensor, which Lightwave Smart 5.5.0 adds to each device's radio device ("Office Light Device").**
-- **Off:** the hub cannot reach the device, about 30 minutes after it loses power. The device is unavailable, dated from the change, as a dead Z-Wave node is ([STACK-05](#stack-05-z-wave)). Off is never the device speaking.
+- **Off:** the hub cannot reach the device, about 30 minutes after it loses power. The device is unavailable, dated from the change, as a dead Z-Wave node is ([STACK-05](#stack-05-z-wave)). Off is never the device speaking. Since 0.30.2 it is listed at the next minute check, without the three-minute wait, as a hub's lost connection is ([UNAV-03](Rulebook__06_UNAV_Unavailable.md#unav-03-the-three-minute-debounce)): Lightwave has already waited about 30 minutes.
 - **Back on:** the hub has heard the device again, which counts as contact and ends the outage.
 - **On:** the device is never newly called frozen, as a connected ESPHome device is not ([STACK-07](#stack-07-esphome)). A dimmer used once a week says nothing between uses, and its hub reaches it all the same. A frozen verdict already standing stays until the device reports.
 - **Never reported:** a device whose sensor reads on is never called never reported. The radio device carries only this sensor and a firmware notice, and a socket nobody has switched since it was added has sent nothing either; the hub reaching them is enough. One that has never sent anything and whose sensor reads off is unavailable.
 - **Lights and sockets:** each is a device of its own registered via the radio device, and follows its sensor. Their own entities stay their reports.
 - **Says nothing:** unavailable (Home Assistant's Lightwave session down, the hub's own link lost, or a status other than connected or disconnected), not yet known, or switched off. The last word stands for an outage, and the freeze rule stands for a device not known to be down.
-- **Not read:** the hub's Cloud Link sensor. Connect Series devices, and Lightwave Smart before 5.5.0, have no Connectivity sensor and keep the ordinary rules.
+- **The hub's Cloud Link sensor:** read since 0.30.2, under [STACK-17](#stack-17-lightwave-hubs-and-their-cloud-link). Connect Series devices, and Lightwave Smart before 5.5.0, have no Connectivity sensor and keep the ordinary rules.
 - **On the page:** no Z-Wave status row, and the Recommendations tab does not ask for the sensor switched on.
 
 *Proof:* [`test_lightwave_connectivity.py`](../tests/test_lightwave_connectivity.py).
+
+### STACK-17 Lightwave Hubs and Their Cloud Link
+
+**Since 0.30.2, a Lightwave hub is judged by its Cloud Link sensor, as a Lutron hub is judged by its connection ([STACK-09](#stack-09-lutron-hubs)). One row tells a hub that has lost its link, not a row for each device behind it.**
+- **The hub:** the device carrying Cloud Link (unique id `<hub id>_cloudLink`). Lightwave registers it as a service; it is watched as a hub all the same ([WATCH-03](Rulebook__02_WATCH_What_Is_Watched.md#watch-03-set-aside)), and shows on the Networks tab as a Lutron hub does.
+- **Down:** Cloud Link read Disconnected on two checks 55 seconds or more apart, dated from the first, published at once. On a tester's house the sensor turned to Disconnected 2 minutes 23 seconds after the hub's network cable was pulled, and to Connected 38 seconds after it was plugged back in. Its integration failing to start is down too.
+- **No opinion:** Cloud Link unavailable, or its integration still starting or unloaded. What was known stands and nothing is confirmed.
+- **Behind it:** every Lightwave device of the same entry registered under it, directly or through its radio device. While the hub is down, or going, each waits for it with its verdict as it stood, and is listed on the hub's page, not on the Problem List. While the hub is up, each keeps its own judgment ([STACK-16](#stack-16-lightwave-devices-and-their-connectivity-sensor)), unlike a Lutron hub's devices, which report only when used.
+- **The hub itself:** judged by Cloud Link alone, never frozen and never "never reported".
+- **Its mute:** covers the hub's own outage, and so its devices while they wait for it, and nothing of their own. Muted for unavailable, the hub going down is silent, and a socket it cannot reach while it is up is still listed. Unlike a Lutron hub's mute, which covers its devices in every family ([STACK-09](#stack-09-lutron-hubs)), because a Lutron device has no voice but its hub's (James, 22 November 2026).
+- **The return:** Lightwave updates every device at once when the hub comes back, 70 devices 13 seconds after Cloud Link read Connected on the tester's house. That burst is recorded as a storm, as any other ([UP-17](Rulebook__07_UP_Upstream_Outages.md#up-17-storms-and-pollers)).
+- **Rows and words:** as for any hub ([STACK-10](#stack-10-what-a-hubs-rows-and-pages-say)): "Hub down", with the number of devices that it controls.
+- **Cloud Link switched off:** the hub is watched with no word to give, its devices are judged on their own, and the Cloud Link Switched Off card asks for it on ([REC-05](Rulebook__15_REC_Recommendations.md#rec-05-switched-off-sensors)), in Simple too (James, 22 November 2026).
+- **No Cloud Link sensor:** the hub stays set aside as a service, and its devices are judged as before.
+
+*Proof:* [`test_lightwave_hub.py`](../tests/test_lightwave_hub.py).
