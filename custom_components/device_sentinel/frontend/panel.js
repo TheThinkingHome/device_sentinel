@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.0 (2026-11-21)
+// File: panel.js, Version: 0.30.2 (2026-11-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -641,6 +641,18 @@ const STYLE = `
   .maint select { min-height: 44px; background: transparent; color: var(--primary-text-color); border: 0;
     border-left: 1px solid var(--divider-color); padding: 0 12px; border-radius: 0 22px 22px 0; }
   .asof { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
+  /* The header's ⋮ menu: Send Brief and Regenerate Reports (rule DASH-20). */
+  .more { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+  .more > .pill { padding: 0 14px; font-size: 18px; line-height: 1; }
+  .more .menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 5; min-width: 200px; padding: 6px 0;
+    background: var(--card-background-color, #fff); border: 1px solid var(--divider-color); border-radius: 12px;
+    box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,0.25)); }
+  .more .menu[hidden] { display: none; }
+  .more .menu button { display: block; width: 100%; text-align: left; padding: 10px 16px; min-height: 44px;
+    background: transparent; border: 0; color: var(--primary-text-color); cursor: pointer; }
+  .more .menu button:disabled { color: var(--disabled-text-color, #888); cursor: default; }
+  .more .menu .why { padding: 0 16px 8px; font-size: 12px; color: var(--secondary-text-color); }
+  .more .note { font-size: 13px; color: var(--secondary-text-color); }
   /* The release running, at the foot of every view (rule DASH-15). */
   .release { margin: 12px 4px 0; font-size: 13px; color: var(--secondary-text-color); text-align: center; }
   .release a { color: inherit; }
@@ -1307,10 +1319,23 @@ class DeviceSentinelPanel extends HTMLElement {
     // acknowledged, hidden at zero, opening the tab.
     this._activeButton = el("button", { class: "pill active-recs", type: "button", hidden: "",
       onclick: () => this._navigate(this._tabPath("Recommendations")) }, "");
+    // The ⋮ menu: what writes or sends, one click deeper (rule DASH-20).
+    this._sendBriefItem = el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("send_brief") }, "Send Brief");
+    this._sendBriefWhy = el("div", { class: "why", hidden: "" }, "No Daily Brief target is set. Choose one in Notifications and Daily Brief.");
+    this._moreMenu = el("div", { class: "menu", role: "menu", hidden: "" },
+      this._sendBriefItem, this._sendBriefWhy,
+      el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("regenerate_reports") }, "Regenerate Reports"));
+    this._moreButton = el("button", { class: "pill", type: "button", "aria-label": "More actions", "aria-haspopup": "menu",
+      "aria-expanded": "false", title: "More actions", onclick: (ev) => { ev.stopPropagation(); this._toggleMore(); } }, "⋮");
+    this._moreNote = el("span", { class: "note", role: "status" });
+    const more = el("div", { class: "more" }, this._moreButton, this._moreMenu, this._moreNote);
+    root.addEventListener("click", () => this._toggleMore(false));
+    root.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._toggleMore(false); });
     const actions = el(
       "section",
       { class: "actions", "aria-label": "Actions" },
       this._refreshButton,
+      more,
       el("div", { class: "maint" }, this._maintButton, this._minutes),
       this._activeButton,
       this._modeSwitch = el("div", { class: "modes", role: "group", "aria-label": "Dashboard" }),
@@ -1495,6 +1520,11 @@ class DeviceSentinelPanel extends HTMLElement {
     this._statusRow.replaceChildren(...parts);
 
     this._paintMaintButton();
+    // Send Brief greyed out with no target to send to (rule DASH-20); an
+    // older server's reply carries no count, so it stays offered.
+    const noTarget = status.brief_targets === 0;
+    this._sendBriefItem.disabled = noTarget;
+    this._sendBriefWhy.hidden = !noTarget;
     this._minutes.disabled = maint.open;
     const chosen = this._minutes.value || String(maint.default_minutes);
     this._minutes.replaceChildren(...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((m) =>
@@ -1899,6 +1929,8 @@ class DeviceSentinelPanel extends HTMLElement {
         signal_off: ["signal", "Turn on its signal sensor"],
         node_status_off: ["node_status", "Turn on its Z-Wave status"],
         voltage_off: ["voltage", "Turn on its battery voltage sensor"],
+        // A Lightwave hub's own link (rule STACK-17).
+        hub_link_off: ["hub_link", "Turn on its Cloud Link"],
       };
       if (card.kind === "battery_confirm") {
         action = this._batteryAnswers(row.device_id, async (error) => {
@@ -6397,6 +6429,58 @@ class DeviceSentinelPanel extends HTMLElement {
         el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.15" }),
           "the same, during maintenance")),
       toggle, table);
+  }
+
+  _toggleMore(open) {
+    if (!this._moreMenu) return;
+    const show = open === undefined ? this._moreMenu.hidden : open;
+    this._moreMenu.hidden = !show;
+    this._moreButton.setAttribute("aria-expanded", show ? "true" : "false");
+  }
+
+  // The clock in the person's Home Assistant profile, as Home Assistant
+  // itself reads it: 12 or 24 as chosen, or what their language, or this
+  // browser, uses (rule BRIEF-18).
+  _hour12() {
+    const locale = (this._hass && this._hass.locale) || {};
+    if (locale.time_format === "12") return true;
+    if (locale.time_format === "24") return false;
+    const lang = locale.time_format === "system" ? undefined : (locale.language || (this._hass && this._hass.language));
+    try {
+      return new Date("January 1, 2023 22:00:00").toLocaleString(lang).includes("10");
+    } catch (err) {
+      return true;
+    }
+  }
+
+  // One menu choice: says what is happening, then what happened, beside
+  // the menu (rule DASH-20).
+  async _menuAction(action) {
+    this._toggleMore(false);
+    const send = action === "send_brief";
+    this._moreNote.textContent = send ? "Sending the brief…" : "Regenerating the reports…";
+    try {
+      const call = { type: "device_sentinel/action", action };
+      if (send) call.hour12 = this._hour12();
+      const result = await this._call(call);
+      if (send) {
+        const sent = result && Number(result.sent) || 0;
+        const targets = result && Number(result.targets) || 0;
+        this._moreNote.textContent = targets === 0
+          ? "Not sent: no Daily Brief target is set."
+          : sent === 0 ? "Not sent: no target took it. See Settings, System, Logs."
+          : sent === targets ? `Sent to ${sent} ${sent === 1 ? "target" : "targets"}.`
+          : `Sent to ${sent} of ${targets} targets.`;
+      } else {
+        this._moreNote.textContent = "Reports regenerated.";
+      }
+    } catch (err) {
+      this._moreNote.textContent = `That did not work: ${err.message || err.code || err}`;
+    }
+    // The note says what happened, then makes way.
+    clearTimeout(this._moreNoteTimer);
+    this._moreNoteTimer = setTimeout(() => { if (this._moreNote) this._moreNote.textContent = ""; }, 30000);
+    await this._refresh();
   }
 
   async _maintenance() {
