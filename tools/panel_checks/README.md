@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.30.0 (2026-11-21) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.30.2 (2026-11-22) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -14,6 +14,7 @@ written rather than what it proves).
 | Every tab | `check_tab_addresses.js` | 31 | each tab's own address, Classification's old address opening the Devices tab, the Problem List's opening the Daily Brief, and the dashboard opening on the Daily Brief |
 | Every tab | `check_back_links.js` | 19 | back links to the exact page a view was opened from, and Print beside the gear |
 | Every tab | `check_controls_band.js` | 20 | the controls in a band above the tabs, and tabs that read as tabs |
+| Every tab | `check_more_menu.js` | 18 | the ⋮ menu in the header: Send Brief and Regenerate Reports, Send Brief greyed with its reason when no target can take the brief, the note saying what happened, and the menu closing on a press elsewhere or Escape |
 | Every tab | `check_tables_hold_columns.js` | 14 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
