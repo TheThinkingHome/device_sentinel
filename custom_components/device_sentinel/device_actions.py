@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.29.5 (2026-11-17)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.30.2 (2026-11-22)
 
 """Acting from the device page (rule DASH-09).
 
@@ -60,6 +60,7 @@ from .const import (
     SYS_RECOMMENDATIONS_TAB,
 )
 from .device_fields import area_name_of, child_devices, parent_device, parent_name_part, update_device
+from .stacks import is_hub_link
 from .naming import cannot_be_told_apart, composed_name, display_name, with_parent, without_parent
 
 # What a "Turn it on" switches on, as the brief's row names it
@@ -72,6 +73,8 @@ TURN_ON_WORDS = {
     "signal": "Signal sensor",
     "voltage": "Battery voltage sensor",
     "firmware": "Firmware update check",
+    # A Lightwave hub's own link (rule STACK-17).
+    "hub_link": "Cloud Link",
 }
 
 # Each mute kind's three settings lists, in the order every mute is
@@ -298,6 +301,9 @@ class DeviceActionsMixin:
             "voltage": _is_voltage,
             # Home Assistant's firmware update entity (rule REC-05).
             "firmware": _is_update,
+            # A hub's own link sensor, as a Lightwave hub's Cloud Link
+            # (rule STACK-17).
+            "hub_link": lambda ent: is_hub_link(domain, ent),
         }[kind]
         return [
             ent

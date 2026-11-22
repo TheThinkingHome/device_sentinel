@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.29.8 (2026-11-19)
+# File: dashboard_api.py, Version: 0.30.2 (2026-11-22)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -84,6 +84,9 @@ def mutes_for_kinds(kinds: Any) -> list[str]:
     return [mute for mute, test in wanted if any(test(kind) for kind in kinds)]
 
 ACTION_MAINTENANCE = "maintenance"
+# The header's ⋮ menu (rule DASH-20).
+ACTION_SEND_BRIEF = "send_brief"
+ACTION_REGENERATE = "regenerate_reports"
 _MINUTES = list(
     range(
         MAINTENANCE_MINUTES_MIN,
@@ -175,9 +178,12 @@ def ws_status(
     {
         vol.Required("type"): "device_sentinel/action",
         vol.Required("action"): vol.In(
-            [ACTION_MAINTENANCE]
+            [ACTION_MAINTENANCE, ACTION_SEND_BRIEF, ACTION_REGENERATE]
         ),
         vol.Optional("minutes"): vol.In(_MINUTES),
+        # The person's own clock, from their Home Assistant profile, for
+        # Send Brief's title (rule BRIEF-18).
+        vol.Optional("hour12"): bool,
     }
 )
 @websocket_api.async_response
@@ -196,7 +202,12 @@ async def ws_action(
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    result = await coordinator.async_toggle_maintenance(msg.get("minutes"))
+    if msg["action"] == ACTION_SEND_BRIEF:
+        result = await coordinator.async_send_brief_now(hour12=msg.get("hour12", True))
+    elif msg["action"] == ACTION_REGENERATE:
+        result = await coordinator.async_regenerate_reports()
+    else:
+        result = await coordinator.async_toggle_maintenance(msg.get("minutes"))
     connection.send_result(msg["id"], result if isinstance(result, dict) else {})
 
 
@@ -909,7 +920,9 @@ def ws_recommendation_ack(
     {
         vol.Required("type"): "device_sentinel/device_turn_on",
         vol.Required("device_id"): str,
-        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal", "voltage", "firmware"]),
+        vol.Required("kind"): vol.In(
+            ["last_seen", "node_status", "battery", "signal", "voltage", "firmware", "hub_link"]
+        ),
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )

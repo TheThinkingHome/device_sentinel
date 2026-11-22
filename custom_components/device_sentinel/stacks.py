@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.30.0 (2026-11-21)
+# File: stacks.py, Version: 0.30.2 (2026-11-22)
 
 """The one place a coordinator stack is registered.
 
@@ -311,6 +311,27 @@ def _status_module(domain: str | None) -> object | None:
         if domain and module.owns_domain(domain):
             return module
     return None
+
+
+def is_hub_link(domain: str | None, ent: Any) -> bool:
+    """Whether this entity is a hub's own link sensor, as a Lightwave
+    hub's Cloud Link is: its device is a hub (rule STACK-17)."""
+    module = _status_module(domain)
+    check = getattr(module, "is_hub_link", None)
+    return bool(check(ent)) if check is not None else False
+
+
+def hub_link_up(domain: str | None, state: str | None) -> bool | None:
+    """What a hub's link sensor reads: up, down, or None for no opinion."""
+    module = _status_module(domain)
+    check = getattr(module, "hub_link_up", None)
+    return check(state) if check is not None else None
+
+
+def hub_members_keep_own(domain: str | None) -> bool:
+    """Whether the devices behind this integration's hubs keep their own
+    judgment while the hub is up (rule STACK-17)."""
+    return bool(getattr(_status_module(domain), "MEMBERS_KEEP_OWN", False))
 
 
 def status_followed(domain: str | None) -> bool:

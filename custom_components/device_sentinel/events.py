@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.29.4 (2026-11-16)
+# File: events.py, Version: 0.30.2 (2026-11-22)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -45,6 +45,7 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import (
     EVENT_ACKNOWLEDGED,
+    EVENT_BRIEF_SENT,
     EVENT_FAULT,
     EVENT_UPSTREAM_DOWN,
     EVENT_UPSTREAM_RESTORED,
@@ -373,7 +374,9 @@ class EventMixin:
         # fired inside the startup grace too.
         # So is a recovery owed to a down announced before the restart:
         # the automation that heard the down is waiting for it.
-        if self._in_startup_grace() and event_type != EVENT_WITHDRAWN and not owed:
+        # A brief sent is a fact too: it went, whatever the hour
+        # (rule BRIEF-18).
+        if self._in_startup_grace() and event_type not in (EVENT_WITHDRAWN, EVENT_BRIEF_SENT) and not owed:
             # A device that really reported inside the grace has already
             # left its verdict; its recovery is kept and fired when the
             # grace closes, so an automation that heard the fault still

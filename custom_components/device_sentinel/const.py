@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.1 (2026-11-21)
+# File: const.py, Version: 0.30.2 (2026-11-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2161,6 +2161,10 @@ NOTIFY_FAMILY_TITLES = {
 # The email's subject, and the brief's own title, kept as one string
 # so the document and the message it arrives in cannot disagree.
 BRIEF_TITLE = "Device Sentinel Daily Brief"
+# The title of a brief sent from the dashboard's menu: what it holds,
+# the last 24 hours, and when it was sent (rule BRIEF-18).
+BRIEF_TITLE_ON_DEMAND = "Device Sentinel Daily Brief, Last 24 Hours ({when})"
+BRIEF_SEND_NOW_TRIGGER = "send now"
 CONF_REMINDER_MODE = "daily_reminder_mode"
 CONF_REMINDER_TIME = "daily_reminder_time"
 
@@ -2346,6 +2350,9 @@ TODO_KIND_FAMILIES = {
 # NOTE-12).
 EVENT_FAULT = "device_sentinel_fault"
 EVENT_RECOVERED = "device_sentinel_recovered"
+# A Daily Brief sent, on its schedule or from the dashboard's menu
+# (rule BRIEF-18).
+EVENT_BRIEF_SENT = "device_sentinel_brief_sent"
 EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
 # Fired when a line leaves the list because its device left the watched
 # set, not because anything recovered. An automation pairing faults to

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.28.6 (2026-11-08)
+# File: hubs.py, Version: 0.30.2 (2026-11-22)
 
 """Judged by its hub (rules STACK-09, STACK-10).
 
@@ -48,6 +48,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -72,6 +73,7 @@ from .const import (
     TODO_SUMMARY,
 )
 from .device_fields import device_field
+from .stacks import hub_link_up, hub_members_keep_own
 from .records import BAD_STATES
 
 LUTRON = "lutron_caseta"
@@ -138,6 +140,10 @@ class HubMixin:
     _hub_unreadable: set[str]
 
     def _init_hubs(self) -> None:
+        # A hub whose own link sensor says whether it is up, as a
+        # Lightwave hub's Cloud Link does, and that sensor; filled by the
+        # registry rebuild (rule STACK-17).
+        self._hub_link_entity: dict[str, str] = {}
         self._hub_of = {}
         self._hub_entry = {}
         self._hub_lost = {}
@@ -182,7 +188,35 @@ class HubMixin:
             hub_entry[via] = entry_id
         # A hub is never one of the devices a hub controls, so nothing
         # here can lead back to itself.
-        self._hub_of = {d: hub for d, hub in hub_of.items() if d not in hub_entry}
+        hub_of = {d: hub for d, hub in hub_of.items() if d not in hub_entry}
+        # A hub with its own link sensor, as a Lightwave hub's Cloud Link:
+        # every device of its integration and entry registered under it,
+        # directly or through a radio device, is behind it (rule STACK-17).
+        links = getattr(self, "_hub_link_entity", {}) or {}
+        for hub in links:
+            hub_entry_id = entry_of.get(hub)
+            if hub_entry_id is not None:
+                hub_entry[hub] = hub_entry_id
+        for device in all_devices:
+            device_id = getattr(device, "id", None)
+            if not isinstance(device_id, str) or device_id in links:
+                continue
+            if watched.get(device_id) is None or not hub_members_keep_own(watched.get(device_id)):
+                continue
+            step, seen = device, {device_id}
+            for _ in range(4):
+                via = device_field(step, "via_device_id")
+                if not isinstance(via, str) or via in seen:
+                    break
+                if via in links:
+                    if entry_of.get(device_id) == hub_entry.get(via):
+                        hub_of[device_id] = via
+                    break
+                seen.add(via)
+                step = by_id.get(via)
+                if step is None:
+                    break
+        self._hub_of = hub_of
         self._hub_entry = hub_entry
         for hub in list(self._hub_lost):
             if hub not in hub_entry:
@@ -211,8 +245,28 @@ class HubMixin:
         )
 
     def judged_by_hub(self, device_id: str) -> bool:
-        """Whether a device is a hub or controlled by one (rule STACK-09)."""
-        return device_id in self._hub_of or device_id in self._hub_entry
+        """Whether a device is a hub or controlled by one (rule STACK-09).
+
+        A device behind a hub whose devices keep their own judgment, as a
+        Lightwave hub's do, is judged as any other device while the hub
+        is up (rule STACK-17).
+        """
+        if device_id in self._hub_entry:
+            return True
+        hub = self._hub_of.get(device_id)
+        return hub is not None and hub not in self._hub_link_entity
+
+    def held_by_hub(self, device_id: str) -> bool:
+        """Whether a device keeping its own judgment waits for its hub:
+        the hub's link is down, or going, and the hub is watched
+        (rule STACK-17)."""
+        hub = self._hub_of.get(device_id)
+        return (
+            hub is not None
+            and hub in self._hub_link_entity
+            and hub in self._hub_lost
+            and self._hub_judged(hub)
+        )
 
     def hub_takes_over(self, device_id: str) -> bool:
         """Whether a watched hub speaks for this device's outages (rule STACK-09).
@@ -251,9 +305,15 @@ class HubMixin:
 
         A hub that is not watched (excluded, disabled, or with no
         entity) speaks for nothing, so its mute covers nothing either.
+        A hub with its own link sensor, as a Lightwave hub, speaks for
+        its devices only while it is down, when they wait for it and are
+        not listed; their own verdicts are theirs, so its mutes reach
+        none of them (rule STACK-17).
         """
         hub = getattr(self, "_hub_of", {}).get(device_id)
         if hub is None or hub not in getattr(self, "_watched", {}):
+            return None
+        if hub in getattr(self, "_hub_link_entity", {}):
             return None
         return hub
 
@@ -315,6 +375,15 @@ class HubMixin:
             return False
         if entry.state is not ConfigEntryState.LOADED:
             return None
+        link = self._hub_link_entity.get(hub_id)
+        if link is not None:
+            # Its own link sensor: on is up, off is down, unavailable or
+            # switched off is no opinion (rule STACK-17).
+            registry_entry = er.async_get(self.hass).async_get(link)  # type: ignore[attr-defined]
+            if registry_entry is None or registry_entry.disabled_by is not None:
+                return None
+            state = self.hass.states.get(link)  # type: ignore[attr-defined]
+            return hub_link_up(entry.domain, state.state if state is not None else None)
         reader = HUB_READERS.get(entry.domain)
         if reader is None:
             return None
@@ -418,6 +487,11 @@ class HubMixin:
             # anyone to: the device's page is an ordinary one.
             return None
         down = self.hub_down_since(hub_id, now) is not None
+        if hub_id in self._hub_link_entity and not down:
+            # A Lightwave hub's device is judged on its own while the hub
+            # is up, so its page is an ordinary one; it reads "Its hub is
+            # down" only while it waits (rule STACK-17).
+            return None
         # Going but not yet confirmed still reads as it stood: up.
         known = down or hub_id in self._hub_lost or self._hub_connected(hub_id) is True
         return {

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.30.1 (2026-11-21)
+# File: diagnostics.py, Version: 0.30.2 (2026-11-22)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -182,6 +182,25 @@ def _wifi_scan_hidden(scan: Any, order: Any = (), book: StandInBook | None = Non
         if isinstance(value, (list, tuple, set)):
             hidden[field] = [stand_in(name) for name in value]
     return hidden
+
+
+def _set_aside_devices(coordinator: Any, registry: Any) -> list[dict[str, Any]]:
+    """Each device set aside: its id, name, integration, model and reason."""
+    rows = []
+    for device_id, held in sorted((getattr(coordinator, "_set_aside", {}) or {}).items()):
+        try:
+            name, domain, reason = held
+        except (TypeError, ValueError):
+            continue
+        device = registry.async_get(device_id)
+        rows.append({
+            "device_id": device_id,
+            "name": name,
+            "integration": domain,
+            "model": getattr(device, "model", None) if device is not None else None,
+            "reason": reason,
+        })
+    return rows
 
 
 def _radio_channels(coordinator: Any) -> Any:
@@ -1111,5 +1130,10 @@ async def _learned_state(
         # in case the device comes back (rule WATCH-07).
         "held_records": coordinator.held_records(),
         "devices": devices,
+        # Each device set aside and why, so a device not watched can be
+        # explained from the download alone (rule WATCH-03). Last, so a
+        # name met here first takes no stand-in number a watched device
+        # had before.
+        "set_aside_devices": _set_aside_devices(coordinator, device_registry),
     }
     return payload

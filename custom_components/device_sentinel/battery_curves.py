@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_curves.py, Version: 0.30.1 (2026-11-21)
+# File: battery_curves.py, Version: 0.30.2 (2026-11-22)
 
 """Keep the curve: each battery's whole shape, kept for good (rule BAT-20).
 
@@ -274,7 +274,11 @@ class BatteryCurvesMixin:
             held = ranges.get(day) if day is not None else None
             return _number(held[3]) if held else None
 
-        span = (week_of(ended) - week_of(began)).days // 7 + 1
+        # Weeks are counted to the last day the device was heard: a battery
+        # that ran out leaves silent weeks before its replacement, and
+        # those are its ending, not gaps in its readings.
+        last = min(heard, ended)
+        span = (week_of(last) - week_of(began)).days // 7 + 1
         # Good: the kept readings reach back to three times the threshold,
         # where a time left begins (rule BAT-10), and run from the last week
         # at or over it to the end with readings in four weeks of five.
@@ -283,7 +287,7 @@ class BatteryCurvesMixin:
         over = [row for row in weeks if (_number(row[WK_HIGH]) or _number(row[WK_MEDIAN]) or 0.0) >= ceiling]
         from_week = _day(over[-1][WK_START]) if over else None
         if from_week is not None:
-            stretch = (week_of(ended) - from_week).days // 7 + 1
+            stretch = max(1, (week_of(last) - from_week).days // 7 + 1)
             weeks_heard = sum(1 for row in weeks if row[WK_START] >= from_week.isoformat())
             good = weeks_heard >= CURVE_WEEKS_SHARE * stretch
         else:

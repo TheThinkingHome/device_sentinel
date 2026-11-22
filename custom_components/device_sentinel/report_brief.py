@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.0 (2026-11-21)
+# File: report_brief.py, Version: 0.30.2 (2026-11-22)
 
 """The daily brief: the one report written for a person.
 
@@ -37,6 +37,7 @@ from .repairs import (
     missing_targets,
 )
 from .const import (
+    BRIEF_SEND_NOW_TRIGGER,
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
@@ -142,6 +143,22 @@ from .const import (
     SYS_DEVICE_ID,
 )
 from .outage_detail import FAILED, REMOVED, STALLED, UNWATCHED, parse_detail
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def brief_title_when(moment: Any, hour12: bool) -> str:
+    """The date and time in Send Brief's title: "22 Nov 2026, 2:20 PM" on
+    a 12-hour clock, "22 Nov 2026, 14:20" on a 24-hour one. The month is
+    named, so the date reads the same in any day-and-month order, and
+    named here, so the server's own language cannot change it
+    (rule BRIEF-18)."""
+    day = f"{moment.day} {_MONTHS[moment.month - 1]} {moment.year}"
+    if hour12:
+        hour = moment.hour % 12 or 12
+        return f"{day}, {hour}:{moment.minute:02d} {'AM' if moment.hour < 12 else 'PM'}"
+    return f"{day}, {moment.hour:02d}:{moment.minute:02d}"
 
 
 def _plural(count: int) -> str:
@@ -2962,7 +2979,9 @@ class BriefMixin:
         if complete:
             self._last_brief_pair = (text, page)
         self._last_brief_text = text
-        return text if complete else None
+        # The menu's Send Brief takes the file as it now stands, the last
+        # 24 hours (rule BRIEF-18).
+        return text if complete or trigger == BRIEF_SEND_NOW_TRIGGER else None
 
     @staticmethod
     def _is_brief_table_rule(line: str) -> bool:

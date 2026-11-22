@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.29.8 (2026-11-19)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.30.2 (2026-11-22)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -65,6 +65,9 @@ KIND_NODE_STATUS_OFF = "node_status_off"
 KIND_VOLTAGE_OFF = "voltage_off"
 # Models with devices behind on firmware, one row a model (rule REC-12).
 KIND_FIRMWARE = "firmware"
+# A Lightwave hub's Cloud Link switched off: the hub has no word to give
+# until it is on (rule STACK-17).
+KIND_HUB_LINK_OFF = "hub_link_off"
 
 # The switched-off cards and the kind of sensor each one turns on
 # (rule REC-05).
@@ -74,6 +77,7 @@ SWITCHED_OFF_CARDS = {
     KIND_SIGNAL_OFF: "signal",
     KIND_NODE_STATUS_OFF: "node_status",
     KIND_VOLTAGE_OFF: "voltage",
+    KIND_HUB_LINK_OFF: "hub_link",
 }
 # The cards Simple shows: the ones that stop a missed or false alarm,
 # with Confirm Battery Replacement. Signal Sensor Switched Off and
@@ -94,7 +98,7 @@ KIND_RESTART_CACHED = "restart_cached"
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
     KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF, KIND_SHARED_ADDRESS,
-    KIND_RESTART_LIVE, KIND_RESTART_CACHED, KIND_FIRMWARE,
+    KIND_RESTART_LIVE, KIND_RESTART_CACHED, KIND_FIRMWARE, KIND_HUB_LINK_OFF,
 })
 
 
@@ -260,6 +264,9 @@ class DeviceRecommendationsMixin:
              "With it on, Device Sentinel notices the device going quiet sooner."),
             (KIND_BATTERY_OFF, "Battery Sensor Switched Off", "a battery sensor",
              "With it on, Device Sentinel warns you when the battery runs low."),
+            (KIND_HUB_LINK_OFF, "Cloud Link Switched Off", "a Cloud Link sensor",
+             "With it on, Device Sentinel tells you when the Lightwave hub loses its "
+             "connection, as one problem for the hub and the devices behind it."),
             (KIND_NODE_STATUS_OFF, "Z-Wave Status Switched Off", "a Z-Wave status sensor",
              "It is the only place Home Assistant shows that Z-Wave can no longer reach "
              "a device, so with it on, Device Sentinel reports the device unavailable."),

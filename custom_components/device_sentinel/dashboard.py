@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.30.0 (2026-11-21)
+# File: dashboard.py, Version: 0.30.2 (2026-11-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -371,6 +371,9 @@ class DashboardMixin:
                 "default_minutes": self.maintenance_minutes,
             },
             "marker": self._change_marker,
+            # How many Daily Brief targets a brief can go to now: none greys
+            # out the menu's Send Brief (rule DASH-20).
+            "brief_targets": len(self.brief_targets_usable()),  # type: ignore[attr-defined]
             # The view the dashboard opens in (rule DASH-03).
             "dashboard": self.dashboard_mode,
             # The release running, for the dashboard's foot (rule DASH-15).
@@ -1396,6 +1399,11 @@ class DeviceViewMixin:
         A hub itself is judged by its connection (rule STACK-10).
         """
         hub = self.hub_of(device_id)  # type: ignore[attr-defined]
+        # A Lightwave hub's devices keep their own judgment, so their
+        # pages keep their own words; "Its hub is down" still shows while
+        # they wait for it (rule STACK-17).
+        if hub is not None and hub in getattr(self, "_hub_link_entity", {}):
+            hub = None
         if hub is not None:
             return {
                 "how": "hub",

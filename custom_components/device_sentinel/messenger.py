@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.29.7 (2026-11-18)
+# File: messenger.py, Version: 0.30.2 (2026-11-22)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -27,10 +27,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from .notifier import as_entity_target, async_notify, async_send, fitted_for, notify_platform
 from .const import (
     ENTITY_TARGET_PREFIX,
     BRIEF_TITLE,
+    EVENT_BRIEF_SENT,
     CONF_BRIEF_TARGETS,
     CONF_REMINDER_MODE,
     DEFAULT_REMINDER_MODE,
@@ -87,14 +90,38 @@ class MessengerMixin:
             return False
         return True
 
-    def _brief_payload(self, target: str, text: str) -> dict[str, Any]:
+    def _brief_targets_stored(self) -> list[str]:
+        """The Daily Brief targets as stored. A target saved as one piece
+        of text, as a hand-edited file can hold, is one target, never a
+        target per letter (rule BRIEF-11)."""
+        stored = self.entry.options.get(CONF_BRIEF_TARGETS)
+        if isinstance(stored, str):
+            return [stored]
+        if not isinstance(stored, (list, tuple)):
+            return []
+        return [target for target in stored if isinstance(target, str)]
+
+    def brief_targets_usable(self) -> list[str]:
+        """The Daily Brief targets a brief can be sent to now: a phone is
+        never one (rule BRIEF-11), so a list of phones alone greys out the
+        dashboard's Send Brief (rule DASH-20)."""
+        usable = []
+        for target in self._brief_targets_stored():
+            if not target:
+                continue
+            if notify_platform(self.hass, target) == "mobile_app":
+                continue
+            usable.append(target)
+        return usable
+
+    def _brief_payload(self, target: str, text: str, title: str | None = None) -> dict[str, Any]:
         """Return the service data for one target.
 
         The persistent notification takes a title and a message and
         nothing else, so the HTML alternative is offered only to the
         notify services, which ignore a data key they do not know.
         """
-        payload: dict[str, Any] = {"title": BRIEF_TITLE, "message": text}
+        payload: dict[str, Any] = {"title": title or BRIEF_TITLE, "message": text}
         if target in PERSISTENT_TARGETS:
             # Shown as Markdown, and the brief carries no link of its
             # own: a bracket a device's name brings into a sentence is
@@ -127,7 +154,14 @@ class MessengerMixin:
             }
         return payload
 
-    async def async_send_brief(self, text: str | None) -> int:
+    async def async_send_brief(
+        self,
+        text: str | None,
+        *,
+        title: str | None = None,
+        on_demand: bool = False,
+        window: tuple[float, float] | None = None,
+    ) -> int:
         """Send a closed brief to its targets, and return how many took it.
 
         Called only from the brief's own scheduled write, so a
@@ -139,11 +173,13 @@ class MessengerMixin:
         server must not stop the other targets, and a brief that
         cannot be delivered is still written to disk.
         """
-        if not text or not self._brief_should_send():
+        # Sent from the dashboard's menu, it goes whatever How Often says:
+        # a person asked for it (rule BRIEF-18).
+        if not text or (not on_demand and not self._brief_should_send()):
             return 0
         targets = [
             target
-            for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
+            for target in self._brief_targets_stored()
             if target
         ]
         if not targets:
@@ -158,7 +194,7 @@ class MessengerMixin:
                 # which Home Assistant keeps when it retires the
                 # old-style notify actions for SMTP in 2027.3. The
                 # composed text stays as the plain body.
-                payload = self._brief_payload(target, text)
+                payload = self._brief_payload(target, text, title)
                 try:
                     await self.hass.services.async_call(
                         SMTP_DOMAIN,
@@ -185,7 +221,7 @@ class MessengerMixin:
                 try:
                     await async_send(
                         self.hass, target,
-                        fitted_for(self.hass, target, self._brief_payload(target, text)),
+                        fitted_for(self.hass, target, self._brief_payload(target, text, title)),
                     )
                 except Exception as err:  # noqa: BLE001
                     LOGGER.warning(
@@ -219,7 +255,7 @@ class MessengerMixin:
             try:
                 await async_notify(
                     self.hass, domain, service,
-                    fitted_for(self.hass, target, self._brief_payload(target, text)),
+                    fitted_for(self.hass, target, self._brief_payload(target, text, title)),
                 )
             except Exception as err:  # noqa: BLE001
                 # A notify platform can raise anything from a socket
@@ -233,7 +269,31 @@ class MessengerMixin:
         LOGGER.debug(
             "Daily brief sent to %d of %d target(s)", sent, len(targets)
         )
+        self._fire_brief_sent(on_demand, window, len(targets), sent)
         return sent
+
+    def _fire_brief_sent(
+        self, on_demand: bool, window: tuple[float, float] | None, targets: int, sent: int
+    ) -> None:
+        """Tell automations a brief went out: on its schedule or from the
+        dashboard's menu, the hours it covers, and how many targets took
+        it. Never the brief's text, which can be long (rule BRIEF-18)."""
+        def iso(moment: float | None) -> str | None:
+            if moment is None:
+                return None
+            return dt_util.as_local(dt_util.utc_from_timestamp(moment)).isoformat()
+
+        start, end = window if window is not None else (None, None)
+        self._fire(  # type: ignore[attr-defined]
+            EVENT_BRIEF_SENT,
+            {
+                "on_demand": on_demand,
+                "from": iso(start),
+                "to": iso(end),
+                "targets": targets,
+                "sent": sent,
+            },
+        )
 
     async def async_announce_restore(
         self, headline: str, detail: str
@@ -261,7 +321,7 @@ class MessengerMixin:
         sent = 0
         targets = {
             target
-            for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
+            for target in self._brief_targets_stored()
             if target and target != PERSISTENT_TARGET
         }
         # The high-priority targets at any hour (rule STOR-08), and the

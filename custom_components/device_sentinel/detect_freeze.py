@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.30.0 (2026-11-21)
+# File: detect_freeze.py, Version: 0.30.2 (2026-11-22)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -833,6 +833,13 @@ class FreezeMixin:
                 return gone
             return self._muted_away(category, muted_freeze, muted_unavailable)
 
+        # A device behind a hub whose own link is down, or going, as a
+        # Lightwave device behind a hub whose Cloud Link reads off: what it
+        # reads says nothing of it, and it waits for its hub with its
+        # verdict as it stood (rule STACK-17).
+        if self.held_by_hub(device_id):  # type: ignore[attr-defined]
+            return self._muted_away(standing, muted_freeze, muted_unavailable)
+
         # An ESPHome device with nothing but firmware notices and command
         # buttons, such as a Bluetooth proxy, is judged by its connection alone,
         # its only report: unavailable while it is dropped, never frozen or never
@@ -1147,6 +1154,18 @@ class FreezeMixin:
                 and self.is_hub(device_id)  # type: ignore[attr-defined]
                 else None
             )
+            if (
+                hub_lost is None
+                and category == FREEZE_CATEGORY_UNAVAILABLE
+                and spares_while_up(self._watched.get(device_id))
+                and self._dead_node(device_id)
+            ):
+                # A link sensor that turned off is already confirmed, as a
+                # Lightwave device's Connected sensor is after about 30
+                # minutes unheard: published at once, as a hub's lost
+                # connection is, dated from the change (rules STACK-16,
+                # UNAV-03).
+                hub_lost = self._outage_began(record, now)
             if hub_lost is not None:
                 # From when the connection went, whatever stood before it: an earlier
                 # frozen verdict is not its start.

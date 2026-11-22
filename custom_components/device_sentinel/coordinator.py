@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.1 (2026-11-21)
+# File: coordinator.py, Version: 0.30.2 (2026-11-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -139,6 +139,7 @@ from .battery_replacement import BatteryReplacementMixin
 from .history_file import fold_line
 from .store import _version_tuple as _store_version_tuple
 from .removed_days import counted_gaps, prune_removed
+from .report_brief import brief_title_when
 from .const import (
     BROKER_RIDER_DOMAINS,
     DOMAIN,
@@ -176,6 +177,9 @@ from .const import (
     BACKUP_TAKEN_KEY,
     BATTERY_ARMING_DAYS,
     BATTERY_SAMPLE_SPACING,
+    BRIEF_LIVE_WINDOW_SECONDS,
+    BRIEF_SEND_NOW_TRIGGER,
+    BRIEF_TITLE_ON_DEMAND,
     BRIEF_TRIGGER,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_MUTED_DEVICES,
@@ -368,6 +372,7 @@ from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
 from .stacks import (
+    is_hub_link,
     is_node_status,
     node_dead,
     node_heard,
@@ -2730,6 +2735,17 @@ class DeviceSentinelCoordinator(
         owning_domains: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
         entry_of: dict[str, str] = {}
+        # Each device carrying a hub's own link sensor, as a Lightwave
+        # hub carries its Cloud Link, and that sensor: such a device is a
+        # hub, watched even where its integration registers it as a
+        # service. One whose link sensor is switched off is watched too,
+        # with no word until it is on, and the Cloud Link Switched Off
+        # card asks for it (rules STACK-17, REC-05).
+        hub_links: dict[str, str] = {}
+        for ent in ent_reg.entities.values():
+            if ent.device_id and is_hub_link(getattr(ent, "platform", None), ent):
+                hub_links[ent.device_id] = ent.entity_id
+        self._hub_link_entity = hub_links
         all_devices = self._registry_devices(dev_reg)
         for device in all_devices:
             domain = self._primary_domain(device)
@@ -2752,7 +2768,10 @@ class DeviceSentinelCoordinator(
                 # outranks a fact about the device (rule WATCH-03).
                 set_aside[device.id] = (name, domain, SET_ASIDE_EXCLUDED)
                 continue
-            if device_field(device, "entry_type") is dr.DeviceEntryType.SERVICE:
+            if (
+                device_field(device, "entry_type") is dr.DeviceEntryType.SERVICE
+                and device.id not in hub_links
+            ):
                 set_aside[device.id] = (name, domain, SET_ASIDE_SERVICE)
                 continue
             if device.disabled_by is not None:
@@ -5006,7 +5025,7 @@ class DeviceSentinelCoordinator(
         self._dirty = True
         text = await self._write_reports_guarded(BRIEF_TRIGGER)
         if text is not None:
-            await self.async_send_brief(text)
+            await self.async_send_brief(text, window=self._brief_close_bounds())
         # After the send, not before it, so a Repair raised here
         # cannot delay or fail the delivery it travels beside
         # (rule REP-07). The fold still runs the storage shape check,
@@ -6908,6 +6927,31 @@ class DeviceSentinelCoordinator(
         (rule WATCH-10).
         """
         return dt_util.utcnow().timestamp() < self._grace_until
+
+    async def async_send_brief_now(self, *, hour12: bool = True) -> dict[str, Any]:
+        """The dashboard's Send Brief (rule BRIEF-18).
+
+        Judges every device, writes the reports, and sends the brief as
+        the file now holds it, the last 24 hours, titled with when it was
+        sent. It goes at any hour, quiet or not, and whatever How Often
+        says, because a person asked for it; it never closes the day, so
+        the scheduled brief still goes at its time. The title's time
+        follows the clock of the person who pressed it: 12-hour with AM
+        or PM, or 24-hour.
+        """
+        targets = self.brief_targets_usable()
+        if not targets:
+            return {"sent": 0, "targets": 0}
+        self._judge_all_devices()
+        text = await self._write_reports_guarded(BRIEF_SEND_NOW_TRIGGER)
+        now = dt_util.utcnow().timestamp()
+        title = BRIEF_TITLE_ON_DEMAND.format(
+            when=brief_title_when(dt_util.as_local(dt_util.utc_from_timestamp(now)), hour12)
+        )
+        sent = await self.async_send_brief(
+            text, title=title, on_demand=True, window=(now - BRIEF_LIVE_WINDOW_SECONDS, now)
+        )
+        return {"sent": sent, "targets": len(targets)}
 
     async def async_regenerate_reports(self) -> dict[str, int]:
         """Judge every device now, then rewrite every report.
