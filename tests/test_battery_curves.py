@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_curves.py, Version: 0.30.1 (2026-11-21)
+# File: test_battery_curves.py, Version: 0.30.2 (2026-11-22)
 
 """Keep the curve (rule BAT-20).
 
@@ -227,3 +227,27 @@ async def test_a_replacement_taken_back_leaves_no_second_copy_of_its_weeks(hass:
     starts = [row[0] for row in weeks]
     assert len(starts) == len(set(starts)), "each week once"
     assert len({row[1] for row in weeks}) == 1, "one battery"
+
+
+async def test_weeks_of_silence_before_the_replacement_are_its_ending(hass: HomeAssistant):
+    """A battery that ran out and sat dead for three weeks before anyone
+    changed it: those silent weeks end its curve, they are not gaps in
+    its readings, so it is kept, whatever the weekday."""
+    _entry, coord, device, record = await _house(hass)
+    coord.page_set_power(device.id, "AAA", 2)
+    _first_seen(record, 120)
+    first = dt_util.now().date() - timedelta(days=100)
+    await _run(coord, record, device.id, [40, 39, 38, 37, 100, 100], first)
+    coord.battery_answer(device.id, "confirm")
+    second = [100.0 - i * 1.5 for i in range(64)]
+    await _run(coord, record, device.id, second, first + timedelta(days=6))
+    gone = first + timedelta(days=6 + len(second))
+    for i in range(21):
+        coord._folding_day = gone + timedelta(days=i)
+        coord._roll_battery(record, device.id)
+    coord._folding_day = None
+    from .test_battery_last_replaced import _fold
+
+    _fold(coord, record, device.id, [100.0, 100.0], gone + timedelta(days=21))
+    curve = coord.data[DATA_BATTERY_CURVES].get(device.id)
+    assert curve is not None and curve["good"] and curve["full"] and curve["ended"] == "ran_out"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_names.py, Version: 0.29.8 (2026-11-19)
+# File: tests/test_diagnostics_names.py, Version: 0.30.2 (2026-11-22)
 
 """The diagnostics download names nothing of the house (rule STOR-21).
 
@@ -141,6 +141,9 @@ async def test_names_are_numbers_and_the_key_tells_them_back(hass: HomeAssistant
 async def test_a_device_keeps_its_number_and_a_number_is_never_given_twice(hass: HomeAssistant, hass_storage):
     entry, coord, door, lamp, twin, terrace, spare = await _small_house(hass)
     first = (await _download(hass, entry))["devices"]
+    # The next number after the first download: the devices set aside
+    # are named in it too (WATCH-03), and take theirs.
+    after_first = hass_storage[STAND_INS_KEY]["data"]["next"]["device"]
     # Removed from Home Assistant, and a new device added.
     dr.async_get(hass).async_remove_device(twin.id)
     coord.data[DATA_DEVICES].pop(twin.id, None)
@@ -149,10 +152,10 @@ async def test_a_device_keeps_its_number_and_a_number_is_never_given_twice(hass:
     second = (await _download(hass, entry))["devices"]
     assert second[door.id]["name"] == first[door.id]["name"]
     assert second[lamp.id]["name"] == first[lamp.id]["name"]
-    assert second[plug.id]["name"] == "Device 4"
+    assert second[plug.id]["name"] == f"Device {after_first}"
     # The table is kept between starts, in its own file.
     stored = hass_storage[STAND_INS_KEY]
-    assert stored["data"]["next"]["device"] == 5
+    assert stored["data"]["next"]["device"] == after_first + 1
     # The removed device's number stays its own.
     assert stored["data"]["device"][twin.id]["n"] == int(first[twin.id]["name"].split()[1])
 

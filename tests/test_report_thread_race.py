@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_report_thread_race.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_report_thread_race.py, Version: 0.30.2 (2026-11-22)
 
 """The reports' worker thread and a changing device list (rule BRIEF-14).
 
@@ -116,7 +116,7 @@ async def test_a_brief_that_meets_the_midnight_write_is_still_sent(hass: HomeAss
     coord = await setup_coordinator(hass)
     sent: list[str] = []
 
-    async def _send(text: str) -> None:
+    async def _send(text: str, **_details: object) -> None:
         sent.append(text)
 
     coord.async_send_brief = _send  # type: ignore[method-assign]
