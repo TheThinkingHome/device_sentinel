@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.30.4 (2026-11-23)
+# File: problem_list.py, Version: 0.30.5 (2026-11-23)
 
 """The problem list: the single memory every channel renders.
 
@@ -533,7 +533,7 @@ class ProblemListMixin:
             noun = "device" if behind == 1 else "devices"
             summary = f"{title} stopped updating: {behind} {noun} not heard from"
             opening = (
-                f"{title} stopped updating at {when}."
+                f"{title} stopped updating on {when}."
                 if when
                 else f"{title} has stopped updating."
             )
@@ -552,7 +552,7 @@ class ProblemListMixin:
             f"unavailable"
         )
         opening = (
-            f"{display} stopped reporting at {when}."
+            f"{display} stopped reporting on {when}."
             if when
             else f"{display} is not reporting."
         )
@@ -643,7 +643,7 @@ class ProblemListMixin:
             )
         )
         return self._recovering_words(
-            display, f"{display} came back at {when}", left, fell
+            display, f"{display} came back on {when}", left, fell
         )
 
     def _wifi_recovering_text(self, devices: int) -> tuple[str, str]:
@@ -677,7 +677,7 @@ class ProblemListMixin:
         verb = "networks came" if len(names) > 1 else "network came"
         opening = f"{subject.rsplit(' Wi-Fi network', 1)[0]} Wi-Fi {verb} back"
         return self._recovering_words(
-            "Wi-Fi network", f"{opening} at {when}", left, fell
+            "Wi-Fi network", f"{opening} on {when}", left, fell
         )
 
     def _wifi_item_text(
@@ -713,7 +713,7 @@ class ProblemListMixin:
         # plural wording changes and the singular stays as it is.
         whose = "their" if many else "its"
         opening = (
-            f"{subject} became unavailable at {when}."
+            f"{subject} became unavailable on {when}."
             if when
             else f"{subject} is unavailable."
         )
@@ -807,7 +807,7 @@ class ProblemListMixin:
                 lines.append(f"{word.capitalize()}, discovered {when}.")
                 continue
             if kind == TODO_KIND_FROZEN and when is not None:
-                lines.append(f"{word.capitalize()} at {when}.")
+                lines.append(f"{word.capitalize()} on {when}.")
                 continue
             if when is not None:
                 lines.append(f"{word.capitalize()} since {when}.")
