@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.2 (2026-11-22)
+// File: panel.js, Version: 0.30.3 (2026-11-23)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2684,47 +2684,81 @@ class DeviceSentinelPanel extends HTMLElement {
       why ? el("p", { class: "muted", style: "margin:0" }, why) : null);
   }
 
-  // Why the Networks tab is empty, from what the server's Wi-Fi scan found,
-  // and how to let Device Sentinel hear Wi-Fi (rule DASH-17).
-  _emptyNetworks(air) {
-    const p = (text) => el("p", { style: "margin:0;line-height:1.5" }, text);
+  // The steps that let Device Sentinel hear Wi-Fi, with their pictures
+  // (rule DASH-17).
+  _wifiSteps() {
     const pic = (file, alt) => el("img", { src: `${NETWORK_IMAGES}${encodeURIComponent(file)}`, alt,
       loading: "lazy", style: "display:block;max-width:100%;width:560px;margin:8px 0;border-radius:8px" });
-    const steps = () => [
-      el("ol", { style: "margin:0;padding-left:20px;line-height:1.5" },
-        el("li", {}, "In Home Assistant, open Settings, System, Network, and choose your Wi-Fi interface, often named wlo1 or wlan0.",
-          pic("HA Network - Step 1 Choose the Wi-Fi Interface.png", "The Wi-Fi interface tab, wlo1, marked")),
-        el("li", {}, "Open the Wi-Fi section.", pic("HA Network - Step 2 Open Wi-Fi.png", "The Wi-Fi row, marked")),
-        el("li", {}, "Press Search networks, choose the network you are using for your IoT devices and enter its password.",
-          pic("HA Network - Step 3 Search Networks.png", "Search networks, marked, with the networks it found")),
-        el("li", {}, "Choose Static for its address, and press Save. Be sure that your wired network also uses Static.",
-          pic("HA Network - Step 4 Set a Static Address.png", "Static and Save, marked")),
-        el("li", {}, "Then choose your network in Device Sentinel's settings, under Wi-Fi.",
-          pic("HA Network - Step 5 Choose the Network in Device Sentinel.png",
-            "The network chosen under Your IoT Wi-Fi Networks, and Submit, marked")))];
-    const out = [p("No Wi-Fi or other networks found. Device Sentinel lists a Zigbee, Z-Wave, Matter or Thread network once its "
-      + "integration is found, and your Wi-Fi once your server reports it.")];
-    if (air.scan === "no_supervisor") {
-      out.push(p("Your Home Assistant server runs without the Supervisor, as a Container or Core install does, so Device "
-        + "Sentinel cannot use a Wi-Fi adapter. Install your router's integration. A router integration that tracks its "
-        + "clients, such as UniFi, TP-Link Router or FRITZ!Box, will allow Device Sentinel to report your Wi-Fi "
-        + "network's status."));
-    } else if (air.scan === "no_adapter") {
-      out.push(p("Your server has no Wi-Fi adapter. An inexpensive USB Wi-Fi adapter will allow Device Sentinel to monitor "
+    return el("ol", { style: "margin:0;padding-left:20px;line-height:1.5" },
+      el("li", {}, "In Home Assistant, open Settings, System, Network, and choose your Wi-Fi interface, often named wlo1 or wlan0.",
+        pic("HA Network - Step 1 Choose the Wi-Fi Interface.png", "The Wi-Fi interface tab, wlo1, marked")),
+      el("li", {}, "Open the Wi-Fi section.", pic("HA Network - Step 2 Open Wi-Fi.png", "The Wi-Fi row, marked")),
+      el("li", {}, "Press Search networks, choose one of your networks and enter its password. It doesn't have to be the "
+        + "one your devices use: Device Sentinel watches the network you choose in step 5.",
+        pic("HA Network - Step 3 Search Networks.png", "Search networks, marked, with the networks it found")),
+      el("li", {}, "Choose Static for its address, and press Save. Be sure that your wired network also uses Static.",
+        pic("HA Network - Step 4 Set a Static Address.png", "Static and Save, marked")),
+      el("li", {}, "Then choose your network in Device Sentinel's settings, under Wi-Fi.",
+        pic("HA Network - Step 5 Choose the Network in Device Sentinel.png",
+          "The network chosen under Your IoT Wi-Fi Networks, and Submit, marked")));
+  }
+
+  // What a server with no Wi-Fi adapter needs (rule DASH-17).
+  _adapterAdvice() {
+    return [
+      el("p", { style: "margin:0;line-height:1.5" },
+        "Your server has no Wi-Fi adapter. An inexpensive USB Wi-Fi adapter will allow Device Sentinel to monitor "
         + "your Wi-Fi network and tell you when it goes down. Home Assistant OS works with adapters built on the MediaTek "
         + "MT7601U, MT7612U, MT7663U or MT7921U, and Realtek RTL8188, RTL8192, RTL8812AU, RTL8821AU, RTL8821CU, "
         + "RTL8822BU or RTL8822CU chip sets. Plug it in on an extension cable, "
         + "away from a Zigbee USB stick, since both use 2.4 GHz. If Home Assistant runs in a virtual machine, pass the "
         + "adapter through to it. Then set it up as below."),
-        pic("usb_wifi_adapter.png", "A USB Wi-Fi adapter with an external antenna"), ...steps());
+      el("img", { src: `${NETWORK_IMAGES}${encodeURIComponent("usb_wifi_adapter.png")}`,
+        alt: "A USB Wi-Fi adapter with an external antenna", loading: "lazy",
+        style: "display:block;max-width:100%;width:560px;margin:8px 0;border-radius:8px" }),
+      this._wifiSteps()];
+  }
+
+  // Why the Networks tab is empty, from what the server's Wi-Fi scan found,
+  // and how to let Device Sentinel hear Wi-Fi (rule DASH-17).
+  _emptyNetworks(air) {
+    const p = (text) => el("p", { style: "margin:0;line-height:1.5" }, text);
+    const out = [p("No Wi-Fi or other networks found. Device Sentinel lists a Zigbee, Z-Wave, Matter or Thread network once its "
+      + "integration is found, and your Wi-Fi once your server reports it.")];
+    if (air.scan === "no_supervisor") {
+      out.push(p("Your Home Assistant server runs without the Supervisor, as a Container or Core install does, so Device "
+        + "Sentinel cannot use a Wi-Fi adapter. Install your router's integration. A router integration that tracks its "
+        + "clients, such as UniFi, TP-Link Omada, TP-Link Router or FRITZ!Box, will allow Device Sentinel to report your "
+        + "Wi-Fi network's status."));
+    } else if (air.scan === "no_adapter") {
+      out.push(...this._adapterAdvice());
     } else if (air.scan === "adapter_off" || (air.scan === "ok" && air.connected === false)) {
       out.push(p("Your server's Wi-Fi adapter is turned off or not connected to a network. Device Sentinel hears Wi-Fi "
-        + "only through a connected adapter:"), ...steps());
+        + "only through a connected adapter:"), this._wifiSteps());
     } else if (air.scan === "ok" && air.connected) {
       out.push(p("Your server's Wi-Fi adapter is connected. Choose your network in Device Sentinel's settings, under "
         + "Wi-Fi, and it appears here."));
     }
     return out;
+  }
+
+  // "Watch your Wi-Fi": a closed section under the networks the house
+  // has, for a server that could hear its Wi-Fi and does not yet. Never
+  // on a Container or Core install, which cannot use an adapter, and gone
+  // once a Wi-Fi network is chosen (rule DASH-17).
+  _watchWifi(air) {
+    if (!air || air.watching || !["no_adapter", "adapter_off", "ok"].includes(air.scan)) return null;
+    const noAdapter = air.scan === "no_adapter";
+    const hint = noAdapter ? "A USB Wi-Fi adapter would let Device Sentinel hear it"
+      : "Your server has a Wi-Fi adapter it isn't using";
+    const body = noAdapter ? this._adapterAdvice()
+      : air.scan === "ok" && air.connected
+        ? [el("p", { style: "margin:0;line-height:1.5" }, "Your server's Wi-Fi adapter is connected. Choose your network in "
+          + "Device Sentinel's settings, under Wi-Fi.")]
+        : [this._wifiSteps()];
+    return el("details", { class: "watchwifi", "data-section": "watch-wifi" },
+      el("summary", {}, el("strong", {}, "Watch your Wi-Fi"), el("span", { class: "muted small" }, ` ${hint}`)),
+      el("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:8px" }, ...body));
   }
 
   _paintNetworks() {
@@ -2762,7 +2796,9 @@ class DeviceSentinelPanel extends HTMLElement {
       + "such as Tasmota, are counted under the broker as well.");
     // The radio chart first: it is about every network at once.
     const air = simple ? null : this._airChart(this._snapshot.networks.air);
-    this._pane.replaceChildren(...(air ? [air] : []), intro, el("div", { class: "scroll" }, table), foot);
+    const watch = this._watchWifi(this._snapshot.networks.air);
+    this._pane.replaceChildren(...(air ? [air] : []), intro, el("div", { class: "scroll" }, table), foot,
+      ...(watch ? [watch] : []));
   }
 
   // A network's page (rule DASH-17). Simple shows its state, its devices
@@ -5186,7 +5222,12 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "muted" },
           [who.manufacturer, who.model].filter(Boolean).join(" ") || "Device",
           who.integration ? [" on ", this._link(who.integration_name || who.integration, this._integrationPath(who.integration))] : "",
-          `. ${standing}.`)),
+          `. ${standing}.`),
+        // A router's entry for a Wi-Fi client says what it is, since the
+        // device it stands for is watched elsewhere (rule WATCH-03).
+        who.set_aside === "router client"
+          ? el("div", { class: "muted small" }, "A router's entry for a Wi-Fi client. The device itself is watched through its own integration, if it has one.")
+          : ""),
       el("div", { class: "links" },
         el("span", { class: "small" }, "Live, updates every minute")));
     // Simple shows the freeze window and the rhythm only for a device
