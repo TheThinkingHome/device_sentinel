@@ -8,7 +8,7 @@ To use one from the wiki, link to its raw address: `https://raw.githubuserconten
 
 ### Device Page Full.png
 
-Device Sentinel's own page in Home Assistant, under Settings > Devices and Services. The controls are the Maintenance Mode and Regenerate Reports buttons. The sensors beneath them count what is wrong, and the diagnostic sensors count what is watched, learned and set aside.
+Device Sentinel's own page in Home Assistant, under Settings > Devices and Services. The controls are the Maintenance Mode and Regenerate reports buttons. The sensors beneath them count what is wrong, and the diagnostic sensors count what is watched, learned and set aside.
 
 ![Device Page Full](./Device%20Page%20Full.png)
 
