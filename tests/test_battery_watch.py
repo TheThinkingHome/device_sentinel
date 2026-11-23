@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_watch.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_battery_watch.py, Version: 0.30.4 (2026-11-23)
 
 """Two warning levels for a falling battery, and a time left that runs to
 the low threshold (rules BAT-14, BAT-13).
@@ -11,7 +11,7 @@ the low threshold (rules BAT-14, BAT-13).
 A warning on a cell falling at a steady pace comes true about half the
 time, and one on a cell speeding up about 85 percent. So only an
 accelerating cell gets the full warning: the Problem List, the phone,
-the brief and the Battery: Falling sensor. A steady one inside Days
+the brief and the Battery: falling sensor. A steady one inside Days
 Till Low Warning is listed as a battery to watch, with no push.
 """
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_battery_trend.py, Version: 0.30.4 (2026-11-23)
 
 """The battery trend by the week, and accelerating on a curve
 (rules BAT-10, BAT-11, BAT-12).
@@ -297,7 +297,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     steady_row = next(row for row in trends["steady"] if row["name"] == "Door Master Shower")
     assert steady_row["month_drop"] < 0, "its weekly averages rose"
 
-    # The Battery: Falling sensor names the accelerating cell inside
+    # The Battery: falling sensor names the accelerating cell inside
     # the horizon, and the Problem List carries it (rule BAT-14).
     assert [row["name"] for row in coord.battery_falling_list] == ["Garage Door"]
     coord._sync_problem_list()

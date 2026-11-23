@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.27.10 (2026-10-27)
+# File: test_signal_stats.py, Version: 0.30.4 (2026-11-23)
 
 """The good-state statistics, what each signal day keeps, and the
 signal sensors (rules SIG-05, SIG-07, SIG-09, SIG-10, SIG-11).
@@ -442,7 +442,7 @@ async def test_weak_links_are_counted_apart_from_rails(
     One number for both would mean two things, and the two are not
     alike: a rail is a broken measurement confirmed over three days, a
     weak link is a live reading that moves. So they are counted apart,
-    the way Battery: Low and Battery: Falling are, and the weak rule is
+    the way Battery: low and Battery: falling are, and the weak rule is
     the bad signal day Signal Trends shows (rule SIG-08).
     """
     coord = await setup_coordinator(hass, {})

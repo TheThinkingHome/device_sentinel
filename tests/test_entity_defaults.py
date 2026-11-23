@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_entity_defaults.py, Version: 0.30.4 (2026-11-23)
 
 """Which entities a first install presents, and what removal leaves
 (rules CFG-08, CFG-09, STOR-24).
@@ -201,7 +201,7 @@ async def test_the_count_sensors_split_found_from_watched(
     Signal Rails are findings about the house, like a stopped broker,
     and a person who enables one puts it on a dashboard, which leaves
     diagnostic entities out. Classification, the three tracked totals,
-    Devices: Watched and Devices: Learned describe the integration's
+    Devices: watched and Devices: learned describe the integration's
     own bookkeeping and stay diagnostic, named in the Category: State
     pattern every other sensor follows (rule CFG-06).
     """

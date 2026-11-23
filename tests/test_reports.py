@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.30.0 (2026-11-21)
+# File: test_reports.py, Version: 0.30.4 (2026-11-23)
 
 """The diagnostic files: telemetry, classification and silence episodes
 (rules BRIEF-14, BRIEF-15, BRIEF-16, FRZ-08).
@@ -17,7 +17,7 @@ daily maximum. The telemetry report marks its SIGNAL LOWS cell (bold
 floor, struck trim, italic rail), carries a battery column and a
 readable Written header, and holds a Devices With a Fault section that
 groups every standing fault by family. The STATUS cell reads one
-grammar (Reported or Excluded with reasons), the Regenerate Reports
+grammar (Reported or Excluded with reasons), the Regenerate reports
 button judges then rewrites, and the whole learned state is available
 in the diagnostics download. A third file, silence_episodes.md, records
 each time a device passed its own basis: a row opens halfway from rhythm
@@ -523,7 +523,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
 
 
 async def test_regenerate_button_present_and_presses(hass: HomeAssistant):
-    """The Regenerate Reports button exists on the Device Sentinel
+    """The Regenerate reports button exists on the Device Sentinel
     device and its press runs without error."""
     coord = await setup_coordinator(hass)
     reg = er.async_get(hass)

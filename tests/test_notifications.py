@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.30.0 (2026-11-21)
+# File: test_notifications.py, Version: 0.30.4 (2026-11-23)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -716,7 +716,7 @@ async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
 
 
 async def test_battery_low_is_a_primary_sensor(hass: HomeAssistant):
-    """Battery: Low sits with the primary sensors (rule CFG-09).
+    """Battery: low sits with the primary sensors (rule CFG-09).
 
     A count of what was found is news about the house rather than
     bookkeeping about the integration, the same line drawn for the

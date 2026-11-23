@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_switched_off_sensors.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_switched_off_sensors.py, Version: 0.30.4 (2026-11-23)
 
 """Switched-off sensors: found per device, turned on per device (rules
 REC-05, DASH-09).
@@ -75,7 +75,7 @@ USER = er.RegistryEntryDisabler.USER
 
 
 async def test_the_three_enable_buttons_are_gone(hass: HomeAssistant):
-    """Only Regenerate Reports and Maintenance Mode are button entities;
+    """Only Regenerate reports and Maintenance Mode are button entities;
     nothing a script can press turns on another integration's entity
     (rule REC-05)."""
     await setup_entry(hass)

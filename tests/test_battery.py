@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_battery.py, Version: 0.30.4 (2026-11-23)
 
 """Battery detection: the low verdict and the daily recorder
 (rules BAT-01, BAT-02, BAT-03, BAT-06).
@@ -214,7 +214,7 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     d1, e1 = _battery_device(hass, source, 6)
     d2, e2 = _battery_device(hass, source, 7)
     entry = await setup_entry(hass)
-    # Battery: Low is disabled by default; enable it to read its state.
+    # Battery: low is disabled by default; enable it to read its state.
     reg = er.async_get(hass)
     bl = reg.async_get_entity_id(
         "sensor", DOMAIN, f"{entry.entry_id}_low_batteries"
@@ -235,7 +235,7 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert state is not None
     coord._notify()
     await hass.async_block_till_done()
-    # Battery: Low carries the count as its state, with the rows and
+    # Battery: low carries the count as its state, with the rows and
     # thresholds in its attributes.
     state = hass.states.get("sensor.device_sentinel_battery_low")
     assert state.state == "2"

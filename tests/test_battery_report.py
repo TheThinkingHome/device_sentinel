@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.30.0 (2026-11-21)
+# File: test_battery_report.py, Version: 0.30.4 (2026-11-23)
 
 """Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
@@ -12,7 +12,7 @@ are going to be. The shapes below include a recorded cell that sat ten
 days flat at 32 percent, then dropped ten points and
 rebounded eight and a half on consecutive days, then fell to 21.
 
-The rows are what Battery Trends, the Battery: Falling sensor, the
+The rows are what Battery Trends, the Battery: falling sensor, the
 Problem List and the brief read, so they are asserted here directly,
 and the brief's own line beside them.
 """

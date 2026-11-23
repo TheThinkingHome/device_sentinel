@@ -3,10 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_left_out.py, Version: 0.27.9 (2026-10-27)
+# File: tests/test_set_aside_left_out.py, Version: 0.30.4 (2026-11-23)
 
 """Lists and counts read watched devices only (rules SIG-09, WATCH-09):
-Signal: Weak, the signal-mute picker and the day's rule line leave out a
+Signal: weak, the signal-mute picker and the day's rule line leave out a
 device that is set aside, though its record is kept."""
 
 from __future__ import annotations
