@@ -23,7 +23,7 @@ Device Sentinel thanks its contributor testers. Choose how:
 - [ ] No credit
 - [ ] Other (Explain): 
 
-6. Your GitHub username and email, if you have one:
+6. Your GitHub username and email, if you have one. GitHub's private address, the one ending in users.noreply.github.com, works:
 
 ## Your Home Assistant
 
@@ -76,15 +76,15 @@ Device Sentinel thanks its contributor testers. Choose how:
     - [ ] Take a device down on purpose, such as pulling its battery or unplugging it, and note the time
     - [ ] Try a pre-release on my house before it goes to everyone
     - [ ] Send the files contained in /config/device_sentinel/
-    - [ ] Go a little deeper. You can ask about this because it depends on what we are building together.
+    - [ ] Go a little deeper, depending on what we're building together. We'll explain first.
 
 ## Your Files
 
 Your diagnostics, your logs, this questionnaire, and anything else you share are used only to fix Device Sentinel. They are never published.
 
-- [ ] I agree
+- [ ] I agree to share my files on these terms
 
 ## Anything Else
 
 21. Is there anything else we should know?
-22. Has Device Sentinel already helped you identify a problem device, a failed battery, a room with poor signal, or anything else you'd like to share. Would you be willing to give us a short testimonal here?
+22. Has Device Sentinel already helped you find a problem device, a failed battery, a room with poor signal, or anything else? If so, would you write a short testimonial here that we may publish? Say whether to use your name:
