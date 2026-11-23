@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.3.*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4.*
 
 **What this is.** Each rule Device Sentinel follows, in plain words, grouped by subject into twenty sections, one file each. A rule says what holds today. Under it, a Proof line names the tests that check it. The rulebook is the contract the code is written to: code comments and docstrings give the reason in plain words, then cite the rule by its ID, written "(rule [BAT-13](Rulebook__09_BAT_Battery.md#bat-13-how-long-a-battery-has-left))".
 
@@ -19,7 +19,7 @@
 
 | Code | Section | Rules | File |
 |---|---|---|---|
-| GEN | General | 10 | [`Rulebook__01_GEN_General.md`](Rulebook__01_GEN_General.md) |
+| GEN | General | 11 | [`Rulebook__01_GEN_General.md`](Rulebook__01_GEN_General.md) |
 | WATCH | What Is Watched | 12 | [`Rulebook__02_WATCH_What_Is_Watched.md`](Rulebook__02_WATCH_What_Is_Watched.md) |
 | MUTE | Muting and Exclusion | 10 | [`Rulebook__03_MUTE_Muting_and_Exclusion.md`](Rulebook__03_MUTE_Muting_and_Exclusion.md) |
 | DEV | Device Identity | 19 | [`Rulebook__04_DEV_Device_Identity.md`](Rulebook__04_DEV_Device_Identity.md) |

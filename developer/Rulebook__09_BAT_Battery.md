@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -151,7 +151,7 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 ### BAT-14 Warnings
 
 **There are two warning levels. Both are decided by the near end of the time left against Days Till Low Warning (7 to 30 days, default 30).**
-- **Full warning:** an accelerating battery whose near end is inside Days Till Low Warning, and which is not already low, gets an item on the Problem List, a phone push, the Daily Brief and the Battery: Falling sensor.
+- **Full warning:** an accelerating battery whose near end is inside Days Till Low Warning, and which is not already low, gets an item on the Problem List, a phone push, the Daily Brief and the Battery: falling sensor.
 - **Batteries to Watch:** a battery falling at a steady pace inside Days Till Low Warning, and not already low, is listed under Batteries to Watch in the Daily Brief and on Battery Trends. It gets no push and no Problem List item.
 - **Already low:** a battery already low is left out of both, since it has its own line.
 - **Low and falling:** a device both low and falling reads as one line, the level and then the direction: "battery 16%, empty in about 2 weeks".

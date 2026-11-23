@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 1 November 2026, on Device Sentinel 0.27.17. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -80,3 +80,12 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 - **Storage changes:** a change Device Sentinel makes to its own storage, such as an upgrade filling fields, records deleted at the fold or a backup taken, is logged once at info.
 
 *Proof:* [`test_log_lines.py`](../tests/test_log_lines.py).
+
+### GEN-11 Times and Dates Follow Home Assistant's Profile
+
+**Device Sentinel writes times and dates the way the reader chose them in their Home Assistant profile, under Localization. It has no setting of its own for this.**
+- **The dashboard:** follows the person looking at it: 12 or 24 hours, the order of day and month, and the time zone, each also "as my language has it" or "as this browser has it", read as Home Assistant reads them.
+- **What the server writes:** the Daily Brief, pushes, the Problem List and the reports go to everyone, so they follow the owner account's choices, and follow a change the moment the owner makes it. "As this browser has it" cannot be read on the server, so it falls back to the language, and so does a house with no owner choice saved.
+- **The words stay English:** only the order of day and month, and 12 or 24 hours, follow the choice. Month names are English. A 24-hour time carries its leading zero: 05:34.
+
+*Proof:* [`test_clock.py`](../tests/test_clock.py), [`check_clock.js`](../tools/panel_checks/check_clock.js).

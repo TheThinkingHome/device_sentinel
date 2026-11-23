@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Upstream Outages (UP)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What happens when something between a device and Home Assistant stops: the MQTT broker, a bridge or coordinator, an integration, or a Wi-Fi network. This section covers how each one is seen to fail and recover, which devices an outage claims, the row, the pushes, the bus events, and the storms a whole integration can throw. How each stack is read is under [STACK](Rulebook__08_STACK_Stacks.md). A device's own frozen and unavailable verdicts are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and how the Daily Brief tells an outage is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -60,7 +60,7 @@ What happens when something between a device and Home Assistant stops: the MQTT 
 - **A one-device entry:** a device that is its integration entry's only device is never claimed by that entry's outage. It is judged on its own, listed as unavailable with its connection's reason beneath it ("Its SwitchBot connection failed to start."), and stays listed through restarts. An entry of several devices still claims them. A one-device entry whose device is muted for unavailable stays silent.
 - **Old rows:** an integration outage row written before 0.22.23 names no entry and can never close, so it is left off the integration's page.
 - **The record:** nothing is lost. Each device's verdict, episodes and taints are kept.
-- **Counts:** the Device: Frozen sensor counts frozen devices only. The outage row carries the outage's count.
+- **Counts:** the Device: frozen sensor counts frozen devices only. The outage row carries the outage's count.
 - **Not a fault:** the upstream row is not a device fault and takes no part in incidents, device events or the journal.
 
 *Proof:* [`test_upstream_reporting.py`](../tests/test_upstream_reporting.py), [`test_upstream_outage_row.py`](../tests/test_upstream_outage_row.py), [`test_reachability.py`](../tests/test_reachability.py), [`test_entry_outages.py`](../tests/test_entry_outages.py), [`test_outage_pairs_and_counts.py`](../tests/test_outage_pairs_and_counts.py), [`test_integration_outage_fleet_james.py`](../tests/test_integration_outage_fleet_james.py).

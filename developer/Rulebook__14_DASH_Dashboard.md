@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Dashboard (DASH)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers the Device Sentinel dashboard: how it is registered, its top band and tabs, Simple and Advanced, the device page's rows and actions, the Devices tab's filters, the update banner and the footer. The Battery chart and Battery Trends are under [BAT](Rulebook__09_BAT_Battery.md), the rhythm chart and the wait rules under [FRZ](Rulebook__05_FRZ_Freeze.md), and the signal chart under [SIG](Rulebook__10_SIG_Signal.md). The Recommendations tab and its cards are under [REC](Rulebook__15_REC_Recommendations.md), including the cards staying open. What a mute does is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). The answers in the Powered by, Type and Battery last replaced rows are under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -93,7 +93,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 
 **The device page lets a person rename the device, change its area and labels, turn on switched-off sensors, mute it and open it in Home Assistant.** Simple offers fewer of these ([DASH-04](#dash-04-what-simple-shows)).
 - **What it offers:** Rename, with "Reset to" the integration's name. Area, changed with its pencil. A Labels row after Area. Mute, for freeze, unavailable, battery, signal or everything (see [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md)). Open in Home Assistant ([DASH-07](#dash-07-the-device-pages-top-row)).
-- **Turning sensors on:** "Turn on its Last Seen" appears in the Last seen sensor row when that sensor is switched off, and a turn-on appears in the Battery sensor, Signal sensor and Z-Wave status rows the same way. A battery voltage sensor is turned on from its card only (see [REC](Rulebook__15_REC_Recommendations.md)).
+- **Turning sensors on:** Turn on its "Last seen" appears in the Last seen sensor row when that sensor is switched off, and a turn-on appears in the Battery sensor, Signal sensor and Z-Wave status rows the same way. A battery voltage sensor is turned on from its card only (see [REC](Rulebook__15_REC_Recommendations.md)).
 - **Where changes are written:** labels, area and name are written through Home Assistant's own registries. A removed label is never deleted from Home Assistant.
 - **New labels and areas:** one can be created from Device Sentinel's own pickers. A name Home Assistant already has is used as it is, so a second "Garage" is never made.
 - **No button:** Manufacturer, Model, Model ID, Hardware version, the addresses and Device ID have none, since their integration would overwrite an edit.
@@ -214,7 +214,7 @@ This section covers the Device Sentinel dashboard: how it is registered, its top
 
 **Since 0.30.2, a ⋮ button after Refresh opens a menu of what writes or sends: Send Brief and Regenerate Reports.**
 - **Send Brief:** sends the brief now ([BRIEF-18](Rulebook__13_BRIEF_Daily_Brief.md#brief-18-send-brief-from-the-dashboard)). Greyed out when no Daily Brief target can take it, with the reason beneath: "No Daily Brief target is set. Choose one in Notifications and Daily Brief." An older server's reply carries no count, and the item stays offered.
-- **Regenerate Reports:** judges every device and writes the reports, as the Regenerate Reports button entity does.
+- **Regenerate Reports:** judges every device and writes the reports, as the Regenerate reports button entity does.
 - **The note:** beside the menu, what is happening and then what happened: "Sent to 2 targets.", "Sent to 1 of 2 targets.", "Not sent: no target took it. See Settings, System, Logs.", "Reports regenerated." or what refused it. It clears after 30 seconds.
 - **Who:** admins only, as Maintenance Mode. A press elsewhere or Escape closes the menu.
 - **Refresh stays:** the dashboard is still a picture taken when it opens or is refreshed, with Refresh lighting up when there is something new (James, 22 November 2026).

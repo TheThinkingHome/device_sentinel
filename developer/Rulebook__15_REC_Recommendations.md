@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Recommendations (REC)
 
-*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel suggests a person change about their own setup: the Recommendations tab and its cards, the ticks and counts, and the lines the emailed Daily Brief carries for them. The rest of the brief is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The dashboard around the tab, and Simple and Advanced in general, are under [DASH](Rulebook__14_DASH_Dashboard.md). What each card's answer does to a device (power, type, a battery replacement) is under [DEV](Rulebook__04_DEV_Device_Identity.md) and BAT.
 
@@ -57,7 +57,7 @@ This section covers what Device Sentinel suggests a person change about their ow
 **A sensor is switched on one device at a time, by an administrator.** Nothing switches on a whole kind at once.
 - **Where:** from its card, or in Advanced from the device's page. A battery voltage sensor and a Lightwave hub's Cloud Link are switched on from their cards only.
 - **The cards:** Last Seen Sensor Switched Off, Battery Sensor Switched Off, Z-Wave Status Switched Off, Signal Sensor Switched Off, Battery Voltage Switched Off and, since 0.30.2, Cloud Link Switched Off ([STACK-17](Rulebook__08_STACK_Stacks.md#stack-17-lightwave-hubs-and-their-cloud-link)).
-- **The chips:** each card has a chip per device that names the sensor and what it reports: "Turn on its Last Seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor", "Turn on its battery voltage sensor" and "Turn on its Cloud Link".
+- **The chips:** each card has a chip per device that names the sensor and what it reports: Turn on its "Last seen", "Turn on its battery percentage sensor", "Turn on its Z-Wave status", "Turn on its signal sensor", "Turn on its battery voltage sensor" and "Turn on its Cloud Link".
 - **Firmware update checks:** since 0.28.7 a device's own firmware update entity is switched on the same way, from its network's page only, never a beta channel's ([DASH-17](Rulebook__14_DASH_Dashboard.md#dash-17-the-networks-tab)). No card asks for it (James, 15 November 2026, 12:13): an integration that ships it switched off doesn't push its updates, and a device with it off is judged as one with none ([REC-12](#rec-12-firmware-updates)).
 - **Which entities count:** only a device's own entities, never one another integration added, such as Battery Notes'. A device is listed only when none of its own entities of that kind is on.
 - **Battery Voltage Switched Off:** lists only a device with a battery reading, whose power is not set to mains, USB or PoE, and whose voltage nothing else already reports.

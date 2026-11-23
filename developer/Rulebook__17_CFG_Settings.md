@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Settings (CFG)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How the configuration screens are laid out and worded, what the entities Device Sentinel creates are called and which are switched on, and the Data Trim tool on the Advanced screen. What each setting judges is in its own section (BAT, SIG, FRZ, UNAV, NOTE, MUTE). What the trim does to the stored files is in [STOR](Rulebook__18_STOR_Storage.md).
 
@@ -48,7 +48,8 @@ How the configuration screens are laid out and worded, what the entities Device 
 ### CFG-06 Entity Names
 
 **An entity of a family is named with its subject, a colon and its state, so the list in Home Assistant groups them.**
-- **The family names:** Signal: Weak, Signal: Rails, Battery: Low, Battery: Falling, Device: Frozen, Devices: Watched, Devices: Learned, Devices: Set Aside, Maintenance: Ends, Bridge: Zigbee2MQTT, Bridge: ZHA, Bridge: WiFi and Broker: MQTT.
+- **The family names:** Signal: weak, Signal: rails, Battery: low, Battery: falling, Device: frozen, Devices: watched, Devices: learned, Devices: set aside, Maintenance: ends, Bridge: Zigbee2MQTT, Bridge: ZHA, Bridge: Wi-Fi and Broker: MQTT.
+- **Sentence case:** entity names are written in sentence case, as Home Assistant writes its own. A feature's own name keeps its capitals: the Problem List and Maintenance Mode. Titles on the dashboard and in the brief stay in Title Case.
 - **Plain names:** Status, the Problem List and the buttons keep plain names.
 - **Renames:** a rename changes only the name shown. The entity id stays, so history and automations carry on.
 
@@ -65,17 +66,17 @@ How the configuration screens are laid out and worded, what the entities Device 
 ### CFG-08 Which Entities Are On at First Install
 
 **An entity is switched on at first install only if a person reads it daily or acts on it in the first week.**
-- **On:** Status, Devices: Watched, Devices: Learned, Maintenance: Ends, the Problem List, the Regenerate Reports and Maintenance Mode buttons, and each bridge sensor.
+- **On:** Status, Devices: watched, Devices: learned, Maintenance: ends, the Problem List, the Regenerate reports and Maintenance Mode buttons, and each bridge sensor.
 - **Broker: MQTT:** on where a bridge stack was found and off elsewhere.
-- **Off:** the five problem counts and Devices: Set Aside.
+- **Off:** the five problem counts and Devices: set aside.
 - **Who decides:** the dashboard never decides a default, and a house already installed keeps the choices it has.
-- **Only an admin presses a button (since 0.28.12):** Maintenance Mode and Regenerate Reports refuse a press from a user who is not an admin, as the dashboard's own commands do. An automation that runs on its own carries no user and still may; a script a person starts acts as that person.
+- **Only an admin presses a button (since 0.28.12):** Maintenance Mode and Regenerate reports refuse a press from a user who is not an admin, as the dashboard's own commands do. An automation that runs on its own carries no user and still may; a script a person starts acts as that person.
 
 *Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_non_admin.py`](../tests/test_non_admin.py).
 
 ### CFG-09 Primary or Diagnostic
 
-**An entity that reports news about the house is primary: the problem counts, the bridge sensors and Broker: MQTT. An entity that counts what Device Sentinel watches is diagnostic: Devices: Watched, Devices: Learned and Devices: Set Aside.**
+**An entity that reports news about the house is primary: the problem counts, the bridge sensors and Broker: MQTT. An entity that counts what Device Sentinel watches is diagnostic: Devices: watched, Devices: learned and Devices: set aside.**
 
 *Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py).
 

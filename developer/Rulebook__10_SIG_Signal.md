@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Signal (SIG)
 
-*Version: rulebook, 18 November 2026, on Device Sentinel 0.29.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 How Device Sentinel reads a device's radio signal, what it keeps each day, how it judges a bad signal day and a stuck reading, and what the Signal Trends tab shows. Signal muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). How a railed signal reads on the Problem List is in [LIST](Rulebook__11_LIST_Problem_List.md); how it reaches a phone is in [NOTE](Rulebook__12_NOTE_Notifications.md). A device that keeps dropping out is under [UNAV](Rulebook__06_UNAV_Unavailable.md).
 
@@ -68,11 +68,11 @@ How Device Sentinel reads a device's radio signal, what it keeps each day, how i
 
 *Proof:* [`test_signal_badday.py`](../tests/test_signal_badday.py), [`test_signal_badday_hostile.py`](../tests/test_signal_badday_hostile.py).
 
-### SIG-09 Signal: Rails and Signal: Weak
+### SIG-09 Signal: rails and Signal: weak
 
-**There are two sensors, counted apart as Battery: Low and Battery: Falling are.**
-- **Signal: Rails:** counts the railed devices.
-- **Signal: Weak:** counts the devices whose last recorded day was a bad signal day. It counts watched devices only, and leaves out railed devices and those muted for signal or for everything, so one fault never counts twice.
+**There are two sensors, counted apart as Battery: low and Battery: falling are.**
+- **Signal: rails:** counts the railed devices.
+- **Signal: weak:** counts the devices whose last recorded day was a bad signal day. It counts watched devices only, and leaves out railed devices and those muted for signal or for everything, so one fault never counts twice.
 - **Leaving the count:** a weak device leaves the count the next day its signal holds, with nothing to acknowledge, because a weak day is a reading, not an incident.
 
 *Proof:* [`test_signal_stats.py`](../tests/test_signal_stats.py), [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_set_aside_left_out.py`](../tests/test_set_aside_left_out.py).
