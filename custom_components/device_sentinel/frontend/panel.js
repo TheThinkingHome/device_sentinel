@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.3 (2026-11-23)
+// File: panel.js, Version: 0.30.4 (2026-11-23)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -426,7 +426,7 @@ function halves(value, noun) {
 function shortDropWords(drops) {
   if (!drops || !drops.count) return "None";
   const last = new Date(drops.last);
-  const at = Number.isNaN(last.getTime()) ? "" : `, the last at ${last.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  const at = Number.isNaN(last.getTime()) ? "" : `, the last at ${fmtTime(last)}`;
   return `${drops.count} in the last ${drops.hours || 12} hours, the longest ${span(drops.longest)}${at}`;
 }
 
@@ -443,8 +443,8 @@ function span(seconds) {
 // capture says which day it shows. The language decides the order, the
 // month's name and the 12 or 24 hour clock.
 function longMoment(date) {
-  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return `${time}, ${date.toLocaleDateString([], { dateStyle: "long" })}`;
+  const time = fmtTime(date);
+  return `${time}, ${fmtDay(date, { year: true, month: "long" })}`;
 }
 
 // Home Assistant's own cog, mdiCog from Material Design Icons
@@ -560,7 +560,7 @@ function pinTable(table) {
 }
 
 function moment(iso) {
-  return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return fmtDayTime(new Date(iso));
 }
 
 const STATE_COLOURS = {
@@ -574,6 +574,101 @@ const STATE_COLOURS = {
 function localDay(d) {
   const pad = (v) => String(v).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Times and dates as the person looking chose them in their Home
+// Assistant profile: 12 or 24 hours, the order of day and month, and the
+// time zone, each also "as my language has it" or "as this browser has
+// it", read as Home Assistant reads them. The words stay English, as the
+// rest of the page is (rule GEN-11).
+const CLOCK = { locale: {}, serverZone: undefined, cache: {} };
+function clockLanguage() {
+  return CLOCK.locale.language || undefined;
+}
+function clockHour12() {
+  const key = `h|${CLOCK.locale.time_format}|${clockLanguage()}`;
+  if (CLOCK.cache.key12 !== key) {
+    CLOCK.cache.key12 = key;
+    CLOCK.cache.hour12 = clockHour12Uncached();
+  }
+  return CLOCK.cache.hour12;
+}
+function clockHour12Uncached() {
+  const chosen = CLOCK.locale.time_format;
+  if (chosen === "12") return true;
+  if (chosen === "24") return false;
+  const lang = chosen === "system" ? undefined : clockLanguage();
+  try {
+    return new Date("January 1, 2023 22:00:00").toLocaleString(lang).includes("10");
+  } catch (err) {
+    return true;
+  }
+}
+function clockOrder() {
+  const key = `o|${CLOCK.locale.date_format}|${clockLanguage()}`;
+  if (CLOCK.cache.keyOrder !== key) {
+    CLOCK.cache.keyOrder = key;
+    CLOCK.cache.order = clockOrderUncached();
+  }
+  return CLOCK.cache.order;
+}
+function clockOrderUncached() {
+  const chosen = CLOCK.locale.date_format;
+  if (["DMY", "MDY", "YMD"].includes(chosen)) return chosen;
+  const lang = chosen === "system" ? undefined : clockLanguage();
+  try {
+    const parts = new Intl.DateTimeFormat(lang, { year: "numeric", month: "numeric", day: "numeric" })
+      .formatToParts(new Date(2023, 0, 22)).filter((part) => part.type !== "literal").map((part) => part.type[0]);
+    const order = parts.join("").toUpperCase();
+    return ["DMY", "MDY", "YMD"].includes(order) ? order : "MDY";
+  } catch (err) {
+    return "MDY";
+  }
+}
+function clockZone() {
+  return CLOCK.locale.time_zone === "server" ? CLOCK.serverZone : undefined;
+}
+// The parts of a moment in the chosen zone, the month named in English.
+// One formatter per zone and month length, as a table of hundreds of rows
+// would otherwise build one per cell.
+const CLOCK_FORMATS = new Map();
+function clockParts(date, month = "short", zone = true) {
+  const d = date instanceof Date ? date : new Date(date);
+  const timeZone = zone ? clockZone() : undefined;
+  const key = `${timeZone || ""}|${month}`;
+  let format = CLOCK_FORMATS.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month,
+      day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+    CLOCK_FORMATS.set(key, format);
+  }
+  const parts = {};
+  for (const part of format.formatToParts(d)) parts[part.type] = part.value;
+  return parts;
+}
+// 5:34 PM, or 17:34; with seconds, 5:34:07 PM or 17:34:07.
+function fmtTime(date, seconds = false) {
+  const p = clockParts(date);
+  const hour = Number(p.hour) % 24;
+  const tail = seconds ? `:${p.second}` : "";
+  return clockHour12() ? `${hour % 12 || 12}:${p.minute}${tail} ${hour < 12 ? "AM" : "PM"}`
+    : `${String(hour).padStart(2, "0")}:${p.minute}${tail}`;
+}
+// Nov 23, 23 Nov or 2026 Nov 23; with a weekday, a year, or the month
+// spelled out.
+// A calendar day, such as a chart's, is drawn where it falls (local: true).
+function fmtDay(date, { weekday = false, year = false, month = "short", local = false } = {}) {
+  const p = clockParts(date, month, !local);
+  const order = clockOrder();
+  let text = order === "DMY" ? `${p.day} ${p.month}${year ? ` ${p.year}` : ""}`
+    : order === "YMD" ? `${year ? `${p.year} ` : ""}${p.month} ${p.day}`
+      : `${p.month} ${p.day}${year ? `, ${p.year}` : ""}`;
+  if (weekday) text = `${p.weekday} ${text}`;
+  return text;
+}
+// Nov 23, 5:34 PM.
+function fmtDayTime(date, seconds = false) {
+  return `${fmtDay(date)}, ${fmtTime(date, seconds)}`;
 }
 
 function el(tag, props = {}, ...children) {
@@ -938,6 +1033,9 @@ class DeviceSentinelPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    // The viewer's own time and date choices (rule GEN-11).
+    CLOCK.locale = Object.assign({ language: hass && hass.language }, (hass && hass.locale) || {});
+    CLOCK.serverZone = hass && hass.config ? hass.config.time_zone : undefined;
     if (this._menu) this._menu.hass = hass;
     // Entity states arrive with every hass update, so the readings on
     // a device page redraw the moment one changes.
@@ -1511,7 +1609,7 @@ class DeviceSentinelPanel extends HTMLElement {
           el("span", { class: "dot", style: STATE_COLOURS[part.state] ? `background:${STATE_COLOURS[part.state]}` : "" }),
           part.state)));
     const maint = status.maintenance;
-    const until = maint.open ? new Date(maint.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+    const until = maint.open ? fmtTime(new Date(maint.until)) : null;
     parts.push(el("div", { class: "card part" },
       el("div", { class: "label" }, "Maintenance"),
       el("div", { class: "state" },
@@ -1923,7 +2021,7 @@ class DeviceSentinelPanel extends HTMLElement {
       if (card.kind === "shared_address") action = el("span", { class: "small" }, `Address ${row.detail}`);
       // The switched-off cards (rule REC-05): one device, one kind.
       const TURN_ON = {
-        last_seen: ["last_seen", "Turn on its Last Seen"],
+        last_seen: ["last_seen", 'Turn on its "Last seen"'],
         // Named for what it reports (rule REC-05).
         battery_off: ["battery", "Turn on its battery percentage sensor"],
         signal_off: ["signal", "Turn on its signal sensor"],
@@ -2666,7 +2764,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ...((air.thread || []).length ? [swatch("var(--info-color, #039be5)", "Thread", true)] : []));
     const when = air.scanned_at ? new Date(air.scanned_at) : null;
     const note = air.scan === "ok" && when && Number.isFinite(when.getTime())
-      ? `Last scan ${when.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`
+      ? `Last scan ${clockParts(when).weekday} ${fmtTime(when)}`
       : "";
     const why = {
       no_adapter: "This server has no Wi-Fi adapter, so only the Zigbee and Thread channels are shown.",
@@ -2827,7 +2925,7 @@ class DeviceSentinelPanel extends HTMLElement {
   _networkCard(net, card, named = false) {
     const when = (iso) => {
       const at = new Date(iso);
-      return Number.isFinite(at.getTime()) ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+      return Number.isFinite(at.getTime()) ? fmtTime(at) : "";
     };
     const actions = [];
     // Only a pattern whose outages have a recorded length can be
@@ -3239,10 +3337,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const at = this._snapshot.at.getTime();
     const dayDate = new Date(`${brief.day}T12:00:00`);
     const label = brief.is_today
-      ? `Today, ${dayDate.toLocaleDateString([], { month: "short", day: "numeric" })}`
-      : dayDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      ? `Today, ${fmtDay(dayDate, { local: true })}`
+      : fmtDay(dayDate, { weekday: true, local: true });
     const windowWords = brief.is_today
-      ? `Midnight to ${new Date(brief.window.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}, still running.`
+      ? `Midnight to ${fmtTime(new Date(brief.window.end))}, still running.`
       : "Midnight to midnight.";
     const step = (text, day, ariaLabel) => el("button", {
       class: "chip", type: "button", "aria-disabled": String(!day), "aria-label": ariaLabel,
@@ -3314,7 +3412,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ? el("div", { class: "scroll" }, el("table", {},
         el("thead", {}, el("tr", {}, ...["TIME", "DEVICE", "WHAT HAPPENED"].map((h) => el("th", {}, h)))),
         el("tbody", {}, ...brief.events.map((row) => el("tr", {},
-          el("td", {}, new Date(row.when).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })),
+          el("td", {}, fmtDayTime(new Date(row.when), true)),
           el("td", {}, row.device_id ? this._deviceLink(row.who, row.device_id) : row.who),
           el("td", {}, row.what))))))
       : null;
@@ -4036,7 +4134,7 @@ class DeviceSentinelPanel extends HTMLElement {
   _learningDay(iso, size = "long") {
     const [y, m, d] = String(iso || "").split("-").map(Number);
     if (!y || !m || !d) return "";
-    return new Date(y, m - 1, d).toLocaleDateString([], { month: size, day: "numeric" });
+    return fmtDay(new Date(y, m - 1, d, 12), { month: size, local: true });
   }
 
   // The box at the top of a trend tab while it is still learning
@@ -4330,7 +4428,7 @@ class DeviceSentinelPanel extends HTMLElement {
             : `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
         }
         if (kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
-          value = new Date(state.state).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+          value = fmtTime(new Date(state.state));
         }
         // Home Assistant stamps an entity as changed when a retained
         // message is replayed at a restart (rule WATCH-12), so a value is
@@ -4353,7 +4451,7 @@ class DeviceSentinelPanel extends HTMLElement {
       if (!shown && kind === "last_seen" && page.status && page.status.last_activity
           && Number.isFinite(new Date(page.status.last_activity).getTime())) {
         shown = [el("span", { class: "readingvalue" },
-          new Date(page.status.last_activity).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })),
+          fmtTime(new Date(page.status.last_activity))),
           " ", el("span", { class: "small" }, `heard by Device Sentinel ${ago(page.status.last_activity, Date.now())}`)];
       }
       cell.replaceChildren(...(shown || [el("span", { class: "muted" }, kind === "last_seen" ? "none" : "no reading")]));
@@ -4617,7 +4715,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // A day as the dashboard writes one: Oct 18, 2026.
   _dayWords(iso) {
     const day = new Date(`${iso}T12:00:00`);
-    return day.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+    return fmtDay(day, { year: true, local: true });
   }
 
   // The answers to a detected replacement (rule BAT-07): Confirm,
@@ -4677,7 +4775,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // (rule BAT-07): "Device first detected {day}. No battery
     // replacement yet."
     const firstSeen = view.first_seen
-      ? `Device first detected ${new Date(`${view.first_seen}T12:00:00`).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}. ${view.words.none}.`
+      ? `Device first detected ${fmtDay(new Date(`${view.first_seen}T12:00:00`), { month: "long", year: true, local: true })}. ${view.words.none}.`
       : null;
     const words = view.day ? this._dayWords(view.day) : (firstSeen || view.words.none);
     const shown = el("div", { class: "actrow" }, el("span", {}, words),
@@ -5190,7 +5288,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // Today's time alone; an earlier day's with its date.
     const wentClock = went === null ? ""
       : localDay(new Date(went)) === localDay(new Date(now))
-        ? new Date(went).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        ? fmtTime(new Date(went))
         : moment(new Date(went).toISOString());
     const counted = went !== null && status.last_activity
       ? Math.max(0, (went - new Date(status.last_activity).getTime()) / 1000) : quiet;
@@ -5200,7 +5298,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // or down from its connection, and a device it controls is judged by it.
     const hub = page.hub || null;
     const hubSelf = page.hub_self || null;
-    const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "an unknown time");
+    const clock = (iso) => (iso ? fmtTime(new Date(iso)) : "an unknown time");
     // A verdict of its own, or a mute, is shown as on any page: the hub's
     // words take the place of the plain "reporting" only.
     const ownVerdict = ["frozen", "unavailable", "unknown", "never_reported", "short_drop_outs"].includes(status.category);
@@ -5315,7 +5413,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // (rule DASH-04).
         simple ? null : el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind: "last_seen" }, "heartbeat") },
-          "Turn on its Last Seen")),
+          'Turn on its "Last seen"')),
         this._actNote("heartbeat"))
         // ZHA keeps its own Last Seen for every device (rule STACK-04).
         : who.clock === "zha" ? el("div", { class: "actrow" }, el("span", {}, "ZHA's own"),
@@ -5486,7 +5584,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // again, by pressing its bar: Advanced only, for a person who may act,
     // and only after the warning beneath the chart (rule FRZ-25).
     const pressDays = Boolean(acts) && !simple;
-    const dayLabel = (day) => new Date(`${day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+    const dayLabel = (day) => fmtDay(new Date(`${day}T12:00:00`), { local: true });
     const dayAsk = (chart) => {
       const ask = this._dayAsk;
       if (!ask || ask.device !== who.device_id || ask.chart !== chart) return null;
@@ -5566,7 +5664,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // Where the 42-day chart stood while it counts again (rule FRZ-22).
     const again = !rhythmBox.lognormal_days && rhythmBox.counting_again;
     if (again && charts.length && !status.connection && !judged) {
-      const since = new Date(`${again.since}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+      const since = fmtDay(new Date(`${again.since}T12:00:00`), { local: true });
       charts.push(el("div", { class: "rulebox" },
         el("div", { class: "ruletitle" }, "Log-Normal Percentile"),
         el("p", { class: "small", style: "margin:0;line-height:1.5" },
@@ -5602,7 +5700,7 @@ class DeviceSentinelPanel extends HTMLElement {
             ? span(row.silence_total)
             : row.silence ? span(row.silence) : ""),
           el("td", {}, row.window ? span(row.window) : ""),
-          el("td", {}, `${row.ended || ""}${row.at ? ` at ${new Date(row.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`),
+          el("td", {}, `${row.ended || ""}${row.at ? ` at ${fmtTime(new Date(row.at))}` : ""}`),
           // Truncated by an intervention and still waiting on the
           // device's first word since, which a blank cell would leave
           // unsaid.
@@ -5761,7 +5859,7 @@ class DeviceSentinelPanel extends HTMLElement {
       if (d.getDate() !== 1) continue;
       g.append(svg("line", { x1: x(i), y1: 20, x2: x(i), y2: 190, stroke: "var(--divider-color)", "stroke-opacity": 0.5 }),
         svg("text", { x: x(i), y: 210, class: "axis", "text-anchor": "middle" },
-          d.toLocaleDateString([], { month: "short" })));
+          clockParts(d, "short", false).month));
     }
     // The kept days, and a local fit through them (each point weighted
     // by its distance, fifteen days either side).
@@ -5839,7 +5937,7 @@ class DeviceSentinelPanel extends HTMLElement {
         if (line.zero !== null) zeroes.push(line.zero);
       }
     }
-    const zeroText = (i) => dayAt(Math.round(i)).toLocaleDateString([], { month: "short", day: "numeric" });
+    const zeroText = (i) => fmtDay(dayAt(Math.round(i)), { local: true });
     const zeroX = zeroes.map(x);
     for (const zx of zeroX) {
       g.append(svg("line", { class: "zerotick", x1: zx, y1: 190, x2: zx, y2: 196, stroke: "var(--error-color, #db4437)", "stroke-width": 2 }));
@@ -5912,7 +6010,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const days = this._range === "all" || future ? recorded : Math.min(this._range, recorded);
     const end = new Date(`${page.series_end}T12:00:00`);
     const dayOf = (back) => new Date(end.getFullYear(), end.getMonth(), end.getDate() - back);
-    const fmt = (d) => d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const fmt = (d) => fmtDay(d, { local: true });
     const x = (back) => 44 + (days <= 1 ? 0 : ((days - 1 - back) * 1046) / (days - 1));
     const step = days <= 1 ? 1046 : 1046 / (days - 1);
     const at = (arr, back) => {
@@ -6204,7 +6302,7 @@ class DeviceSentinelPanel extends HTMLElement {
           : "Steady: no week has fallen a point below the week before, so no time left is offered."));
       // Earlier Forecasts (rule BAT-15): what was said, and what happened.
       const forecasts = Array.isArray(b.forecasts) ? b.forecasts : [];
-      const shortDay = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+      const shortDay = (iso) => fmtDay(new Date(`${iso}T12:00:00`), { local: true });
       // A forecast to empty (rule BAT-15) closes on a reading of 0, or on the
       // day a device that then went silent was last heard: it ran out.
       const reached = (f) => f.target > 0 ? `Reached ${f.target}%` : "Ran out";
@@ -6230,7 +6328,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ].filter((part) => part) : [];
       const evidenceNote = evParts.length && !this._isSimple()
         ? el("p", { class: "small muted", style: "margin:4px 0 0;line-height:1.5" },
-          `Saved for future battery forecasts: ${evParts.length > 1 ? `${evParts.slice(0, -1).join(", ")} and ${evParts[evParts.length - 1]}` : evParts.join("")} on ${new Date(`${ev.day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })}.`)
+          `Saved for future battery forecasts: ${evParts.length > 1 ? `${evParts.slice(0, -1).join(", ")} and ${evParts[evParts.length - 1]}` : evParts.join("")} on ${fmtDay(new Date(`${ev.day}T12:00:00`), { local: true })}.`)
         : null;
       const modelNote = modelPaceWords(b.model_pace)
         ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, modelPaceWords(b.model_pace)) : null;
@@ -6483,15 +6581,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // itself reads it: 12 or 24 as chosen, or what their language, or this
   // browser, uses (rule BRIEF-18).
   _hour12() {
-    const locale = (this._hass && this._hass.locale) || {};
-    if (locale.time_format === "12") return true;
-    if (locale.time_format === "24") return false;
-    const lang = locale.time_format === "system" ? undefined : (locale.language || (this._hass && this._hass.language));
-    try {
-      return new Date("January 1, 2023 22:00:00").toLocaleString(lang).includes("10");
-    } catch (err) {
-      return true;
-    }
+    return clockHour12();
   }
 
   // One menu choice: says what is happening, then what happened, beside
