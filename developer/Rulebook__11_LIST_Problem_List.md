@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Problem List (LIST)
 
-*Version: rulebook, 11 November 2026, on Device Sentinel 0.28.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 The Problem List is Home Assistant's to-do list of what is wrong with the house's devices. This section covers what an item is, the kinds of problem and their words, acknowledgment, the order, when a problem is announced, what counts as a recovery and how an item leaves. What a push, the persistent card and the bus events do with an item is under [NOTE](Rulebook__12_NOTE_Notifications.md). How each problem is judged is under [FRZ](Rulebook__05_FRZ_Freeze.md), UNAV, BAT and SIG. An upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md), muting is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md), and the Problem List at the head of the dashboard's Daily Brief tab ([DASH-02](Rulebook__14_DASH_Dashboard.md)) is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -16,6 +16,7 @@ The Problem List is Home Assistant's to-do list of what is wrong with the house'
 
 **There are eight kinds: flapping, unavailable, frozen, unknown, never reported, low battery, falling battery and railed signal.** Worst first, the order is the one above.
 - **The words people see:** each surface that puts a kind into words, the push, the notification card and the Problem List among them, uses the Daily Brief's word for it in its own sentence shape, so a raw key never reaches a person.
+- **A full date takes "on" (since 0.30.5):** an item's sentence puts "on" before a date written out with its year, "Stopped reporting on November 23, 2026 at 2:23 AM.", never "at" twice. "Since" and "discovered" stay.
 - **Each kind's words:** flapping "dropped out N times", unavailable "became unavailable" (a hub "went down"), frozen "stopped reporting", unknown "went unknown", "never reported", a low battery "battery crossed the threshold on Oct 24. Its current level is 14%" (see [BAT](Rulebook__09_BAT_Battery.md)), a falling battery "battery running down" and "signal railed".
 - **Stored names:** these are fixed, because automations trigger on them: flapping, unavailable, frozen, unknown, never_reported, low_battery, falling_battery, railed_signal.
 - **Three families:** the first five are a device not reporting, the two battery kinds are battery, and railed signal is signal.
