@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_back_links.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_back_links.js, Version: 0.30.5 (2026-11-23)
 // Panel checks: each page leads back to the page it came from, and Print
-// sits beside the gear.
+// sits beside the ⋮ menu.
 // Run with: LC_ALL=en_US.UTF-8 node check_back_links.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -128,12 +128,12 @@ const clickName = async (root, name) => {
   ({ window, root } = await open(`${PREFIX}/device/${BRAVO}?from=${encodeURIComponent("/nowhere/at/all")}`));
   check("an origin that is no page falls back to Devices", backLink(root) && backLink(root).text === "\u2039 Devices", backLink(root));
 
-  console.log("Print beside the gear");
+  console.log("Print beside the ⋮ menu");
   ({ window, root } = await open(PREFIX));
   const icon = toolbarPrint(root);
   check("a print icon is in the toolbar", icon !== null);
   check("it is labelled Print this page", icon && icon.getAttribute("aria-label") === "Print this page" && icon.getAttribute("title") === "Print this page");
-  check("it sits just before the gear", icon && icon.nextElementSibling === root.querySelector(".toolbar .gear"));
+  check("it sits just before the ⋮ menu", icon && icon.nextElementSibling === root.querySelector(".toolbar .more"));
   check("the button row no longer has a Print button", rowPrint(root) === undefined);
   if (icon) icon.click();
   const frame = window.document.querySelector("iframe");

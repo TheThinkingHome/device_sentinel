@@ -1,5 +1,5 @@
-// File: tools/panel_checks/check_classification_sources.js, Version: 0.28.8 (2026-11-09)
-// Panel checks: the gear, the date beside "As of", and the devices set
+// File: tools/panel_checks/check_classification_sources.js, Version: 0.30.5 (2026-11-23)
+// Panel checks: Settings in the ⋮ menu, the date beside "As of", and the devices set
 // aside and excluded on the Devices tab (rule DASH-12), driven
 // with real WebSocket replies captured from the integration.
 // Run with: LC_ALL=en_US.UTF-8 node check_classification_sources.js [path/to/panel.js]
@@ -84,17 +84,15 @@ async function tab(root, name) {
   const asOf = root.querySelector(".asof").textContent;
   check("As of carries the time then the long date", /^As of \d{1,2}:\d{2}\s?[AP]M, [A-Z][a-z]+ \d{1,2}, \d{4}$/.test(asOf), asOf);
 
-  const gear = root.querySelector(".toolbar a.gear");
-  check("a gear is in the toolbar", gear !== null);
-  check("the gear links to the integration's page", gear && gear.getAttribute("href") === "/config/integrations/integration/device_sentinel", gear && gear.getAttribute("href"));
-  check("the gear is labelled for a screen reader", gear && gear.getAttribute("aria-label") === "Device Sentinel settings");
-  check("the gear draws Home Assistant's cog", gear && gear.querySelector("svg path") !== null && gear.querySelector("svg path").getAttribute("d").startsWith("M12,15.5A3.5,3.5"));
-  if (gear) gear.click();
-  check("clicking the gear navigates inside Home Assistant", window.navigated.includes("/config/integrations/integration/device_sentinel"), window.navigated);
+  root.querySelector(".toolbar .more > .dots").click();
+  const settingsItem = [...root.querySelectorAll(".toolbar .more .menu button")].find((b) => b.textContent === "Settings");
+  check("Settings is in the ⋮ menu", settingsItem !== undefined);
+  if (settingsItem) settingsItem.click();
+  check("Settings goes to the integration page, inside Home Assistant", window.navigated.includes("/config/integrations/integration/device_sentinel"), window.navigated);
 
   console.log("The printout's heading");
   ({ window, root } = await open("en-US"));
-  // The printer icon beside the gear, or a Print button.
+  // The printer icon beside the ⋮ menu, or a Print button.
   const print = root.querySelector(".toolbar .print") || [...root.querySelectorAll("button")].find((b) => b.textContent === "Print");
   print.click();
   const frame = window.document.querySelector("iframe");

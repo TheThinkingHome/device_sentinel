@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.30.4 (2026-11-23)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.30.5 (2026-11-23)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -164,6 +164,14 @@ const rowCell = (root, label) => {
     rowCell(root, "Battery level").textContent);
   check("Signal: the value with its unit", /^116 lqi changed 4m ago/.test(rowCell(root, "Signal").textContent), rowCell(root, "Signal").textContent);
   check("Last seen: a time of day", /\d{1,2}:\d\d/.test(rowCell(root, "Last seen").textContent), rowCell(root, "Last seen").textContent);
+  // Four minutes ago is still today, except in the first minutes after midnight.
+  if (new Date(NOW - 4 * 60e3).getDate() === new Date(NOW).getDate()) check("Last seen today: the time alone", !/[A-Z][a-z]{2} \d{1,2},/.test(rowCell(root, "Last seen").textContent), rowCell(root, "Last seen").textContent);
+  {
+    const weeks = new Date(NOW - 59 * 86400e3).toISOString();
+    const { root: old } = await open({ states: { ...STATES, "sensor.bravo_last_seen": { state: weeks, attributes: {}, last_changed: weeks } } });
+    check("Last seen weeks ago carries its day (rule DASH-08)", /^[A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d\d/.test(rowCell(old, "Last seen").textContent),
+      rowCell(old, "Last seen").textContent);
+  }
   const link = rowCell(root, "Battery sensor").querySelector("a.entitylink");
   link.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
   check("A sensor link opens its own Home Assistant dialog", events.length === 1 && events[0].entityId === "sensor.bravo_battery", events);
