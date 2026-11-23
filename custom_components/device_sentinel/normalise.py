@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.30.1 (2026-11-21)
+# File: normalise.py, Version: 0.30.3 (2026-11-23)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -1149,6 +1149,8 @@ SCALARS: dict[str, str] = {
     "integration_seen": MAPPING,
     # The lasting poller verdicts, each read with care (rule UP-17).
     "pollers": MAPPING,
+    # The devices that move together, by domain (rule UP-17).
+    "storm_members": MAPPING,
     # The migration markers. Both hold a version-like string that the
     # load compares against an expected mark, and a marker that does
     # not match runs a one-time conversion over data that has already

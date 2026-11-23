@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.30.0 (2026-11-21)
+# File: config_flow.py, Version: 0.30.3 (2026-11-23)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -61,6 +61,7 @@ from .naming import display_name
 from .notifier import notify_platform
 from .wifi import pick_adapter, scan_networks, wireless_interfaces
 
+from .study_aqara import aqara_present
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     SMTP_DOMAIN,
@@ -80,6 +81,7 @@ from .const import (
     CONF_CACHED_REMOVED,
     STUDIABLE,
     STUDY_ALWAYS_OFFERED,
+    AQARA_KEY,
     CONF_WIFI_CONFIRM_SECONDS,
     CONF_WIFI_NETWORKS,
     DEFAULT_WIFI_CONFIRM_SECONDS,
@@ -733,6 +735,11 @@ def _studiable(hass) -> list[str]:
     present = {
         entry.domain for entry in hass.config_entries.async_entries()
     }
+    # An Aqara hub is not an integration of its own: it is offered where
+    # an Aqara device reaches Home Assistant through Matter or HomeKit
+    # Device (rule STACK-11).
+    if aqara_present(hass):
+        present.add(AQARA_KEY)
     return [
         label for domain, label in STUDIABLE.items()
         if domain in present or domain in STUDY_ALWAYS_OFFERED

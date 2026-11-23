@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: pollers.py, Version: 0.28.11 (2026-11-10)
+# File: pollers.py, Version: 0.30.3 (2026-11-23)
 
 """Integrations that update all their devices together (rule UP-17).
 
@@ -42,6 +42,7 @@ from .const import (
     DATA_DEVICES,
     DATA_POLLERS,
     DATA_STORM_DAYS,
+    DATA_STORM_MEMBERS,
     POLLER_BASIS,
     POLLER_BASIS_LOCKSTEP,
     POLLER_BASIS_STORMS,
@@ -171,6 +172,53 @@ class PollerMixin:
         found = {device for device in devices if isinstance(device, str)}
         return found or None
 
+    def storm_members(self, domain: str) -> set[str]:
+        """The devices of an integration that move together, as its last
+        day of storms found them (rule UP-17)."""
+        stored = self.data.get(DATA_STORM_MEMBERS)
+        found = stored.get(domain) if isinstance(stored, dict) else None
+        if not isinstance(found, list):
+            return set()
+        return {device for device in found if isinstance(device, str)}
+
+    def _fold_storm_members(self, ended: date) -> dict[str, list[str]]:
+        """Keep the devices that took part in at least half of the day's
+        tallied storms, by domain, then clear the day's counts. A day
+        with none, as after a restart, keeps those found before; a
+        domain with no storm in the last week is dropped. A Matter
+        bridge passes its own devices on together while the
+        integration's other devices report on their own, so these are
+        the devices a poller is judged on and its line names
+        (rule UP-17)."""
+        stored = self.data.get(DATA_STORM_MEMBERS)
+        if not isinstance(stored, dict):
+            stored = self.data[DATA_STORM_MEMBERS] = {}
+        counts = getattr(self, "_storm_members", None) or {}
+        storms_of = getattr(self, "_storm_member_storms", None) or {}
+        for domain, counter in counts.items():
+            storms = storms_of.get(domain, 0)
+            found = sorted(
+                device for device, count in counter.items()
+                if storms and count * 2 >= storms and device in self._watched
+            )
+            if found and stored.get(domain) != found:
+                stored[domain] = found
+                self._dirty = True
+        if hasattr(self, "_storm_members"):
+            self._storm_members.clear()
+            self._storm_member_storms.clear()
+        earliest = ended - timedelta(days=POLLER_LOOKBACK_DAYS - 1)
+        recent = {
+            row.get(STORM_DAY_DOMAIN)
+            for row in self.data.get(DATA_STORM_DAYS) or []
+            if isinstance(row, dict) and (_day(row.get(STORM_DAY_DATE)) or date.min) >= earliest
+        }
+        for domain in list(stored):
+            if domain not in recent and domain not in counts:
+                stored.pop(domain, None)
+                self._dirty = True
+        return {domain: list(value) for domain, value in stored.items() if isinstance(value, list)}
+
     def _fold_pollers(self, day: str) -> None:
         """Take the verdict again for the day that has just ended."""
         ended = _day(day)
@@ -186,7 +234,10 @@ class PollerMixin:
             if measure.get("lockstep"):
                 holding[domain] = (POLLER_BASIS_LOCKSTEP, _number(measure.get("gap")))
                 in_step[domain] = list(measure.get("in_step_ids") or [])
+        members = self._fold_storm_members(ended)
         for domain, interval in by_storms.items():
+            if domain not in holding and members.get(domain):
+                in_step[domain] = list(members[domain])
             if domain not in holding:
                 # The time between storms is a day's middle, and a poller
                 # that slows at night, as Tado does, has longer gaps than

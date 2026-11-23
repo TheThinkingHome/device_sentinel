@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.30.0 (2026-11-21)
+# File: radio_channels.py, Version: 0.30.3 (2026-11-23)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 
@@ -547,6 +547,9 @@ class RadioChannelsMixin:
             "scanned_at": dt_util.utc_from_timestamp(self._air_at).isoformat() if self._air_at else None,
             "scan": self._air_why if self._air is None else "ok",
             "connected": self._air_connected,
+            # Whether a Wi-Fi network is chosen, so the Networks tab
+            # offers "Watch your Wi-Fi" only where it is not (rule DASH-17).
+            "watching": bool(getattr(self, "wifi_networks", None)),
             "wifi": heard,
             "zigbee": zigbee,
             "thread": thread,

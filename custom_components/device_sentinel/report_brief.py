@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.2 (2026-11-22)
+# File: report_brief.py, Version: 0.30.3 (2026-11-23)
 
 """The daily brief: the one report written for a person.
 
@@ -1201,6 +1201,37 @@ class BriefMixin:
         except Exception:  # noqa: BLE001 - a name is never worth a failure
             return domain
 
+    def _poller_group(self, domain: str) -> tuple[int, int, str | None] | None:
+        """The devices of a poller that move together, when they are only
+        some of its watched devices: how many, of how many, and the hub
+        they all sit behind if they share one. None when the verdict
+        names no devices, or names them all (rule UP-17)."""
+        members_of = getattr(self, "poller_devices", None)
+        members = members_of(domain) if callable(members_of) else None
+        if not members:
+            # Not a poller yet, or one known by lockstep with no list:
+            # the devices its storms found to move together
+            # (rule UP-17).
+            stored = getattr(self, "storm_members", None)
+            members = stored(domain) if callable(stored) else None
+        if not members:
+            return None
+        own = [device_id for device_id, owner in self._watched.items() if owner == domain]
+        together = [device_id for device_id in own if device_id in members]
+        if not together or len(together) >= len(own):
+            return None
+        registry = dr.async_get(self.hass)
+        hubs = {
+            getattr(registry.async_get(device_id), "via_device_id", None)
+            for device_id in together
+        }
+        hub = None
+        if len(hubs) == 1:
+            only = next(iter(hubs))
+            if only is not None:
+                hub = self._device_name(only)
+        return len(together), len(own), hub
+
     def _noisy_integration_advice(self) -> list[str]:
         """Return one line per integration worth excluding for noise."""
         return [text for _key, text in self._noisy_integration_entries()]
@@ -1253,6 +1284,25 @@ class BriefMixin:
             # its devices fails. Excluding stays the person's choice
             # (rules UP-18, MUTE-02).
             title = self._integration_title(domain)
+            together = self._poller_group(domain)
+            if together is not None:
+                # Only some of its devices move together, as a Matter
+                # bridge's do beside devices that report on their own:
+                # the note names those and leaves the rest alone
+                # (rule UP-17).
+                count, of, hub = together
+                who = (
+                    f"The {count} devices behind {hub}" if hub
+                    else f"{count} of {title}'s {of} devices"
+                )
+                said.append((f"noisy:{domain}",
+                    f"{who} update together, {cadence}. Device Sentinel "
+                    f"hears that update, not each of those devices, so it "
+                    f"tells you when they all stop, but not when one of "
+                    f"them fails. {title}'s other devices are judged on "
+                    f"their own."
+                ))
+                continue
             said.append((f"noisy:{domain}",
                 f"{title} updates all its devices at once, {cadence}. "
                 f"Device Sentinel hears {title}'s regular update, not each "

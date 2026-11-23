@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.30.2 (2026-11-22)
+# File: diagnostics.py, Version: 0.30.3 (2026-11-23)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -97,6 +97,7 @@ from .const import (
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
     DATA_POLLERS,
+    DATA_STORM_MEMBERS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
     TAINT_FLOOR_MINUTES,
@@ -991,6 +992,12 @@ async def _learned_state(
             "muted_devices": coordinator._muted_devices,
             # The lasting poller verdicts, taken each midnight (rule UP-17).
             "pollers": dict(sorted((coordinator.data.get(DATA_POLLERS) or {}).items())),
+            # How many devices of each integration move together
+            # (rule UP-17).
+            "storm_members": {
+                domain: len(found) if isinstance(found, list) else None
+                for domain, found in sorted((coordinator.data.get(DATA_STORM_MEMBERS) or {}).items())
+            },
             "storm_exempt_entries": sorted(
                 {
                     row.get("entry_id")

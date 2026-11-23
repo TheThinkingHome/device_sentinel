@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.2 (2026-11-22)
+# File: coordinator.py, Version: 0.30.3 (2026-11-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -278,6 +278,7 @@ from .const import (
     SET_ASIDE_DUPLICATE_COORDINATOR,
     SET_ASIDE_EXCLUDED,
     SET_ASIDE_NO_ENTITIES,
+    SET_ASIDE_ROUTER_CLIENT,
     SET_ASIDE_SERVICE,
     SIGNAL_ARMING_DAYS,
     SIGNAL_DAY_REPAIR_MARK,
@@ -341,6 +342,7 @@ from .router_ties import RouterTiesMixin
 from .study import StudyMixin
 from .study_tado import TadoStudyMixin
 from .study_sonos import SonosStudyMixin
+from .study_aqara import AqaraStudyMixin
 from .study_watch import WatchStudyMixin
 from .radio_channels import RadioChannelsMixin
 from .wifi import WifiScanMixin
@@ -477,6 +479,7 @@ class DeviceSentinelCoordinator(
     WatchStudyMixin,
     TadoStudyMixin,
     SonosStudyMixin,
+    AqaraStudyMixin,
     DashboardMixin,
     IntegrationViewMixin,
     NetworksMixin,
@@ -732,6 +735,13 @@ class DeviceSentinelCoordinator(
         # The day's closed storms per domain, memory only, folded
         # into DATA_STORM_DAYS at midnight (rule UP-17).
         self._storm_day: dict[str, list[tuple[float, int, float]]] = {}
+        # The day's storm members per domain: how many of the day's
+        # tallied storms each device took part in, and how many storms
+        # there were. Memory only, read by the poller fold at midnight,
+        # so a poller known by its storms is judged on the devices that
+        # move together and not on all its integration's (rule UP-17).
+        self._storm_members: dict[str, Counter[str]] = {}
+        self._storm_member_storms: dict[str, int] = {}
         # The clocks file as loaded, for the shape check (rule
         # STOR-05). Set at load, read once, cleared.
         self._clocks_seen: dict[str, Any] | None = None
@@ -2894,6 +2904,9 @@ class DeviceSentinelCoordinator(
         enabled_notice: set[str] = set()
         held_keys: dict[str, str] = {}
         unheld_own: set[str] = set()
+        # The domains of each device's own entities, switched on or off,
+        # to find a router's client entries (rule WATCH-03).
+        own_domains: dict[str, set[str]] = {}
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
                 deviceless += 1
@@ -2944,6 +2957,7 @@ class DeviceSentinelCoordinator(
                     ent.platform, []
                 ).append(ent.entity_id)
             else:
+                own_domains.setdefault(ent.device_id, set()).add(ent.domain)
                 # A firmware notice or a command button is never the
                 # device, so it does not count as the device having
                 # something that could report; an ESPHome device's
@@ -3034,6 +3048,25 @@ class DeviceSentinelCoordinator(
         for device_id in enabled_notice - enabled_real:
             if watched.get(device_id) == "esphome" or watched.get(device_id) in HUB_READERS:
                 continue
+            with_entities.discard(device_id)
+        # A router's entry for a client it tracks: nothing but trackers,
+        # and the client's network address. The router's word that a
+        # client is home is not the client reporting, and the client is
+        # watched through its own integration where it has one. Its
+        # tracker still ties that device to the Wi-Fi (rule WATCH-03).
+        for device_id in [d for d in watched if own_domains.get(d) == {"device_tracker"}]:
+            device = dev_reg.async_get(device_id)
+            if device is None or not any(
+                kind == dr.CONNECTION_NETWORK_MAC
+                for kind, _value in device_field(device, "connections", set()) or set()
+            ):
+                continue
+            set_aside[device_id] = (
+                device_names.get(device_id, device_id),
+                watched.pop(device_id),
+                SET_ASIDE_ROUTER_CLIENT,
+            )
+            device_names.pop(device_id, None)
             with_entities.discard(device_id)
         in_grace = dt_util.utcnow().timestamp() < self._grace_until
         for device_id in [d for d in watched if d not in with_entities]:

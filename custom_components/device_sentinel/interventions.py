@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.29.0 (2026-11-14)
+# File: interventions.py, Version: 0.30.3 (2026-11-23)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -27,7 +27,7 @@ rather than trusting it.
 from __future__ import annotations
 
 import math
-from collections import deque
+from collections import Counter, deque
 from typing import Any
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.loader import async_get_loaded_integration
@@ -2709,6 +2709,9 @@ class InterventionMixin:
                     # their poll cadence as rhythm, which is the
                     # whole point of recognizing it (rule UP-17).
                     "announce": recorded and not polling,
+                    # The devices that made the burst, and any that joined
+                    # it, for the poller's scope (rule UP-17).
+                    "members": set(counts),
                 }
                 self._storm_active[entry_id] = storm
                 # A storm is a radio-level event, most often a bridge
@@ -2729,6 +2732,7 @@ class InterventionMixin:
                     )
             else:
                 storm["last_met"] = now
+                storm.setdefault("members", set()).add(device_id)
         elif storm is not None and now - storm["last_met"] > (
             STORM_RELEASE_SECONDS
         ):
@@ -3022,6 +3026,10 @@ class InterventionMixin:
                 self._storm_day.setdefault(
                     self._entry_domain(entry_id), []
                 ).append((now, len(storm["devices"]), duration))
+                members = storm.get("members") or set()
+                if members:
+                    self._storm_members.setdefault(domain, Counter()).update(members)
+                    self._storm_member_storms[domain] = self._storm_member_storms.get(domain, 0) + 1
         if announce:
             self._record_system_event(
                 SYS_STORM_CLOSED,

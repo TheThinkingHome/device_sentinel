@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.29.1 (2026-11-14)
+# File: study.py, Version: 0.30.3 (2026-11-23)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -91,6 +91,7 @@ from .const import (
     STUDIABLE,
     TADO_KEY,
     SONOS_KEY,
+    AQARA_KEY,
     WATCH_KEY,
     STUDY_SHAPE_CAP,
 )
@@ -549,6 +550,15 @@ class StudyMixin:
                 self._probe_failure(SONOS_KEY, err)
         else:
             self._sonos_clear()  # type: ignore[attr-defined]
+        # Aqara devices likewise, from Home Assistant's own data (rule
+        # STACK-11).
+        if AQARA_KEY in studied:
+            try:
+                self._aqara_tick(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(AQARA_KEY, err)
+        else:
+            self._aqara_clear()  # type: ignore[attr-defined]
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
             self._probe_since.clear()
@@ -1102,6 +1112,11 @@ class StudyMixin:
                 self._sonos_fold(now)  # type: ignore[attr-defined]
             except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
                 self._probe_failure(SONOS_KEY, err)
+        if AQARA_KEY in studied:
+            try:
+                self._aqara_fold(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - its lines never cost the stacks theirs
+                self._probe_failure(AQARA_KEY, err)
         self._probe_flush()
 
     # -------------------------------------------- Hue and SmartThings
@@ -1205,7 +1220,18 @@ class StudyMixin:
                 {"sonos": self._sonos_download()}
                 if SONOS_KEY in self.studied else {}
             ),
+            **(
+                {"aqara": self._aqara_download()}
+                if AQARA_KEY in self.studied else {}
+            ),
         }
+
+    def _aqara_download(self) -> dict[str, Any]:
+        """Aqara devices for the download, or what stopped it (rule STACK-11)."""
+        try:
+            return self.aqara_diagnostics()  # type: ignore[attr-defined, no-any-return]
+        except Exception as err:  # noqa: BLE001 - the download must still arrive
+            return {"unreadable": f"{type(err).__name__}: {err}"}
 
     def _sonos_download(self) -> dict[str, Any]:
         """Sonos for the download, or what stopped it (rule STACK-11)."""

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_curves.py, Version: 0.30.2 (2026-11-22)
+# File: battery_curves.py, Version: 0.30.3 (2026-11-23)
 
 """Keep the curve: each battery's whole shape, kept for good (rule BAT-20).
 
@@ -339,6 +339,13 @@ class BatteryCurvesMixin:
                 began, ended = _day(curve["start"]), _day(curve["end"])
                 if ended is None:
                     continue
+                # A battery ends on the last day its device was heard: the
+                # silent days before the replacement are not its life, and
+                # counting from the replacement would set curves apart by
+                # how long each sat dead (rule BAT-20).
+                heard = _day(curve.get("last_heard"))
+                if heard is not None and heard < ended:
+                    ended = heard
                 for row in curve["weeks"]:
                     # Weeks before the battery ended: a curve whose start was
                     # not seen still lines up with every other at its end.

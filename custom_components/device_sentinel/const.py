@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.2 (2026-11-22)
+# File: const.py, Version: 0.30.3 (2026-11-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -657,6 +657,12 @@ SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
 # are its clones (hardware_copies.py, rule WATCH-06). Called "clone" on
 # screen.
 SET_ASIDE_COPY = "clone"
+# A router's own registry entry for a client it tracks, as TP-Link Omada
+# makes one for each Wi-Fi client: its only entities are trackers, and it
+# carries the client's network address. The device itself is watched
+# through its own integration where it has one; the tracker still ties
+# that device to the Wi-Fi (rule WATCH-03).
+SET_ASIDE_ROUTER_CLIENT = "router client"
 # An integration's standing on the Integrations tab. Service: its
 # devices report themselves as services. No hardware: it owns no device
 # at all and only adds entities to devices other integrations own, as
@@ -2468,6 +2474,7 @@ DEFAULT_SHARE_NAMES = True
 # nobody has built for is the report worth having.
 ROUTER_DOMAINS = (
     "tplink_router",
+    "tplink_omada",
     "unifi",
     "fritz",
     "asuswrt",
@@ -2503,6 +2510,10 @@ STUDIABLE = {
     # Read from what Home Assistant's Sonos integration holds; no
     # speaker is asked anything (rule STACK-11).
     "sonos": "Sonos",
+    # Not an integration: Aqara devices on Matter or HomeKit Device,
+    # offered where one is found, read from Home Assistant's own data
+    # (rule STACK-11).
+    "aqara": "Hub: Aqara",
     # Not a stack: every problem sensor, and which integrations update
     # in lockstep, recorded on any house (rule STACK-14).
     "problem_polling": "Problem Sensors and Polling",
@@ -2515,6 +2526,7 @@ WATCH_KEY = "problem_polling"
 TADO_KEY = "tado"
 # The Sonos recording's key (rule STACK-11).
 SONOS_KEY = "sonos"
+AQARA_KEY = "aqara"
 # Lockstep: an integration with at least this many devices measurable
 # over this many days, of which at least this share keep each day's
 # longest gap within this tolerance of the integration's median that
@@ -2550,6 +2562,11 @@ WATCH_STOP_FLOOR = 600.0
 # step on 5 days, about 240 storms a day; a tester's Tado: about 200
 # storms a day, through its 30-minute nights.
 DATA_POLLERS = "pollers"
+# The devices of each integration that took part in at least half of a
+# day's tallied storms, by domain, kept from the last day that had any:
+# the devices that move together, which a poller known by its storms is
+# judged on and its line names (rule UP-17).
+DATA_STORM_MEMBERS = "storm_members"
 POLLER_SINCE = "since"
 POLLER_SEEN = "seen"
 POLLER_BASIS = "basis"
