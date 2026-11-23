@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_empty_networks.js, Version: 0.30.0 (2026-11-21)
+// File: tools/panel_checks/check_empty_networks.js, Version: 0.30.3 (2026-11-23)
 // Panel checks: an empty Networks tab says why it is empty, from the
 // server's Wi-Fi scan, and how to let Device Sentinel hear Wi-Fi, with
 // the step pictures (rule DASH-17).
@@ -72,7 +72,7 @@ const STEPS = ["HA Network - Step 1 Choose the Wi-Fi Interface.png", "HA Network
     let { root } = await open("/networks", mode);
     check("it says nothing is found yet", text(root).includes("No Wi-Fi or other networks found."), text(root));
     check("it names a Container or Core install and the router instead", text(root).includes("Container or Core install")
-      && text(root).includes("UniFi, TP-Link Router or FRITZ!Box"), text(root));
+      && text(root).includes("UniFi, TP-Link Omada, TP-Link Router or FRITZ!Box"), text(root));
     check("no pictures", pics(root).length === 0, pics(root));
 
     console.log(`No adapter, ${mode}`);
