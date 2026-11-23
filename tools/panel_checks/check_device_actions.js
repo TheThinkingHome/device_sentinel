@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_actions.js, Version: 0.29.5 (2026-11-17)
+// File: tools/panel_checks/check_device_actions.js, Version: 0.30.4 (2026-11-23)
 // Panel checks: the device page's actions. Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -120,7 +120,7 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}));
   // The chip sits in the Last seen group.
-  await click(buttonIn(rowCell(root, "Last seen sensor"), "Turn on its Last Seen"));
+  await click(buttonIn(rowCell(root, "Last seen sensor"), 'Turn on its "Last seen"'));
   // Each turn-on says where it was pressed (rule BRIEF-07).
   check("Last seen sensor: the chip switches on this device's Last Seen, from the device page", calls.some((c) => c.type === "device_sentinel/device_turn_on"
     && c.kind === "last_seen" && c.device_id === DEVICE && c.source === "device_page"), calls.filter((c) => c.type === "device_sentinel/device_turn_on"));

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.30.4 (2026-11-23)
 // Panel checks: Simple and Advanced (rules DASH-03, DASH-04, BAT-17, MUTE-09).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -279,7 +279,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   // Advanced keeps every one of them.
   ({ root } = await open({ __mode: "advanced" }, (p) => { p.status.category = "reporting"; p.identity.node_status = "off"; p.identity.actions.battery_off = true; }));
   check("Advanced keeps Rename and the turn-on buttons", nameMarks(root).includes("Rename")
-    && buttons(rowCell(root, "Last seen sensor")).includes("Turn on its Last Seen")
+    && buttons(rowCell(root, "Last seen sensor")).includes('Turn on its "Last seen"')
     && buttons(rowCell(root, "Z-Wave status")).includes("Turn it on") && buttons(rowCell(root, "Battery sensor")).includes("Turn it on"));
   ({ root } = await open({ __mode: "advanced" }, frozenLognormal));
   check("Advanced keeps Use the 14-Day Trimmed Maximum", !!anyButton(root, "Use the 14-Day Trimmed Maximum"));

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.29.6 (2026-11-17)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.30.4 (2026-11-23)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards. The Identity section's order and groups (rule DASH-08),
 // live values, sensor links, both rule charts, Previous and Next,
@@ -250,7 +250,7 @@ const rowCell = (root, label) => {
   // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07).
   check("Power set from the list says so", sent && sent.source === "recommendations", sent);
   ({ root, calls } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
-  [...root.querySelectorAll("article.rec")[1].querySelectorAll("button")].find((b) => b.textContent === "Turn on its Last Seen").click();
+  [...root.querySelectorAll("article.rec")[1].querySelectorAll("button")].find((b) => b.textContent === 'Turn on its "Last seen"').click();
   await settle();
   check("Last Seen is switched on from the list, and says so", calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "last_seen"
     && c.device_id === ROWS[2].device_id && c.source === "recommendations"), calls.filter((c) => c.type === "device_sentinel/device_turn_on"));

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.30.4 (2026-11-23)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -231,7 +231,7 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   // Simple has the Excluded chip and no Set aside chip, and its summary
   // leaves the set-aside devices out (rule DASH-12).
   const simpleChips = [...root.querySelectorAll(".pane .chips .chip")].map((c) => c.textContent);
-  check("Simple Devices: Watched, With a problem, Muted and Excluded, no Set aside",
+  check("Simple Devices: watched, With a problem, Muted and Excluded, no Set aside",
     simpleChips.length === 4 && simpleChips[3].startsWith("Excluded") && !simpleChips.some((c) => c.startsWith("Set aside")), simpleChips);
   const simpleSummary = root.querySelector(".pane p").textContent;
   check("Simple Devices: the summary leaves out the devices set aside",
