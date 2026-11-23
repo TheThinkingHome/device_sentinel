@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.28.12 (2026-11-11)
+# File: button.py, Version: 0.30.4 (2026-11-23)
 
 """Button platform for the Device Sentinel integration.
 
@@ -12,7 +12,7 @@ may press them, and so may an automation that runs on its own; a user
 who is not an admin may not, nor a script that user starts (rule
 CFG-08).
 
-Regenerate Reports rewrites every report on demand, for a person
+Regenerate reports rewrites every report on demand, for a person
 mid-investigation who wants them to reflect a fix now rather than at
 the next tick, or an automation that sends a fresh Daily Brief.
 
@@ -50,7 +50,7 @@ async def async_setup_entry(
     entry: DeviceSentinelConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Regenerate Reports and Maintenance Mode buttons."""
+    """Set up the Regenerate reports and Maintenance Mode buttons."""
     coordinator = entry.runtime_data
     async_add_entities(
         [

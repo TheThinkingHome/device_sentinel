@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.3 (2026-11-23)
+# File: const.py, Version: 0.30.4 (2026-11-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -3537,7 +3537,7 @@ ATTR_SETUP_COUNT = "setup_count"
 # sensor is retired, and drop it again once every install is past it.
 DEAD_ENTITY_SENTINEL_TYPES: tuple[str, ...] = (
     # The three retired Enable buttons (rule REC-05). The unique id is the
-    # entry id and the button's key, so Regenerate Reports and Maintenance
+    # entry id and the button's key, so Regenerate reports and Maintenance
     # Mode, which share the platform, are untouched.
     "enable_signal_entities",
     "enable_last_seen_entities",

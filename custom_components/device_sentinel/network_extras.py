@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: network_extras.py, Version: 0.29.8 (2026-11-19)
+# File: network_extras.py, Version: 0.30.4 (2026-11-23)
 
 """More on each network's page (rules DASH-17, DASH-18).
 
@@ -38,6 +38,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
+from . import clock
 from .const import (
     ADDR_AP,
     ADDR_DEVICE_ID,
@@ -119,13 +120,12 @@ def _apart(a: int, b: int) -> int:
 
 
 def _clock(minute: int) -> str:
-    """A time of day as a person reads it: 3:40 AM."""
-    hour, mins = divmod(int(minute) % 1440, 60)
-    return f"{(hour % 12) or 12}:{mins:02d} {'AM' if hour < 12 else 'PM'}"
+    """A time of day as the owner reads it: 3:40 AM, or 03:40 (rule GEN-11)."""
+    return clock.minute_text(minute)
 
 
 def _date(moment: Any) -> str:
-    return f"{moment.strftime('%b')} {moment.day}"
+    return clock.day_text(moment)
 
 
 def _span(seconds: float | None) -> str | None:

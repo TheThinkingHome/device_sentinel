@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.30.2 (2026-11-22)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.30.4 (2026-11-23)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -39,6 +39,7 @@ from typing import Any
 
 from homeassistant.helpers import device_registry as dr
 
+from . import clock
 from .const import (
     DATA_DEVICES,
     DEV_FROZEN_CATEGORY,
@@ -110,8 +111,7 @@ def _short_day(iso: str) -> str:
     """A day as the brief writes one: Oct 18."""
     from datetime import date
 
-    day = date.fromisoformat(iso)
-    return f"{day.strftime('%b')} {day.day}"
+    return clock.day_text(date.fromisoformat(iso))
 
 
 def _in_models(models: int) -> str:

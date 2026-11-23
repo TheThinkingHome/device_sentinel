@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.30.2 (2026-11-22)
+# File: detect_freeze.py, Version: 0.30.4 (2026-11-23)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -1721,7 +1721,7 @@ class FreezeMixin:
     def frozen_devices_list(self) -> list[dict[str, Any]]:
         """Return devices judged frozen, unknown, or unavailable.
 
-        The Device: Frozen problem sensor. One row per down device, carrying
+        The Device: frozen problem sensor. One row per down device, carrying
         its category (the worst of what its entities show) and the UTC time
         the verdict began, so a person sees what is down, how, and for how
         long. A device muted for the kind its verdict is, is left out at once,

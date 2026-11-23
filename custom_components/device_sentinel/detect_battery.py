@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.30.0 (2026-11-21)
+# File: detect_battery.py, Version: 0.30.4 (2026-11-23)
 
 """Battery: the level threshold and what is tracked.
 
@@ -950,7 +950,7 @@ class BatteryMixin:
         """Return accelerating cells that reach their target inside Days
         Till Low Warning.
 
-        The Battery: Falling sensor. A different set from Battery:
+        The Battery: falling sensor. A different set from Battery:
         Low and a different question: low is a level that has been
         crossed, falling is a level that is going to be (rule BAT-14).
         Only a cell at or under three times the low threshold is judged

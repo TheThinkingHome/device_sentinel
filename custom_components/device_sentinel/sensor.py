@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.30.0 (2026-11-21)
+# File: sensor.py, Version: 0.30.4 (2026-11-23)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -314,7 +314,7 @@ class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
     An integer rather than "115 of 125", because a string state
     cannot be compared in an automation and forfeits the state class.
 
-    This is not expected to reach Devices: Watched. Devices with no
+    This is not expected to reach Devices: watched. Devices with no
     heartbeat (buttons, remotes) never establish a rhythm and are
     never judged frozen, by design, so a permanent gap between the
     two counts is the system working.
@@ -513,7 +513,7 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
     """How many accelerating cells reach their target inside Days Till
     Low Warning.
 
-    A different set from Battery: Low and a different question. Low is
+    A different set from Battery: low and a different question. Low is
     a level that has been crossed; falling is a level that is going to
     be. Only a cell speeding up is counted here (rule BAT-14). A cell is
     judged falling only at or under three times the low threshold (rule

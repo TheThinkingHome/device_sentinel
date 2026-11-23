@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.3 (2026-11-23)
+# File: coordinator.py, Version: 0.30.4 (2026-11-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -140,6 +140,7 @@ from .history_file import fold_line
 from .store import _version_tuple as _store_version_tuple
 from .removed_days import counted_gaps, prune_removed
 from .report_brief import brief_title_when
+from . import clock
 from .const import (
     BROKER_RIDER_DOMAINS,
     DOMAIN,
@@ -1171,6 +1172,22 @@ class DeviceSentinelCoordinator(
     # ------------------------------------------------------------- setup
 
 
+    async def _async_bind_clock(self) -> None:
+        """Read times and dates as the owner account chose them in Home
+        Assistant's Localization settings: its store is Home Assistant's
+        own, kept up to date as the owner changes them. With no owner, or
+        no frontend store, the house's language decides (rule GEN-11)."""
+        store = None
+        try:
+            from homeassistant.components.frontend.storage import async_user_store
+
+            owner = await self.hass.auth.async_get_owner()
+            if owner is not None:
+                store = await async_user_store(self.hass, owner.id)
+        except Exception as err:  # noqa: BLE001 - the language still decides
+            LOGGER.debug("device_sentinel: the owner's time and date choices not read: %s", err)
+        clock.bind(store, getattr(self.hass.config, "language", None))
+
     async def async_setup(self) -> None:
         """Load storage, build the registry view, and start listening.
 
@@ -1182,6 +1199,9 @@ class DeviceSentinelCoordinator(
         where there is no copy, or the copy will not load either
         (rule STOR-08).
         """
+        # The owner's Localization choices, before anything is written,
+        # so every time and date reads as the owner chose (rule GEN-11).
+        await self._async_bind_clock()
         # What powers each device, read first so the first reports of
         # this start already carry it, then the answers owners set on
         # device pages. Neither can stop a start: each says why in the

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.29.4 (2026-11-16)
+# File: reports.py, Version: 0.30.4 (2026-11-23)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -39,6 +39,7 @@ from typing import Any
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
+from . import clock
 from .const import (
     LOGGER,
     CLASSIFICATION_SETTLED_TRIGGER,
@@ -88,20 +89,12 @@ class ReportWritingMixin(
 
     @staticmethod
     def _format_report_time(when: datetime) -> str:
-        """Return a local time a person reads at a glance, the month
-        spelled out, the day, the year and "at 7:19 AM". Built without
-        strftime's platform specific %-d and %-I so it is the same on
-        every host: the month name and AM/PM come from strftime, the
-        day and hour are integers so they carry no leading zero.
+        """Return a local time a person reads at a glance: the month
+        spelled out, the day, the year and the time, in the owner's
+        order of day and month and on the owner's clock.
         """
-        month = when.strftime("%B")
-        hour_24 = when.hour
-        hour_12 = hour_24 % 12 or 12
-        meridiem = "AM" if hour_24 < 12 else "PM"
-        return (
-            f"{month} {when.day}, {when.year} at "
-            f"{hour_12}:{when.minute:02d} {meridiem}"
-        )
+        # The owner's order of day and month, and clock (rule GEN-11).
+        return clock.report_text(when)
 
     @staticmethod
     def _report_cell(text: str) -> str:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.3 (2026-11-23)
+# File: report_brief.py, Version: 0.30.4 (2026-11-23)
 
 """The daily brief: the one report written for a person.
 
@@ -36,6 +36,7 @@ from .repairs import (
     delivery_is_configured,
     missing_targets,
 )
+from . import clock
 from .const import (
     BRIEF_SEND_NOW_TRIGGER,
     PANEL_URL_PATH,
@@ -231,9 +232,7 @@ class BriefMixin:
     @staticmethod
     def _brief_moment(epoch: float) -> str:
         """Return a readable local time for the brief."""
-        return dt_util.as_local(
-            dt_util.utc_from_timestamp(epoch)
-        ).strftime("%b %-d, %-I:%M %p")
+        return clock.day_time_text(dt_util.as_local(dt_util.utc_from_timestamp(epoch)))
 
     @staticmethod
     def _brief_log_moment(epoch: float) -> str:
@@ -242,9 +241,7 @@ class BriefMixin:
         The table is the log, where a minute is too coarse to order
         what happened; the summary above it keeps minutes (rule BRIEF-07).
         """
-        return dt_util.as_local(
-            dt_util.utc_from_timestamp(epoch)
-        ).strftime("%b %-d, %-I:%M:%S %p")
+        return clock.day_time_text(dt_util.as_local(dt_util.utc_from_timestamp(epoch)), seconds=True)
 
     def _brief_hour_minute(self) -> tuple[int, int]:
         """Return the configured brief time, as hour and minute."""
@@ -690,15 +687,15 @@ class BriefMixin:
                 )
             return f"The {self._integration_title(str(scope))} pairing window closed at {when}."
         if kind == SYS_MAINTENANCE_OPEN:
-            return f"Maintenance mode was opened at {when}."
+            return f"Maintenance Mode was opened at {when}."
         if kind == SYS_MAINTENANCE_CLOSED:
             tail = f" ({detail})" if detail else ""
             if held:
                 return (
-                    f"Maintenance mode ended at {when} after "
+                    f"Maintenance Mode ended at {when} after "
                     f"{held}{tail}."
                 )
-            return f"Maintenance mode ended at {when}{tail}."
+            return f"Maintenance Mode ended at {when}{tail}."
         if kind == SYS_UNCLEAN_RESTART:
             # The restart row says the system came back; this one says
             # what was different about it (rule FRZ-20). It says what it
@@ -2538,14 +2535,10 @@ class BriefMixin:
         """
 
         def day(moment: float) -> str:
-            return dt_util.as_local(
-                dt_util.utc_from_timestamp(moment)
-            ).strftime("%b %-d")
+            return clock.day_text(dt_util.as_local(dt_util.utc_from_timestamp(moment)))
 
-        def clock(moment: float) -> str:
-            return dt_util.as_local(
-                dt_util.utc_from_timestamp(moment)
-            ).strftime("%H:%M")
+        def at(moment: float) -> str:
+            return clock.time_text(dt_util.as_local(dt_util.utc_from_timestamp(moment)))
 
         ordered = sorted(whens)
         days: list[str] = []
@@ -2555,10 +2548,10 @@ class BriefMixin:
                 days.append(named)
         if len(days) == 1:
             if len(ordered) == 1:
-                return f"{days[0]}, {clock(ordered[0])}"
+                return f"{days[0]}, {at(ordered[0])}"
             return (
-                f"{days[0]}, {clock(ordered[0])} to "
-                f"{clock(ordered[-1])}"
+                f"{days[0]}, {at(ordered[0])} to "
+                f"{at(ordered[-1])}"
             )
         if len(days) == 2:
             return f"{days[0]} and {days[1]}"

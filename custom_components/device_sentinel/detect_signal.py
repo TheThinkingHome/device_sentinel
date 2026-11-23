@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.28.6 (2026-11-08)
+# File: detect_signal.py, Version: 0.30.4 (2026-11-23)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -895,14 +895,14 @@ class SignalMixin:
     def signal_weak_list(self) -> list[dict[str, Any]]:
         """Return devices whose link is weak right now.
 
-        The Signal: Weak sensor. A device qualifies when its most
+        The Signal: weak sensor. A device qualifies when its most
         recent folded day was a bad signal day: its own P5 fell far
         enough below its own recent normal, in its own units and its
         own spread (rule SIG-08). One definition serves every surface
         (rule SIG-09).
 
-        Separate from the rails for the same reason Battery: Low and
-        Battery: Falling are separate. A rail is a broken
+        Separate from the rails for the same reason Battery: low and
+        Battery: falling are separate. A rail is a broken
         measurement, confirmed over three days and persistent; a bad
         day is a reading about one day that may or may not repeat.
 

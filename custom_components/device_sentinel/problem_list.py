@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.30.0 (2026-11-21)
+# File: problem_list.py, Version: 0.30.4 (2026-11-23)
 
 """The problem list: the single memory every channel renders.
 
@@ -47,6 +47,7 @@ from .events import sort_kinds
 from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS
 from .normalise import row_damage
 from .removed_days import counted_gaps
+from . import clock
 from .const import (
     INCIDENT_SETTLE_SECONDS,
     TODO_KIND_FLAPPING,
@@ -1131,7 +1132,7 @@ class ProblemListMixin:
             return
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         moment = dt_util.now() if at is None else dt_util.as_local(dt_util.utc_from_timestamp(at))
-        when = moment.strftime("%-I:%M %p").lower()
+        when = clock.time_text(moment)
         # The brief's words where they depend on the device: a hub
         # "went down", and a device dropping out says how often, as the
         # brief does (rules NOTE-01, UNAV-08). The push adds no line

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/restart_values.py, Version: 0.29.3 (2026-11-15)
+# File: custom_components/device_sentinel/restart_values.py, Version: 0.30.4 (2026-11-23)
 
 """Integrations and models that report cached values after a restart
 (rule WATCH-12).
@@ -47,6 +47,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from . import clock
 from .const import (
     CONF_CACHED_ADDED,
     CONF_CACHED_REMOVED,
@@ -552,7 +553,7 @@ class RestartValuesMixin:
         if len(own) <= 1:
             return "This is the first time this has happened to this device."
         since = dt_util.as_local(dt_util.utc_from_timestamp(min(row[0] for row in own)))
-        said = f"This has happened to this device {len(own)} times since {since.strftime('%b')} {since.day}"
+        said = f"This has happened to this device {len(own)} times since {clock.day_text(since)}"
         key = self._power_key(device_id)  # type: ignore[attr-defined]
         others = sum(1 for row in rows if key and row[3] == key and row[2] != device_id)
         if others:
@@ -807,7 +808,7 @@ class RestartValuesMixin:
                 continue
             mode = self._restart_model(devices[0])[1]
             since = dt_util.as_local(dt_util.utc_from_timestamp(min(row[0] for row in rows)))
-            when = f"{since.strftime('%b')} {since.day}"
+            when = clock.day_text(since)
             model = self._model_words(devices[0])
             count = "1 device" if len(devices) == 1 else f"{len(devices)} devices"
             if kind == CASE_CONFIRMED:

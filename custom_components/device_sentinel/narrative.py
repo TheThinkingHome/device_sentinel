@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.30.0 (2026-11-21)
+# File: narrative.py, Version: 0.30.4 (2026-11-23)
 
 """How to say what happened: the composer.
 
@@ -33,6 +33,7 @@ from homeassistant.util import dt as dt_util
 
 from .restart_values import CONFIRMED_ON_DASHBOARD, confirmed_by, is_confirmed_cause
 from .battery_level import level_text
+from . import clock
 from .const import (
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_INTERVENTION,
@@ -220,9 +221,7 @@ class NarrativeMixin:
     @staticmethod
     def _clock(epoch: float) -> str:
         """Return a bare local time, as a person would say it."""
-        return dt_util.as_local(
-            dt_util.utc_from_timestamp(epoch)
-        ).strftime("%-I:%M %p")
+        return clock.time_text(dt_util.as_local(dt_util.utc_from_timestamp(epoch)))
 
     def _battery_phrase(
         self, device_id: str, state: bool, crossed_at: float | None = None, at: str | None = None
@@ -278,8 +277,7 @@ class NarrativeMixin:
             moment = dt_util.parse_datetime(str(record.get(DEV_BATTERY_SINCE) or ""))
         if moment is None:
             return None
-        local = dt_util.as_local(moment)
-        return f"{local.strftime('%b')} {local.day}"
+        return clock.day_text(dt_util.as_local(moment))
 
     def _change_clause(
         self, row: dict[str, Any], form: str = "sentence"
@@ -582,8 +580,8 @@ class NarrativeMixin:
             # Across midnight both times carry their day, or a stop at
             # 1:04 AM and a return at 1:48 AM the next night read as 44
             # minutes (rule BRIEF-02).
-            quiet = local_start.strftime("%b %-d, ") + quiet
-            back = local_end.strftime("%b %-d, ") + back
+            quiet = f"{clock.day_text(local_start)}, {quiet}"
+            back = f"{clock.day_text(local_end)}, {back}"
         name = self._told_name(opened)
         # "Recovered", not "reported again": a freeze can also clear
         # because its wait grew, with no report, and the row cannot

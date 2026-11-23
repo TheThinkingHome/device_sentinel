@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.30.2 (2026-11-22)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.30.4 (2026-11-23)
 
 """Acting from the device page (rule DASH-09).
 
@@ -67,7 +67,7 @@ from .naming import cannot_be_told_apart, composed_name, display_name, with_pare
 # (rule DASH-09). Last Seen and the Z-Wave status are apart, each with
 # its own card (rule REC-05).
 TURN_ON_WORDS = {
-    "last_seen": "Last Seen",
+    "last_seen": "Last seen",
     "node_status": "Z-Wave status",
     "battery": "Battery sensor",
     "signal": "Signal sensor",

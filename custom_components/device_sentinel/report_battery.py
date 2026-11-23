@@ -3,11 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.30.0 (2026-11-21)
+# File: report_battery.py, Version: 0.30.4 (2026-11-23)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
-The dashboard's Battery Trends tab, the Battery: Falling sensor, the
+The dashboard's Battery Trends tab, the Battery: falling sensor, the
 Problem List and the brief read the rows kept here (rule BAT-18).
 
 One of the report modules, split by report rather than by reader,
@@ -350,7 +350,7 @@ class BatteryReportMixin:
                 absent.append({"device_id": device_id, "name": name})
                 continue
             row = {
-                # Carried so the Battery: Falling sensor can name the
+                # Carried so the Battery: falling sensor can name the
                 # device in an automation rather than only in prose
                 # (rule BAT-14).
                 "device_id": device_id,
@@ -489,7 +489,7 @@ class BatteryReportMixin:
         """Return the accelerating cells close enough to warn about.
 
         The full warning, the Problem List, the phone, the brief and the
-        Battery: Falling sensor, goes only to a cell speeding up whose
+        Battery: falling sensor, goes only to a cell speeding up whose
         near end is inside Days Till Low (rule BAT-14). A warning on a
         cell falling at a steady pace comes true about half the time,
         since most rest between steps, and one on an accelerating cell

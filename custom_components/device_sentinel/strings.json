@@ -360,28 +360,28 @@
         }
       },
       "devices_watched": {
-        "name": "Devices: Watched"
+        "name": "Devices: watched"
       },
       "devices_learned": {
-        "name": "Devices: Learned"
+        "name": "Devices: learned"
       },
       "devices_set_aside": {
-        "name": "Devices: Set Aside"
+        "name": "Devices: set aside"
       },
       "signal_rails": {
-        "name": "Signal: Rails"
+        "name": "Signal: rails"
       },
       "signal_weak": {
-        "name": "Signal: Weak"
+        "name": "Signal: weak"
       },
       "battery_low": {
-        "name": "Battery: Low"
+        "name": "Battery: low"
       },
       "device_frozen": {
-        "name": "Device: Frozen"
+        "name": "Device: frozen"
       },
       "maintenance_ends": {
-        "name": "Maintenance: Ends"
+        "name": "Maintenance: ends"
       },
       "broker": {
         "name": "Broker: MQTT"
@@ -396,12 +396,12 @@
         "name": "Bridge: ZHA"
       },
       "falling_batteries": {
-        "name": "Battery: Falling"
+        "name": "Battery: falling"
       }
     },
     "button": {
       "regenerate_reports": {
-        "name": "Regenerate Reports"
+        "name": "Regenerate reports"
       },
       "maintenance_mode": {
         "name": "Maintenance Mode"

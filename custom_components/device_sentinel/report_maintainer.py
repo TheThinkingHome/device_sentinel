@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.30.3 (2026-11-23)
+# File: report_maintainer.py, Version: 0.30.4 (2026-11-23)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -29,6 +29,7 @@ from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
 from .removed_days import counted_gaps, is_counted
+from . import clock
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     CONF_BATTERY_MUTED_DEVICES,
@@ -127,9 +128,8 @@ class MaintainerReportMixin:
         """Return a local timestamp for an episode column."""
         if epoch is None:
             return ""
-        return dt_util.as_local(
-            dt_util.utc_from_timestamp(epoch)
-        ).strftime("%b %d %H:%M")
+        moment = dt_util.as_local(dt_util.utc_from_timestamp(epoch))
+        return f"{clock.day_text(moment)} {clock.time_text(moment)}"
 
     def _write_episodes(self, report_directory: str, trigger: str) -> None:
         """Write the silence-episode report.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.28.12 (2026-11-11)
+# File: backup.py, Version: 0.30.4 (2026-11-23)
 
 """Copies of the storage files: the one-shot copy, last-good, evidence
 copies and the restore.
@@ -33,6 +33,7 @@ from homeassistant.helpers.storage import STORAGE_DIR
 from homeassistant.util import dt as dt_util
 from homeassistant.util.json import json_loads
 
+from . import clock
 from .const import (
     BACKUP_LAST_GOOD_SUFFIX,
     BACKUP_TAKEN_KEY,
@@ -576,14 +577,14 @@ def describe_restore_loss(
     local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
     midnights = (local_now.date() - local_taken.date()).days
     hours = max(0.0, (now - taken) / 3600.0)
-    when = local_taken.strftime("%B %-d at %-I:%M %p")
+    when = f"{clock.day_text(local_taken, long=True)} at {clock.time_text(local_taken)}"
     head = (
         "which was taken" if embedded else "The last-good backup was taken"
     )
 
     if midnights <= 0:
         return (
-            f"{head} today at {local_taken.strftime('%-I:%M %p')}, "
+            f"{head} today at {clock.time_text(local_taken)}, "
             f"{hours:.1f} hours prior to the restore. Today's "
             "counters since then are gone. No daily statistics were "
             "lost."
