@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_wording.py, Version: 0.28.0 (2026-11-03)
+# File: tests/test_outage_wording.py, Version: 0.30.5 (2026-11-23)
 
 """What a bridge's row says, down and recovering (rule UP-11).
 
@@ -81,7 +81,7 @@ async def test_a_bridge_back_with_nothing_returned_says_what_it_waits_for(
         STACK_Z2M, {UPSTREAM_KIND: began}, 3
     )
     assert summary == "Zigbee2MQTT is back: waiting for 3 devices to reconnect"
-    assert "Zigbee2MQTT came back at" in body
+    assert "Zigbee2MQTT came back on" in body
     assert "waiting for the 3 devices that went down to reconnect" in body
     assert "already recovered" not in body
     assert "reported as its own problem" in body

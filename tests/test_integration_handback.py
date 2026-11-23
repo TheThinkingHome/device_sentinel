@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_handback.py, Version: 0.29.1 (2026-11-14)
+# File: tests/test_integration_handback.py, Version: 0.30.5 (2026-11-23)
 
 """An integration coming back gives its devices time to rejoin
 (rules UP-08, UNAV-05).
@@ -135,7 +135,7 @@ async def test_the_row_says_the_integration_is_recovering(
         "zwave_js", {UPSTREAM_KIND: start + 1}, 2
     )
     assert summary == "Z-Wave is back: waiting for 2 devices to reconnect"
-    assert "Z-Wave came back at" in body
+    assert "Z-Wave came back on" in body
 
     record = coord.data[DATA_DEVICES][devices[0].id]
     record[DEV_FROZEN_CATEGORY] = None

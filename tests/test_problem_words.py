@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_problem_words.py, Version: 0.28.2 (2026-11-04)
+# File: test_problem_words.py, Version: 0.30.5 (2026-11-23)
 
 """One set of words for each problem, the Daily Brief's (rules NOTE-01,
 NOTE-10, LIST-02, LIST-10, UNAV-08).
@@ -112,7 +112,9 @@ async def test_every_surface_uses_the_brief_words(hass: HomeAssistant):
 
     items = {i[TODO_SUMMARY]: i[TODO_DESCRIPTION] for i in coord.todo_items}
     assert "Frozen Sensor: stopped reporting" in items
-    assert items["Frozen Sensor: stopped reporting"].startswith("Stopped reporting at ")
+    assert items["Frozen Sensor: stopped reporting"].startswith("Stopped reporting on ")
+    # A date written out with its year takes "on", never "at" twice (rule LIST-02).
+    assert " at " in items["Frozen Sensor: stopped reporting"] and items["Frozen Sensor: stopped reporting"].count(" at ") == 1
     # Never reported is dated "discovered", as in the brief (rule LIST-10).
     assert items["Never Sensor: never reported"].startswith("Never reported, discovered ")
 

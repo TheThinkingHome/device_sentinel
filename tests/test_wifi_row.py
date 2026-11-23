@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_wifi_row.py, Version: 0.30.5 (2026-11-23)
 
 """The row a Wi-Fi outage writes (rules UP-11, UP-15).
 
@@ -488,7 +488,7 @@ async def test_the_row_says_recovering_once_the_network_is_back(
         "Wi-Fi network recovering: 3 of the 11 devices that went down "
         "remain unavailable"
     )
-    assert "'Harbor-IoT' Wi-Fi network came back at" in body
+    assert "'Harbor-IoT' Wi-Fi network came back on" in body
     assert "8 of the 11 devices that went down have already recovered" in body
     assert "Device Sentinel is monitoring the recovery" in body
     assert "reported as its own problem" in body
@@ -646,7 +646,7 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == "Wi-Fi network is back: waiting for 11 devices to reconnect"
-    assert "'Harbor-IoT' Wi-Fi network came back at" in body
+    assert "'Harbor-IoT' Wi-Fi network came back on" in body
     assert "waiting for the 11 devices that went down to reconnect" in body
     assert "already recovered" not in body
     assert "reported as its own problem" in body

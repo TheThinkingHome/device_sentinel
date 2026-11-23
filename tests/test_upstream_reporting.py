@@ -2,7 +2,7 @@
 (rules UP-01, UP-05, UP-09, UP-11).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.27.10 (2026-10-27)
+# File: test_upstream_reporting.py, Version: 0.30.5 (2026-11-23)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -219,7 +219,7 @@ async def test_the_upstream_row_reads_like_a_sentence(
     # stack in this house, so membership reads as the larger of the
     # two rather than below the count (rule UP-11).
     assert summary == "Zigbee2MQTT down: 74 of 74 total devices unavailable"
-    assert "stopped reporting at" in description
+    assert "stopped reporting on" in description
     assert "listed on its own" in description
 
 
