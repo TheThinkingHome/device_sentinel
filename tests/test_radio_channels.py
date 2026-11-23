@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_radio_channels.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_radio_channels.py, Version: 0.30.3 (2026-11-23)
 
 """Radio channels (rules SIG-19, SIG-20, REC-13, DASH-19).
 
@@ -134,6 +134,7 @@ async def test_no_extra_scan_where_a_network_is_chosen(hass: HomeAssistant, supe
     assert supervisor.scans == 1
     assert coord.air_view()["scan"] == "ok"
     assert len(coord.air_view()["wifi"]) == len(SCAN)
+    assert coord.air_view()["watching"] is True, "a chosen network ends Watch your Wi-Fi (rule DASH-17)"
 
 
 async def test_no_adapter_no_scan(hass: HomeAssistant):
@@ -144,6 +145,7 @@ async def test_no_adapter_no_scan(hass: HomeAssistant):
     assert fake.scans == 0
     view = coord.air_view()
     assert view["scan"] == "no_adapter" and view["wifi"] == []
+    assert view["watching"] is False
 
 
 async def test_no_supervisor_no_scan(hass: HomeAssistant):

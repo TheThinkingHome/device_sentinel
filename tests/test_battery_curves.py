@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_curves.py, Version: 0.30.2 (2026-11-22)
+# File: test_battery_curves.py, Version: 0.30.3 (2026-11-23)
 
 """Keep the curve (rule BAT-20).
 
@@ -251,3 +251,21 @@ async def test_weeks_of_silence_before_the_replacement_are_its_ending(hass: Home
     _fold(coord, record, device.id, [100.0, 100.0], gone + timedelta(days=21))
     curve = coord.data[DATA_BATTERY_CURVES].get(device.id)
     assert curve is not None and curve["good"] and curve["full"] and curve["ended"] == "ran_out"
+
+
+async def test_curves_line_up_at_the_last_day_heard(hass: HomeAssistant):
+    """Two batteries of one model died on the same Wednesday; one was
+    replaced the next day, the other after two silent weeks. In the
+    download both end in the same week, so their weeks line up, whatever
+    the day the test runs."""
+    _entry, coord, _device, _record = await _house(hass)
+
+    def curve(device_id: str, end: str) -> dict:
+        rows = [[(date(2026, 11, 9) - timedelta(weeks=n)).isoformat(), "2026-08-01", 10.0 + 5 * n, 9.0 + 5 * n,
+                 11.0 + 5 * n, None, None, 100, None] for n in range(3)]
+        return {"device_id": device_id, "maker": "Acme", "model": "Leak", "start": "2026-08-01", "end": end,
+                "last_heard": "2026-11-11", "full": False, "weeks": rows, "from_week": None, "first_under": None}
+
+    coord.data[DATA_BATTERY_CURVES] = {"a": curve("a", "2026-11-12"), "b": curve("b", "2026-11-25")}
+    levels = coord.battery_curves_view()["models"][0]["levels_before_end"]
+    assert levels[0] == [0, 10.0, 2], "both batteries' last week is week 0"
