@@ -1,11 +1,12 @@
-// File: tools/panel_checks/check_phrases.js, Version: 0.30.8 (2026-11-24)
+// File: tools/panel_checks/check_phrases.js, Version: 0.30.11 (2026-11-25)
 // Panel checks: the page's words come from the phrase files (rule
 // GEN-12). In English the tabs, the ⋮ menu and the dates read as they
 // always have. In the test language, the English wrapped in ⟦ ⟧ with
 // each value in ⟨ ⟩ and filed as Russian, every word moved shows its
 // markers, a number picks its Russian plural form, and what the language
 // leaves out reads English. A change of language in the profile draws
-// the page again in the new one.
+// the page again in the new one. A broken file reads English, and a
+// placeholder that names nothing given stays as written.
 // Run with: LC_ALL=en_US.UTF-8 node check_phrases.js [path/to/panel.js]
 const fs = require("fs");
 const path = require("path");
@@ -129,6 +130,21 @@ const MOMENT = "2026-11-23T22:34:07Z";
     && run(window, `t("dashboard.menu.sent", { count: 3 })`) === "Sent to 3 targets.", [run(window, `t("dashboard.menu.sent", { count: 21 })`), run(window, `t("dashboard.menu.sent", { count: 3 })`)]);
   ({ window, root } = await open({ language: "de" }));
   check("a language with no file reads English", menu(root)[0] === "Send Brief", menu(root));
+
+  console.log("A broken phrase file");
+  const broken = await open({ language: "ru" }, { ru: {
+    "dashboard.tab.daily_brief": 5,
+    "dashboard.tab.devices": ["Devices"],
+    "dashboard.menu.send_brief": { one: "only one" },
+    "dashboard.menu.sent": null,
+  } });
+  check("a number in place of text reads English", tabs(broken.root)[0] === "Daily Brief", tabs(broken.root));
+  check("a list in place of text reads English", tabs(broken.root).includes("Devices"), tabs(broken.root));
+  check("a plural with no form for the number reads English", menu(broken.root)[0] === "Send Brief", menu(broken.root));
+  const page = broken.panel.ownerDocument.defaultView;
+  check("an inherited name is never filled in", page.eval("fillWords('{constructor} {count}', { count: 2 })") === "{constructor} 2",
+    page.eval("fillWords('{constructor} {count}', { count: 2 })"));
+  check("a key no file knows reads as itself", page.eval("t('dashboard.no_such_key')") === "dashboard.no_such_key");
 
   console.log("A change of language");
   let opened = await open({ language: "en" });
