@@ -1,7 +1,7 @@
 """The words come from the phrase files (rule GEN-12).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_phrases.py, Version: 0.30.7 (2026-11-24)
+# File: test_phrases.py, Version: 0.30.8 (2026-11-24)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -24,6 +24,8 @@ from pathlib import Path
 import pytest
 
 from custom_components.device_sentinel import clock, phrases
+
+from .helpers import setup_entry
 
 ROOT = Path(__file__).resolve().parent.parent
 CODE = ROOT / "custom_components" / "device_sentinel"
@@ -116,13 +118,12 @@ def test_every_language_carries_englishs_placeholders_and_forms():
             if isinstance(source, dict):
                 assert isinstance(value, dict), f"{code}: {key} needs its plural forms"
                 assert NEEDED.get(code.split("-")[0], {"one", "other"}) <= set(value), f"{code}: {key}"
+                # A form may leave out the number itself ("one device").
                 wanted = set(phrases.PLACEHOLDER.findall(source["other"])) - {"count"}
-                texts = value.values()
+                for text in value.values():
+                    assert set(phrases.PLACEHOLDER.findall(text)) - {"count"} == wanted, f"{code}: {key}"
             else:
-                wanted = set(phrases.PLACEHOLDER.findall(source))
-                texts = [value]
-            for text in texts:
-                assert set(phrases.PLACEHOLDER.findall(text)) - {"count"} == wanted, f"{code}: {key}"
+                assert set(phrases.PLACEHOLDER.findall(value)) == set(phrases.PLACEHOLDER.findall(source)), f"{code}: {key}"
 
 
 @pytest.mark.parametrize(("language", "numbers", "forms"), [
@@ -206,3 +207,39 @@ def test_the_clock_reads_as_it_did_in_english():
         moment = date(2026, month, 1)
         assert clock.day_text(moment).split()[0] == moment.strftime("%b")
         assert clock.day_text(moment, long=True).split()[0] == moment.strftime("%B")
+
+
+def test_every_key_the_page_uses_is_in_english():
+    panel = (CODE / "frontend" / "panel.js").read_text(encoding="utf-8")
+    used = set(re.findall(r"[\"'`]((?:dashboard|common)\.[a-z0-9_.]+)[\"'`]", panel))
+    assert used, "the scan found no page keys"
+    assert sorted(used - set(_english())) == []
+
+
+def test_the_page_checks_answer_with_todays_words():
+    payloads = json.loads((ROOT / "tools" / "panel_checks" / "payloads.json").read_text(encoding="utf-8"))
+    assert payloads["phrases"] == phrases.page_words("en")
+
+
+def test_the_page_gets_only_its_own_words(test_language):
+    english = phrases.page_words("en")
+    assert english["language"] == "en" and english["phrases"] == {}
+    assert all(key.startswith(("dashboard.", "common.")) for key in english["english"])
+    russian = phrases.page_words("ru")
+    assert russian["language"] == "ru"
+    assert set(russian["phrases"]) == set(english["english"])
+    assert phrases.page_words("ru-RU")["language"] == "ru"
+    assert phrases.page_words("de")["language"] == "en"
+
+
+async def test_the_dashboard_asks_for_its_words(hass, hass_ws_client):
+    await setup_entry(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "device_sentinel/phrases", "language": "de"})
+    reply = await client.receive_json()
+    assert reply["success"], reply
+    assert reply["result"] == phrases.page_words("de")
+    assert reply["result"]["english"]["dashboard.tab.daily_brief"] == "Daily Brief"
+    await client.send_json_auto_id({"type": "device_sentinel/phrases"})
+    reply = await client.receive_json()
+    assert reply["result"]["language"] == "en"

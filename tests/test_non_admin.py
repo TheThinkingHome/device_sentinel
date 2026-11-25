@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_non_admin.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_non_admin.py, Version: 0.30.8 (2026-11-24)
 
 """Attacks that must fail: a Home Assistant user who is not an administrator.
 
@@ -40,6 +40,7 @@ LIST_ENTITY = "todo.device_sentinel_problem_list"
 # Every command with a payload its schema accepts, so a refusal can only
 # come from the permission check.
 COMMANDS = [
+    {"type": "device_sentinel/phrases", "language": "en"},
     {"type": "device_sentinel/status"},
     {"type": "device_sentinel/action", "action": "maintenance"},
     {"type": "device_sentinel/subscribe_changes"},
