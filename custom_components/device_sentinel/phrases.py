@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: phrases.py, Version: 0.30.8 (2026-11-24)
+# File: phrases.py, Version: 0.30.10 (2026-11-25)
 
 """The words Device Sentinel writes, read from its phrase files (rule GEN-12).
 
@@ -31,16 +31,28 @@ from typing import Any
 
 FOLDER = Path(__file__).parent / "phrases"
 ENGLISH = "en"
+# The test language: the English in markers, shipped while the words move
+# into these files, and used only on a house that asks for it with an
+# empty file named test_language in its device_sentinel folder. It reads
+# a number by Russian's plural rules, and a viewer whose profile is
+# Russian sees the dashboard in it.
+TEST = "test"
+TEST_AS = "ru"
+TEST_FLAG = "test_language"
 FORMS = ("zero", "one", "two", "few", "many", "other")
 PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 
 _FILES: dict[str, dict[str, Any]] = {}
 _LOADED: list[bool] = [False]
+_TESTING: list[bool] = [False]
 
 
-def load(folder: Path | None = None) -> None:
+def load(folder: Path | None = None, flag: str | None = None) -> None:
     """Read every phrase file in the folder; a file that cannot be read
-    is left out, and its language reads English."""
+    is left out, and its language reads English. flag is the house's
+    test_language file: the house is in testing mode while it exists."""
+    if flag is not None:
+        _TESTING[0] = Path(flag).is_file()
     found: dict[str, dict[str, Any]] = {}
     for path in sorted((folder or FOLDER).glob("*.json")):
         try:
@@ -52,6 +64,12 @@ def load(folder: Path | None = None) -> None:
     _FILES.clear()
     _FILES.update(found)
     _LOADED[0] = True
+
+
+def testing() -> bool:
+    """Whether the house reads in the test language (a test file and its
+    flag both there)."""
+    return _TESTING[0] and TEST in _FILES
 
 
 def languages() -> list[str]:
@@ -76,6 +94,9 @@ def page_words(language: str) -> dict[str, Any]:
     if not _LOADED[0]:
         load()
     code, own = _file_for(language)
+    if testing() and str(language).split("-")[0] == TEST_AS:
+        # A viewer whose profile is Russian, on a house in testing mode.
+        code, own = TEST_AS, _FILES[TEST]
 
     def page(found: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in found.items() if k.startswith(("dashboard.", "common."))}
@@ -88,6 +109,8 @@ def plural(language: str, count: float) -> str:
     """The plural category of a number in a language, as Unicode's CLDR
     rules name it, for the languages Device Sentinel has or plans."""
     base = language.split("-")[0]
+    if base == TEST:
+        base = TEST_AS
     whole = float(count).is_integer()
     i = int(abs(count)) if whole else None
     if base == "fr":

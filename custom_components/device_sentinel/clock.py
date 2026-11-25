@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: clock.py, Version: 0.30.7 (2026-11-24)
+# File: clock.py, Version: 0.30.10 (2026-11-25)
 
 """Times and dates as the house's owner chose to read them (rule GEN-11).
 
@@ -73,7 +73,11 @@ def _language() -> str:
 
 
 def language() -> str:
-    """The house's language: the owner's choice, or Home Assistant's own."""
+    """The house's language: the owner's choice, or Home Assistant's own;
+    the test language while the house is in testing mode. Times and
+    dates keep the owner's real language for their format."""
+    if phrases.testing():
+        return phrases.TEST
     return _language()
 
 
