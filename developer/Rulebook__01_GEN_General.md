@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 25 November 2026, on Device Sentinel 0.30.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -99,6 +99,7 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 - **A phrase or form a language leaves out reads English,** with English's own plural rules, so a partial translation is safe to ship.
 - **The brief, pushes, Problem List and reports are written in the house's language,** the owner's (GEN-11). The dashboard is written in the language of the person looking at it.
 - **The files are read once, off the event loop,** when Device Sentinel starts.
-- **The checks:** every key the code uses is in the English file, no English key sits unused, every language's phrases carry English's placeholders, and every plural carries the forms its language needs. A test language, the English wrapped in ⟦ ⟧ with each value in ⟨ ⟩ and filed as Russian, runs every phrase through the readers; it never ships.
+- **The checks:** every key the code uses is in the English file, no English key sits unused, every language's phrases carry English's placeholders, and every plural carries the forms its language needs. A test language, the English wrapped in ⟦ ⟧ with each value in ⟨ ⟩ and filed as Russian, runs every phrase through the readers.
+- **The test language ships as `phrases/test.json` while the words move, and does nothing on its own.** A house reads in it only while an empty file named `test_language` sits in its `device_sentinel` folder: then the brief, pushes, Problem List and reports are written in it, and a viewer whose profile is Russian sees the dashboard in it. Times and dates keep the owner's real language for their format.
 
 *Proof:* [`test_phrases.py`](../tests/test_phrases.py), [`test_clock.py`](../tests/test_clock.py), [`check_phrases.js`](../tools/panel_checks/check_phrases.js).
