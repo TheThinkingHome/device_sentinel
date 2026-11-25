@@ -25,5 +25,40 @@
   "common.month_short.9": "Sep",
   "common.month_short.10": "Oct",
   "common.month_short.11": "Nov",
-  "common.month_short.12": "Dec"
+  "common.month_short.12": "Dec",
+  "common.weekday_short.0": "Sun",
+  "common.weekday_short.1": "Mon",
+  "common.weekday_short.2": "Tue",
+  "common.weekday_short.3": "Wed",
+  "common.weekday_short.4": "Thu",
+  "common.weekday_short.5": "Fri",
+  "common.weekday_short.6": "Sat",
+  "dashboard.tab.daily_brief": "Daily Brief",
+  "dashboard.tab.battery_trends": "Battery Trends",
+  "dashboard.tab.signal_trends": "Signal Trends",
+  "dashboard.tab.integrations": "Integrations",
+  "dashboard.tab.networks": "Networks",
+  "dashboard.tab.devices": "Devices",
+  "dashboard.tab.recommendations": "Recommendations",
+  "dashboard.tab.recommendations_waiting": "Recommendations ({count})",
+  "dashboard.menu.print": "Print this page",
+  "dashboard.menu.more": "More actions",
+  "dashboard.menu.send_brief": "Send Brief",
+  "dashboard.menu.send_brief_no_target": "No Daily Brief target is set. Choose one in Notifications and Daily Brief.",
+  "dashboard.menu.regenerate_reports": "Regenerate Reports",
+  "dashboard.menu.settings": "Settings",
+  "dashboard.menu.sending": "Sending the brief…",
+  "dashboard.menu.regenerating": "Regenerating the reports…",
+  "dashboard.menu.not_sent_no_target": "Not sent: no Daily Brief target is set.",
+  "dashboard.menu.not_sent_none_took_it": "Not sent: no target took it. See Settings, System, Logs.",
+  "dashboard.menu.sent": {
+    "one": "Sent to {count} target.",
+    "other": "Sent to {count} targets."
+  },
+  "dashboard.menu.sent_some": {
+    "one": "Sent to {sent} of {count} target.",
+    "other": "Sent to {sent} of {count} targets."
+  },
+  "dashboard.menu.regenerated": "Reports regenerated.",
+  "dashboard.menu.failed": "That did not work: {error}"
 }
