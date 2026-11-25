@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_more_menu.js, Version: 0.30.5 (2026-11-23)
+// File: tools/panel_checks/check_more_menu.js, Version: 0.30.6 (2026-11-24)
 // Panel checks: the header's ⋮ menu holds Send Brief and Regenerate
 // Reports, Send Brief is greyed out with no target, and a note beside the
 // menu says what happened (rule DASH-20).
@@ -37,6 +37,8 @@ async function open(status = {}, actionAnswer = null, locale = undefined) {
   panel.hass = {
     callWS: async (message) => {
       calls.push(message);
+      // The person's clock as Home Assistant stores it (rule GEN-11).
+      if (message.type === "frontend/get_user_data") return { value: locale || null };
       const kind = message.type.replace("device_sentinel/", "");
       if (kind === "status") return { ...JSON.parse(JSON.stringify(payloads.status)), ...status };
       if (kind === "action") {
@@ -48,7 +50,6 @@ async function open(status = {}, actionAnswer = null, locale = undefined) {
     },
     connection: { subscribeMessage: async () => () => {} },
     states: {},
-    locale,
   };
   await settle();
   return { window, root: panel.shadowRoot, calls };

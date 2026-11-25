@@ -1,8 +1,10 @@
-// File: tools/panel_checks/check_clock.js, Version: 0.30.4 (2026-11-23)
+// File: tools/panel_checks/check_clock.js, Version: 0.30.6 (2026-11-24)
 // Panel checks: times and dates follow the viewer's Home Assistant
-// profile. 12 or 24 hours as chosen, or as the language has it; the
-// order of day and month as chosen, or as the language has it; the
-// server's time zone when the profile asks for it (rule GEN-11).
+// profile as Home Assistant stores it, never the browser. 12 or 24 hours
+// and the order of day and month as chosen, or as the language has it; a
+// choice that points to the browser follows the language; the time zone
+// is always Home Assistant's own; no choice saved follows Home
+// Assistant's language (rule GEN-11).
 // Run with: node check_clock.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -24,7 +26,10 @@ function check(label, ok, detail) {
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
 
-async function open(address, locale, extra) {
+// locale: the viewer's choices as Home Assistant stores them (null for
+// none saved); browser: what the browser's own hass.locale says, which
+// the page must not follow; house: Home Assistant's own language.
+async function open(address, locale, extra, { browser, house = "en", asked } = {}) {
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (err) => {
     if (!String(err.message).includes("Not implemented")) console.log("jsdom:", err.message);
@@ -40,6 +45,10 @@ async function open(address, locale, extra) {
   panel.route = { prefix: PREFIX, path: window.location.pathname.slice(PREFIX.length) };
   panel.hass = {
     callWS: async (message) => {
+      if (message.type === "frontend/get_user_data") {
+        if (asked) asked.push(message.key);
+        return { value: locale };
+      }
       const kind = message.type.replace("device_sentinel/", "");
       if (!(kind in payloads)) throw new Error(`no payload for ${kind}`);
       const reply = JSON.parse(JSON.stringify(payloads[kind]));
@@ -47,9 +56,9 @@ async function open(address, locale, extra) {
     },
     connection: { subscribeMessage: async () => () => {} },
     states: {},
-    language: "en",
-    locale,
-    config: { time_zone: "America/Guayaquil" },
+    language: (browser && browser.language) || "en",
+    locale: browser || locale || {},
+    config: { time_zone: "America/Guayaquil", language: house },
   };
   await settle();
   return { window, panel, root: panel.shadowRoot };
@@ -88,6 +97,33 @@ const server = (more) => Object.assign({ language: "en", time_zone: "server" }, 
 
   ({ window } = await open(`${PREFIX}/`, { language: "en", time_zone: "server", time_format: "24" }));
   check("The server's zone: 22:34 UTC reads 17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "17:34");
+
+  console.log("Never the browser");
+  ({ window } = await open(`${PREFIX}/`, { language: "en", time_zone: "local", time_format: "24" }));
+  check("Local time chosen: still Home Assistant's zone, 17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`));
+  check("A day is Home Assistant's day: 2026-11-23", window.eval(`typeof houseDay === "function" && houseDay(new Date("2026-11-24T03:00:00Z"))`) === "2026-11-23", window.eval(`typeof houseDay === "function" && houseDay(new Date("2026-11-24T03:00:00Z"))`));
+  ({ window } = await open(`${PREFIX}/`, { language: "de", time_zone: "server", time_format: "system", date_format: "system" }));
+  check("Use system locale for the time: German's 17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`));
+  check("Use system locale for the date: German's 23 Nov", window.eval(`fmtDay(new Date("${MOMENT}"))`) === "23 Nov", window.eval(`fmtDay(new Date("${MOMENT}"))`));
+  ({ window } = await open(`${PREFIX}/`, null, undefined, { house: "de", browser: { language: "en", time_format: "12", date_format: "MDY", time_zone: "local" } }));
+  check("No choice saved: Home Assistant's German, 17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`));
+  check("No choice saved: Home Assistant's German, 23 Nov", window.eval(`fmtDay(new Date("${MOMENT}"))`) === "23 Nov", window.eval(`fmtDay(new Date("${MOMENT}"))`));
+  ({ window } = await open(`${PREFIX}/`, server({ time_format: "24" }), undefined, { browser: { language: "en", time_format: "12", time_zone: "local" } }));
+  check("The browser's own choices are not followed: 17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "17:34", window.eval(`fmtTime(new Date("${MOMENT}"))`));
+  ({ window } = await open(`${PREFIX}/`, null, undefined, { house: "en" }));
+  check("Nothing saved, English house: 5:34 PM", window.eval(`fmtTime(new Date("${MOMENT}"))`) === "5:34 PM", window.eval(`fmtTime(new Date("${MOMENT}"))`));
+
+  console.log("A change to the profile");
+  const asked = [];
+  let opened;
+  opened = await open(`${PREFIX}/`, server({ time_format: "12" }), undefined, { asked, browser: { language: "en", time_format: "12" } });
+  const first = asked.length;
+  opened.panel.hass = Object.assign({}, opened.panel._hass, { locale: { language: "en", time_format: "12" } });
+  await settle();
+  check("The same profile: not read again", asked.length === first, asked);
+  opened.panel.hass = Object.assign({}, opened.panel._hass, { locale: { language: "en", time_format: "24" } });
+  await settle();
+  check("A changed profile: read again", asked.length === first + 1, asked);
 
   console.log("On a page");
   const DEVICE = payloads._ids.bravo;
