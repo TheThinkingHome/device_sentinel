@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.30.8 (2026-11-24)
+# File: dashboard_api.py, Version: 0.30.9 (2026-11-25)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -39,7 +39,7 @@ from . import phrases
 from .device_actions import MUTE_SOURCES_SAID, NameInUse
 from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
-from .report_brief import RECOMMENDATIONS_CLOSING
+from .report_brief import recommendations_closing
 from .const import (
     DATA_DEVICES,
     DATA_PANEL_FILE,
@@ -432,7 +432,7 @@ async def ws_recommendations(
             # Each written line with its key, whether Simple shows it,
             # and whether it is acknowledged (rules REC-09, REC-07).
             "lines": coordinator.recommendation_lines(),
-            "closing": RECOMMENDATIONS_CLOSING,
+            "closing": recommendations_closing(),
             # Recommendations about single devices, each with its list,
             # and the Power choices to set them from the list.
             "devices": coordinator.device_recommendations(),

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.4 (2026-11-23)
+# File: report_brief.py, Version: 0.30.9 (2026-11-25)
 
 """The daily brief: the one report written for a person.
 
@@ -37,6 +37,7 @@ from .repairs import (
     missing_targets,
 )
 from . import clock
+from .phrases import say
 from .const import (
     BRIEF_SEND_NOW_TRIGGER,
     PANEL_URL_PATH,
@@ -146,19 +147,17 @@ from .const import (
 from .outage_detail import FAILED, REMOVED, STALLED, UNWATCHED, parse_detail
 
 
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-
 def brief_title_when(moment: Any, hour12: bool) -> str:
     """The date and time in Send Brief's title: "22 Nov 2026, 2:20 PM" on
     a 12-hour clock, "22 Nov 2026, 14:20" on a 24-hour one. The month is
-    named, so the date reads the same in any day-and-month order, and
-    named here, so the server's own language cannot change it
-    (rule BRIEF-18)."""
-    day = f"{moment.day} {_MONTHS[moment.month - 1]} {moment.year}"
+    named, so the date reads the same in any day-and-month order, from
+    the phrase files rather than the server's own language (rules
+    BRIEF-18, GEN-12)."""
+    day = f"{moment.day} {say(clock.MONTHS_SHORT[moment.month - 1])} {moment.year}"
     if hour12:
         hour = moment.hour % 12 or 12
-        return f"{day}, {hour}:{moment.minute:02d} {'AM' if moment.hour < 12 else 'PM'}"
+        half = say("common.am" if moment.hour < 12 else "common.pm")
+        return f"{day}, {hour}:{moment.minute:02d} {half}"
     return f"{day}, {moment.hour:02d}:{moment.minute:02d}"
 
 
@@ -188,43 +187,33 @@ def _markdown_unescaped(text: str) -> str:
 # their own noun because "unexplained interruption" misdescribes a
 # threshold crossing (rule BRIEF-09).
 _REPEAT_NOUNS = {
-    TODO_KIND_LOW_BATTERY: "low-battery alarm",
-    TODO_KIND_FALLING_BATTERY: "falling-battery alarm",
+    TODO_KIND_LOW_BATTERY: "brief.repeat.low_battery_alarm",
+    TODO_KIND_FALLING_BATTERY: "brief.repeat.falling_battery_alarm",
 }
 
 # The author's own wording, printed verbatim beneath the Repeat
 # Offenders table (rule BRIEF-09).
-REPEAT_PARAGRAPH = (
-    "This table lists repeat offenders. Every row represents a "
-    "device that failed more than once in the last seven days "
-    "for no obvious reason. Device Sentinel ruled out the usual "
-    "causes. These "
-    "failures did not happen during a system restart, a "
-    "coordinator outage, a network or integration outage, or work "
-    "you did yourself in Maintenance Mode. To help you track down "
-    "the real problem, the table "
-    "attempts to correlate a cause by grouping devices that failed "
-    "at the same moment. If multiple devices fail together, it "
-    "usually means the cause is shared. A device on this list is a "
-    "candidate for muting or excluding if you recognize the cause, "
-    "like a smart TV whose state goes unavailable when it is "
-    "switched off."
-)
+def repeat_paragraph() -> str:
+    """The paragraph beneath the Repeat Offenders table."""
+    return say("brief.repeat.paragraph")
 
 
 
 
-# The words under the recommendations. One constant, because the
-# brief and the dashboard's tab both print it.
-RECOMMENDATIONS_CLOSING = (
-    "These are suggestions based on observations that the integration "
-    "has made. Device Sentinel is meant to monitor physical devices. Not "
-    "all integrations own physical devices and therefore should not be "
-    "monitored. When a setting that the integration depends on is not "
-    "properly configured, Device Sentinel will notify you here. Making "
-    "these changes will make the integration more efficient, and record "
-    "and interpret data that is meaningful."
-)
+# The words under the recommendations, one phrase, because the brief
+# and the dashboard's tab both print it.
+def recommendations_closing() -> str:
+    """The paragraph beneath the recommendations."""
+    return say("brief.rec.closing")
+
+# A detection family muted for every device it judges, by family: the
+# words for a house with one such device, then for more.
+FAMILY_MUTED = {
+    "freeze": ("brief.rec.all_muted_freeze_only", "brief.rec.all_muted_freeze"),
+    "battery": ("brief.rec.all_muted_battery_only", "brief.rec.all_muted_battery"),
+    "signal": ("brief.rec.all_muted_signal_only", "brief.rec.all_muted_signal"),
+}
+
 
 class BriefMixin:
     """The daily brief: the one report written for a person."""
@@ -300,8 +289,8 @@ class BriefMixin:
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
-            return f"battery {level_text(level)}{self._brief_power(device_id)}"
-        return f"battery low{self._brief_power(device_id)}"
+            return say("brief.cell.battery_level", level=level_text(level), power=self._brief_power(device_id))
+        return say("brief.cell.battery_low", power=self._brief_power(device_id))
 
     def _brief_power(self, device_id: str) -> str:
         """", 2× CR2032" after a battery cell, or nothing.
@@ -310,7 +299,7 @@ class BriefMixin:
         cell's escape like a device name does.
         """
         words = self.power_text(device_id)
-        return f", {self._report_cell(words)}" if words else ""
+        return say("brief.cell.power", power=self._report_cell(words)) if words else ""
 
     def _brief_phrase(self, row: dict[str, Any]) -> str:
         """Return one incident as a sentence a person would write.
@@ -339,26 +328,26 @@ class BriefMixin:
             seconds = row.get(INC_DURATION)
             cause = row.get(INC_CAUSE)
             # A closed signal problem says so, as the sentence does.
-            what = "signal recovered" if kind == TODO_KIND_RAILED_SIGNAL else "recovered"
-            base = (
-                f"{what} after {self._human_span(seconds)}"
-                if seconds is not None
-                else what
-            )
-            return f"{base}, {cause}" if cause else base
+            signal = kind == TODO_KIND_RAILED_SIGNAL
+            if seconds is not None:
+                base = say("brief.row.signal_recovered_after" if signal else "brief.row.recovered_after",
+                           span=self._human_span(seconds))
+            else:
+                base = say("brief.row.signal_recovered" if signal else "brief.row.recovered")
+            return say("brief.row.with_cause", text=base, cause=cause) if cause else base
         if event == INCIDENT_ACTION:
-            return {
-                ACTION_ACKNOWLEDGED: "acknowledged",
-                ACTION_UNACKNOWLEDGED: "acknowledgment removed",
-                ACTION_DELETED: "deleted from the list",
-                ACTION_READDED: "re-added, the problem is still there",
+            return say({
+                ACTION_ACKNOWLEDGED: "brief.row.acknowledged",
+                ACTION_UNACKNOWLEDGED: "brief.row.acknowledgment_removed",
+                ACTION_DELETED: "brief.row.deleted",
+                ACTION_READDED: "brief.row.readded",
                 # Nothing recovered and nobody acted: the watching
                 # stopped. Saying so keeps the table from claiming an
                 # acknowledgment nobody made (rule LIST-09).
-                ACTION_SET_ASIDE: "set aside, no longer watched",
-                ACTION_REMOVED: "removed from Home Assistant",
-                ACTION_MUTED: "muted",
-            }.get(row.get(INC_CAUSE) or "", "acknowledged")
+                ACTION_SET_ASIDE: "brief.row.set_aside",
+                ACTION_REMOVED: "brief.row.removed",
+                ACTION_MUTED: "brief.row.muted",
+            }.get(row.get(INC_CAUSE) or "", "brief.row.acknowledged"))
         if kind == TODO_KIND_LOW_BATTERY:
             # Borrowed from the composer so the table and the prose
             # cannot disagree about the same event: one composer
@@ -373,17 +362,19 @@ class BriefMixin:
             )
             return self._battery_phrase(row[INC_DEVICE_ID], False, crossed_at=crossed)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
-        wording = {
-            TODO_KIND_FLAPPING: "started having short drop-outs",
-            TODO_KIND_FROZEN: "stopped reporting",
-            TODO_KIND_NEVER_REPORTED: "has never reported",
+        if kind == TODO_KIND_UNAVAILABLE and hub:
             # A hub went down (rule STACK-10).
-            TODO_KIND_UNAVAILABLE: hub[0] if hub else "became unavailable",
-            TODO_KIND_UNKNOWN: "went unknown",
-            TODO_KIND_RAILED_SIGNAL: "signal railed",
-            TODO_KIND_FALLING_BATTERY: "battery is running down",
+            return hub[0]
+        wording = {
+            TODO_KIND_FLAPPING: "brief.row.short_drop_outs_started",
+            TODO_KIND_FROZEN: "brief.row.stopped_reporting",
+            TODO_KIND_NEVER_REPORTED: "brief.row.never_reported",
+            TODO_KIND_UNAVAILABLE: "brief.row.became_unavailable",
+            TODO_KIND_UNKNOWN: "brief.row.went_unknown",
+            TODO_KIND_RAILED_SIGNAL: "brief.row.signal_railed",
+            TODO_KIND_FALLING_BATTERY: "brief.row.battery_running_down",
         }
-        return wording.get(kind, kind)
+        return say(wording[kind]) if kind in wording else kind
 
     def _brief_unavailable_text(self, device_id: str) -> str:
         """Unavailable, or for a hub what the Problem List says (rule STACK-10).
@@ -395,7 +386,7 @@ class BriefMixin:
         if words:
             return f"{words[:1].lower()}{words[1:]}"
         hub = self.hub_unavailable_words(device_id)  # type: ignore[attr-defined]
-        return hub[1] if hub else "unavailable"
+        return hub[1] if hub else say("brief.now.unavailable")
 
     def _brief_falling_text(self, device_id: str) -> str:
         """Return the falling clause with its time left where known.
@@ -406,8 +397,10 @@ class BriefMixin:
         """
         for row in self.battery_falling_list:
             if row.get("device_id") == device_id:
-                return f"battery {row.get('until') or 'empty in ' + row['left']}{self._brief_power(device_id)}"
-        return f"battery running down{self._brief_power(device_id)}"
+                if row.get("until"):
+                    return say("brief.cell.battery_until", until=row["until"], power=self._brief_power(device_id))
+                return say("brief.cell.battery_empty_in", left=row["left"], power=self._brief_power(device_id))
+        return say("brief.cell.battery_running_down", power=self._brief_power(device_id))
 
     def _brief_now_rows(
         self,
@@ -439,11 +432,11 @@ class BriefMixin:
                     continue
                 problem = {
                     TODO_KIND_FLAPPING: self.flap_words(device_id),
-                    TODO_KIND_FROZEN: "stopped reporting",
-                    TODO_KIND_NEVER_REPORTED: "never reported",
+                    TODO_KIND_FROZEN: say("brief.now.stopped_reporting"),
+                    TODO_KIND_NEVER_REPORTED: say("brief.now.never_reported"),
                     TODO_KIND_UNAVAILABLE: self._brief_unavailable_text(device_id),
-                    TODO_KIND_UNKNOWN: "unknown",
-                    TODO_KIND_RAILED_SIGNAL: "signal railed",
+                    TODO_KIND_UNKNOWN: say("brief.now.unknown"),
+                    TODO_KIND_RAILED_SIGNAL: say("brief.now.signal_railed"),
                     TODO_KIND_LOW_BATTERY: self._brief_battery_text(device_id),
                     TODO_KIND_FALLING_BATTERY: (
                         self._brief_falling_text(device_id)
@@ -1330,34 +1323,18 @@ class BriefMixin:
         the house harder to read (rule REC-02).
         """
         items: list[tuple[str, str]] = []
-        screen = "the Notifications and Daily Brief settings screen"
         for target in missing_targets(self.hass, self.entry):
-            items.append((f"target:{target}",
-                f"Notifications Recipient Not Valid: {target} no longer "
-                f"exists. Anything sent there is lost. Choose another "
-                f"notification target from {screen}."
-            ))
+            items.append((f"target:{target}", say("brief.rec.target_invalid", target=target)))
         if not delivery_is_configured(self.entry):
-            items.append(("no_target",
-                f"Notifications Recipient Not Set: no phone or brief "
-                f"notification target is set. A problem reaches only the "
-                f"persistent card and this page. Targets are set from "
-                f"{screen}."
-            ))
+            items.append(("no_target", say("brief.rec.target_not_set")))
         choice = self.entry.options.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
         if (
             choice in (REPORT_LINKS_EXTERNAL, REPORT_LINKS_INTERNAL)
             and self._configured_url(choice) is None
         ):
-            which = "external" if choice == REPORT_LINKS_EXTERNAL else "internal"
-            items.append(("links",
-                f"Your Home Assistant {which.title()} URL, which you have "
-                f"chosen, is missing or invalid: Device names in reports "
-                f"are set to be links with your {which} URL, and that URL "
-                f"is misconfigured or not set. Set that address in Home "
-                f"Assistant's network settings, or choose another under "
-                f"Links in Reports on {screen}."
-            ))
+            items.append(("links", say(
+                "brief.rec.links_external" if choice == REPORT_LINKS_EXTERNAL else "brief.rec.links_internal"
+            )))
         items += self._family_muted_entries()
         # Asked of every house whose server has a wireless adapter and
         # no chosen network, router ties or not: the scan hears an
@@ -1366,18 +1343,9 @@ class BriefMixin:
         # like that (rule REC-02).
         adapter = getattr(self, "_wifi_adapter_unused", None)
         if adapter:
-            line = (
-                f"Your server is equipped with a Wi-Fi adapter ({adapter}), "
-                f"but no Wi-Fi network is chosen. Choose your network under "
-                f"Wi-Fi in settings, and Device Sentinel will be able to "
-                f"detect Wi-Fi outages directly instead of deducing outages "
-                f"from devices dropping off your router."
-            )
+            line = say("brief.rec.wifi_adapter", adapter=adapter)
             if getattr(self, "_wifi_adapter_off", False):
-                line += (
-                    " The adapter is turned off: turn it on first, under "
-                    "Settings, System, Network."
-                )
+                line += " " + say("brief.rec.wifi_adapter_off")
             items.append(("wifi_network", line))
         # Switched-off sensors are on the Recommendations tab, one card
         # per kind (rule REC-05).
@@ -1386,12 +1354,7 @@ class BriefMixin:
             # nothing rather than guessing. Device Sentinel surfaces
             # this setting and never writes it (rule STACK-13).
             if getattr(reader, "availability_enabled", None) is False:
-                items.append(("z2m_availability",
-                    "Zigbee2MQTT availability is disabled: Device Sentinel "
-                    "uses Z2M availability as a confirmation for outage "
-                    "detection. Turning on Availability in Zigbee2MQTT's "
-                    "settings gives Device Sentinel that second opinion."
-                ))
+                items.append(("z2m_availability", say("brief.rec.z2m_availability")))
                 break
         offers = self._exclusion_offer_entries()
         items += [(key, text) for key, text, _extra in offers]
@@ -1442,11 +1405,7 @@ class BriefMixin:
             count = len(names)
             said.append((
                 f"offer:{domain}",
-                f"{title} Is Usually Excluded: Device Sentinel found the "
-                f"{title} integration, with {count} device"
-                f"{'' if count == 1 else 's'}. It is usually excluded "
-                f"because {why}. Exclude it here, or tick the box to keep "
-                f"watching it.",
+                say("brief.rec.usually_excluded", count=count, title=title, why=why),
                 {"exclude": domain, "devices": names},
             ))
         return said
@@ -1465,17 +1424,9 @@ class BriefMixin:
         records = self.data.get(DATA_DEVICES) or {}
         watched = [device_id for device_id in self._watched if device_id in records]
         families = (
+            ("freeze", watched, self._freeze_muted),
             (
-                "All devices are muted or excluded for freeze reporting",
-                "frozen-device warnings", "devices", "device",
-                "freeze", "Freeze and Unavailable Detection",
-                watched, self._freeze_muted,
-            ),
-            (
-                "All battery devices are muted or excluded for battery "
-                "reporting",
-                "low-battery warnings", "battery devices", "battery device",
-                "battery", "Low Battery",
+                "battery",
                 [
                     device_id for device_id in watched
                     if records[device_id].get(DEV_BATTERY_VALUE) is not None
@@ -1483,10 +1434,7 @@ class BriefMixin:
                 self._battery_muted,
             ),
             (
-                "All signal devices are muted or excluded for signal "
-                "reporting",
-                "weak-signal warnings", "signal devices", "signal device",
-                "signal", "Signal Strength",
+                "signal",
                 [
                     device_id for device_id in watched
                     if records[device_id].get(DEV_SIGNAL_VALUE) is not None
@@ -1495,26 +1443,18 @@ class BriefMixin:
             ),
         )
         said: list[tuple[str, str]] = []
-        for title, warnings, nouns, noun, family, screen, judged, muted in families:
+        for family, judged, muted in families:
             if not judged:
                 continue
             if all(
                 device_id in self._muted_devices or muted(device_id)
                 for device_id in judged
             ):
-                why = (
-                    f"your only {noun} is muted"
-                    if len(judged) == 1
-                    else f"all {len(judged)} of your {nouns} are muted"
-                )
-                said.append((f"muted:{family}",
-                    f"{title}: You will not get any {warnings} because "
-                    f"{why}. To receive {family} reports on the devices "
-                    f"you wish to monitor, unmute or unexclude "
-                    f"{'it' if len(judged) == 1 else 'them'} on the "
-                    f"Exclusions and Muting, and the {screen} settings "
-                    f"screen, or on each device's page."
-                ))
+                # "Your only device" is about there being one, not about
+                # the grammar of a number, so it is a phrase of its own.
+                only, many = FAMILY_MUTED[family]
+                text = say(only) if len(judged) == 1 else say(many, count=len(judged))
+                said.append((f"muted:{family}", text))
         return said
 
     def _router_watched_items(self) -> list[str]:
@@ -1541,16 +1481,7 @@ class BriefMixin:
             ):
                 clients.setdefault(entity.platform, set()).add(entity.device_id)
         return [
-            (
-                f"router:{domain}",
-                f"Eliminate noise from integrations that own no actual "
-                f"devices: Device Sentinel is monitoring the {domain} "
-                f"integration, and it has registered {len(devices)} virtual "
-                f"device{'' if len(devices) == 1 else 's'} that duplicate "
-                f"hardware other integrations own and that are already being "
-                f"watched. It is recommended that the {domain} integration be "
-                f"excluded from the Exclusions and Muting settings screen.",
-            )
+            (f"router:{domain}", say("brief.rec.router_watched", count=len(devices), domain=domain))
             for domain, devices in sorted(clients.items())
         ]
 
@@ -1584,17 +1515,17 @@ class BriefMixin:
                 continue  # on the tab only, or every row ticked (rule REC-07)
             # The title counts the rows not ticked, as the card's on
             # the tab does (rule REC-08); a line here always has one.
-            line = f"{card['title']} ({card['active']}): {card['brief']}"
+            line = say("brief.rec.card_line", title=card["title"], active=card["active"], text=card["brief"])
             url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
             if url:
                 self._brief_rec_links[line] = url
             items.append(line)
         if not items:
             return []
-        lines = ["## Recommendations", ""]
+        lines = [f"## {say('brief.heading.recommendations')}", ""]
         for item in items:
             lines += [item, ""]
-        lines += [RECOMMENDATIONS_CLOSING, ""]
+        lines += [recommendations_closing(), ""]
         return lines
 
     def _longest(
@@ -2492,7 +2423,7 @@ class BriefMixin:
                     ]
                 )
                 if entry["durations"]
-                else "unknown"
+                else say("brief.repeat.unknown")
             )
             entry["with"] = self._repeat_with(entry, found)
             table.append(entry)
@@ -2503,7 +2434,7 @@ class BriefMixin:
         device_id = entry.get("device_id")
         stored = entry.get("stored")
         if not device_id:
-            return stored or "unknown device"
+            return stored or say("brief.repeat.unknown_device")
         current = self._trim_name(device_id)
         if current != device_id:
             return current
@@ -2515,15 +2446,15 @@ class BriefMixin:
     def _repeat_verb(kind: str) -> str:
         """Return what the device did, as the table's second column."""
         if kind == TODO_KIND_UNAVAILABLE:
-            return "became unavailable"
+            return say("brief.repeat.became_unavailable")
         if kind == TODO_KIND_RAILED_SIGNAL:
-            return "signal railed"
+            return say("brief.repeat.signal_railed")
         if kind == TODO_KIND_FLAPPING:
-            return "had short drop-outs"
+            return say("brief.repeat.short_drop_outs")
         noun = _REPEAT_NOUNS.get(kind)
         if noun:
-            return noun
-        return "went silent"
+            return say(noun)
+        return say("brief.repeat.went_silent")
 
     def _repeat_when(self, whens: list[float]) -> str:
         """Return the WHEN cell: the days, or one day's span.
@@ -2548,14 +2479,11 @@ class BriefMixin:
                 days.append(named)
         if len(days) == 1:
             if len(ordered) == 1:
-                return f"{days[0]}, {at(ordered[0])}"
-            return (
-                f"{days[0]}, {at(ordered[0])} to "
-                f"{at(ordered[-1])}"
-            )
+                return say("brief.repeat.when_once", day=days[0], time=at(ordered[0]))
+            return say("brief.repeat.when_one_day", day=days[0], first=at(ordered[0]), last=at(ordered[-1]))
         if len(days) == 2:
-            return f"{days[0]} and {days[1]}"
-        return f"{days[0]} to {days[-1]}"
+            return say("brief.repeat.when_two_days", first=days[0], second=days[1])
+        return say("brief.repeat.when_days", first=days[0], last=days[-1])
 
     def _repeat_with(
         self,
@@ -2586,13 +2514,11 @@ class BriefMixin:
                 continue
             name = self._repeat_name(other)
             if matched == len(mine):
-                partners.append(f"{name}, every time")
+                partners.append(say("brief.repeat.with_every_time", name=name))
             else:
-                partners.append(
-                    f"{name}, {matched} of {len(mine)} times"
-                )
+                partners.append(say("brief.repeat.with_some", count=len(mine), name=name, matched=matched))
         if not partners:
-            return "alone"
+            return say("brief.repeat.alone")
         return "; ".join(partners)
 
     def _brief_muted(self, device_id: Any, kind: Any) -> bool:
@@ -2643,10 +2569,11 @@ class BriefMixin:
         if not table:
             return []
         lines = [
-            "## Repeat Offenders",
+            f"## {say('brief.heading.repeat_offenders')}",
             "",
-            "| DEVICE | WHAT HAPPENED | TIMES | WHEN "
-            "| TYPICAL | WITH |",
+            "| " + " | ".join(say(key) for key in (
+                "brief.column.device", "brief.column.what_happened", "brief.column.times",
+                "brief.column.when", "brief.column.typical", "brief.column.with")) + " |",
             "|---|---|---|---|---|---|",
         ]
         for row in table:
@@ -2655,7 +2582,7 @@ class BriefMixin:
                 f"| {row['what']} | {row['n']} | {row['when']} "
                 f"| {row['typical']} | {row['with']} |"
             )
-        lines += ["", REPEAT_PARAGRAPH, ""]
+        lines += ["", repeat_paragraph(), ""]
         return lines
 
     def _brief_prose(
@@ -2693,7 +2620,7 @@ class BriefMixin:
                 continue
             if line not in standing:
                 standing.append(line)
-        lines = ["## In Short", ""]
+        lines = [f"## {say('brief.heading.in_short')}", ""]
         since_text = self._brief_moment(window_start)
         # Above the device lines, not among them. What happened to
         # the house is the context for what happened to the devices,
@@ -2718,23 +2645,19 @@ class BriefMixin:
         if house:
             lines += [" ".join(house), ""]
         if told:
-            lines += [f"Since {since_text}: " + " ".join(told), ""]
+            lines += [say("brief.in_short.since", since=since_text, told=" ".join(told)), ""]
         else:
             # Which nothing it means (rule BRIEF-02): the line counts
             # device incidents, and beneath a paragraph of system events
             # it would appear to deny them.
-            lines += [
-                "No device problems started or ended in this "
-                "window.",
-                "",
-            ]
+            lines += [say("brief.in_short.no_device_problems"), ""]
         if standing:
-            lines += ["Right now: " + " ".join(standing), ""]
+            lines += [say("brief.in_short.right_now", standing=" ".join(standing)), ""]
         else:
             # The repeat offenders have their own section below Now
             # (rule BRIEF-09), so the all-clear answers the standing
             # problems alone.
-            lines += ["Nothing needs attention right now.", ""]
+            lines += [say("brief.in_short.nothing_needs_attention"), ""]
         return lines
 
     def _write_brief(
@@ -2806,17 +2729,17 @@ class BriefMixin:
         # brief hour, which is the thing a person notices.
         span = round((window_end - window_start) / 3600.0)
         scope = (
-            f"{self._brief_moment(window_end)}. Covering the {span} "
-            f"hours since {self._brief_moment(window_start)}."
+            say("brief.scope_complete", count=span, end=self._brief_moment(window_end),
+                start=self._brief_moment(window_start))
             if complete
-            else f"From {self._brief_moment(window_start)} to "
-            f"{self._brief_moment(window_end)} (in progress)."
+            else say("brief.scope_running", start=self._brief_moment(window_start),
+                     end=self._brief_moment(window_end))
         )
         # One brief, one map: names pair with devices while this
         # brief is composed, and nothing carries over to the next one.
         self._brief_devices: dict[str, list[str | None]] = {}
         lines = [
-            "# Device Sentinel Daily Brief",
+            f"# {say('brief.title')}",
             "",
             scope,
             "",
@@ -2824,31 +2747,26 @@ class BriefMixin:
         lines += self._brief_prose(
             incidents, now_rows, window_start, sys_events, window_end=window_end
         )
-        lines += ["## Now", ""]
+        lines += [f"## {say('brief.heading.now')}", ""]
         if not now_rows:
-            lines += ["Nothing needs attention.", ""]
+            lines += [say("brief.now.nothing"), ""]
         else:
             devices = len({row[0] for row in now_rows})
-            summary = (
-                f"{devices} device{'s' if devices != 1 else ''} "
-                f"need{'' if devices != 1 else 's'} attention"
-            )
             # The table lists problems, not devices, so a device with
             # two faults would give "1 device needs attention" above two
             # rows.
-            if len(now_rows) != devices:
-                summary += (
-                    f", with {len(now_rows)} problem"
-                    f"{'s' if len(now_rows) != 1 else ''} between them"
-                    if devices != 1
-                    else f", with {len(now_rows)} problems"
-                )
-            summary += "."
+            if len(now_rows) == devices:
+                summary = say("brief.now.need_attention", count=devices)
+            elif devices != 1:
+                summary = say("brief.now.need_attention_between", count=devices, problems=len(now_rows))
+            else:
+                summary = say("brief.now.needs_attention_with", count=len(now_rows))
             now = dt_util.utcnow().timestamp()
             lines += [
                 summary,
                 "",
-                "| DEVICE | PROBLEM | SINCE | FOR |",
+                "| " + " | ".join(say(key) for key in (
+                    "brief.column.device", "brief.column.problem", "brief.column.since", "brief.column.for")) + " |",
                 "|---|---|---|---|",
             ]
             for name, problem, since, kind, device_id in now_rows:
@@ -2857,7 +2775,7 @@ class BriefMixin:
                 # registry, and saying so stops a reader taking it
                 # for the moment the device broke (rule LIST-10).
                 when = (
-                    f"discovered {self._brief_moment(since)}"
+                    say("brief.now.discovered", when=self._brief_moment(since))
                     if kind == TODO_KIND_NEVER_REPORTED
                     else self._brief_moment(since)
                 )
@@ -2889,7 +2807,7 @@ class BriefMixin:
             if seen:
                 lines += [
                     " ".join(
-                        f"{name}: {phrase}" for name, phrase in seen.items()
+                        say("brief.now.bridge_says", name=name, phrase=phrase) for name, phrase in seen.items()
                     ),
                     "",
                 ]
@@ -2908,27 +2826,27 @@ class BriefMixin:
         battery_lines: list[str] = []
         if fallers:
             named = ", ".join(
-                f"{row['name']} ({self.battery_until_words(row)})"
+                say("brief.battery.named", name=row["name"], until=self.battery_until_words(row))
                 for row in fallers[:5]
             )
-            battery_lines.append(f"Batteries falling faster each week: {named}.")
+            battery_lines.append(say("brief.battery.falling_faster", named=named))
         # A cell falling at a steady pace inside Days Till Low is named
         # here and on Battery Trends, and pushes nothing (rule BAT-14).
         watched = self.battery_watch_rows()
         if watched:
             named = ", ".join(
-                f"{row['name']} ({self.battery_until_words(row)})"
+                say("brief.battery.named", name=row["name"], until=self.battery_until_words(row))
                 for row in watched[:5]
             )
-            battery_lines.append(f"Batteries to watch: {named}.")
+            battery_lines.append(say("brief.battery.to_watch", named=named))
         if battery_lines:
             # The dashboard's Battery Trends tab carries the battery
             # report. Said once, after the last battery line.
-            battery_lines[-1] += " Details are in Battery Trends on the Device Sentinel dashboard."
+            battery_lines[-1] += " " + say("brief.battery.details")
             for line in battery_lines:
                 lines += [line, ""]
         lines += self._recommendations_section()
-        lines += ["## Last 24 Hours", ""]
+        lines += [f"## {say('brief.heading.last_24_hours')}", ""]
         # The rows behind a stitched sentence are dropped here
         # (rule BRIEF-06): each says a dead device recovered or broke
         # again when the restart only interrupted the counting, and
@@ -2955,15 +2873,14 @@ class BriefMixin:
             1 for row in shown if row[INC_EVENT] == INCIDENT_RESOLVED
         )
         if not shown and not sys_events:
-            lines += ["Nothing happened.", ""]
+            lines += [say("brief.last24.nothing"), ""]
         else:
             lines += [
-                f"{len(shown) + len(sys_events)} event"
-                f"{'s' if len(shown) + len(sys_events) != 1 else ''}. "
-                f"{opened} problem{'s' if opened != 1 else ''} "
-                f"started, {resolved} ended.",
+                say("brief.last24.events", count=len(shown) + len(sys_events))
+                + " " + say("brief.last24.started_ended", count=opened, resolved=resolved),
                 "",
-                "| TIME | DEVICE | WHAT HAPPENED |",
+                "| " + " | ".join(say(key) for key in (
+                    "brief.column.time", "brief.column.device", "brief.column.what_happened")) + " |",
                 "|---|---|---|",
             ]
             merged: list[tuple[float, str | None, str, str]] = [
@@ -3153,7 +3070,7 @@ class BriefMixin:
                 # _recommendations_section from a fixed path.
                 rec_url = (getattr(self, "_brief_rec_links", None) or {}).get(line)
                 if rec_url:
-                    text_line += f' <a href="{escape(rec_url, True)}">Open the list</a>'
+                    text_line += f' <a href="{escape(rec_url, True)}">{escape(say("brief.rec.open_list"))}</a>'
                 html_lines.append(f"<p>{text_line}</p>")
         _flush_table()
 
@@ -3161,7 +3078,7 @@ class BriefMixin:
         page = f"""<!DOCTYPE html>
 <html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Device Sentinel Daily Brief</title>
+<title>{escape(say("brief.title"))}</title>
 <style>
 body {{ font-family: sans-serif; margin: 16px; background: #fff;
   color: #1a1a19; max-width: 720px; }}
