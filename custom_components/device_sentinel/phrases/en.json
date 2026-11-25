@@ -60,5 +60,140 @@
     "other": "Sent to {sent} of {count} targets."
   },
   "dashboard.menu.regenerated": "Reports regenerated.",
-  "dashboard.menu.failed": "That did not work: {error}"
+  "dashboard.menu.failed": "That did not work: {error}",
+  "brief.repeat.low_battery_alarm": "low-battery alarm",
+  "brief.repeat.falling_battery_alarm": "falling-battery alarm",
+  "brief.repeat.paragraph": "This table lists repeat offenders. Every row represents a device that failed more than once in the last seven days for no obvious reason. Device Sentinel ruled out the usual causes. These failures did not happen during a system restart, a coordinator outage, a network or integration outage, or work you did yourself in Maintenance Mode. To help you track down the real problem, the table attempts to correlate a cause by grouping devices that failed at the same moment. If multiple devices fail together, it usually means the cause is shared. A device on this list is a candidate for muting or excluding if you recognize the cause, like a smart TV whose state goes unavailable when it is switched off.",
+  "brief.rec.closing": "These are suggestions based on observations that the integration has made. Device Sentinel is meant to monitor physical devices. Not all integrations own physical devices and therefore should not be monitored. When a setting that the integration depends on is not properly configured, Device Sentinel will notify you here. Making these changes will make the integration more efficient, and record and interpret data that is meaningful.",
+  "brief.cell.battery_level": "battery {level}{power}",
+  "brief.cell.battery_low": "battery low{power}",
+  "brief.cell.power": ", {power}",
+  "brief.row.signal_recovered_after": "signal recovered after {span}",
+  "brief.row.recovered_after": "recovered after {span}",
+  "brief.row.signal_recovered": "signal recovered",
+  "brief.row.recovered": "recovered",
+  "brief.row.with_cause": "{text}, {cause}",
+  "brief.row.acknowledged": "acknowledged",
+  "brief.row.acknowledgment_removed": "acknowledgment removed",
+  "brief.row.deleted": "deleted from the list",
+  "brief.row.readded": "re-added, the problem is still there",
+  "brief.row.set_aside": "set aside, no longer watched",
+  "brief.row.removed": "removed from Home Assistant",
+  "brief.row.muted": "muted",
+  "brief.row.short_drop_outs_started": "started having short drop-outs",
+  "brief.row.stopped_reporting": "stopped reporting",
+  "brief.row.never_reported": "has never reported",
+  "brief.row.became_unavailable": "became unavailable",
+  "brief.row.went_unknown": "went unknown",
+  "brief.row.signal_railed": "signal railed",
+  "brief.row.battery_running_down": "battery is running down",
+  "brief.now.unavailable": "unavailable",
+  "brief.cell.battery_until": "battery {until}{power}",
+  "brief.cell.battery_empty_in": "battery empty in {left}{power}",
+  "brief.cell.battery_running_down": "battery running down{power}",
+  "brief.now.stopped_reporting": "stopped reporting",
+  "brief.now.never_reported": "never reported",
+  "brief.now.unknown": "unknown",
+  "brief.now.signal_railed": "signal railed",
+  "brief.rec.target_invalid": "Notifications Recipient Not Valid: {target} no longer exists. Anything sent there is lost. Choose another notification target from the Notifications and Daily Brief settings screen.",
+  "brief.rec.target_not_set": "Notifications Recipient Not Set: no phone or brief notification target is set. A problem reaches only the persistent card and this page. Targets are set from the Notifications and Daily Brief settings screen.",
+  "brief.rec.links_external": "Your Home Assistant External URL, which you have chosen, is missing or invalid: Device names in reports are set to be links with your external URL, and that URL is misconfigured or not set. Set that address in Home Assistant's network settings, or choose another under Links in Reports on the Notifications and Daily Brief settings screen.",
+  "brief.rec.links_internal": "Your Home Assistant Internal URL, which you have chosen, is missing or invalid: Device names in reports are set to be links with your internal URL, and that URL is misconfigured or not set. Set that address in Home Assistant's network settings, or choose another under Links in Reports on the Notifications and Daily Brief settings screen.",
+  "brief.rec.wifi_adapter": "Your server is equipped with a Wi-Fi adapter ({adapter}), but no Wi-Fi network is chosen. Choose your network under Wi-Fi in settings, and Device Sentinel will be able to detect Wi-Fi outages directly instead of deducing outages from devices dropping off your router.",
+  "brief.rec.wifi_adapter_off": "The adapter is turned off: turn it on first, under Settings, System, Network.",
+  "brief.rec.z2m_availability": "Zigbee2MQTT availability is disabled: Device Sentinel uses Z2M availability as a confirmation for outage detection. Turning on Availability in Zigbee2MQTT's settings gives Device Sentinel that second opinion.",
+  "brief.rec.usually_excluded": {
+    "one": "{title} Is Usually Excluded: Device Sentinel found the {title} integration, with {count} device. It is usually excluded because {why}. Exclude it here, or tick the box to keep watching it.",
+    "other": "{title} Is Usually Excluded: Device Sentinel found the {title} integration, with {count} devices. It is usually excluded because {why}. Exclude it here, or tick the box to keep watching it."
+  },
+  "brief.rec.all_muted_freeze": {
+    "one": "All devices are muted or excluded for freeze reporting: You will not get any frozen-device warnings because all {count} of your devices are muted. To receive freeze reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Freeze and Unavailable Detection settings screen, or on each device's page.",
+    "other": "All devices are muted or excluded for freeze reporting: You will not get any frozen-device warnings because all {count} of your devices are muted. To receive freeze reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Freeze and Unavailable Detection settings screen, or on each device's page."
+  },
+  "brief.rec.all_muted_battery": {
+    "one": "All battery devices are muted or excluded for battery reporting: You will not get any low-battery warnings because all {count} of your battery devices are muted. To receive battery reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Low Battery settings screen, or on each device's page.",
+    "other": "All battery devices are muted or excluded for battery reporting: You will not get any low-battery warnings because all {count} of your battery devices are muted. To receive battery reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Low Battery settings screen, or on each device's page."
+  },
+  "brief.rec.all_muted_signal": {
+    "one": "All signal devices are muted or excluded for signal reporting: You will not get any weak-signal warnings because all {count} of your signal devices are muted. To receive signal reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Signal Strength settings screen, or on each device's page.",
+    "other": "All signal devices are muted or excluded for signal reporting: You will not get any weak-signal warnings because all {count} of your signal devices are muted. To receive signal reports on the devices you wish to monitor, unmute or unexclude them on the Exclusions and Muting, and the Signal Strength settings screen, or on each device's page."
+  },
+  "brief.rec.router_watched": {
+    "one": "Eliminate noise from integrations that own no actual devices: Device Sentinel is monitoring the {domain} integration, and it has registered {count} virtual device that duplicate hardware other integrations own and that are already being watched. It is recommended that the {domain} integration be excluded from the Exclusions and Muting settings screen.",
+    "other": "Eliminate noise from integrations that own no actual devices: Device Sentinel is monitoring the {domain} integration, and it has registered {count} virtual devices that duplicate hardware other integrations own and that are already being watched. It is recommended that the {domain} integration be excluded from the Exclusions and Muting settings screen."
+  },
+  "brief.rec.card_line": "{title} ({active}): {text}",
+  "brief.heading.recommendations": "Recommendations",
+  "brief.repeat.unknown": "unknown",
+  "brief.repeat.unknown_device": "unknown device",
+  "brief.repeat.became_unavailable": "became unavailable",
+  "brief.repeat.signal_railed": "signal railed",
+  "brief.repeat.short_drop_outs": "had short drop-outs",
+  "brief.repeat.went_silent": "went silent",
+  "brief.repeat.when_once": "{day}, {time}",
+  "brief.repeat.when_one_day": "{day}, {first} to {last}",
+  "brief.repeat.when_two_days": "{first} and {second}",
+  "brief.repeat.when_days": "{first} to {last}",
+  "brief.repeat.with_every_time": "{name}, every time",
+  "brief.repeat.with_some": {
+    "one": "{name}, {matched} of {count} times",
+    "other": "{name}, {matched} of {count} times"
+  },
+  "brief.repeat.alone": "alone",
+  "brief.heading.in_short": "In Short",
+  "brief.in_short.since": "Since {since}: {told}",
+  "brief.in_short.no_device_problems": "No device problems started or ended in this window.",
+  "brief.in_short.right_now": "Right now: {standing}",
+  "brief.in_short.nothing_needs_attention": "Nothing needs attention right now.",
+  "brief.scope_complete": {
+    "one": "{end}. Covering the {count} hour since {start}.",
+    "other": "{end}. Covering the {count} hours since {start}."
+  },
+  "brief.scope_running": "From {start} to {end} (in progress).",
+  "brief.title": "Device Sentinel Daily Brief",
+  "brief.heading.now": "Now",
+  "brief.now.nothing": "Nothing needs attention.",
+  "brief.now.need_attention": {
+    "one": "{count} device needs attention.",
+    "other": "{count} devices need attention."
+  },
+  "brief.now.need_attention_between": {
+    "one": "{count} device needs attention, with {problems} problems between them.",
+    "other": "{count} devices need attention, with {problems} problems between them."
+  },
+  "brief.now.needs_attention_with": {
+    "one": "1 device needs attention, with {count} problem.",
+    "other": "1 device needs attention, with {count} problems."
+  },
+  "brief.column.device": "DEVICE",
+  "brief.column.problem": "PROBLEM",
+  "brief.column.since": "SINCE",
+  "brief.column.for": "FOR",
+  "brief.now.discovered": "discovered {when}",
+  "brief.now.bridge_says": "{name}: {phrase}",
+  "brief.battery.named": "{name} ({until})",
+  "brief.battery.falling_faster": "Batteries falling faster each week: {named}.",
+  "brief.battery.to_watch": "Batteries to watch: {named}.",
+  "brief.battery.details": "Details are in Battery Trends on the Device Sentinel dashboard.",
+  "brief.heading.last_24_hours": "Last 24 Hours",
+  "brief.last24.nothing": "Nothing happened.",
+  "brief.last24.events": {
+    "one": "{count} event.",
+    "other": "{count} events."
+  },
+  "brief.last24.started_ended": {
+    "one": "{count} problem started, {resolved} ended.",
+    "other": "{count} problems started, {resolved} ended."
+  },
+  "brief.column.time": "TIME",
+  "brief.column.what_happened": "WHAT HAPPENED",
+  "brief.heading.repeat_offenders": "Repeat Offenders",
+  "brief.column.times": "TIMES",
+  "brief.column.when": "WHEN",
+  "brief.column.typical": "TYPICAL",
+  "brief.column.with": "WITH",
+  "brief.rec.open_list": "Open the list",
+  "brief.rec.all_muted_freeze_only": "All devices are muted or excluded for freeze reporting: You will not get any frozen-device warnings because your only device is muted. To receive freeze reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Freeze and Unavailable Detection settings screen, or on each device's page.",
+  "brief.rec.all_muted_battery_only": "All battery devices are muted or excluded for battery reporting: You will not get any low-battery warnings because your only battery device is muted. To receive battery reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Low Battery settings screen, or on each device's page.",
+  "brief.rec.all_muted_signal_only": "All signal devices are muted or excluded for signal reporting: You will not get any weak-signal warnings because your only signal device is muted. To receive signal reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Signal Strength settings screen, or on each device's page."
 }
