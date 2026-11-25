@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.30.3 (2026-11-23)
+# File: interventions.py, Version: 0.30.11 (2026-11-25)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -47,7 +47,6 @@ from .const import (
     RETIRED_KIND_DROPPING_OUT,
     WITHDRAWN_REASON_REPLACED,
     LOGNORMAL_RESTART_REPAIR,
-    FLAP_CHECK_WORDS,
     SYS_DETAIL,
     SYS_DEVICES,
     SYS_DURATION,
@@ -134,6 +133,7 @@ from .const import (
     SYS_PAIRING_OPEN,
 )
 from .outage_detail import DOWN, FAILED, REMOVED, STALLED, UNWATCHED, make_detail, pair_key, parse_detail
+from .phrases import number, say
 
 
 def _spell_minutes(minutes: int) -> str:
@@ -144,24 +144,30 @@ def _spell_minutes(minutes: int) -> str:
     converts in their head while reading a brief.
     """
     if minutes < 90:
-        return f"{minutes} minutes"
+        return say("brief.note.minutes", count=minutes, value=minutes)
     hours = minutes / 60
     if hours < 48:
-        shown = int(hours) if float(hours).is_integer() else round(hours, 1)
-        return f"{shown} hours"
+        return say("brief.note.hours", count=hours, value=_shown(hours))
     days = hours / 24
-    shown = int(days) if float(days).is_integer() else round(days, 1)
-    return f"{shown} days"
+    return say("brief.note.days", count=days, value=_shown(days))
+
+
+def _shown(value: float) -> str:
+    """A whole number as itself, else to one decimal in the house's
+    language's decimal sign."""
+    if float(value).is_integer():
+        return str(int(value))
+    return number(round(value, 1), 1)
 
 
 def _spell_ago(seconds: float) -> str:
     """Return how long ago something happened, as a person would say it."""
     minutes = int(max(0.0, seconds) // 60)
     if minutes < 1:
-        return "less than a minute ago"
+        return say("brief.note.under_a_minute_ago")
     if minutes == 1:
-        return "1 minute ago"
-    return f"{_spell_minutes(minutes)} ago"
+        return say("brief.note.one_minute_ago")
+    return say("brief.note.ago", span=_spell_minutes(minutes))
 
 
 def zha_phrase(view: dict[str, Any] | None, now: float) -> str | None:
@@ -175,21 +181,16 @@ def zha_phrase(view: dict[str, Any] | None, now: float) -> str | None:
     if not isinstance(view, dict) or not isinstance(view.get("available"), bool):
         return None
     if not view["available"]:
-        return "ZHA confirms it is unavailable."
+        return say("brief.note.zha_unavailable")
     seen = view.get("last_seen")
-    heard = (
-        f" and last heard from it {_spell_ago(now - seen)}"
-        if isinstance(seen, (int, float)) and not isinstance(seen, bool)
-        else ""
-    )
-    sentence = f"ZHA reads it as available{heard}."
+    if isinstance(seen, (int, float)) and not isinstance(seen, bool):
+        sentence = say("brief.note.zha_available_heard", ago=_spell_ago(now - seen))
+    else:
+        sentence = say("brief.note.zha_available")
     timeout = view.get("timeout_seconds")
     if isinstance(timeout, int) and not isinstance(timeout, bool) and timeout > 0:
-        kind = "a battery device" if view.get("class") == "battery" else "a mains device"
-        sentence += (
-            f" ZHA waits {_spell_minutes(timeout // 60)} of silence from "
-            f"{kind} before it marks it unavailable."
-        )
+        key = "brief.note.zha_waits_battery" if view.get("class") == "battery" else "brief.note.zha_waits_mains"
+        sentence = say("brief.note.two", first=sentence, second=say(key, span=_spell_minutes(timeout // 60)))
     return sentence
 
 
@@ -564,7 +565,7 @@ class InterventionMixin:
             # Worded as something to check, not a diagnosis, because a
             # flapping device can hold a steady link quality whenever it
             # gets through.
-            return FLAP_CHECK_WORDS
+            return say("brief.note.flap_check")
         seen = self.reachability(device_id)
         if seen is None:
             # ZHA keeps its own judgment of each device, read from its
@@ -574,20 +575,13 @@ class InterventionMixin:
                 dt_util.utcnow().timestamp(),
             )
         if seen.get("state") == "offline":
-            return "Zigbee2MQTT confirms it is offline."
+            return say("brief.note.z2m_offline")
         minutes = seen.get("timeout_minutes")
         if not isinstance(minutes, int):
-            return "Zigbee2MQTT reads it as online."
+            return say("brief.note.z2m_online")
         if seen.get("class") == "passive":
-            return (
-                "Zigbee2MQTT reads it as online. Zigbee2MQTT waits "
-                f"{_spell_minutes(minutes)} of silence from a battery "
-                "device before it says otherwise."
-            )
-        return (
-            "Zigbee2MQTT reads it as online. Zigbee2MQTT pings a mains "
-            f"device every {_spell_minutes(minutes)}."
-        )
+            return say("brief.note.z2m_online_battery", span=_spell_minutes(minutes))
+        return say("brief.note.z2m_online_mains", span=_spell_minutes(minutes))
 
     def _own_entry_failure(self, device_id: str) -> str | None:
         """Return why a device's own connection is down, or None.
@@ -607,8 +601,8 @@ class InterventionMixin:
         title = self._integration_title(entry.domain)
         detail = self._integration_detail.get(entry_id)
         if parse_detail(detail)[2] == FAILED:
-            return f"Its {title} connection failed to start."
-        return f"Its {title} connection is down."
+            return say("brief.note.connection_failed", title=title)
+        return say("brief.note.connection_down", title=title)
 
     def _sample_broker(self, now: float) -> str:
         """Record the broker going and returning. Returns its state.

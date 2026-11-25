@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: durations.py, Version: 0.27.10 (2026-10-27)
+# File: durations.py, Version: 0.30.11 (2026-11-25)
 
 """A duration in the words a person reads, and in a table cell.
 
@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from math import isfinite
 
+from .phrases import number, say
+
 DAY = 86400.0
 WEEK = 7 * DAY
 # Two days: where hours stop being the scale a person reads.
@@ -35,17 +37,29 @@ LONG_SPAN_SECONDS = 2 * DAY
 WEEK_SPAN_SECONDS = 1.5 * WEEK
 
 
+# The words for a whole count, a half, one and a half, and more and a
+# half, of a day and of a week (rule GEN-12).
+_HALVES = {
+    "day": ("common.span.day.whole", "common.span.day.half",
+            "common.span.day.one_and_a_half", "common.span.day.and_a_half"),
+    "week": ("common.span.week.whole", "common.span.week.half",
+             "common.span.week.one_and_a_half", "common.span.week.and_a_half"),
+}
+
+
 def _halves(value: float, noun: str) -> str:
-    """Return the value in halves, rounded down, in words."""
+    """Return the value in halves, rounded down, in words; noun is
+    "day" or "week"."""
+    whole_key, half_key, one_and_a_half_key, and_a_half_key = _HALVES[noun]
     halves = int(value * 2)
     whole, half = divmod(halves, 2)
     if not half:
-        return f"{whole} {noun}{'' if whole == 1 else 's'}"
+        return say(whole_key, count=whole)
     if whole == 0:
-        return f"half a {noun}"
+        return say(half_key)
     if whole == 1:
-        return f"a {noun} and a half"
-    return f"{whole} and a half {noun}s"
+        return say(one_and_a_half_key)
+    return say(and_a_half_key, count=whole)
 
 
 def long_span(seconds: float) -> str:
@@ -56,7 +70,7 @@ def long_span(seconds: float) -> str:
     guards the paths that never touch a file.
     """
     if not isfinite(seconds):
-        return "?"
+        return say("common.span.unknown")
     seconds = max(0.0, seconds)
     if seconds >= WEEK_SPAN_SECONDS:
         return _halves(seconds / WEEK, "week")
@@ -78,17 +92,17 @@ def compact_span(seconds: float, cap: float | None = None) -> str:
     unknown rather than raising.
     """
     if not isfinite(seconds):
-        return "?"
+        return say("common.span.unknown")
     seconds = max(0.0, seconds)
     if cap is not None and seconds >= cap:
-        return f"more than {cap / DAY:.0f} days"
+        return say("common.span.more_than_days", count=round(cap / DAY))
     if seconds < 90:
-        return f"{seconds:.0f}s"
+        return say("common.span.seconds", value=number(seconds, 0))
     if seconds < 90 * 60:
-        return f"{seconds / 60:.0f}m"
+        return say("common.span.minutes", value=number(seconds / 60, 0))
     if seconds < 2 * DAY:
-        return f"{seconds / 3600:.1f}h"
+        return say("common.span.hours", value=number(seconds / 3600, 1))
     if seconds < 2 * WEEK:
-        return f"{seconds / DAY:.1f}d"
-    return f"{seconds / WEEK:.1f}w"
+        return say("common.span.days", value=number(seconds / DAY, 1))
+    return say("common.span.weeks", value=number(seconds / WEEK, 1))
 

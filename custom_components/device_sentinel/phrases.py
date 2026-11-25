@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: phrases.py, Version: 0.30.10 (2026-11-25)
+# File: phrases.py, Version: 0.30.11 (2026-11-25)
 
 """The words Device Sentinel writes, read from its phrase files (rule GEN-12).
 
@@ -25,6 +25,7 @@ Sentinel starts; reading a phrase never touches the disk.
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -111,7 +112,13 @@ def plural(language: str, count: float) -> str:
     base = language.split("-")[0]
     if base == TEST:
         base = TEST_AS
-    whole = float(count).is_integer()
+    try:
+        count = float(count)
+    except (TypeError, ValueError):
+        return "other"
+    if not math.isfinite(count):
+        return "other"
+    whole = count.is_integer()
     i = int(abs(count)) if whole else None
     if base == "fr":
         return "one" if 0 <= abs(count) < 2 else "other"
@@ -129,6 +136,13 @@ def plural(language: str, count: float) -> str:
     return "one" if i == 1 else "other"
 
 
+def number(value: float, places: int) -> str:
+    """A number with a fixed count of decimals, written with the house
+    language's decimal sign: 4.1 in English, 4,1 in French."""
+    text = f"{value:.{places}f}"
+    return text.replace(".", say("common.decimal_sign")) if places else text
+
+
 def _fill(text: str, values: dict[str, Any]) -> str:
     return PLACEHOLDER.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), text)
 
@@ -143,24 +157,28 @@ def say(key: str, language: str | None = None, count: float | None = None, **val
         from . import clock
 
         language = clock.language()
-    wanted = language
-    code, phrases = _file_for(wanted)
-    entry = phrases.get(key)
-    if entry is None and code != ENGLISH:
-        code, entry = ENGLISH, _FILES.get(ENGLISH, {}).get(key)
-    if entry is None:
-        return key
     if count is not None:
         values = {"count": count, **values}
+    amount = count if count is not None else 0
+    code, phrases = _file_for(language)
+    # The language's own text, then English's: a phrase, or the form a
+    # number needs, that a file leaves out or writes as something other
+    # than text reads in English, never as the key or as a stray value.
+    for file_code, found in ((code, phrases), (ENGLISH, _FILES.get(ENGLISH, {}))):
+        text = _text_of(found.get(key), file_code, amount)
+        if text is not None:
+            return _fill(text, values)
+        if file_code == ENGLISH:
+            break
+    return key
+
+
+def _text_of(entry: Any, code: str, count: Any) -> str | None:
+    """A phrase's text for a number in its own file's language, or None
+    where the file holds no usable text for it."""
     if isinstance(entry, dict):
-        form = plural(code, count if count is not None else 0)
-        text = entry.get(form) or entry.get("other")
-        if text is None and code != ENGLISH:
-            english = _FILES.get(ENGLISH, {}).get(key)
-            if isinstance(english, dict):
-                text = english.get(plural(ENGLISH, count if count is not None else 0)) or english.get("other")
-        entry = text if text is not None else key
-    return _fill(str(entry), values)
+        entry = entry.get(plural(code, count)) or entry.get("other")
+    return entry if isinstance(entry, str) else None
 
 
 # Home Assistant imports an integration off the event loop, so the files

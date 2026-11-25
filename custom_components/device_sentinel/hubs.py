@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.30.2 (2026-11-22)
+# File: hubs.py, Version: 0.30.11 (2026-11-25)
 
 """Judged by its hub (rules STACK-09, STACK-10).
 
@@ -75,6 +75,7 @@ from .const import (
 from .device_fields import device_field
 from .stacks import hub_link_up, hub_members_keep_own
 from .records import BAD_STATES
+from .phrases import say
 
 LUTRON = "lutron_caseta"
 
@@ -333,7 +334,7 @@ class HubMixin:
         """
         if device_id is None or not self.is_hub(device_id):
             return None
-        return "went down", "down"
+        return say("push.hub.went_down"), say("push.hub.down")
 
     def unavailable_words(self, device_id: str | None) -> tuple[str, str] | None:
         """The brief's words for this device going unavailable, if not the usual.
@@ -346,7 +347,7 @@ class HubMixin:
         if hub is not None:
             return hub
         if device_id is not None and device_id in getattr(self, "_node_status_entity", {}):
-            return "became unavailable", "unavailable"
+            return say("push.kind.event.unavailable"), say("push.kind.state.unavailable")
         return None
 
     def hub_members(self, hub_id: str) -> list[str]:

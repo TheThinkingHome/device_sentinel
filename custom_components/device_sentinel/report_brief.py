@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.10 (2026-11-25)
+# File: report_brief.py, Version: 0.30.11 (2026-11-25)
 
 """The daily brief: the one report written for a person.
 
@@ -39,6 +39,7 @@ from .repairs import (
 from . import clock
 from .phrases import say
 from .const import (
+    UPSTREAM_KIND,
     BRIEF_SEND_NOW_TRIGGER,
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
@@ -347,7 +348,7 @@ class BriefMixin:
                            span=self._human_span(seconds))
             else:
                 base = say("brief.row.signal_recovered" if signal else "brief.row.recovered")
-            return say("brief.row.with_cause", text=base, cause=cause) if cause else base
+            return say("brief.row.with_cause", text=base, cause=self._cause_words(cause)) if cause else base
         if event == INCIDENT_ACTION:
             return say({
                 ACTION_ACKNOWLEDGED: "brief.row.acknowledged",
@@ -454,12 +455,12 @@ class BriefMixin:
                     TODO_KIND_FALLING_BATTERY: (
                         self._brief_falling_text(device_id)
                     ),
+                    UPSTREAM_KIND: say("brief.now.upstream"),
                 }.get(kind, kind)
                 rows.append((name, problem, since or now, kind, device_id))
         rows.sort(key=lambda row: row[2])
         return rows
 
-    @staticmethod
     @staticmethod
     def _worst_words(row: dict[str, Any], sentence: bool) -> str | None:
         """How many devices an ended outage took, or None.
@@ -684,11 +685,11 @@ class BriefMixin:
             return say("brief.event.maintenance_mode_was_opened_at", when=when)
         if kind == SYS_MAINTENANCE_CLOSED:
             if held and detail:
-                return say("brief.event.maintenance_mode_ended_at_after", when=when, held=held, detail=detail)
+                return say("brief.event.maintenance_mode_ended_at_after", when=when, held=held, detail=self._ended_words(detail))
             if held:
                 return say("brief.event.maintenance_mode_ended_at_after_2", when=when, held=held)
             if detail:
-                return say("brief.event.maintenance_mode_ended_at_2", when=when, detail=detail)
+                return say("brief.event.maintenance_mode_ended_at_2", when=when, detail=self._ended_words(detail))
             return say("brief.event.maintenance_mode_ended_at", when=when)
         if kind == SYS_UNCLEAN_RESTART:
             # The restart row says the system came back; this one says
@@ -991,11 +992,11 @@ class BriefMixin:
             return say("brief.cell.maintenance_mode_opened")
         if kind == SYS_MAINTENANCE_CLOSED:
             if held and detail:
-                return say("brief.cell.maintenance_mode_ended_after", held=held, detail=detail)
+                return say("brief.cell.maintenance_mode_ended_after", held=held, detail=self._ended_words(detail))
             if held:
                 return say("brief.cell.maintenance_mode_ended_after_2", held=held)
             if detail:
-                return say("brief.cell.maintenance_mode_ended_2", detail=detail)
+                return say("brief.cell.maintenance_mode_ended_2", detail=self._ended_words(detail))
             return say("brief.cell.maintenance_mode_ended")
         if kind == SYS_UNCLEAN_RESTART:
             return (
@@ -1103,20 +1104,40 @@ class BriefMixin:
             label = self._option_label(key)
             if label and label not in names:
                 names.append(label)
-        return "; ".join(names)
+        return say("brief.settings_separator").join(names)
 
     def _option_labels(self) -> dict[str, str]:
-        """Return every option key's screen label, read once.
+        """Return every option key's screen label, in the house's
+        language where its settings file names it, else in English.
 
-        Read while Device Sentinel starts, on a worker thread, so a page
-        asked for on the event loop finds them in memory (rule CODE-06).
+        Every language's file is read once, while Device Sentinel
+        starts, on a worker thread, so a page asked for on the event
+        loop finds them in memory (rule CODE-06).
         """
         cached = getattr(self, "_option_label_cache", None)
-        if cached is not None:
-            return cached
+        if cached is None:
+            cached = {"en": self._read_option_labels("strings.json")}
+            folder = os.path.join(os.path.dirname(__file__), "translations")
+            try:
+                names = sorted(os.listdir(folder))
+            except OSError:
+                names = []
+            for name in names:
+                if name.endswith(".json") and name != "en.json":
+                    cached[name[:-5]] = self._read_option_labels(os.path.join("translations", name))
+            self._option_label_cache = cached
+        from .clock import language
+
+        house = language()
+        own = cached.get(house) or cached.get(house.split("-")[0]) or {}
+        return {**cached["en"], **own}
+
+    @staticmethod
+    def _read_option_labels(relative: str) -> dict[str, str]:
+        """One settings file's option labels; empty when it cannot be read."""
         labels: dict[str, str] = {}
         try:
-            path = os.path.join(os.path.dirname(__file__), "strings.json")
+            path = os.path.join(os.path.dirname(__file__), relative)
             with open(path, encoding="utf-8") as handle:
                 steps = json.load(handle)["options"]["step"]
             for body in steps.values():
@@ -1131,10 +1152,9 @@ class BriefMixin:
                 for block in (body.get("sections") or {}).values():
                     for key, label in (block.get("data") or {}).items():
                         labels[key] = label
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, AttributeError):
             labels = {}
-        self._option_label_cache = labels
-        return labels
+        return {key: label for key, label in labels.items() if isinstance(label, str)}
 
     def _house_sentences(
         self, sys_events: list[dict[str, Any]]
@@ -1164,12 +1184,10 @@ class BriefMixin:
         if not seconds:
             return ""
         if seconds < 90:
-            count, unit = round(seconds), "second"
-        elif seconds < 5400:
-            count, unit = round(seconds / 60), "minute"
-        else:
-            count, unit = round(seconds / 3600), "hour"
-        return f"{count} {unit}{'' if count == 1 else 's'}"
+            return say("brief.interval.seconds", count=round(seconds))
+        if seconds < 5400:
+            return say("brief.interval.minutes", count=round(seconds / 60))
+        return say("brief.interval.hours", count=round(seconds / 3600))
 
     def _integration_title(self, domain: str) -> str:
         """The integration's name as Home Assistant shows it.
@@ -1262,7 +1280,7 @@ class BriefMixin:
                 continue
             worst = max(days, key=lambda row: int(row.get(STORM_DAY_COUNT) or 0))
             every = self._plain_interval(worst.get(STORM_DAY_INTERVAL))
-            cadence = f"every {every}" if every else "over and over"
+            cadence = say("brief.noisy.every", every=every) if every else say("brief.noisy.over_and_over")
             # What is true, and no advice to exclude: Device Sentinel
             # hears the integration's update, not each device, so it can
             # tell when the whole integration stops and not when one of
@@ -1276,24 +1294,13 @@ class BriefMixin:
                 # the note names those and leaves the rest alone
                 # (rule UP-17).
                 count, of, hub = together
-                who = (
-                    f"The {count} devices behind {hub}" if hub
-                    else f"{count} of {title}'s {of} devices"
-                )
-                said.append((f"noisy:{domain}",
-                    f"{who} update together, {cadence}. Device Sentinel "
-                    f"hears that update, not each of those devices, so it "
-                    f"tells you when they all stop, but not when one of "
-                    f"them fails. {title}'s other devices are judged on "
-                    f"their own."
-                ))
+                if hub:
+                    text = say("brief.noisy.behind_hub", count=count, hub=hub, cadence=cadence, title=title)
+                else:
+                    text = say("brief.noisy.some_of", count=count, of=of, cadence=cadence, title=title)
+                said.append((f"noisy:{domain}", text))
                 continue
-            said.append((f"noisy:{domain}",
-                f"{title} updates all its devices at once, {cadence}. "
-                f"Device Sentinel hears {title}'s regular update, not each "
-                f"device. It tells you when the whole integration stops "
-                f"updating, but not when one of its devices fails."
-            ))
+            said.append((f"noisy:{domain}", say("brief.noisy.whole", title=title, cadence=cadence)))
         return said
 
     def _recommendation_items(self) -> list[str]:
@@ -1633,6 +1640,13 @@ class BriefMixin:
             OUTAGE_SPAN[subject][1], title=title, span=self._human_span(duration),
             start=self._brief_moment(start), until=until,
         )
+
+    @staticmethod
+    def _ended_words(detail: Any) -> Any:
+        """How Maintenance Mode ended, as stored, in the house's language:
+        "expired" and "ended by hand" by name, anything else as stored."""
+        key = {"expired": "brief.stored.expired", "ended by hand": "brief.stored.ended_by_hand"}.get(detail)
+        return say(key) if key else detail
 
     def _options_sentence(self, rows: list[dict[str, Any]]) -> list[str]:
         """Return one sentence naming what a person changed.

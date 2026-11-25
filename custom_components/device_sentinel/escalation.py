@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: escalation.py, Version: 0.27.10 (2026-10-27)
+# File: escalation.py, Version: 0.30.11 (2026-11-25)
 
 """A problem replaced by a worse one, told as the change it is.
 
@@ -54,6 +54,7 @@ from .const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
+from .phrases import say
 
 # Held on a reader's copy of the worse opening, never stored.
 ESCALATED_FROM = "escalated_from"
@@ -64,14 +65,15 @@ ESCALATED_FROM = "escalated_from"
 PAIR_SECONDS = 1.0
 
 # What each kind is called in "was marked X from Y".
+# Each holds its phrase's key (rule GEN-12).
 STATE_WORD = {
-    TODO_KIND_FROZEN: "frozen",
-    TODO_KIND_UNAVAILABLE: "unavailable",
-    TODO_KIND_UNKNOWN: "unknown",
-    TODO_KIND_NEVER_REPORTED: "never reported",
-    TODO_KIND_LOW_BATTERY: "low",
-    TODO_KIND_FALLING_BATTERY: "running down",
-    TODO_KIND_RAILED_SIGNAL: "railed",
+    TODO_KIND_FROZEN: "push.kind.marked.frozen",
+    TODO_KIND_UNAVAILABLE: "push.kind.marked.unavailable",
+    TODO_KIND_UNKNOWN: "push.kind.marked.unknown",
+    TODO_KIND_NEVER_REPORTED: "push.kind.marked.never_reported",
+    TODO_KIND_LOW_BATTERY: "push.kind.marked.low_battery",
+    TODO_KIND_FALLING_BATTERY: "push.kind.marked.falling_battery",
+    TODO_KIND_RAILED_SIGNAL: "push.kind.marked.railed_signal",
 }
 
 
@@ -89,7 +91,8 @@ def _family(kind: Any) -> str | None:
 
 def state_word(kind: Any) -> str:
     """Return a kind as the state a device was marked."""
-    return STATE_WORD.get(kind, str(kind).replace("_", " "))
+    key = STATE_WORD.get(kind)
+    return say(key) if key else str(kind).replace("_", " ")
 
 
 def fold(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
