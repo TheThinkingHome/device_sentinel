@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -81,11 +81,12 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 
 *Proof:* [`test_log_lines.py`](../tests/test_log_lines.py).
 
-### GEN-11 Times and Dates Follow Home Assistant's Profile
+### GEN-11 Times, Dates and Language Come From Home Assistant
 
-**Device Sentinel writes times and dates the way the reader chose them in their Home Assistant profile, under Localization. It has no setting of its own for this.**
-- **The dashboard:** follows the person looking at it: 12 or 24 hours, the order of day and month, and the time zone, each also "as my language has it" or "as this browser has it", read as Home Assistant reads them.
-- **What the server writes:** the Daily Brief, pushes, the Problem List and the reports go to everyone, so they follow the owner account's choices, and follow a change the moment the owner makes it. "As this browser has it" cannot be read on the server, so it falls back to the language, and so does a house with no owner choice saved.
+**Device Sentinel reads times, dates and language only from what Home Assistant stores: the profile's Localization choices and Home Assistant's own settings. It never takes them from the browser or the device showing the dashboard. It has no setting of its own for this.**
+- **The dashboard** follows the profile of the person looking at it. **The Daily Brief, pushes, Problem List and reports** follow the owner's profile, and follow a change the moment the owner makes it.
+- **A choice that points to the browser** falls back to what Home Assistant stores. "Use system locale" for the time or date format follows the profile's language. Local time for the zone follows Home Assistant's own time zone, so a time in a push matches the time on the dashboard wherever it is read.
+- **A house with no owner choice saved,** and a person with none saved, follows Home Assistant's own language and time zone.
 - **The words stay English:** only the order of day and month, and 12 or 24 hours, follow the choice. Month names are English. A 24-hour time carries its leading zero: 05:34.
 
-*Proof:* [`test_clock.py`](../tests/test_clock.py), [`check_clock.js`](../tools/panel_checks/check_clock.js).
+*Proof:* [`test_clock.py`](../tests/test_clock.py), [`check_clock.js`](../tools/panel_checks/check_clock.js), [`check_more_menu.js`](../tools/panel_checks/check_more_menu.js).
