@@ -3,11 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.30.2 (2026-11-22)
+# File: dashboard_api.py, Version: 0.30.8 (2026-11-24)
 
 """The WebSocket commands behind the dashboard, admins only.
 
-`device_sentinel/status` returns the header. `device_sentinel/action`
+`device_sentinel/phrases` returns the words the page draws itself, in
+the viewer's language. `device_sentinel/status` returns the header.
+`device_sentinel/action`
 runs a top-row button through the same coordinator code the device
 page's buttons call. `device_sentinel/subscribe_changes` pushes the
 change marker whenever it moves, so the Refresh button can change
@@ -33,6 +35,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
+from . import phrases
 from .device_actions import MUTE_SOURCES_SAID, NameInUse
 from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
@@ -103,6 +106,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
         return
     hass.data[_REGISTERED] = True
     websocket_api.async_register_command(hass, ws_status)
+    websocket_api.async_register_command(hass, ws_phrases)
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_device_note)
     websocket_api.async_register_command(hass, ws_subscribe_changes)
@@ -153,6 +157,21 @@ def _coordinator(hass: HomeAssistant) -> Any | None:
 
 def _not_loaded(connection: websocket_api.ActiveConnection, msg_id: int) -> None:
     connection.send_error(msg_id, "not_loaded", "Device Sentinel is not loaded")
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "device_sentinel/phrases", vol.Optional("language"): str}
+)
+@callback
+def ws_phrases(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the dashboard's words in the viewer's language, with English
+    beside them for what that language leaves out (rule GEN-12)."""
+    connection.send_result(msg["id"], phrases.page_words(msg.get("language") or "en"))
 
 
 @websocket_api.require_admin

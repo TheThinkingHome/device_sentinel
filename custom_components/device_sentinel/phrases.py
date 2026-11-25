@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: phrases.py, Version: 0.30.7 (2026-11-24)
+# File: phrases.py, Version: 0.30.8 (2026-11-24)
 
 """The words Device Sentinel writes, read from its phrase files (rule GEN-12).
 
@@ -68,6 +68,20 @@ def _file_for(language: str) -> tuple[str, dict[str, Any]]:
         if code in _FILES:
             return code, _FILES[code]
     return ENGLISH, _FILES.get(ENGLISH, {})
+
+
+def page_words(language: str) -> dict[str, Any]:
+    """The words the dashboard draws itself, for a viewer's language: its
+    own file's and English beside them, `dashboard.` and `common.`."""
+    if not _LOADED[0]:
+        load()
+    code, own = _file_for(language)
+
+    def page(found: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in found.items() if k.startswith(("dashboard.", "common."))}
+
+    english = page(_FILES.get(ENGLISH, {}))
+    return {"language": code, "phrases": page(own) if code != ENGLISH else {}, "english": english}
 
 
 def plural(language: str, count: float) -> str:
