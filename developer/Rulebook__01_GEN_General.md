@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -101,4 +101,4 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 - **The files are read once, off the event loop,** when Device Sentinel starts.
 - **The checks:** every key the code uses is in the English file, no English key sits unused, every language's phrases carry English's placeholders, and every plural carries the forms its language needs. A test language, the English wrapped in ⟦ ⟧ with each value in ⟨ ⟩ and filed as Russian, runs every phrase through the readers; it never ships.
 
-*Proof:* [`test_phrases.py`](../tests/test_phrases.py), [`test_clock.py`](../tests/test_clock.py).
+*Proof:* [`test_phrases.py`](../tests/test_phrases.py), [`test_clock.py`](../tests/test_clock.py), [`check_phrases.js`](../tools/panel_checks/check_phrases.js).
