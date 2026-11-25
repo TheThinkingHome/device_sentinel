@@ -195,5 +195,366 @@
   "brief.rec.open_list": "Open the list",
   "brief.rec.all_muted_freeze_only": "All devices are muted or excluded for freeze reporting: You will not get any frozen-device warnings because your only device is muted. To receive freeze reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Freeze and Unavailable Detection settings screen, or on each device's page.",
   "brief.rec.all_muted_battery_only": "All battery devices are muted or excluded for battery reporting: You will not get any low-battery warnings because your only battery device is muted. To receive battery reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Low Battery settings screen, or on each device's page.",
-  "brief.rec.all_muted_signal_only": "All signal devices are muted or excluded for signal reporting: You will not get any weak-signal warnings because your only signal device is muted. To receive signal reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Signal Strength settings screen, or on each device's page."
+  "brief.rec.all_muted_signal_only": "All signal devices are muted or excluded for signal reporting: You will not get any weak-signal warnings because your only signal device is muted. To receive signal reports on the devices you wish to monitor, unmute or unexclude it on the Exclusions and Muting, and the Signal Strength settings screen, or on each device's page.",
+  "brief.event.unknown_kind": "{kind} at {when}.",
+  "brief.event.breaking_change_the_update_changed_your": "Breaking change: the update changed your settings at {when}.",
+  "brief.event.device_sentinel_was_reloaded_at": "Device Sentinel was reloaded at {when}.",
+  "brief.event.the_system_restarted_at": "The system restarted at {when}.",
+  "brief.event.stopped_updating_at": "{title} stopped updating at {when}.",
+  "brief.event.the_integration_went_down_at": "The {title} integration went down at {when}.",
+  "brief.event.the_integration_was_removed_from_home": "The {title} integration was removed from Home Assistant at {when}, while down.",
+  "brief.event.device_sentinel_stopped_watching_the_integration": "Device Sentinel stopped watching the {title} integration at {when}, while it was down.",
+  "brief.event.the_bridge_went_down_at": "The {title} bridge went down at {when}.",
+  "brief.event.burst": "{burst} at {when}.",
+  "brief.event.the_wi_fi_network_went_down": "The Wi-Fi network went down at {when}.",
+  "brief.event.the_wi_fi_network_came_back": "The Wi-Fi network came back at {when}, and its devices began reconnecting.",
+  "brief.event.the_wi_fi_recovery_stalled_at": "The Wi-Fi recovery stalled at {when} as devices dropped again, so the outage continues.",
+  "brief.event.the_wi_fi_network_came_back_2": "The Wi-Fi network came back at {when}.",
+  "brief.event.the_mqtt_broker_went_down_at": "The MQTT broker went down at {when}.",
+  "brief.event.was_handled_at_somebody_re_paired": "{who} was handled at {when}: somebody re-paired, reconfigured or removed it.",
+  "brief.event.had_its_battery_replaced_or_recharged": "{who} had its battery replaced or recharged at {when}. Its history starts again from that day.",
+  "brief.event.a_pairing_window_opened_at": "A {title} pairing window opened at {when}.",
+  "brief.event.the_pairing_window_closed_at": "The {title} pairing window closed at {when}.",
+  "brief.event.maintenance_mode_was_opened_at": "Maintenance Mode was opened at {when}.",
+  "brief.event.maintenance_mode_ended_at": "Maintenance Mode ended at {when}.",
+  "brief.event.home_assistant_did_not_shut_down": "Home Assistant did not shut down cleanly at {stopped}.",
+  "brief.event.learned_statistics_were_reset_at": "Learned statistics were reset at {when}.",
+  "brief.event.the_system_clock_was_reset_or": "The system clock was reset, or the system paused, at {when}; every device's activity clock restarted then.",
+  "brief.event.the_file_that_holds_each_device": "The file that holds each device's last report time was missing or damaged when Device Sentinel started at {when}: every device clock restarted then. Nothing learned was lost.",
+  "brief.event.settings_changed_at": "Settings changed at {when}.",
+  "brief.event.changed_from_its_device_page_at": "{who}: changed from its device page, at {when}.",
+  "brief.event.excluded_when_first_seen_at": "{title}: excluded when first seen, at {when}.",
+  "brief.event.found_at_and_usually_excluded_the": "{title}: found at {when} and usually excluded; the Recommendations tab has a card for it.",
+  "brief.event.changed_from_its_integration_page_at": "{title}: changed, from its integration page, at {when}.",
+  "brief.event.changed_from_the_integrations_tab_at": "{title}: changed, from the Integrations tab, at {when}.",
+  "brief.event.changed_from_the_recommendations_tab_at": "{title}: changed, from the Recommendations tab, at {when}.",
+  "brief.event.learned_history_was_erased_at_a": "Learned history was erased at {when}. A copy of storage was written first.",
+  "brief.event.storage_repaired_itself_at": "Storage repaired itself at {when}: {detail}",
+  "brief.event.the_storage_check_found_a_record": "The storage check found a record that does not fit at {when}.",
+  "brief.event.breaking_change_alkaline_batteries_and_lithium": "Breaking change: alkaline batteries, and lithium and rechargeable batteries, now have their own low thresholds, 10% and 20% respectively. Changes can be made in Settings, Low Battery.",
+  "brief.event.the_system_restarted_at_after_with": "The system restarted at {when} after {held} with nothing listening.",
+  "brief.event.is_offline_its_connection_went_down": "{device} is offline: its {title} connection went down at {when}.",
+  "brief.event.connection_removed_from_home_assistant": "{device}'s {title} connection was removed from Home Assistant at {when}, while down.",
+  "brief.event.device_sentinel_stopped_watching_at_while": "Device Sentinel stopped watching {device} at {when}, while its {title} connection was down.",
+  "brief.event.is_back_its_connection_came_back": "{device} is back: its {title} connection came back at {when} after {held}.",
+  "brief.event.is_back_its_connection_came_back_2": "{device} is back: its {title} connection came back at {when}.",
+  "brief.event.stopped_updating_at_2": {
+    "one": "{title} stopped updating at {when}, {count} device.",
+    "other": "{title} stopped updating at {when}, {count} devices."
+  },
+  "brief.event.was_updating_again_at_after": "{title} was updating again at {when}, after {held}.",
+  "brief.event.was_updating_again_at": "{title} was updating again at {when}.",
+  "brief.event.the_integration_came_back_at_after": "The {title} integration came back at {when} after {held}.",
+  "brief.event.the_integration_came_back_at": "The {title} integration came back at {when}.",
+  "brief.event.the_bridge_came_back_at_after": "The {title} bridge came back at {when} after {held}.",
+  "brief.event.the_bridge_came_back_at": "The {title} bridge came back at {when}.",
+  "brief.event.the_wi_fi_network_went_down_2": {
+    "one": "The Wi-Fi network went down at {when}, {count} device behind it.",
+    "other": "The Wi-Fi network went down at {when}, {count} devices behind it."
+  },
+  "brief.event.the_wi_fi_outage_ended_at": "The Wi-Fi outage ended at {when} after {held}.",
+  "brief.event.the_wi_fi_outage_ended_at_2": "The Wi-Fi outage ended at {when}.",
+  "brief.event.the_wi_fi_network_came_back_3": {
+    "one": "The Wi-Fi network came back at {when} after {held}, {count} device behind it.",
+    "other": "The Wi-Fi network came back at {when} after {held}, {count} devices behind it."
+  },
+  "brief.event.the_wi_fi_network_came_back_4": "The Wi-Fi network came back at {when} after {held}.",
+  "brief.event.the_wi_fi_network_came_back_5": {
+    "one": "The Wi-Fi network came back at {when}, {count} device behind it.",
+    "other": "The Wi-Fi network came back at {when}, {count} devices behind it."
+  },
+  "brief.event.the_mqtt_broker_came_back_at": "The MQTT broker came back at {when} after {held}.",
+  "brief.event.the_mqtt_broker_came_back_at_2": "The MQTT broker came back at {when}.",
+  "brief.event.a_device": "A device",
+  "brief.event.had_its_battery_replaced_or_recharged_2": "{who} had its battery replaced or recharged at {when}, {before}% to {after}%. Its history starts again from that day.",
+  "brief.event.the_pairing_window_closed_at_after": "The {title} pairing window closed at {when} after {held}.",
+  "brief.event.maintenance_mode_ended_at_after": "Maintenance Mode ended at {when} after {held} ({detail}).",
+  "brief.event.maintenance_mode_ended_at_after_2": "Maintenance Mode ended at {when} after {held}.",
+  "brief.event.maintenance_mode_ended_at_2": "Maintenance Mode ended at {when} ({detail}).",
+  "brief.event.home_assistant_did_not_shut_down_2": "Home Assistant did not shut down cleanly at {stopped}: {held} went unwatched and {count} devices had their silence timers restarted.",
+  "brief.event.home_assistant_did_not_shut_down_3": "Home Assistant did not shut down cleanly at {stopped}: {held} went unwatched.",
+  "brief.event.home_assistant_did_not_shut_down_4": "Home Assistant did not shut down cleanly at {stopped}: {count} devices had their silence timers restarted.",
+  "brief.event.learned_statistics_were_reset_at_for": "Learned statistics were reset at {when} for {detail}.",
+  "brief.event.the_system_clock_was_reset_or_2": "The system clock was reset, or the system paused, at {when} ({detail}); every device's activity clock restarted then.",
+  "brief.event.the_file_that_holds_each_device_2": "The file that holds each device's last report time was missing or damaged when Device Sentinel started at {when}: {count} device clocks restarted then. Nothing learned was lost.",
+  "brief.event.settings_changed_at_2": "Settings changed at {when}: {labels}.",
+  "brief.event.from_device_page": "{who}: {detail}, at {when}.",
+  "brief.event.from_its_integration_page_at": "{title}: {detail}, from its integration page, at {when}.",
+  "brief.event.from_the_integrations_tab_at": "{title}: {detail}, from the Integrations tab, at {when}.",
+  "brief.event.from_the_recommendations_tab_at": "{title}: {detail}, from the Recommendations tab, at {when}.",
+  "brief.event.learned_history_was_erased_at_a_2": "Learned history was erased at {when} ({detail}). A copy of storage was written first.",
+  "brief.event.storage_repaired_itself_at_2": "Storage repaired itself at {when}.",
+  "brief.event.the_storage_check_found_a_record_2": "The storage check found a record that does not fit at {when} ({detail}).",
+  "brief.event.is_offline_its_connection_failed_to": "{device} is offline: its {title} connection failed to start at {when}.",
+  "brief.cell.as_expected": "{text}, as expected",
+  "brief.cell.with_worst": "{text}, {worst}",
+  "brief.event.updated_devices_at_once": {
+    "one": "{title} updated {count} device at once",
+    "other": "{title} updated {count} devices at once"
+  },
+  "brief.event.updated_all_at_once": "{title} updated its devices all at once",
+  "brief.cell.the_system": "The system",
+  "brief.cell.changed_from_its_device_page": "changed from its device page",
+  "brief.cell.reloaded_device_sentinel": "reloaded Device Sentinel",
+  "brief.cell.stopped_updating": "{title} stopped updating",
+  "brief.cell.integration_went_down": "{title} integration went down",
+  "brief.cell.integration_removed_while_down": "{title} integration removed while down",
+  "brief.cell.integration_no_longer_watched_while_down": "{title} integration no longer watched while down",
+  "brief.cell.bridge_went_down": "{title} bridge went down",
+  "brief.cell.wi_fi_network_went_down": "Wi-Fi network went down",
+  "brief.cell.wi_fi_network_came_back_devices": "Wi-Fi network came back, devices reconnecting",
+  "brief.cell.wi_fi_recovery_stalled_outage_continues": "Wi-Fi recovery stalled, outage continues",
+  "brief.cell.mqtt_broker_went_down": "MQTT broker went down",
+  "brief.cell.pairing_window_opened": "{title} pairing window opened",
+  "brief.cell.maintenance_mode_opened": "maintenance mode opened",
+  "brief.cell.maintenance_mode_ended": "maintenance mode ended",
+  "brief.cell.handled_by_hand": "handled by hand",
+  "brief.cell.battery_replaced_or_recharged": "battery replaced or recharged",
+  "brief.cell.excluded_when_first_seen": "{title} excluded when first seen",
+  "brief.cell.recommended_for_exclusion": "{title} recommended for exclusion",
+  "brief.cell.changed_from_its_integration_page": "{title} changed, from its integration page",
+  "brief.cell.changed_from_the_integrations_tab": "{title} changed, from the Integrations tab",
+  "brief.cell.changed_from_the_recommendations_tab": "{title} changed, from the Recommendations tab",
+  "brief.cell.battery_thresholds_set_by_battery_type": "battery thresholds set by battery type",
+  "brief.cell.settings_changed_by_the_update": "settings changed by the update",
+  "brief.cell.offline_its_connection_went_down": "{device} offline, its {title} connection went down",
+  "brief.cell.no_longer_watched_while_its_connection": "{device} no longer watched while its {title} connection was down",
+  "brief.cell.restarted_unwatched": "restarted, {held} unwatched",
+  "brief.cell.restarted": "restarted",
+  "brief.cell.updating_again_after": "{title} updating again after {held}",
+  "brief.cell.updating_again": "{title} updating again",
+  "brief.cell.wi_fi_network_came_back_after": "Wi-Fi network came back after {held}",
+  "brief.cell.wi_fi_network_came_back": "Wi-Fi network came back",
+  "brief.cell.pairing_window_closed_after": "{title} pairing window closed after {held}",
+  "brief.cell.pairing_window_closed": "{title} pairing window closed",
+  "brief.cell.maintenance_mode_ended_after": "maintenance mode ended after {held} ({detail})",
+  "brief.cell.maintenance_mode_ended_after_2": "maintenance mode ended after {held}",
+  "brief.cell.maintenance_mode_ended_2": "maintenance mode ended ({detail})",
+  "brief.cell.unclean_shutdown": "unclean shutdown ({detail})",
+  "brief.cell.unclean_shutdown_2": "unclean shutdown",
+  "brief.cell.re_paired_by_hand": "re-paired by hand",
+  "brief.cell.reconfigured_by_hand": "reconfigured by hand",
+  "brief.cell.removed_by_hand": "removed by hand",
+  "brief.cell.battery_replaced_or_recharged_to": "battery replaced or recharged ({before}% to {after}%)",
+  "brief.cell.learned_statistics_reset": "learned statistics reset ({detail})",
+  "brief.cell.learned_statistics_reset_2": "learned statistics reset",
+  "brief.cell.system_clock_reset_or_paused": "system clock reset or paused ({detail})",
+  "brief.cell.system_clock_reset_or_paused_2": "system clock reset or paused",
+  "brief.cell.activity_clocks_file_missing_or_damaged": "activity clocks file missing or damaged ({detail})",
+  "brief.cell.activity_clocks_file_missing_or_damaged_2": "activity clocks file missing or damaged",
+  "brief.cell.settings_changed": "settings changed ({labels})",
+  "brief.cell.settings_changed_2": "settings changed",
+  "brief.cell.from_its_integration_page": "{title} {detail}, from its integration page",
+  "brief.cell.from_the_integrations_tab": "{title} {detail}, from the Integrations tab",
+  "brief.cell.from_the_recommendations_tab": "{title} {detail}, from the Recommendations tab",
+  "brief.cell.learned_history_erased": "learned history erased ({detail})",
+  "brief.cell.learned_history_erased_2": "learned history erased",
+  "brief.cell.storage_check": "storage check: {detail}",
+  "brief.cell.storage_check_found_a_record_that": "storage check found a record that does not fit",
+  "brief.cell.storage_repaired": "storage repaired: {detail}",
+  "brief.cell.storage_repaired_itself": "storage repaired itself",
+  "brief.cell.offline_its_connection_failed_to_start": "{device} offline, its {title} connection failed to start",
+  "brief.cell.back_its_connection_came_back_after": "{device} back, its {title} connection came back after {held}",
+  "brief.cell.back_its_connection_came_back": "{device} back, its {title} connection came back",
+  "brief.cell.integration_came_back_after": "{title} integration came back after {held}",
+  "brief.cell.integration_came_back": "{title} integration came back",
+  "brief.cell.bridge_came_back_after": "{title} bridge came back after {held}",
+  "brief.cell.bridge_came_back": "{title} bridge came back",
+  "brief.cell.wi_fi_outage_ended_after": "Wi-Fi outage ended after {held}",
+  "brief.cell.wi_fi_outage_ended": "Wi-Fi outage ended",
+  "brief.cell.mqtt_broker_came_back_after": "MQTT broker came back after {held}",
+  "brief.cell.mqtt_broker_came_back": "MQTT broker came back",
+  "brief.cell.connection_removed_while_down": "{device}'s {title} connection removed while down",
+  "brief.worst.no_devices_sentence": "No devices went down.",
+  "brief.worst.no_devices": "no devices went down",
+  "brief.worst.went_down_sentence": {
+    "one": "{count} device went down.",
+    "other": "{count} devices went down."
+  },
+  "brief.worst.went_down": {
+    "one": "{count} device went down",
+    "other": "{count} devices went down"
+  },
+  "brief.worst.its_one_sentence": "Its one device went down.",
+  "brief.worst.its_one": "its one device went down",
+  "brief.worst.none_of_its_sentence": {
+    "one": "None of its {count} device went down.",
+    "other": "None of its {count} devices went down."
+  },
+  "brief.worst.of_its_sentence": {
+    "one": "{worst} of its {count} device went down.",
+    "other": "{worst} of its {count} devices went down."
+  },
+  "brief.worst.none_of": {
+    "one": "none of {count} device went down",
+    "other": "none of {count} devices went down"
+  },
+  "brief.worst.of": {
+    "one": "{worst} of {count} device went down",
+    "other": "{worst} of {count} devices went down"
+  },
+  "brief.told.shut_down_cleanly": "The system was shut down cleanly and was unwatched for {span}, ending {when}.",
+  "brief.told.expected": "{text} It was expected.",
+  "brief.told.bridge_came_back": "The {title} bridge came back at {when}.",
+  "brief.told.bridge_down_for": "The {title} bridge was down for {span}, from {start} until {until}.",
+  "brief.told.broker_came_back": "The MQTT broker came back at {when}.",
+  "brief.told.broker_down_for": "The MQTT broker was down for {span}, from {start} until {until}.",
+  "brief.told.settings_changed_at": "Settings changed at {when}: {listed}.",
+  "brief.told.settings_changed_times": {
+    "one": "Settings changed {count} times: {listed}.",
+    "other": "Settings changed {count} times: {listed}."
+  },
+  "brief.told.bursts_at": {
+    "one": "{title} updated its devices all at once {count} times at {first}.",
+    "other": "{title} updated its devices all at once {count} times at {first}."
+  },
+  "brief.told.bursts_at_most": {
+    "one": "{title} updated its devices all at once {count} times at {first}, as many as {most} at a time.",
+    "other": "{title} updated its devices all at once {count} times at {first}, as many as {most} at a time."
+  },
+  "brief.told.bursts_between": {
+    "one": "{title} updated its devices all at once {count} times between {first} and {last}.",
+    "other": "{title} updated its devices all at once {count} times between {first} and {last}."
+  },
+  "brief.told.bursts_between_most": {
+    "one": "{title} updated its devices all at once {count} times between {first} and {last}, as many as {most} at a time.",
+    "other": "{title} updated its devices all at once {count} times between {first} and {last}, as many as {most} at a time."
+  },
+  "brief.told.silent_since": "{name} has been silent since {since}, {span} so far.",
+  "brief.told.silent_since_restarts": {
+    "one": "{name} has been silent since {since}, {span} so far, across {count} restart.",
+    "other": "{name} has been silent since {since}, {span} so far, across {count} restarts."
+  },
+  "brief.flap.twice": "twice",
+  "brief.flap.times": {
+    "one": "{count} time",
+    "other": "{count} times"
+  },
+  "brief.flap.drop_outs_stopped": "{name} had short drop-outs {times}, and each time they stopped.",
+  "brief.flap.drop_outs_still": "{name} had short drop-outs {times}, and still has them.",
+  "brief.flap.recovered_each_time": "{name} {went} {times} and recovered each time.",
+  "brief.flap.recovered_each_time_total": "{name} {went} {times} and recovered each time, {state} for {span} in total.",
+  "brief.flap.still": "{name} {went} {times} and is still {state}.",
+  "brief.flap.still_total": "{name} {went} {times} and is still {state}, {state} for {span} in total.",
+  "brief.flap.became_unavailable": "became unavailable",
+  "brief.flap.unavailable": "unavailable",
+  "brief.flap.signal_railed": "signal railed",
+  "brief.flap.railed": "railed",
+  "brief.flap.battery_read_low": "battery read low",
+  "brief.flap.low": "low",
+  "brief.flap.battery_fell": "battery fell",
+  "brief.flap.falling": "falling",
+  "brief.flap.had_drop_outs": "had short drop-outs",
+  "brief.flap.having_drop_outs": "having short drop-outs",
+  "brief.flap.went_silent": "went silent",
+  "brief.flap.silent": "silent",
+  "brief.flood.an_intervention": "an intervention",
+  "brief.flood.never_reported_revived": {
+    "one": "{count} devices were listed as never reported at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices were listed as never reported at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.never_reported_during": {
+    "one": "{count} devices were listed as never reported at {when}, during {clause}, and recovered.",
+    "other": "{count} devices were listed as never reported at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.never_reported_with": {
+    "one": "{count} devices were listed as never reported at {when}, with {clause}.",
+    "other": "{count} devices were listed as never reported at {when}, with {clause}."
+  },
+  "brief.flood.low_battery_revived": {
+    "one": "{count} devices reported a low battery at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices reported a low battery at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.low_battery_during": {
+    "one": "{count} devices reported a low battery at {when}, during {clause}, and recovered.",
+    "other": "{count} devices reported a low battery at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.low_battery_with": {
+    "one": "{count} devices reported a low battery at {when}, with {clause}.",
+    "other": "{count} devices reported a low battery at {when}, with {clause}."
+  },
+  "brief.flood.railed_revived": {
+    "one": "{count} devices had a signal railed at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices had a signal railed at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.railed_during": {
+    "one": "{count} devices had a signal railed at {when}, during {clause}, and recovered.",
+    "other": "{count} devices had a signal railed at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.railed_with": {
+    "one": "{count} devices had a signal railed at {when}, with {clause}.",
+    "other": "{count} devices had a signal railed at {when}, with {clause}."
+  },
+  "brief.flood.falling_revived": {
+    "one": "{count} devices had a battery running down at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices had a battery running down at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.falling_during": {
+    "one": "{count} devices had a battery running down at {when}, during {clause}, and recovered.",
+    "other": "{count} devices had a battery running down at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.falling_with": {
+    "one": "{count} devices had a battery running down at {when}, with {clause}.",
+    "other": "{count} devices had a battery running down at {when}, with {clause}."
+  },
+  "brief.flood.drop_outs_revived": {
+    "one": "{count} devices started having short drop-outs at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices started having short drop-outs at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.drop_outs_during": {
+    "one": "{count} devices started having short drop-outs at {when}, during {clause}, and recovered.",
+    "other": "{count} devices started having short drop-outs at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.drop_outs_with": {
+    "one": "{count} devices started having short drop-outs at {when}, with {clause}.",
+    "other": "{count} devices started having short drop-outs at {when}, with {clause}."
+  },
+  "brief.flood.stopped_reporting_revived": {
+    "one": "{count} devices stopped reporting at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices stopped reporting at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.stopped_reporting_during": {
+    "one": "{count} devices stopped reporting at {when}, during {clause}, and recovered.",
+    "other": "{count} devices stopped reporting at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.stopped_reporting_with": {
+    "one": "{count} devices stopped reporting at {when}, with {clause}.",
+    "other": "{count} devices stopped reporting at {when}, with {clause}."
+  },
+  "brief.flood.unavailable_revived": {
+    "one": "{count} devices became unavailable at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices became unavailable at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.unavailable_during": {
+    "one": "{count} devices became unavailable at {when}, during {clause}, and recovered.",
+    "other": "{count} devices became unavailable at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.unavailable_with": {
+    "one": "{count} devices became unavailable at {when}, with {clause}.",
+    "other": "{count} devices became unavailable at {when}, with {clause}."
+  },
+  "brief.flood.unknown_revived": {
+    "one": "{count} devices went unknown at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices went unknown at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.unknown_during": {
+    "one": "{count} devices went unknown at {when}, during {clause}, and recovered.",
+    "other": "{count} devices went unknown at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.unknown_with": {
+    "one": "{count} devices went unknown at {when}, with {clause}.",
+    "other": "{count} devices went unknown at {when}, with {clause}."
+  },
+  "brief.flood.word_revived": {
+    "one": "{count} devices {word} at {when} and recovered, revived by {clause}.",
+    "other": "{count} devices {word} at {when} and recovered, revived by {clause}."
+  },
+  "brief.flood.word_during": {
+    "one": "{count} devices {word} at {when}, during {clause}, and recovered.",
+    "other": "{count} devices {word} at {when}, during {clause}, and recovered."
+  },
+  "brief.flood.word_with": {
+    "one": "{count} devices {word} at {when}, with {clause}.",
+    "other": "{count} devices {word} at {when}, with {clause}."
+  }
 }
