@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: General (GEN)
 
-*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.6. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 24 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what Device Sentinel is and what it watches, the Home Assistant it needs, how light it must stay, the words and names it uses on each surface, and what it writes to the log. Which devices are watched is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). Device names, types and power are under [DEV](Rulebook__04_DEV_Device_Identity.md). The Problem List's own rules are under [LIST](Rulebook__11_LIST_Problem_List.md).
 
@@ -90,3 +90,15 @@ This section covers what Device Sentinel is and what it watches, the Home Assist
 - **The words stay English:** only the order of day and month, and 12 or 24 hours, follow the choice. Month names are English. A 24-hour time carries its leading zero: 05:34.
 
 *Proof:* [`test_clock.py`](../tests/test_clock.py), [`check_clock.js`](../tools/panel_checks/check_clock.js), [`check_more_menu.js`](../tools/panel_checks/check_more_menu.js).
+
+### GEN-12 Words Come From the Phrase Files
+
+**The words Device Sentinel writes for people come from its phrase files, one per language in `phrases/`, each phrase under a key. The code holds keys, never the words. Only English ships until the whole line is moved; the settings and repair cards keep Home Assistant's own `translations/` files.**
+- **A key names its block by its first word:** `brief.` and `push.` for the Daily Brief and the pushes, `dashboard.` for the dashboard page, `common.` for words several use, anything else for the rest. Each block is one translation workbook per language; a `common.` phrase goes in the Brief and Pushes workbook.
+- **A sentence with a number is one phrase with its plural forms,** never English pieces joined around the number, because other languages change the sentence around it. `{count}` is the number; the forms are those of the language's plural rules (one and other in English, French and Spanish; one, few, many and other in Polish).
+- **A phrase or form a language leaves out reads English,** with English's own plural rules, so a partial translation is safe to ship.
+- **The brief, pushes, Problem List and reports are written in the house's language,** the owner's (GEN-11). The dashboard is written in the language of the person looking at it.
+- **The files are read once, off the event loop,** when Device Sentinel starts.
+- **The checks:** every key the code uses is in the English file, no English key sits unused, every language's phrases carry English's placeholders, and every plural carries the forms its language needs. A test language, the English wrapped in ⟦ ⟧ with each value in ⟨ ⟩ and filed as Russian, runs every phrase through the readers; it never ships.
+
+*Proof:* [`test_phrases.py`](../tests/test_phrases.py), [`test_clock.py`](../tests/test_clock.py).
