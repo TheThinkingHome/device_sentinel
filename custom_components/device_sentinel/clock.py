@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: clock.py, Version: 0.30.4 (2026-11-23)
+# File: clock.py, Version: 0.30.7 (2026-11-24)
 
 """Times and dates as the house's owner chose to read them (rule GEN-11).
 
@@ -17,14 +17,16 @@ follows the owner account's choices. A choice only a browser can make,
 "use system locale", falls back to the language, and so does a house
 with no owner or no choice saved.
 
-The words stay English, as the rest of the text is: only the order of
-day and month, and 12 or 24 hours, follow the choice.
+The words, month names and AM and PM, come from the phrase files in the
+house's language (rule GEN-12); only English ships, so they read English.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
+
+from . import phrases
 
 # Languages whose clock is 12 hours, as Home Assistant's own "use my
 # language" reads them; every other language reads 24 hours.
@@ -36,6 +38,16 @@ HOUR12_LANGUAGES = frozenset({
 MDY_LANGUAGES = frozenset({"en", "en-US", "en-PH", "es-US", "fil"})
 YMD_LANGUAGES = frozenset({"zh-Hans", "zh-Hant", "zh-TW", "ja", "ko", "hu", "lt", "sv", "fr-CA", "en-CA", "en-ZA", "eu"})
 ORDERS = ("DMY", "MDY", "YMD")
+MONTHS = (
+    "common.month.1", "common.month.2", "common.month.3", "common.month.4",
+    "common.month.5", "common.month.6", "common.month.7", "common.month.8",
+    "common.month.9", "common.month.10", "common.month.11", "common.month.12",
+)
+MONTHS_SHORT = (
+    "common.month_short.1", "common.month_short.2", "common.month_short.3", "common.month_short.4",
+    "common.month_short.5", "common.month_short.6", "common.month_short.7", "common.month_short.8",
+    "common.month_short.9", "common.month_short.10", "common.month_short.11", "common.month_short.12",
+)
 
 _SOURCE: dict[str, Any] = {"store": None, "language": "en"}
 
@@ -58,6 +70,11 @@ def _choices() -> dict[str, Any]:
 def _language() -> str:
     chosen = _choices().get("language")
     return chosen if isinstance(chosen, str) and chosen else str(_SOURCE.get("language") or "en")
+
+
+def language() -> str:
+    """The house's language: the owner's choice, or Home Assistant's own."""
+    return _language()
 
 
 def hour12() -> bool:
@@ -87,7 +104,8 @@ def time_text(moment: datetime, seconds: bool = False) -> str:
     """5:34 AM, or 05:34; with seconds, 5:34:07 AM or 05:34:07."""
     tail = f":{moment.second:02d}" if seconds else ""
     if hour12():
-        return f"{moment.hour % 12 or 12}:{moment.minute:02d}{tail} {'AM' if moment.hour < 12 else 'PM'}"
+        half = phrases.say("common.am" if moment.hour < 12 else "common.pm")
+        return f"{moment.hour % 12 or 12}:{moment.minute:02d}{tail} {half}"
     return f"{moment.hour:02d}:{moment.minute:02d}{tail}"
 
 
@@ -100,7 +118,7 @@ def minute_text(minute: int) -> str:
 def day_text(moment: date | datetime, year: bool = False, long: bool = False) -> str:
     """Nov 23, 23 Nov or 2026 Nov 23; with the year, Nov 23, 2026 or
     23 Nov 2026; long spells the month out."""
-    month = moment.strftime("%B" if long else "%b")
+    month = phrases.say((MONTHS if long else MONTHS_SHORT)[moment.month - 1])
     way = order()
     if way == "YMD":
         return f"{moment.year} {month} {moment.day}" if year else f"{month} {moment.day}"
@@ -117,4 +135,4 @@ def day_time_text(moment: datetime, seconds: bool = False) -> str:
 def report_text(moment: datetime) -> str:
     """A date and time as a report's heading says it: the month spelled out,
     the year, then the time."""
-    return f"{day_text(moment, year=True, long=True)} at {time_text(moment)}"
+    return phrases.say("common.day_at_time", day=day_text(moment, year=True, long=True), time=time_text(moment))
