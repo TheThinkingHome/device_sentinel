@@ -1,4 +1,4 @@
-<!-- File: tools/panel_checks/README.md, Version: 0.30.6 (2026-11-24) -->
+<!-- File: tools/panel_checks/README.md, Version: 0.30.8 (2026-11-24) -->
 # Panel Checks
 
 The dashboard is JavaScript, which pytest cannot run. These checks load
@@ -17,6 +17,7 @@ written rather than what it proves).
 | Every tab | `check_more_menu.js` | 26 | the ⋮ menu at the top right, in place of the gear: Send Brief, Regenerate Reports and Settings, Send Brief greyed with its reason when no target can take the brief, the note saying what happened, and the menu closing on a press elsewhere or Escape |
 | Networks | `check_watch_wifi.js` | 24 | the closed "Watch your Wi-Fi" section under the networks: shown for an unused adapter or no adapter, with the steps or the adapter advice inside, and never on a Container or Core install, before the first scan, or once Wi-Fi is watched |
 | Every tab | `check_clock.js` | 26 | times and dates follow the viewer's Home Assistant profile as Home Assistant stores it, never the browser: 12 or 24 hours, the order of day and month, "use system locale" following the language, Home Assistant's own time zone and day whatever the profile or browser says, Home Assistant's language when nothing is saved, the profile read again when it changes, English words, and a device page on 24 hours |
+| Every tab | `check_phrases.js` | 31 | the page's words from the phrase files: the tabs, the ⋮ menu and the dates in English as before; in the test language every one marked, a number taking its Russian plural form, what the language leaves out read in English, and the page drawn again when the profile's language changes |
 | Every tab | `check_tables_hold_columns.js` | 14 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
