@@ -1,4 +1,4 @@
-# File: tools/translation/make_test_language.py, Version: 0.30.7 (2026-11-24)
+# File: tools/translation/make_test_language.py, Version: 0.30.10 (2026-11-25)
 """Make the test language from the English phrase file (rule GEN-12).
 
 Every phrase is the English wrapped in markers no keyboard types:
@@ -8,8 +8,10 @@ phrase file. A phrase that changes with a number gets one form per
 plural category of the language it is filed as, each naming its form:
 ⟦few: ⟨3⟩ devices⟧. Filed as Russian it has Polish's four forms.
 
-It never ships. Usage:
-    python3 -I make_test_language.py phrases/en.json out.json [ru]
+It ships as phrases/test.json, made with ru, and a house reads in it only
+while an empty file named test_language sits in its device_sentinel folder.
+Usage:
+    python3 -I make_test_language.py phrases/en.json phrases/test.json [ru]
 """
 
 import json
