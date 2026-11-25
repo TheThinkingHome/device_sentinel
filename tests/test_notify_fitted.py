@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_notify_fitted.py, Version: 0.28.12 (2026-11-11)
+# File: tests/test_notify_fitted.py, Version: 0.30.11 (2026-11-25)
 
 """Each message as its notify action can take it (rule NOTE-02).
 
@@ -15,7 +15,8 @@
   each member and keeps a member's refusal to itself, so a Signal or
   Slack member would get nothing and nobody would know.
 - Telegram is told the message is plain text, since its Markdown refuses
-  a message whose underscores do not pair, and gets no more than it takes.
+  a message whose underscores do not pair, and gets no more than it takes,
+  in any language, whatever the length of the note that ends a cut message.
 - Any other action gets the message as it is, and is asked again without
   data if it refuses it.
 """
@@ -69,6 +70,29 @@ async def test_telegram_gets_plain_text_no_longer_than_it_takes(hass: HomeAssist
     long = fitted_for(hass, "notify.telegram_home", {**BRIEF, "message": "y" * 9000})
     assert long["data"] == {"parse_mode": "plain_text"}
     assert len(long["message"]) <= TELEGRAM_LONGEST
+
+
+async def test_telegram_keeps_its_limit_in_a_language_with_a_long_note(hass: HomeAssistant, tmp_path):
+    import json
+    import shutil
+
+    from custom_components.device_sentinel import clock, phrases
+
+    _services(hass)
+    english = fitted_for(hass, "notify.telegram_home", {**BRIEF, "message": "y" * 9000})["message"]
+    # The English cut is where it always was.
+    assert english == "y" * (TELEGRAM_LONGEST - 60) + "\n\n(The rest is in Home Assistant.)"
+    shutil.copy(phrases.FOLDER / "en.json", tmp_path / "en.json")
+    (tmp_path / "fr.json").write_text(json.dumps({"push.telegram_rest": "z" * 300}), encoding="utf-8")
+    phrases.load(tmp_path)
+    clock.bind(None, "fr")
+    try:
+        long = fitted_for(hass, "notify.telegram_home", {**BRIEF, "message": "y" * 9000})
+        assert len(long["message"]) <= TELEGRAM_LONGEST
+        assert long["message"].endswith("z" * 300)
+    finally:
+        phrases.load()
+        clock.bind(None, "en")
 
 
 async def test_any_other_action_gets_it_as_it_is(hass: HomeAssistant):

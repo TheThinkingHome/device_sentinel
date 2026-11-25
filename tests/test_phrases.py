@@ -1,16 +1,18 @@
 """The words come from the phrase files (rule GEN-12).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_phrases.py, Version: 0.30.10 (2026-11-25)
+# File: test_phrases.py, Version: 0.30.11 (2026-11-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 Every key the code uses is in the English file and no English key sits
 unused. Every language's phrases carry English's placeholders and the
 plural forms the language needs. A phrase or form a language leaves out
-reads English, by English's own plural rules. The test language, the
-English in markers, ships, and a house uses it only while the empty
-file test_language sits in its device_sentinel folder. The test language, the
+reads English, by English's own plural rules, and so does one a file
+writes as something other than text. A device's name, an odd language
+code or an odd number never breaks a phrase. The test language ships,
+and a house uses it only while the empty file test_language sits in its
+device_sentinel folder. The test language, the
 English wrapped in markers and filed as Russian, runs every phrase
 through the reader.
 """
@@ -18,6 +20,7 @@ through the reader.
 import ast
 import importlib.util
 import json
+import math
 import re
 import shutil
 from datetime import date, datetime
@@ -291,6 +294,65 @@ async def test_the_brief_reads_in_the_owners_language(hass, test_language):
     assert "⟦From ⟨" in text and "(in progress).⟧" in text
 
 
+def test_a_phrase_a_file_writes_as_something_other_than_text_reads_english(tmp_path):
+    shutil.copy(FOLDER / "en.json", tmp_path / "en.json")
+    (tmp_path / "ru.json").write_text(json.dumps({
+        "common.am": 5, "common.pm": ["PM"], "common.month.1": None,
+        "common.month.2": {"one": "only one"}, "common.month.3": {"few": 3, "other": ["x"]},
+        "push.flap.minutes": {"one": "RU {count}"},
+    }), encoding="utf-8")
+    phrases.load(tmp_path)
+    assert [phrases.say(key, "ru") for key in ("common.am", "common.pm", "common.month.1", "common.month.2", "common.month.3")] == [
+        "AM", "PM", "January", "February", "March"]
+    # A plural with no form for the number reads English's form, never the key.
+    assert phrases.say("push.flap.minutes", "ru", count=5) == "5 minutes"
+    assert phrases.say("push.flap.minutes", "ru", count=21) == "RU 21"
+
+
+@pytest.mark.parametrize("count", [0, -1, 1.5, math.nan, math.inf, -math.inf, 10**30, True, "3", "x", None, [2]])
+def test_an_odd_number_never_stops_a_phrase(count):
+    for language in NEEDED:
+        assert phrases.plural(language, count) in phrases.FORMS
+        assert isinstance(phrases.say("push.summary.more_devices", language, count=count), str)
+
+
+def test_a_name_is_written_exactly_as_given():
+    name = "Kitchen {time} ⟦x⟧ ⟨y⟩ **b** [l](http://e.x) {count}\nline"
+    assert phrases.say("push.action.muted", "en", name=name, time="3:04 PM") == f"{name} was muted at 3:04 PM."
+    outer = phrases.say("push.line.one_problem", "en", name=name, clause=phrases.say("push.line.frozen"))
+    assert outer == f"{name} stopped reporting."
+
+
+@pytest.mark.parametrize("code", ["../en", "en/../ru", "", "EN", "..", "/etc/passwd", "ru\x00", "pt-BR-x-y"])
+def test_a_language_code_reaches_no_file(tmp_path, code):
+    shutil.copy(FOLDER / "en.json", tmp_path / "en.json")
+    (tmp_path / "ru.json").write_text(json.dumps({"common.am": "RU"}), encoding="utf-8")
+    phrases.load(tmp_path)
+    assert phrases.say("common.am", code) == "AM"
+
+
+def test_a_translation_that_leaves_out_a_placeholder_still_reads(tmp_path):
+    shutil.copy(FOLDER / "en.json", tmp_path / "en.json")
+    (tmp_path / "ru.json").write_text(json.dumps({"push.fault.words": "Что-то случилось.", "push.card.name_words": "{nope}"}), encoding="utf-8")
+    phrases.load(tmp_path)
+    assert phrases.say("push.fault.words", "ru", time="3 PM", name="A", words="b") == "Что-то случилось."
+    assert phrases.say("push.card.name_words", "ru", name="A", words="b") == "{nope}"
+
+
+def test_a_number_takes_the_languages_decimal_sign(tmp_path):
+    from custom_components.device_sentinel.durations import compact_span, long_span
+
+    shutil.copy(FOLDER / "en.json", tmp_path / "en.json")
+    (tmp_path / "fr.json").write_text(json.dumps({"common.decimal_sign": ",", "common.span.hours": "{value} h"}), encoding="utf-8")
+    phrases.load(tmp_path)
+    clock.bind(None, "fr")
+    assert compact_span(4.1 * 3600) == "4,1 h"
+    assert compact_span(45) == "45s"
+    assert long_span(11 * 86400) == "a week and a half"
+    clock.bind(None, "en")
+    assert compact_span(4.1 * 3600) == "4.1h"
+
+
 def _house(tmp_path, flag: bool, extra: dict | None = None):
     """The shipped files, and the house's flag where asked for."""
     words = tmp_path / "phrases"
@@ -387,3 +449,66 @@ async def test_setup_reads_the_houses_flag(hass, tmp_path):
         os.remove(marker)
         phrases.load(None, marker)
     assert not phrases.testing()
+
+
+async def test_a_changed_setting_is_named_in_the_houses_language(hass):
+    """The brief names a changed setting by its label on the settings
+    screen, in the house's language where its settings file has one."""
+    coord = await setup_coordinator(hass)
+    clock.bind(None, "fr")
+    assert coord._changed_labels("low_threshold_alkaline,low_threshold_alkaline") == "Piles alcalines"
+    # A key the French file leaves out reads English, and an unknown key as itself.
+    labels = coord._option_label_cache
+    missing = next((key for key in labels["en"] if key not in labels["fr"]), None)
+    if missing is not None:
+        assert coord._changed_labels(missing) == labels["en"][missing]
+    assert coord._changed_labels("no_such_option") == "no_such_option"
+    clock.bind(None, "en")
+    assert coord._changed_labels("low_threshold_alkaline") == "Alkaline Batteries"
+
+
+def _unmarked(text: str) -> str:
+    """What a test-language text says outside its ⟦ ⟧ marks."""
+    depth, kept = 0, []
+    for ch in text:
+        if ch == "⟦":
+            depth += 1
+        elif ch == "⟧":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            kept.append(ch)
+    return "".join(kept).strip(" .")
+
+
+async def test_the_notes_and_stored_words_of_a_real_brief_move(hass, test_language):
+    """What a real house's brief showed still in English: the
+    Zigbee2MQTT and ZHA notes beside a device, a recovery's stored cause
+    and how Maintenance Mode ended. In English they read as before; in the
+    test language each is marked."""
+    from custom_components.device_sentinel.interventions import zha_phrase
+
+    coord = await setup_coordinator(hass)
+    now = 1_000_000.0
+    view = {"available": True, "last_seen": now - 600, "timeout_seconds": 21600, "class": "battery"}
+    clock.bind(None, "en")
+    phrases.load(test_language)
+    assert zha_phrase(view, now) == (
+        "ZHA reads it as available and last heard from it 10 minutes ago. "
+        "ZHA waits 6 hours of silence from a battery device before it marks it unavailable."
+    )
+    assert coord._cause_words("pairing window") == "pairing window"
+    assert coord._cause_words("no intervention recorded") == "no intervention recorded"
+    assert coord._ended_words("ended by hand") == "ended by hand"
+    clock.bind(type("Owner", (), {"data": {"language": {"language": "ru"}}})(), "en")
+    for text in (
+        zha_phrase(view, now),
+        zha_phrase({"available": False}, now),
+        coord._cause_words("pairing window"),
+        coord._cause_words("no intervention recorded"),
+        coord._cause_words("handled at the device"),
+        coord._ended_words("expired"),
+        coord._ended_words("ended by hand"),
+    ):
+        assert text.startswith("⟦") and _unmarked(text) == "", text
+    # A cause no release wrote by name stays as stored.
+    assert coord._cause_words("something else") == "something else"
