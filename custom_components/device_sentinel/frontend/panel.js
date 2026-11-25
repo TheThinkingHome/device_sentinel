@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.6 (2026-11-24)
+// File: panel.js, Version: 0.30.8 (2026-11-24)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -22,25 +22,37 @@
 // and change marker too. A page that finds it is not the file being
 // served says so and offers a reload.
 
+// The tabs by their code names, which are also their addresses; the
+// names on screen come from the phrase files (rule GEN-12).
 const TABS = [
-  "Daily Brief",
-  "Battery Trends",
-  "Signal Trends",
-  "Integrations",
-  "Networks",
-  "Devices",
-  "Recommendations",
+  "daily-brief",
+  "battery-trends",
+  "signal-trends",
+  "integrations",
+  "networks",
+  "devices",
+  "recommendations",
 ];
+const TAB_WORDS = {
+  "daily-brief": "dashboard.tab.daily_brief",
+  "battery-trends": "dashboard.tab.battery_trends",
+  "signal-trends": "dashboard.tab.signal_trends",
+  "integrations": "dashboard.tab.integrations",
+  "networks": "dashboard.tab.networks",
+  "devices": "dashboard.tab.devices",
+  "recommendations": "dashboard.tab.recommendations",
+};
+const tabName = (tab) => t(TAB_WORDS[tab] || tab);
 // Each tab's own address under the panel, so the back button, a reload
 // and a bookmark all return to the tab that was on screen. The Daily
 // Brief owns the bare address, so opening the dashboard lands on it.
 // The tabs Simple leaves off the row (rule DASH-04).
-const SIMPLE_HIDDEN_TABS = ["Signal Trends"];
-const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
+const SIMPLE_HIDDEN_TABS = ["signal-trends"];
+const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name]));
 // The addresses of tabs folded into others, so a bookmark or a back link
 // still lands: Classification into Devices, the Problem List into the
 // Daily Brief (rules DASH-02, DASH-12).
-const OLD_SLUGS = { "classification": "Devices", "problem-list": "Daily Brief" };
+const OLD_SLUGS = { "classification": "devices", "problem-list": "daily-brief" };
 const TAB_BY_SLUG = { ...Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name])), ...OLD_SLUGS };
 // A type, an area or a battery nobody has set, the same words on
 // every tab, and the Type filters' choice for it (rules DEV-10, DASH-04).
@@ -90,8 +102,8 @@ const FIRMWARE_Z2M_WORDS = ", select OTA, tick the box that selects all devices 
   + "every device of this model. Each one then offers its update.";
 // Where a "Not Set" was set from, by tab, so the brief says so
 // (rule BRIEF-07).
-const TAB_SOURCE = { "Battery Trends": "battery_trends", "Devices": "devices_tab",
-  "Recommendations": "recommendations" };
+const TAB_SOURCE = { "battery-trends": "battery_trends", "devices": "devices_tab",
+  "recommendations": "recommendations" };
 // A battery level as reported, the same on every surface: "15.5%",
 // "16%", one decimal at most, rounded half up on the number as
 // written, as battery_level.py does, so the brief, the device page and
@@ -187,7 +199,7 @@ const modelPaceWords = (pace) => {
   const said = levelNumber(pace.pace_low) === "0" && range !== high ? `up to ${high}` : range;
   return `Others of this model lose ${said} ${said === "1" || said === "up to 1" ? "point" : "points"} a week.`;
 };
-const BUILT = new Set(["Daily Brief", "Battery Trends", "Signal Trends", "Integrations", "Networks", "Devices", "Recommendations"]);
+const BUILT = new Set(TABS);
 const PROBLEM_FILTERS = [
   ["all", "All"],
   ["open", "Open"],
@@ -439,9 +451,9 @@ function span(seconds) {
 }
 
 // The header's and the printout's moment: the time, then the date in
-// long form, both in the browser's language, so a printout or a screen
-// capture says which day it shows. The language decides the order, the
-// month's name and the 12 or 24 hour clock.
+// long form, so a printout or a screen capture says which day it shows.
+// The profile decides the order and the 12 or 24 hour clock (rule
+// GEN-11).
 function longMoment(date) {
   const time = fmtTime(date);
   return `${time}, ${fmtDay(date, { year: true, month: "long" })}`;
@@ -569,13 +581,58 @@ const STATE_COLOURS = {
   down: "var(--error-color, #db4437)",
 };
 
+// The page's words, from Device Sentinel's phrase files: the viewer's
+// language and English beside it, so a phrase or form a language leaves
+// out reads English, by English's own plural rules (rule GEN-12).
+const WORDS = { asked: null, language: "en", own: {}, english: {} };
+function pluralForm(language, count) {
+  try {
+    return new Intl.PluralRules(language).select(Number(count));
+  } catch (err) {
+    return Number(count) === 1 ? "one" : "other";
+  }
+}
+function fillWords(text, values) {
+  return String(text).replace(/\{([a-z_]+)\}/g, (all, name) => (name in values ? String(values[name]) : all));
+}
+function t(key, values = {}) {
+  const count = values.count === undefined ? 0 : values.count;
+  let language = WORDS.language;
+  let entry = WORDS.own[key];
+  if (entry === undefined) {
+    language = "en";
+    entry = WORDS.english[key];
+  }
+  if (entry === undefined) return key;
+  if (entry && typeof entry === "object") {
+    let text = entry[pluralForm(language, count)];
+    if (text === undefined) text = entry.other;
+    if (text === undefined && language !== "en") {
+      const english = WORDS.english[key] || {};
+      text = english[pluralForm("en", count)];
+      if (text === undefined) text = english.other;
+    }
+    entry = text === undefined ? key : text;
+  }
+  return fillWords(entry, values);
+}
+const MONTH_WORDS = {
+  long: ["common.month.1", "common.month.2", "common.month.3", "common.month.4", "common.month.5", "common.month.6",
+    "common.month.7", "common.month.8", "common.month.9", "common.month.10", "common.month.11", "common.month.12"],
+  short: ["common.month_short.1", "common.month_short.2", "common.month_short.3", "common.month_short.4",
+    "common.month_short.5", "common.month_short.6", "common.month_short.7", "common.month_short.8",
+    "common.month_short.9", "common.month_short.10", "common.month_short.11", "common.month_short.12"],
+};
+const WEEKDAY_WORDS = ["common.weekday_short.0", "common.weekday_short.1", "common.weekday_short.2",
+  "common.weekday_short.3", "common.weekday_short.4", "common.weekday_short.5", "common.weekday_short.6"];
+
 // Times and dates as the person looking chose them in their Home
 // Assistant profile, read from what Home Assistant stores and never from
 // the browser: 12 or 24 hours and the order of day and month as chosen,
 // or as the language has it. A choice that points to the browser follows
 // the language, the time zone is Home Assistant's own, and a person with
-// no choice saved follows Home Assistant's language. The words stay
-// English, as the rest of the page is (rule GEN-11).
+// no choice saved follows Home Assistant's language (rule GEN-11). The
+// month and day names come from the phrase files (rule GEN-12).
 const CLOCK = { locale: {}, houseLanguage: undefined, serverZone: undefined, cache: {} };
 function clockLanguage() {
   return CLOCK.locale.language || CLOCK.houseLanguage || "en";
@@ -623,22 +680,25 @@ function clockOrderUncached() {
 function clockZone() {
   return CLOCK.serverZone;
 }
-// The parts of a moment in the chosen zone, the month named in English.
-// One formatter per zone and month length, as a table of hundreds of rows
-// would otherwise build one per cell.
+// The parts of a moment in the chosen zone, the month and the weekday
+// named from the phrase files. One formatter per zone, as a table of
+// hundreds of rows would otherwise build one per cell.
 const CLOCK_FORMATS = new Map();
 function clockParts(date, month = "short", zone = true) {
   const d = date instanceof Date ? date : new Date(date);
   const timeZone = zone ? clockZone() : undefined;
-  const key = `${timeZone || ""}|${month}`;
+  const key = timeZone || "";
   let format = CLOCK_FORMATS.get(key);
   if (!format) {
-    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month,
-      day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric",
+      day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
     CLOCK_FORMATS.set(key, format);
   }
   const parts = {};
   for (const part of format.formatToParts(d)) parts[part.type] = part.value;
+  const number = Number(parts.month);
+  parts.month = t((MONTH_WORDS[month] || MONTH_WORDS.short)[number - 1]);
+  parts.weekday = t(WEEKDAY_WORDS[new Date(Date.UTC(Number(parts.year), number - 1, Number(parts.day))).getUTCDay()]);
   return parts;
 }
 // A count grouped as the viewer's language groups it: 12,345 or 12.345.
@@ -669,7 +729,7 @@ function fmtTime(date, seconds = false) {
   const p = clockParts(date);
   const hour = Number(p.hour) % 24;
   const tail = seconds ? `:${p.second}` : "";
-  return clockHour12() ? `${hour % 12 || 12}:${p.minute}${tail} ${hour < 12 ? "AM" : "PM"}`
+  return clockHour12() ? `${hour % 12 || 12}:${p.minute}${tail} ${t(hour < 12 ? "common.am" : "common.pm")}`
     : `${String(hour).padStart(2, "0")}:${p.minute}${tail}`;
 }
 // Nov 23, 23 Nov or 2026 Nov 23; with a weekday, a year, or the month
@@ -994,7 +1054,7 @@ class DeviceSentinelPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._tab = "Daily Brief";
+    this._tab = "daily-brief";
     // The dashboard's own Simple or Advanced switch (rule DASH-03): held
     // only while this page is open, and nothing is kept in the browser.
     // Leaving the dashboard, closing the window or reloading returns it
@@ -1064,7 +1124,7 @@ class DeviceSentinelPanel extends HTMLElement {
     CLOCK.houseLanguage = hass && hass.config ? hass.config.language : undefined;
     CLOCK.serverZone = hass && hass.config ? hass.config.time_zone : undefined;
     const locale = JSON.stringify((hass && hass.locale) || {});
-    if (this._started && locale !== this._localeSeen) this._refresh();
+    if (this._started && this._refreshButton && locale !== this._localeSeen) this._refresh();
     this._localeSeen = locale;
     if (this._menu) this._menu.hass = hass;
     // Entity states arrive with every hass update, so the readings on
@@ -1072,9 +1132,12 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._readingCells && this._view && this._view.kind === "device") this._paintReadings();
     if (!this._started) {
       this._started = true;
-      this._build();
-      this._refresh();
-      this._subscribe();
+      // The words first, so the page is drawn in its own language.
+      this._loadWords().finally(() => {
+        this._build();
+        this._refresh();
+        this._subscribe();
+      });
     }
   }
 
@@ -1121,8 +1184,8 @@ class DeviceSentinelPanel extends HTMLElement {
       window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: true } }));
     }
     const tab = next
-      ? rootTab(from) || ({ device: "Devices", network: "Networks" }[next.kind] || "Integrations")
-      : TAB_BY_SLUG[slug] || "Daily Brief";
+      ? rootTab(from) || ({ device: "devices", network: "networks" }[next.kind] || "integrations")
+      : TAB_BY_SLUG[slug] || "daily-brief";
     const changed = JSON.stringify(next) !== JSON.stringify(this._view)
       || tab !== this._tab || from !== this._from;
     // The Send to Battery Notes offer belongs to the save that made it:
@@ -1131,8 +1194,8 @@ class DeviceSentinelPanel extends HTMLElement {
     // Coming to the Daily Brief from another tab opens it on today, so
     // the Problem List is the one to act on; Back, Forward, Refresh and a
     // page opened from the brief and left keep the day shown (rule DASH-02).
-    const toToday = !next && tab === "Daily Brief" && Boolean(this._briefDay)
-      && (this._tab !== "Daily Brief" || askedToday);
+    const toToday = !next && tab === "daily-brief" && Boolean(this._briefDay)
+      && (this._tab !== "daily-brief" || askedToday);
     this._view = next;
     this._tab = tab;
     this._from = from;
@@ -1147,7 +1210,7 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _tabPath(name) {
-    return name === "Daily Brief" ? this._base : `${this._base}/${TAB_SLUG[name]}`;
+    return name === "daily-brief" ? this._base : `${this._base}/${TAB_SLUG[name]}`;
   }
 
   // The address of the page on screen, as an origin for the next one:
@@ -1202,7 +1265,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._deviceSearch = "";
     this._deviceNetwork = key || "";
     this._deviceGroup = group || "";
-    this._navigate(this._tabPath("Devices"));
+    this._navigate(this._tabPath("devices"));
   }
 
   // The link at the top of a device or integration page: the page it
@@ -1215,7 +1278,7 @@ class DeviceSentinelPanel extends HTMLElement {
         : origin.kind === "network" ? this._networkName(origin.id) : this._deviceName(origin.id);
       return this._link(`\u2039 ${name}`, `${this._base}${origin.path}`);
     }
-    return this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab));
+    return this._link(`\u2039 ${tabName(this._tab)}`, this._tabPath(this._tab));
   }
 
   _integrationName(domain) {
@@ -1314,6 +1377,37 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _call(message) {
     return this._hass.callWS(message);
+  }
+
+  // The viewer's time and date choices as Home Assistant stores them,
+  // none saved or none readable leaving Home Assistant's own (rule
+  // GEN-11), then the words of their language when it changed (rule
+  // GEN-12). True when the words changed.
+  async _loadWords() {
+    const stored = await this._call({ type: "frontend/get_user_data", key: "language" }).catch(() => null);
+    const chosen = stored && stored.value;
+    CLOCK.locale = chosen && typeof chosen === "object" ? chosen : {};
+    const language = clockLanguage();
+    if (WORDS.asked === language) return false;
+    const answer = await this._call({ type: "device_sentinel/phrases", language }).catch(() => null);
+    if (!answer) return false;
+    WORDS.asked = language;
+    WORDS.language = answer.language || "en";
+    WORDS.own = answer.phrases || {};
+    WORDS.english = answer.english || {};
+    return true;
+  }
+
+  // The words drawn once, at the top, in the viewer's language again.
+  _paintWords() {
+    if (!this._moreMenu) return;
+    this._sendBriefItem.textContent = t("dashboard.menu.send_brief");
+    this._sendBriefWhy.textContent = t("dashboard.menu.send_brief_no_target");
+    const [, , regenerate, settings] = this._moreMenu.children;
+    regenerate.textContent = t("dashboard.menu.regenerate_reports");
+    settings.textContent = t("dashboard.menu.settings");
+    for (const name of ["aria-label", "title"]) this._moreButton.setAttribute(name, t("dashboard.menu.more"));
+    for (const name of ["aria-label", "title"]) this._printButton.setAttribute(name, t("dashboard.menu.print"));
   }
 
   async _subscribe() {
@@ -1423,28 +1517,29 @@ class DeviceSentinelPanel extends HTMLElement {
     // to open the options dialog itself (rule DASH-20). The toolbar is
     // not part of a printout.
     const printer = el("button", {
-      class: "print", type: "button", title: "Print this page", "aria-label": "Print this page",
+      class: "print", type: "button", title: t("dashboard.menu.print"), "aria-label": t("dashboard.menu.print"),
       onclick: () => this._print(),
     }, svg("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true" },
       svg("path", { d: PRINTER_PATH, fill: "currentColor" })));
     const settings = "/config/integrations/integration/device_sentinel";
-    this._sendBriefItem = el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("send_brief") }, "Send Brief");
-    this._sendBriefWhy = el("div", { class: "why", hidden: "" }, "No Daily Brief target is set. Choose one in Notifications and Daily Brief.");
+    this._sendBriefItem = el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("send_brief") }, t("dashboard.menu.send_brief"));
+    this._sendBriefWhy = el("div", { class: "why", hidden: "" }, t("dashboard.menu.send_brief_no_target"));
     this._moreMenu = el("div", { class: "menu", role: "menu", hidden: "" },
       this._sendBriefItem, this._sendBriefWhy,
-      el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("regenerate_reports") }, "Regenerate Reports"),
+      el("button", { type: "button", role: "menuitem", onclick: () => this._menuAction("regenerate_reports") }, t("dashboard.menu.regenerate_reports")),
       el("button", { type: "button", role: "menuitem", class: "settings", onclick: () => {
         this._toggleMore(false);
         this._navigate(settings);
-      } }, "Settings"));
-    this._moreButton = el("button", { class: "dots", type: "button", "aria-label": "More actions", "aria-haspopup": "menu",
-      "aria-expanded": "false", title: "More actions", onclick: (ev) => { ev.stopPropagation(); this._toggleMore(); } },
+      } }, t("dashboard.menu.settings")));
+    this._moreButton = el("button", { class: "dots", type: "button", "aria-label": t("dashboard.menu.more"), "aria-haspopup": "menu",
+      "aria-expanded": "false", title: t("dashboard.menu.more"), onclick: (ev) => { ev.stopPropagation(); this._toggleMore(); } },
     svg("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true" },
       svg("path", { d: DOTS_PATH, fill: "currentColor" })));
     this._moreNote = el("span", { class: "note", role: "status" });
     const more = el("div", { class: "more" }, this._moreButton, this._moreMenu);
     root.addEventListener("click", () => this._toggleMore(false));
     root.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this._toggleMore(false); });
+    this._printButton = printer;
     root.append(el("div", { class: "toolbar" }, this._menu, "Device Sentinel", this._moreNote, printer, more));
 
     this._statusRow = el("section", { class: "status", "aria-label": "Status" });
@@ -1455,7 +1550,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // One highlighted button (rule DASH-02): the recommendations not yet
     // acknowledged, hidden at zero, opening the tab.
     this._activeButton = el("button", { class: "pill active-recs", type: "button", hidden: "",
-      onclick: () => this._navigate(this._tabPath("Recommendations")) }, "");
+      onclick: () => this._navigate(this._tabPath("recommendations")) }, "");
     const actions = el(
       "section",
       { class: "actions", "aria-label": "Actions" },
@@ -1504,7 +1599,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ? this._page.identity.name
       : this._view && (this._view.kind === "integration" || this._view.kind === "network") && this._page && this._page.name
         ? this._page.name
-        : this._tab;
+        : tabName(this._tab);
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.setAttribute("tabindex", "-1");
@@ -1553,8 +1648,9 @@ class DeviceSentinelPanel extends HTMLElement {
     this._refreshButton.disabled = true;
     this._areaChoices = null;
     try {
+      if (await this._loadWords()) this._paintWords();
       const askedDay = this._briefDay;
-      const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal, stored] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
@@ -1567,12 +1663,7 @@ class DeviceSentinelPanel extends HTMLElement {
         this._call({ type: "device_sentinel/brief", ...(askedDay ? { day: askedDay } : {}) }),
         this._call({ type: "device_sentinel/battery_trends" }),
         this._call({ type: "device_sentinel/signal_trends" }),
-        // The viewer's time and date choices as Home Assistant stores
-        // them; none saved, or none readable, leaves Home Assistant's own.
-        this._call({ type: "frontend/get_user_data", key: "language" }).catch(() => null),
       ]);
-      const chosen = stored && stored.value;
-      CLOCK.locale = chosen && typeof chosen === "object" ? chosen : {};
       // A day stepped to while this was asked keeps its own brief.
       const shownBrief = askedDay === this._briefDay ? brief : (this._snapshot && this._snapshot.brief) || brief;
       this._snapshot = { status, classification, problems, recommendations, integrations, networks, devices, brief: shownBrief, battery, signal, at: new Date() };
@@ -1750,13 +1841,13 @@ class DeviceSentinelPanel extends HTMLElement {
           // The Daily Brief pressed while it shows a past day opens today,
           // with the list to act on (rule DASH-02).
           if (!this._view && name === this._tab) {
-            if (name === "Daily Brief" && this._briefDay) this._briefGo(null);
+            if (name === "daily-brief" && this._briefDay) this._briefGo(null);
             return;
           }
           this._navigate(this._tabPath(name));
         },
-      }, name === "Recommendations" && this._snapshot && this._activeRecs()
-        ? `Recommendations (${this._activeRecs()})` : name)));
+      }, name === "recommendations" && this._snapshot && this._activeRecs()
+        ? t("dashboard.tab.recommendations_waiting", { count: this._activeRecs() }) : tabName(name))));
   }
 
   _paintPane() {
@@ -1764,7 +1855,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // its own.
     this._pane.classList.toggle("devpage", Boolean(this._view && this._view.kind === "device"));
     if (!BUILT.has(this._tab)) {
-      this._pane.replaceChildren(el("p", { class: "muted" }, `${this._tab} arrives in a later release.`));
+      this._pane.replaceChildren(el("p", { class: "muted" }, `${tabName(this._tab)} arrives in a later release.`));
       return;
     }
     if (!this._snapshot) {
@@ -1774,12 +1865,12 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._view && this._view.kind === "integration") this._paintIntegrationPage();
     else if (this._view && this._view.kind === "network") this._paintNetworkPage();
     else if (this._view && this._view.kind === "device") this._paintDevicePage();
-    else if (this._tab === "Networks") this._paintNetworks();
-    else if (this._tab === "Devices") this._paintDevices();
-    else if (this._tab === "Daily Brief") this._paintBrief();
-    else if (this._tab === "Battery Trends") this._paintBatteryTrends();
-    else if (this._tab === "Signal Trends") this._paintSignalTrends();
-    else if (this._tab === "Integrations") this._paintIntegrations();
+    else if (this._tab === "networks") this._paintNetworks();
+    else if (this._tab === "devices") this._paintDevices();
+    else if (this._tab === "daily-brief") this._paintBrief();
+    else if (this._tab === "battery-trends") this._paintBatteryTrends();
+    else if (this._tab === "signal-trends") this._paintSignalTrends();
+    else if (this._tab === "integrations") this._paintIntegrations();
     else this._paintRecommendations();
   }
 
@@ -2004,7 +2095,7 @@ class DeviceSentinelPanel extends HTMLElement {
         box.checked = !box.checked;
       }
       this._paintActiveRecs();
-      if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+      if (this._tab === "recommendations" && !this._view) this._paintRecommendations();
     });
     // Ticked, it says it can be taken back (rule REC-07).
     return el("label", { class: "ack small", ...(on ? { title: ACK_HOVER } : {}) }, box, " Acknowledged");
@@ -2015,7 +2106,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // A whole card ticked counts nothing until it is unticked or opened
     // (rule REC-07).
     const unticked = card.card_acknowledged ? 0 : card.devices.filter((row) => !row.acknowledged).length;
-    const from = TAB_SLUG.Recommendations;
+    const from = TAB_SLUG.recommendations;
     const nameLink = (row) => el("a", {
       href: `${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`,
       onclick: (ev) => {
@@ -2219,7 +2310,7 @@ class DeviceSentinelPanel extends HTMLElement {
         box.checked = !box.checked;
       }
       this._paintActiveRecs();
-      if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+      if (this._tab === "recommendations" && !this._view) this._paintRecommendations();
     });
     return el("label", { class: "ack small", ...(on ? { title: ACK_HOVER } : {}) }, box, " Acknowledged");
   }
@@ -2241,7 +2332,7 @@ class DeviceSentinelPanel extends HTMLElement {
       if (opened && card && card.card_acknowledged) {
         await this._untickCard(card);
         this._paintActiveRecs();
-        if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+        if (this._tab === "recommendations" && !this._view) this._paintRecommendations();
       }
     });
     return details;
@@ -3351,7 +3442,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     // A reply that comes after another tab, a page or another day was
     // chosen is not drawn over it.
-    if (this._briefDay !== day || this._view || this._tab !== "Daily Brief") return;
+    if (this._briefDay !== day || this._view || this._tab !== "daily-brief") return;
     this._paintBrief();
   }
 
@@ -3454,9 +3545,9 @@ class DeviceSentinelPanel extends HTMLElement {
     const active = this._activeRecs();
     const recLine = active ? el("p", { class: "recline", style: "margin:0" },
       `${active} active ${active === 1 ? "recommendation" : "recommendations"} on the `,
-      el("a", { href: this._tabPath("Recommendations"), onclick: (ev) => {
+      el("a", { href: this._tabPath("recommendations"), onclick: (ev) => {
         ev.preventDefault();
-        this._navigate(this._tabPath("Recommendations"));
+        this._navigate(this._tabPath("recommendations"));
       } }, "Recommendations tab"), ".") : null;
     // A detected battery replacement names the device and the day
     // (rule REC-10), as the emailed Brief does.
@@ -4363,7 +4454,7 @@ class DeviceSentinelPanel extends HTMLElement {
             : row.window ? span(row.window) : row.window_learning ? el("span", { class: "muted" }, "learning") : "")])))));
     // The order a device page's Previous and Next follow: the rows shown
     // that have a page here.
-    this._keepList(TAB_SLUG.Devices, rows.filter((row) => watching || row.page).map((row) => row.device_id));
+    this._keepList(TAB_SLUG.devices, rows.filter((row) => watching || row.page).map((row) => row.device_id));
     const typeFilter = el("select", { class: "actinput", "aria-label": "Show one type",
       onchange: (ev) => { this._deviceType = ev.target.value; this._paintDevices(); } },
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
@@ -4512,7 +4603,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     // Opened from another page whose list is gone, as after a reload,
     // it steps nowhere rather than into devices that page never showed.
-    if (this._from && this._from !== TAB_SLUG.Devices && this._view) return [this._view.id];
+    if (this._from && this._from !== TAB_SLUG.devices && this._view) return [this._view.id];
     return rows.map((row) => row.device_id);
   }
 
@@ -5193,7 +5284,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // An integration's mute is changed on the Integrations tab (rule MUTE-03).
       parts.push(source.startsWith("integration: ")
         ? el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it on the `,
-          this._link("Integrations tab", this._tabPath("Integrations")), ".")
+          this._link("Integrations tab", this._tabPath("integrations")), ".")
         : el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it in `,
           this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
     }
@@ -5221,7 +5312,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(false) }, "Cancel the exclusion")));
     } else if (ex.integration) {
       parts.push(el("div", { class: "actnote" }, "Its integration is excluded. Change it on the ",
-        this._link("Integrations tab", this._tabPath("Integrations")), "."));
+        this._link("Integrations tab", this._tabPath("integrations")), "."));
     } else {
       // A watched device shows only the button (rule MUTE-03).
       parts.push(
@@ -6608,9 +6699,8 @@ class DeviceSentinelPanel extends HTMLElement {
     this._moreButton.setAttribute("aria-expanded", show ? "true" : "false");
   }
 
-  // The clock in the person's Home Assistant profile, as Home Assistant
-  // itself reads it: 12 or 24 as chosen, or what their language, or this
-  // browser, uses (rule BRIEF-18).
+  // The clock in the person's Home Assistant profile: 12 or 24 as
+  // chosen, or as their language has it (rules BRIEF-18, GEN-11).
   _hour12() {
     return clockHour12();
   }
@@ -6620,7 +6710,7 @@ class DeviceSentinelPanel extends HTMLElement {
   async _menuAction(action) {
     this._toggleMore(false);
     const send = action === "send_brief";
-    this._moreNote.textContent = send ? "Sending the brief…" : "Regenerating the reports…";
+    this._moreNote.textContent = t(send ? "dashboard.menu.sending" : "dashboard.menu.regenerating");
     try {
       const call = { type: "device_sentinel/action", action };
       if (send) call.hour12 = this._hour12();
@@ -6628,16 +6718,15 @@ class DeviceSentinelPanel extends HTMLElement {
       if (send) {
         const sent = result && Number(result.sent) || 0;
         const targets = result && Number(result.targets) || 0;
-        this._moreNote.textContent = targets === 0
-          ? "Not sent: no Daily Brief target is set."
-          : sent === 0 ? "Not sent: no target took it. See Settings, System, Logs."
-          : sent === targets ? `Sent to ${sent} ${sent === 1 ? "target" : "targets"}.`
-          : `Sent to ${sent} of ${targets} targets.`;
+        this._moreNote.textContent = targets === 0 ? t("dashboard.menu.not_sent_no_target")
+          : sent === 0 ? t("dashboard.menu.not_sent_none_took_it")
+          : sent === targets ? t("dashboard.menu.sent", { count: sent })
+          : t("dashboard.menu.sent_some", { sent, count: targets });
       } else {
-        this._moreNote.textContent = "Reports regenerated.";
+        this._moreNote.textContent = t("dashboard.menu.regenerated");
       }
     } catch (err) {
-      this._moreNote.textContent = `That did not work: ${err.message || err.code || err}`;
+      this._moreNote.textContent = t("dashboard.menu.failed", { error: err.message || err.code || err });
     }
     // The note says what happened, then makes way.
     clearTimeout(this._moreNoteTimer);
