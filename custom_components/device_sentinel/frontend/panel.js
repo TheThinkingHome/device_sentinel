@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.10 (2026-11-25)
+// File: panel.js, Version: 0.30.11 (2026-11-25)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -593,28 +593,30 @@ function pluralForm(language, count) {
   }
 }
 function fillWords(text, values) {
-  return String(text).replace(/\{([a-z_]+)\}/g, (all, name) => (name in values ? String(values[name]) : all));
+  // Only the values given, never anything an object inherits: a
+  // "{constructor}" in a phrase stays as written.
+  return String(text).replace(/\{([a-z_]+)\}/g, (all, name) =>
+    (Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : all));
+}
+function textOf(entry, language, count) {
+  // A phrase's text for a number in its own file's language, or
+  // undefined where the file holds no usable text for it.
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+    const form = entry[pluralForm(language, count)];
+    entry = typeof form === "string" ? form : entry.other;
+  }
+  return typeof entry === "string" ? entry : undefined;
 }
 function t(key, values = {}) {
+  // The viewer's language, then English: a phrase, or the form a
+  // number needs, that a file leaves out or writes as something other
+  // than text reads in English, never as the key or a stray value.
   const count = values.count === undefined ? 0 : values.count;
-  let language = WORDS.language;
-  let entry = WORDS.own[key];
-  if (entry === undefined) {
-    language = "en";
-    entry = WORDS.english[key];
-  }
-  if (entry === undefined) return key;
-  if (entry && typeof entry === "object") {
-    let text = entry[pluralForm(language, count)];
-    if (text === undefined) text = entry.other;
-    if (text === undefined && language !== "en") {
-      const english = WORDS.english[key] || {};
-      text = english[pluralForm("en", count)];
-      if (text === undefined) text = english.other;
-    }
-    entry = text === undefined ? key : text;
-  }
-  return fillWords(entry, values);
+  const own = Object.prototype.hasOwnProperty.call(WORDS.own, key) ? WORDS.own[key] : undefined;
+  const english = Object.prototype.hasOwnProperty.call(WORDS.english, key) ? WORDS.english[key] : undefined;
+  let text = textOf(own, WORDS.language, count);
+  if (text === undefined) text = textOf(english, "en", count);
+  return fillWords(text === undefined ? key : text, values);
 }
 const MONTH_WORDS = {
   long: ["common.month.1", "common.month.2", "common.month.3", "common.month.4", "common.month.5", "common.month.6",
