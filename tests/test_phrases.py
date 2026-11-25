@@ -1,7 +1,7 @@
 """The words come from the phrase files (rule GEN-12).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_phrases.py, Version: 0.30.9 (2026-11-25)
+# File: test_phrases.py, Version: 0.30.10 (2026-11-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,6 +9,8 @@ Every key the code uses is in the English file and no English key sits
 unused. Every language's phrases carry English's placeholders and the
 plural forms the language needs. A phrase or form a language leaves out
 reads English, by English's own plural rules. The test language, the
+English in markers, ships, and a house uses it only while the empty
+file test_language sits in its device_sentinel folder. The test language, the
 English wrapped in markers and filed as Russian, runs every phrase
 through the reader.
 """
@@ -32,7 +34,8 @@ CODE = ROOT / "custom_components" / "device_sentinel"
 FOLDER = CODE / "phrases"
 KEY = re.compile(r"^(?:brief|push|dashboard|common|[a-z_]+)\.[a-z0-9_.]+$")
 NEEDED = {"en": {"one", "other"}, "fr": {"one", "other"}, "es": {"one", "other"},
-          "pl": {"one", "few", "many", "other"}, "ru": {"one", "few", "many", "other"}}
+          "pl": {"one", "few", "many", "other"}, "ru": {"one", "few", "many", "other"},
+          "test": {"one", "few", "many", "other"}}
 
 
 def _english():
@@ -66,7 +69,8 @@ def _literals():
 @pytest.fixture(autouse=True)
 def _real_files_after():
     yield
-    phrases.load()
+    # The shipped files, and no house in testing mode.
+    phrases.load(None, "")
     clock.bind(None, "en")
 
 
@@ -80,8 +84,13 @@ def test_language(tmp_path):
     return tmp_path
 
 
-def test_only_english_ships():
-    assert sorted(p.name for p in FOLDER.glob("*.json")) == ["en.json"]
+def test_only_english_and_the_test_language_ship():
+    assert sorted(p.name for p in FOLDER.glob("*.json")) == ["en.json", "test.json"]
+
+
+def test_the_shipped_test_language_is_todays_english():
+    shipped = json.loads((FOLDER / "test.json").read_text(encoding="utf-8"))
+    assert shipped == _maker().make(_english(), "ru")
 
 
 def test_english_file_is_well_formed():
@@ -280,3 +289,101 @@ async def test_the_brief_reads_in_the_owners_language(hass, test_language):
     assert "| ⟦stopped reporting⟧ |" in text
     assert "⟦one: ⟨1⟩ device needs attention.⟧" in text
     assert "⟦From ⟨" in text and "(in progress).⟧" in text
+
+
+def _house(tmp_path, flag: bool, extra: dict | None = None):
+    """The shipped files, and the house's flag where asked for."""
+    words = tmp_path / "phrases"
+    words.mkdir(exist_ok=True)
+    for path in FOLDER.glob("*.json"):
+        shutil.copy(path, words / path.name)
+    for name, data in (extra or {}).items():
+        (words / name).write_text(json.dumps(data), encoding="utf-8")
+    marker = tmp_path / "test_language"
+    if flag:
+        marker.write_text("", encoding="utf-8")
+    elif marker.exists():
+        marker.unlink()
+    phrases.load(words, str(marker))
+    return marker
+
+
+def test_a_house_without_the_flag_reads_english(tmp_path):
+    _house(tmp_path, flag=False)
+    clock.bind(None, "ru")
+    assert not phrases.testing()
+    assert phrases.say("common.month.11") == "November"
+    assert phrases.page_words("ru")["phrases"] == {}
+
+
+def test_the_flag_puts_the_house_in_the_test_language(tmp_path):
+    _house(tmp_path, flag=True)
+    clock.bind(None, "en")
+    assert phrases.testing()
+    assert clock.language() == phrases.TEST
+    assert phrases.say("common.month.11") == "⟦November⟧"
+    # Russian's plural rules: 21 is "one", 22 is "few".
+    assert phrases.say("brief.now.need_attention", count=21).startswith("⟦one: ")
+    assert phrases.say("brief.now.need_attention", count=22).startswith("⟦few: ")
+    # A viewer whose profile is Russian sees the dashboard in it; an
+    # English viewer sees English.
+    russian = phrases.page_words("ru")
+    assert russian["language"] == "ru" and russian["phrases"]["dashboard.tab.daily_brief"] == "⟦Daily Brief⟧"
+    assert phrases.page_words("en")["phrases"] == {}
+
+
+def test_the_test_language_keeps_the_owners_clock(tmp_path):
+    class _Owner:
+        data = {"language": {"language": "en", "time_format": "language"}}
+
+    _house(tmp_path, flag=True)
+    clock.bind(_Owner(), "en")
+    # 12 hours, as English reads, not the test language's default.
+    assert clock.hour12()
+
+
+def test_removing_the_flag_reads_english_again(tmp_path):
+    marker = _house(tmp_path, flag=True)
+    assert phrases.testing()
+    marker.unlink()
+    phrases.load(tmp_path / "phrases", str(marker))
+    clock.bind(None, "en")
+    assert not phrases.testing()
+    assert phrases.say("common.month.11") == "November"
+
+
+def test_a_real_russian_file_never_switches_the_house(tmp_path):
+    _house(tmp_path, flag=False, extra={"ru.json": {"common.month.11": "ноябрь"}})
+    clock.bind(None, "en")
+    assert phrases.say("common.month.11") == "November"
+    assert phrases.page_words("ru")["phrases"]["common.month.11"] == "ноябрь"
+
+
+def test_the_flag_without_the_test_file_reads_english(tmp_path):
+    words = tmp_path / "phrases"
+    words.mkdir()
+    shutil.copy(FOLDER / "en.json", words / "en.json")
+    marker = tmp_path / "test_language"
+    marker.write_text("", encoding="utf-8")
+    phrases.load(words, str(marker))
+    clock.bind(None, "en")
+    assert not phrases.testing()
+    assert phrases.say("common.month.11") == "November"
+
+
+async def test_setup_reads_the_houses_flag(hass, tmp_path):
+    """The flag is read where Home Assistant keeps the house's files."""
+    import os
+
+    folder = hass.config.path("device_sentinel")
+    os.makedirs(folder, exist_ok=True)
+    marker = os.path.join(folder, phrases.TEST_FLAG)
+    with open(marker, "w", encoding="utf-8"):
+        pass
+    try:
+        await setup_coordinator(hass)
+        assert phrases.testing()
+    finally:
+        os.remove(marker)
+        phrases.load(None, marker)
+    assert not phrases.testing()
