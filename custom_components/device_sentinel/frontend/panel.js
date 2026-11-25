@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.8 (2026-11-24)
+// File: panel.js, Version: 0.30.8 (2026-11-25)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1133,8 +1133,12 @@ class DeviceSentinelPanel extends HTMLElement {
     if (!this._started) {
       this._started = true;
       // The words first, so the page is drawn in its own language.
+      // Home Assistant sets the route and puts the page on screen while
+      // they load, so nothing reaches for the page's parts until it is
+      // drawn: _ready says it is (rule DASH-14).
       this._loadWords().finally(() => {
         this._build();
+        this._ready = true;
         this._refresh();
         this._subscribe();
       });
@@ -1200,11 +1204,11 @@ class DeviceSentinelPanel extends HTMLElement {
     this._tab = tab;
     this._from = from;
     this._origin = readOrigin(from);
-    if (this._started && changed) {
+    if (this._ready && changed) {
       this._paintTabs();
       this._openView();
       if (toToday) this._briefGo(null);
-    } else if (this._started && toToday) {
+    } else if (this._ready && toToday) {
       this._briefGo(null);
     }
   }
@@ -1356,7 +1360,7 @@ class DeviceSentinelPanel extends HTMLElement {
     window.addEventListener(UPDATED_EVENT, this._onUpdated);
     // Back on the page: the Maintenance Mode countdown runs again.
     if (this._maintButton && this._snapshot) this._paintMaintButton();
-    if (this._started && !this._unsubscribe) this._subscribe();
+    if (this._ready && !this._unsubscribe) this._subscribe();
   }
 
   disconnectedCallback() {
@@ -1411,6 +1415,10 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   async _subscribe() {
+    // Once: a page put back on screen before the first answer arrives
+    // must not sign up a second time.
+    if (this._subscribing || this._unsubscribe) return;
+    this._subscribing = true;
     try {
       this._unsubscribe = await this._hass.connection.subscribeMessage(
         (event) => {
@@ -1422,6 +1430,8 @@ class DeviceSentinelPanel extends HTMLElement {
       );
     } catch (err) {
       this._unsubscribe = null;
+    } finally {
+      this._subscribing = false;
     }
   }
 
