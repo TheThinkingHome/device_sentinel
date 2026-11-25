@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.5 (2026-11-23)
+// File: panel.js, Version: 0.30.6 (2026-11-24)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -569,21 +569,16 @@ const STATE_COLOURS = {
   down: "var(--error-color, #db4437)",
 };
 
-// A day in the browser's own time zone, as a date input reads it: the
-// UTC day is tomorrow in an evening west of Greenwich.
-function localDay(d) {
-  const pad = (v) => String(v).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 // Times and dates as the person looking chose them in their Home
-// Assistant profile: 12 or 24 hours, the order of day and month, and the
-// time zone, each also "as my language has it" or "as this browser has
-// it", read as Home Assistant reads them. The words stay English, as the
-// rest of the page is (rule GEN-11).
-const CLOCK = { locale: {}, serverZone: undefined, cache: {} };
+// Assistant profile, read from what Home Assistant stores and never from
+// the browser: 12 or 24 hours and the order of day and month as chosen,
+// or as the language has it. A choice that points to the browser follows
+// the language, the time zone is Home Assistant's own, and a person with
+// no choice saved follows Home Assistant's language. The words stay
+// English, as the rest of the page is (rule GEN-11).
+const CLOCK = { locale: {}, houseLanguage: undefined, serverZone: undefined, cache: {} };
 function clockLanguage() {
-  return CLOCK.locale.language || undefined;
+  return CLOCK.locale.language || CLOCK.houseLanguage || "en";
 }
 function clockHour12() {
   const key = `h|${CLOCK.locale.time_format}|${clockLanguage()}`;
@@ -597,7 +592,7 @@ function clockHour12Uncached() {
   const chosen = CLOCK.locale.time_format;
   if (chosen === "12") return true;
   if (chosen === "24") return false;
-  const lang = chosen === "system" ? undefined : clockLanguage();
+  const lang = clockLanguage();
   try {
     return new Date("January 1, 2023 22:00:00").toLocaleString(lang).includes("10");
   } catch (err) {
@@ -615,7 +610,7 @@ function clockOrder() {
 function clockOrderUncached() {
   const chosen = CLOCK.locale.date_format;
   if (["DMY", "MDY", "YMD"].includes(chosen)) return chosen;
-  const lang = chosen === "system" ? undefined : clockLanguage();
+  const lang = clockLanguage();
   try {
     const parts = new Intl.DateTimeFormat(lang, { year: "numeric", month: "numeric", day: "numeric" })
       .formatToParts(new Date(2023, 0, 22)).filter((part) => part.type !== "literal").map((part) => part.type[0]);
@@ -626,7 +621,7 @@ function clockOrderUncached() {
   }
 }
 function clockZone() {
-  return CLOCK.locale.time_zone === "server" ? CLOCK.serverZone : undefined;
+  return CLOCK.serverZone;
 }
 // The parts of a moment in the chosen zone, the month named in English.
 // One formatter per zone and month length, as a table of hundreds of rows
@@ -645,6 +640,29 @@ function clockParts(date, month = "short", zone = true) {
   const parts = {};
   for (const part of format.formatToParts(d)) parts[part.type] = part.value;
   return parts;
+}
+// A count grouped as the viewer's language groups it: 12,345 or 12.345.
+function countText(value) {
+  try {
+    return Number(value).toLocaleString(clockLanguage());
+  } catch (err) {
+    return Number(value).toLocaleString("en");
+  }
+}
+// A moment's day in Home Assistant's time zone, as a date input reads
+// it: 2026-11-24.
+const HOUSE_DAYS = new Map();
+function houseDay(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const timeZone = clockZone();
+  let format = HOUSE_DAYS.get(timeZone || "");
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    HOUSE_DAYS.set(timeZone || "", format);
+  }
+  const parts = {};
+  for (const part of format.formatToParts(d)) parts[part.type] = part.value;
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 // 5:34 PM, or 17:34; with seconds, 5:34:07 PM or 17:34:07.
 function fmtTime(date, seconds = false) {
@@ -1040,9 +1058,14 @@ class DeviceSentinelPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    // The viewer's own time and date choices (rule GEN-11).
-    CLOCK.locale = Object.assign({ language: hass && hass.language }, (hass && hass.locale) || {});
+    // Home Assistant's own language and zone; the viewer's stored
+    // choices are read with the rest of the page, and again when the
+    // viewer changes them (rule GEN-11).
+    CLOCK.houseLanguage = hass && hass.config ? hass.config.language : undefined;
     CLOCK.serverZone = hass && hass.config ? hass.config.time_zone : undefined;
+    const locale = JSON.stringify((hass && hass.locale) || {});
+    if (this._started && locale !== this._localeSeen) this._refresh();
+    this._localeSeen = locale;
     if (this._menu) this._menu.hass = hass;
     // Entity states arrive with every hass update, so the readings on
     // a device page redraw the moment one changes.
@@ -1511,8 +1534,8 @@ class DeviceSentinelPanel extends HTMLElement {
     // view's, so the tab carries the name for the moment of printing.
     const tabTitle = document.title;
     const stamp = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    document.title = `Device Sentinel - ${view} - ${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}${pad(stamp.getMinutes())}`;
+    const at = clockParts(stamp);
+    document.title = `Device Sentinel - ${view} - ${houseDay(stamp)} ${at.hour.padStart(2, "0")}${at.minute}`;
     const done = () => {
       document.title = tabTitle;
       frame.remove();
@@ -1531,7 +1554,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._areaChoices = null;
     try {
       const askedDay = this._briefDay;
-      const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations, networks, devices, brief, battery, signal, stored] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
@@ -1544,7 +1567,12 @@ class DeviceSentinelPanel extends HTMLElement {
         this._call({ type: "device_sentinel/brief", ...(askedDay ? { day: askedDay } : {}) }),
         this._call({ type: "device_sentinel/battery_trends" }),
         this._call({ type: "device_sentinel/signal_trends" }),
+        // The viewer's time and date choices as Home Assistant stores
+        // them; none saved, or none readable, leaves Home Assistant's own.
+        this._call({ type: "frontend/get_user_data", key: "language" }).catch(() => null),
       ]);
+      const chosen = stored && stored.value;
+      CLOCK.locale = chosen && typeof chosen === "object" ? chosen : {};
       // A day stepped to while this was asked keeps its own brief.
       const shownBrief = askedDay === this._briefDay ? brief : (this._snapshot && this._snapshot.brief) || brief;
       this._snapshot = { status, classification, problems, recommendations, integrations, networks, devices, brief: shownBrief, battery, signal, at: new Date() };
@@ -4738,7 +4766,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._batteryDayOpen = this._batteryDayOpen || {};
     const held = this._batteryDayOpen[deviceId];
     const day = el("input", { class: "actinput", type: "date", "aria-label": "The day the battery was changed",
-      max: localDay(new Date()), value: held ? held.value : "" });
+      max: houseDay(new Date()), value: held ? held.value : "" });
     day.style.display = held ? "" : "none";
     day.addEventListener("input", () => { this._batteryDayOpen[deviceId] = { value: day.value }; });
     const sendAndForget = (message) => { delete this._batteryDayOpen[deviceId]; return send(message); };
@@ -4791,7 +4819,7 @@ class DeviceSentinelPanel extends HTMLElement {
       return el("div", { class: "actcol" }, shown, this._actNote("batteryreplaced"));
     }
     const day = el("input", { class: "actinput", type: "date", "aria-label": "The day the battery was changed",
-      max: localDay(new Date()), value: view.day || "" });
+      max: houseDay(new Date()), value: view.day || "" });
     return el("div", { class: "actcol" }, shown,
       el("div", { class: "actrow" }, day,
         el("button", { class: "chip", type: "button", onclick: () => day.value && this._deviceAct(
@@ -5290,7 +5318,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const went = Number.isFinite(wentAt) ? wentAt : null;
     // Today's time alone; an earlier day's with its date.
     const wentClock = went === null ? ""
-      : localDay(new Date(went)) === localDay(new Date(now))
+      : houseDay(new Date(went)) === houseDay(new Date(now))
         ? fmtTime(new Date(went))
         : moment(new Date(went).toISOString());
     const counted = went !== null && status.last_activity
@@ -5547,7 +5575,7 @@ class DeviceSentinelPanel extends HTMLElement {
         // folded under it, in Advanced only (rules DEV-17, DASH-04).
         ...(who.restarts && who.restarts.length && !simple ? [["Last restart", restartCell(who.restarts)]] : []),
         ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
-        ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
+        ["Events seen", who.event_count != null ? countText(who.event_count) : "0"],
       ]),
       // The freeze rule in use today and its wait (rule FRZ-05): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
@@ -5854,8 +5882,7 @@ class DeviceSentinelPanel extends HTMLElement {
         svg("text", { x: 38, y: y(v) + 4, class: "axis", "text-anchor": "end" }, `${levelNumber(v)}%`));
     }
     // Month ticks across history and future, today at slot n.
-    const today = new Date();
-    today.setHours(12, 0, 0, 0);
+    const today = new Date(`${houseDay(new Date())}T12:00:00`);
     const dayAt = (i) => new Date(today.getTime() + (i - n) * 86400000);
     for (let i = 1; i < total - 1; i += 1) {
       const d = dayAt(i);
@@ -6035,10 +6062,11 @@ class DeviceSentinelPanel extends HTMLElement {
     // Outages on this device's path, placed at their hour of the day.
     const bands = outages.map((o) => {
       const start = new Date(o.start);
-      const noon = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0);
+      const at = clockParts(start);
+      const noon = new Date(`${houseDay(start)}T12:00:00`);
       const back = Math.round((end - noon) / 86400000);
       if (back < 0 || back >= days) return null;
-      const centre = x(back) + ((start.getHours() + start.getMinutes() / 60) / 24 - 0.5) * step;
+      const centre = x(back) + ((Number(at.hour) + Number(at.minute) / 60) / 24 - 0.5) * step;
       // At least 1.5 wide so a short outage still shows, and no wider,
       // so a month of restarts does not bar the chart (rule BAT-17).
       return { back, o, x: centre, w: Math.max(1.5, (o.minutes / 1440) * step) };
