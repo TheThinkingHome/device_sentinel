@@ -1,7 +1,7 @@
 """The words come from the phrase files (rule GEN-12).
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_phrases.py, Version: 0.30.8 (2026-11-24)
+# File: test_phrases.py, Version: 0.30.9 (2026-11-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -25,7 +25,7 @@ import pytest
 
 from custom_components.device_sentinel import clock, phrases
 
-from .helpers import setup_entry
+from .helpers import register_device, setup_coordinator, setup_entry
 
 ROOT = Path(__file__).resolve().parent.parent
 CODE = ROOT / "custom_components" / "device_sentinel"
@@ -243,3 +243,40 @@ async def test_the_dashboard_asks_for_its_words(hass, hass_ws_client):
     await client.send_json_auto_id({"type": "device_sentinel/phrases"})
     reply = await client.receive_json()
     assert reply["result"]["language"] == "en"
+
+
+async def test_the_brief_reads_in_the_owners_language(hass, test_language):
+    """The brief's headings, tables and problem words come from the
+    phrase files, in the owner's language (rules GEN-11, GEN-12)."""
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX, DEV_FROZEN_CATEGORY, DEV_FROZEN_SINCE, DEV_LAST_ACTIVITY,
+        FREEZE_ARMING_DAYS, FREEZE_CATEGORY_FROZEN,
+    )
+
+    device, (entity_id,) = register_device(hass, "words1", "Words Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    since = dt_util.utcnow().timestamp() - 4 * 3600.0
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = since - 10.0
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record[DEV_FROZEN_SINCE] = since
+    coord._sync_problem_list()
+
+    class _Owner:
+        data = {"language": {"language": "ru"}}
+
+    clock.bind(_Owner(), "en")
+    # Setup read the shipped files; the test language is read after it.
+    phrases.load(test_language)
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = coord._last_brief_text
+    for heading in ("# ⟦Device Sentinel Daily Brief⟧", "## ⟦In Short⟧", "## ⟦Now⟧", "## ⟦Last 24 Hours⟧"):
+        assert heading in text, heading
+    assert "| ⟦DEVICE⟧ | ⟦PROBLEM⟧ | ⟦SINCE⟧ | ⟦FOR⟧ |" in text
+    assert "| ⟦stopped reporting⟧ |" in text
+    assert "⟦one: ⟨1⟩ device needs attention.⟧" in text
+    assert "⟦From ⟨" in text and "(in progress).⟧" in text
