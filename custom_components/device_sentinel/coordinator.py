@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.4 (2026-11-23)
+# File: coordinator.py, Version: 0.30.7 (2026-11-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -126,6 +126,9 @@ from .daily_dates import (
     FAMILY_SIGNAL_ALT,
 )
 from .device_actions import DeviceActionsMixin
+from .backup_power import BackupPowerMixin
+from .matter_mesh import MatterMeshMixin
+from .study_matter import MatterContactMixin
 from .device_notes import DeviceNotesMixin
 from .pollers import PollerMixin
 from .power_source import PowerMixin
@@ -208,6 +211,8 @@ from .const import (
     DATA_SETUP_COUNT,
     DATA_SAVED_AT,
     DATA_SIGNAL_DAY_REPAIR,
+    DATA_BATTERY_DAILY_HIGHS,
+    BATTERY_DAILY_HIGHS_MARK,
     DATA_SIGNAL_WEIGHTING,
     DATA_BRIEF_CLOSED_DAY,
     DATA_LAST_VERSION,
@@ -326,6 +331,7 @@ from .detect_battery import (
     mark_raw_battery,
     note_battery_sample,
     note_battery_volts,
+    highs_into_daily,
     raw_battery_history,
     ranges_from_old_lists,
 )
@@ -449,6 +455,9 @@ class DeviceSentinelCoordinator(
     HubMixin,
     DeviceActionsMixin,
     DeviceNotesMixin,
+    BackupPowerMixin,
+    MatterMeshMixin,
+    MatterContactMixin,
     PowerMixin,
     TypeMixin,
     AnswersMixin,
@@ -1783,6 +1792,20 @@ class DeviceSentinelCoordinator(
             # Before the reconciler, which is the last moment the legacy
             # signal accumulators exist: it removes the retired fields,
             # these among them (RETIRED_DEVICE_FIELDS, rule STOR-19).
+            # The daily battery series takes each day's highest level,
+            # once, for the days a range was kept (rules BAT-05, STOR-19).
+            if loaded.get(DATA_BATTERY_DAILY_HIGHS) != BATTERY_DAILY_HIGHS_MARK:
+                raised = sum(
+                    1 for record in loaded[DATA_DEVICES].values()
+                    if isinstance(record, dict) and highs_into_daily(record, saved_day - timedelta(days=1))
+                )
+                loaded[DATA_BATTERY_DAILY_HIGHS] = BATTERY_DAILY_HIGHS_MARK
+                if raised:
+                    LOGGER.info(
+                        "Storage upgrade: the daily battery levels of %d device(s) "
+                        "now read each day's highest level",
+                        raised,
+                    )
             repair = loaded.get(DATA_SIGNAL_DAY_REPAIR) != SIGNAL_DAY_REPAIR_MARK
             converted, day_reset = self._migrate_signal_accumulators(
                 loaded[DATA_DEVICES], repair
@@ -2126,6 +2149,7 @@ class DeviceSentinelCoordinator(
         # stored (rule BAT-07).
         self._settle_battery_entries()
         self._settle_notes()
+        self._settle_backup()
         await self._fold_if_a_midnight_was_missed()
         # A router integration seen for the first time, or Music
         # Assistant or a television integration, is excluded on a new
@@ -2400,6 +2424,7 @@ class DeviceSentinelCoordinator(
         # stored (rule BAT-07).
         self._settle_battery_entries()
         self._settle_notes()
+        self._settle_backup()
         await self._write_reports_guarded("setup")
 
 
@@ -4713,7 +4738,12 @@ class DeviceSentinelCoordinator(
         """The battery voltage a battery device that spoke holds, for the
         day's lowest and highest (rule BAT-16)."""
         if device_id in self._battery_entity:
-            note_battery_volts(record, self.battery_voltage_now(device_id))
+            # The device's own temperature beside it, for the coin cell
+            # work to come (rule BAT-16).
+            note_battery_volts(
+                record, self.battery_voltage_now(device_id),
+                self._evidence_temperature(device_id, er.async_get(self.hass)),
+            )
 
     def _record_activity(
         self,
@@ -6210,6 +6240,7 @@ class DeviceSentinelCoordinator(
         # readers have not all been heard yet.
         self._settle_battery_entries()
         self._settle_notes()
+        self._settle_backup()
         if _now is not None:
             self.prune_recommendation_acks()
         await self._write_reports_guarded()
@@ -6389,6 +6420,11 @@ class DeviceSentinelCoordinator(
             LOGGER.debug("device_sentinel: radio channels not read: %s", err)
         self._sweep_storms(dt_util.utcnow().timestamp())
         self.probe_tick(dt_util.utcnow().timestamp())
+        # The Thread map, every ten minutes in the background (rule STACK-18).
+        try:
+            self.mesh_tick(dt_util.utcnow().timestamp())
+        except Exception as err:  # noqa: BLE001 - a map never stops the minute
+            LOGGER.debug("device_sentinel: the Matter map was not asked for: %s", err)
         # Firmware that has held ten minutes, once the restart's stale
         # registry values have settled (rule DEV-15).
         if not self._in_startup_grace():

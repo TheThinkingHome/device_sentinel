@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.30.4 (2026-11-23)
+# File: detect_battery.py, Version: 0.30.7 (2026-11-26)
 
 """Battery: the level threshold and what is tracked.
 
@@ -55,6 +55,10 @@ from .const import (
     LOGNORMAL_RESTART_BATTERY,
     BATTERY_REPLACED_LANDS,
     BATTERY_DAY_LEVELS_KEPT,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW,
+    DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_TODAY_LOW,
     BATTERY_FULL_RISE,
     BATTERY_RANGE_DAYS,
     BATTERY_REPLACED_CLEAR,
@@ -283,19 +287,69 @@ def battery_day_range(record: dict[str, Any]) -> tuple[float, float] | None:
     return min(chosen), max(chosen)
 
 
-def note_battery_volts(record: dict[str, Any], volts: Any) -> None:
+def battery_day_high(record: dict[str, Any]) -> float | None:
+    """The day's highest level for the daily series (rule BAT-05), or None.
+
+    The level carried in at midnight starts each day once, before the
+    device has said anything. It counts only once the device is heard at
+    it again, or a device that reports once a day would read yesterday's
+    level as today's high. Of the rest, a level held at two moments or
+    more decides, as the day's range does (rule BAT-06)."""
+    levels, counts = _levels_and_counts(record)
+    heard = [
+        (level, count) for index, (level, count) in enumerate(zip(levels, counts, strict=True))
+        if index > 0 or count >= BATTERY_SAMPLE_REPEATS
+    ]
+    if not heard:
+        return None
+    held = [level for level, count in heard if count >= BATTERY_SAMPLE_REPEATS]
+    return max(held or [level for level, _count in heard])
+
+
+def note_battery_volts(record: dict[str, Any], volts: Any, celsius: Any = None) -> None:
     """Note one moment the device was heard at this battery voltage: the
-    day's lowest and highest are kept (rule BAT-16)."""
+    day's lowest and highest are kept (rule BAT-16), each with the
+    device's own temperature at that moment, None without one, for the
+    coin cell work to come. The day's lowest and highest temperature are
+    kept as well."""
+    note_battery_degrees(record, celsius)
     if not _level(volts):
         return
     volts = float(volts)
     low: Any = record.get(DEV_BATTERY_VOLTS_TODAY_LOW)
     high: Any = record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)
-    if not _level(low) or not _level(high) or low > high:
-        # Out of step after a hand edit or a hostile file: start the day again.
+    fresh = not _level(low) or not _level(high) or low > high
+    if fresh:
+        # Out of step after a hand edit or a hostile file, or the day's
+        # first: start the day again.
         low = high = volts
+    degrees = _celsius(celsius)
+    if fresh or volts < float(low):
+        record[DEV_BATTERY_TEMP_AT_VOLTS_LOW] = degrees
+    if fresh or volts > float(high):
+        record[DEV_BATTERY_TEMP_AT_VOLTS_HIGH] = degrees
     record[DEV_BATTERY_VOLTS_TODAY_LOW] = min(float(low), volts)
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = max(float(high), volts)
+
+
+def _celsius(value: Any) -> float | None:
+    """A temperature as kept, or None for anything that is not one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return round(float(value), 1) if -100.0 <= value <= 150.0 else None
+
+
+def note_battery_degrees(record: dict[str, Any], celsius: Any) -> None:
+    """Widen the day's lowest and highest temperature (rule BAT-16)."""
+    degrees = _celsius(celsius)
+    if degrees is None:
+        return
+    low: Any = record.get(DEV_BATTERY_TEMP_TODAY_LOW)
+    high: Any = record.get(DEV_BATTERY_TEMP_TODAY_HIGH)
+    if _celsius(low) is None or _celsius(high) is None or low > high:
+        low = high = degrees
+    record[DEV_BATTERY_TEMP_TODAY_LOW] = min(float(low), degrees)
+    record[DEV_BATTERY_TEMP_TODAY_HIGH] = max(float(high), degrees)
 
 
 def _rows(record: dict[str, Any]) -> list[list[Any]]:
@@ -363,6 +417,39 @@ def _merged(old: list[Any], new: list[Any]) -> list[Any]:
         pairs = [(row[low], row[high]) for row in (old, new) if row[low] is not None]
         out += [min(p[0] for p in pairs), max(p[1] for p in pairs)] if pairs else [None, None]
     return out
+
+
+def highs_into_daily(record: dict[str, Any], last_day: date) -> bool:
+    """The daily series' days that have a kept day range take the day's
+    highest level in place of the one held at midnight, once, at the
+    upgrade (rules BAT-05, STOR-19). The day ranges are kept for the
+    same days as the series, so the history a forecast reads is the new
+    measure from the start. Returns whether anything changed."""
+    series = record.get(DEV_BATTERY_DAILY)
+    if not isinstance(series, list) or not series:
+        return False
+    highs = {
+        row[RANGE_DAY]: float(row[RANGE_HIGH])
+        for row in _rows(record) if _level(row[RANGE_HIGH])
+    }
+    if not highs:
+        return False
+    changed = False
+    before: float | None = None
+    for index, day in enumerate(dates_for(record, FAMILY_BATTERY, len(series), last_day)):
+        value = series[index]
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            before = None
+            continue
+        high = highs.get(day.isoformat())
+        # A kept high equal to the day before's level may be only the
+        # level carried in at midnight, never heard that day: the level
+        # held at midnight stays, as before (rule BAT-05).
+        if high is not None and high != before and float(value) != high:
+            series[index] = high
+            changed = True
+        before = float(value) if high is None or high == before else high
+    return changed
 
 
 def ranges_from_old_lists(record: dict[str, Any], last_day: date) -> bool:
@@ -440,6 +527,15 @@ class BatteryMixin:
         level = record.get(DEV_BATTERY_VALUE)
         if level is None:
             return
+        # The day's highest level, not the one held at midnight: a cold
+        # night or a reading taken as the radio sends pulls a level down
+        # for a while, and the highest of the day is the cell's own
+        # (rule BAT-05). A day with no range kept keeps the level held.
+        high = battery_day_high(record)
+        # The day's levels are kept as whole numbers; the level held now
+        # keeps its half step when it is that high (rule BAT-02).
+        if high is not None and float(round(level)) != high:
+            level = high
         day = getattr(self, "_folding_day", None)
         if day is not None:
             # A day the device was not heard measured nothing: the level

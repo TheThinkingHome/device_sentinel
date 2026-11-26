@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.30.2 (2026-11-22)
+# File: dashboard_api.py, Version: 0.30.7 (2026-11-26)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -34,6 +34,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
 from .device_actions import MUTE_SOURCES_SAID, NameInUse
+from .device_recommendations import NETWORK_RANK
 from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
 from .report_brief import RECOMMENDATIONS_CLOSING
@@ -105,6 +106,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_status)
     websocket_api.async_register_command(hass, ws_action)
     websocket_api.async_register_command(hass, ws_device_note)
+    websocket_api.async_register_command(hass, ws_device_backup_power)
     websocket_api.async_register_command(hass, ws_subscribe_changes)
     websocket_api.async_register_command(hass, ws_classification)
     websocket_api.async_register_command(hass, ws_problem_list)
@@ -410,6 +412,9 @@ async def ws_recommendations(
         msg["id"],
         {
             "networks": networks,
+            # Where the networks' own cards sit among the rest, most
+            # severe first (rule REC-01).
+            "network_rank": NETWORK_RANK,
             # Each written line with its key, whether Simple shows it,
             # and whether it is acknowledged (rules REC-09, REC-07).
             "lines": coordinator.recommendation_lines(),
@@ -479,7 +484,12 @@ def ws_networks(
         _not_loaded(connection, msg["id"])
         return
     # The radio chart at the top of the tab, Advanced only (rule DASH-19).
-    connection.send_result(msg["id"], {"rows": coordinator.dashboard_networks(), "air": coordinator.air_view_safe()})
+    # The Thread network from the Matter server's map, with a link to Home
+    # Assistant's own (rule STACK-18).
+    connection.send_result(msg["id"], {
+        "rows": coordinator.dashboard_networks(), "air": coordinator.air_view_safe(),
+        "thread": coordinator.thread_view(),
+    })
 
 
 @websocket_api.require_admin
@@ -712,6 +722,8 @@ def ws_device_rename(
         vol.Optional("choice"): vol.Any(str, None),
         vol.Optional("quantity"): vol.Any(int, None),
         vol.Optional("other"): vol.Any(str, None),
+        # Words typed under Other: a battery or a wired source (rule DEV-08).
+        vol.Optional("wired"): vol.Any(bool, None),
         vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
@@ -723,7 +735,7 @@ def ws_device_power(
     recorded with where it was pressed (rule BRIEF-07)."""
     def act(c: Any) -> dict[str, Any]:
         c.page_from(msg["source"], lambda: c.page_set_power(
-            msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other")
+            msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other"), msg.get("wired")
         ))
         # Battery Notes' form for a battery type set here, wherever it
         # was set from, the Recommendations tab too (rule DEV-09).
@@ -799,6 +811,22 @@ def ws_device_note(
 ) -> None:
     """Write, change or clear a device's note; empty clears it (rule DEV-19)."""
     _page_act(hass, connection, msg, lambda c: c.page_set_note(msg["device_id"], msg.get("note")))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_backup_power",
+        vol.Required("device_id"): str,
+        vol.Required("on"): bool,
+    }
+)
+@callback
+def ws_device_backup_power(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tick or untick UPS or Battery Backup for one wired device (rule DEV-20)."""
+    _page_act(hass, connection, msg, lambda c: c.page_set_backup(msg["device_id"], msg["on"]))
 
 
 @websocket_api.require_admin

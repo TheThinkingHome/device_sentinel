@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_curves.py, Version: 0.30.3 (2026-11-23)
+# File: battery_curves.py, Version: 0.30.7 (2026-11-26)
 
 """Keep the curve: each battery's whole shape, kept for good (rule BAT-20).
 
@@ -91,10 +91,10 @@ def _evidence(record: dict[str, Any]) -> dict[date, list[Any]]:
     """The evidence rows by day: [volts, temperature, events so far]."""
     out: dict[date, list[Any]] = {}
     for row in record.get(DEV_BATTERY_EVIDENCE) or []:
-        if isinstance(row, list) and len(row) == 4:
+        if isinstance(row, list) and len(row) in (4, 8):
             day = _day(row[0])
             if day is not None:
-                out[day] = row[1:]
+                out[day] = row[1:4]
     return out
 
 

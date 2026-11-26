@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.28.3 (2026-11-04)
+# File: study_stacks.py, Version: 0.30.7 (2026-11-26)
 
 """What six stacks say about their devices, gathered so their support
 can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
@@ -66,7 +66,10 @@ from homeassistant.helpers import device_registry as dr
 from .device_fields import identifier_values
 from homeassistant.helpers import entity_registry as er
 
-from .const import LOGGER
+from homeassistant.util import dt as dt_util
+
+from .const import DATA_DEVICES, DEV_LAST_ACTIVITY, LOGGER
+from .study_matter import check_in, power_source
 
 ZWAVE_DOMAIN = "zwave_js"
 MATTER_DOMAIN = "matter"
@@ -265,8 +268,13 @@ def zwave_study(hass: HomeAssistant) -> dict[str, Any]:
     return {"networks": networks}
 
 
-async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
-    """What this house's Matter fabric says, and its Thread network."""
+async def matter_study(hass: HomeAssistant, coordinator: Any = None) -> dict[str, Any]:
+    """What this house's Matter fabric says, and its Thread network.
+
+    With the coordinator, each node also carries its check-in state, its
+    Power Source answer and Device Sentinel's own contact clock beside its
+    last report through its entities, and the Thread map's routers are
+    added (rule STACK-19)."""
     # Only entries set up to run (rule STACK-12).
     entries = live_entries(hass, MATTER_DOMAIN)
     if not entries:
@@ -284,6 +292,10 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
                 LOGGER.debug("device_sentinel: Matter nodes unreadable: %s", err)
         rows: list[dict[str, Any]] = []
         available = 0
+        contact = _contact_view(coordinator)
+        # Read once per download: each node's device, and whether the
+        # server has once been too slow to answer a check-in.
+        more_once: dict[str, Any] = {"budget": {}, "devices": _mesh_devices(coordinator)}
         for node in listed:
             if _read(node, "available"):
                 available += 1
@@ -301,6 +313,7 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
                 # version keeps it by, recorded beside it.
                 "seen_as": _matter_seen(node)[0] or None,
                 "seen": _matter_seen(node)[1],
+                **(await _matter_more(coordinator, client, node, contact, more_once) if coordinator is not None else {}),
             })
         fabrics.append({
             "entry_id": entry.entry_id,
@@ -311,7 +324,54 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
             "rows_capped": len(listed) > NODE_ROW_CAP,
             "node_rows": rows,
         })
-    return {"fabrics": fabrics, "thread": _thread_network(hass)}
+    study: dict[str, Any] = {"fabrics": fabrics, "thread": _thread_network(hass)}
+    if coordinator is not None:
+        # The routers and what each carries, from the map already held;
+        # never refreshed (rule STACK-18).
+        try:
+            study["thread_map"] = coordinator.thread_view()
+        except Exception as err:  # noqa: BLE001 - the rest of the study still goes
+            study["thread_map"] = {"error": type(err).__name__}
+    return study
+
+
+def _contact_view(coordinator: Any) -> dict[int, dict[str, Any]]:
+    try:
+        return coordinator.matter_contact_view() if coordinator is not None else {}
+    except Exception as err:  # noqa: BLE001
+        LOGGER.debug("device_sentinel: Matter contact clock unreadable: %s", err)
+        return {}
+
+
+def _mesh_devices(coordinator: Any) -> dict[int, str]:
+    try:
+        return coordinator._mesh_devices() if coordinator is not None else {}
+    except Exception as err:  # noqa: BLE001
+        LOGGER.debug("device_sentinel: Matter devices unreadable: %s", err)
+        return {}
+
+
+async def _matter_more(
+    coordinator: Any, client: Any, node: Any, contact: dict[int, dict[str, Any]], once: dict[str, Any]
+) -> dict[str, Any]:
+    """Check-in, Power Source, contact clock and the device's own last report."""
+    number = _read(node, "node_id")
+    more: dict[str, Any] = {"power_source": power_source(node)}
+    if not isinstance(number, int):
+        return more
+    more["check_in"] = await check_in(client, number, once["budget"])
+    more["contact"] = contact.get(number)
+    try:
+        device_id = once["devices"].get(number)
+        record = coordinator.data.get(DATA_DEVICES, {}).get(device_id) if device_id else None
+        last = record.get(DEV_LAST_ACTIVITY) if isinstance(record, dict) else None
+        more["entities_last_seconds_ago"] = (
+            round(dt_util.utcnow().timestamp() - last) if isinstance(last, (int, float)) and not isinstance(last, bool) else None
+        )
+        more["thread"] = coordinator.device_thread(device_id) if device_id else None
+    except Exception as err:  # noqa: BLE001
+        more["entities_error"] = type(err).__name__
+    return more
 
 
 def _thread_network(hass: HomeAssistant) -> dict[str, Any]:

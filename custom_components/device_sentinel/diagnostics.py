@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.30.3 (2026-11-23)
+# File: diagnostics.py, Version: 0.30.7 (2026-11-26)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -961,7 +961,7 @@ async def _learned_state(
                 else {}
             ),
             "matter": (
-                await _studied(lambda: matter_study(hass))
+                await _studied(lambda: matter_study(hass, coordinator))
                 if MATTER_DOMAIN in studied_domains(entry.options)
                 else {}
             ),

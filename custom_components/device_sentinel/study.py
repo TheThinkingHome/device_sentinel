@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.30.3 (2026-11-23)
+# File: study.py, Version: 0.30.7 (2026-11-26)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -566,6 +566,7 @@ class StudyMixin:
             self._probe_changes.clear()
             self._zwave_unlisten()
             self._thread_stop()
+            self._matter_contact_clear()  # type: ignore[attr-defined]
             return
         if ZWAVE_DOMAIN in studied:
             self._zwave_listen()
@@ -573,8 +574,14 @@ class StudyMixin:
             self._zwave_unlisten()
         if MATTER_DOMAIN in studied:
             self._thread_start()
+            # Its own contact clock per Matter device (rule STACK-19).
+            try:
+                self._matter_contact_tick(now)  # type: ignore[attr-defined]
+            except Exception as err:  # noqa: BLE001 - the clock never costs the stacks their lines
+                self._probe_failure(MATTER_DOMAIN, err)
         else:
             self._thread_stop()
+            self._matter_contact_clear()  # type: ignore[attr-defined]
         wifi_nodes: dict[str, bool] = {}
         since: dict[tuple[str, ...], tuple[str, float]] = {}
         lights: dict[tuple[str, ...], bool] = {}
@@ -794,6 +801,10 @@ class StudyMixin:
         the stop as a power cut.
         """
         self._zwave_unlisten()
+        try:
+            self._matter_contact_clear()  # type: ignore[attr-defined]
+        except Exception as err:  # noqa: BLE001 - the save after this must run
+            LOGGER.debug("device_sentinel: Matter contact clock not cleared: %s", err)
         held, self._thread_discovery = self._thread_discovery, None
         if held is not None:
             await self._async_thread_remove(held)

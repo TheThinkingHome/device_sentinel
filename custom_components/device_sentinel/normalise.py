@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.30.3 (2026-11-23)
+# File: normalise.py, Version: 0.30.7 (2026-11-26)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -70,6 +70,10 @@ from .const import (
     DEV_BATTERY_DAY_COUNTS,
     DEV_BATTERY_VOLTS_TODAY_LOW,
     DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_TEMP_TODAY_LOW,
+    DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
     DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_PENDING_HIGH,
     DEV_BATTERY_COARSE_DROPS,
@@ -149,6 +153,7 @@ from .const import (
     DATA_CLEAN_STOP,
     DATA_SETUP_COUNT,
     DATA_SIGNAL_DAY_REPAIR,
+    DATA_BATTERY_DAILY_HIGHS,
     DATA_SIGNAL_WEIGHTING,
     BACKUP_TAKEN_KEY,
     DATA_ASIDE_SEEN,
@@ -274,6 +279,7 @@ FORECAST_LOG = "list of battery forecast rows"
 EVIDENCE_LOG = "list of battery evidence rows"
 DAY_RANGE_LOG = "list of battery day ranges"
 VOLTS = "a battery voltage or None"
+DEGREES = "a temperature in degrees Celsius or None"
 LIVES_LOG = "list of battery lives"
 WEEKS_MAP = "map of battery weeks"
 CURVES_MAP = "map of battery curves"
@@ -335,6 +341,10 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_DAY_COUNTS: INT_SERIES,
     DEV_BATTERY_VOLTS_TODAY_LOW: VOLTS,
     DEV_BATTERY_VOLTS_TODAY_HIGH: VOLTS,
+    DEV_BATTERY_TEMP_TODAY_LOW: DEGREES,
+    DEV_BATTERY_TEMP_TODAY_HIGH: DEGREES,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW: DEGREES,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH: DEGREES,
     DEV_BATTERY_DAY_RANGES: DAY_RANGE_LOG,
     DEV_BATTERY_PENDING_HIGH: LEVEL,
     DEV_BATTERY_COARSE_DROPS: INTEGER,
@@ -420,14 +430,17 @@ def _forecast_row_ok(row: Any) -> bool:
 
 def _evidence_row_ok(row: Any) -> bool:
     """One day's evidence (rule BAT-16): a day, then volts, degrees and the
-    event count, each None where the device gave none."""
-    if not isinstance(row, list) or len(row) != 4:
+    event count, each None where the device gave none, then optionally four
+    more: the day's lowest and highest degrees, and the degrees at the
+    day's lowest and highest voltage. A row of four is still sound."""
+    if not isinstance(row, list) or len(row) not in (4, 8):
         return False
-    day, volts, temperature, events = row
+    day, volts, temperature, events = row[:4]
+    degrees_ok = all(t is None or (_is_number(t) and -100 <= t <= 150) for t in [temperature, *row[4:]])
     return (
         _is_day(day)
         and (volts is None or (_is_number(volts) and 0 <= volts <= 50))
-        and (temperature is None or (_is_number(temperature) and -100 <= temperature <= 150))
+        and degrees_ok
         and (events is None or (isinstance(events, int) and not isinstance(events, bool) and 0 <= events <= COUNT_HIGHEST))
     )
 
@@ -624,6 +637,8 @@ _RANGED: dict[str, tuple[float, float, bool]] = {
     NONNEGATIVE: (0.0, MAGNITUDE_HIGHEST, True),
     # As the evidence rows hold a voltage (rule BAT-16).
     VOLTS: (0.0, 50.0, True),
+    # As the evidence rows hold a temperature (rule BAT-16).
+    DEGREES: (-100.0, 150.0, True),
 }
 # Each ranged series: (lowest, highest, None elements allowed).
 _RANGED_SERIES: dict[str, tuple[float, float, bool]] = {
@@ -1158,6 +1173,7 @@ SCALARS: dict[str, str] = {
     # fault (rule STOR-05).
     DATA_SIGNAL_DAY_REPAIR: TEXT,
     DATA_SIGNAL_WEIGHTING: TEXT,
+    DATA_BATTERY_DAILY_HIGHS: TEXT,
     # Written at every clean stop and read once at the next load, and
     # the value decides whether the restart was clean. A non-boolean
     # here reads as false and every device's clock resets.

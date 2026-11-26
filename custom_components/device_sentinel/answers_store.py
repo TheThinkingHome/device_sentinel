@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.29.8 (2026-11-19)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.30.7 (2026-11-26)
 
 """The one file that holds what the owner set with a pencil (rule STOR-20).
 
@@ -288,6 +288,8 @@ class AnswersMixin:
         dropped += self._restart_read(payload.get("restart"))  # type: ignore[attr-defined]
         # The note a person writes on a device's page (rule DEV-19).
         dropped += self._notes_read(payload.get("notes"))  # type: ignore[attr-defined]
+        # UPS or Battery Backup, ticked on a device page (rule DEV-20).
+        dropped += self._backup_read(payload.get("backup_power"))  # type: ignore[attr-defined]
         await self._note_dropped(dropped)
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
@@ -493,6 +495,10 @@ class AnswersMixin:
         notes = self._notes_payload()  # type: ignore[attr-defined]
         if notes:
             payload["notes"] = notes
+        # UPS or Battery Backup (rule DEV-20), likewise only once one is ticked.
+        backup = self._backup_payload()  # type: ignore[attr-defined]
+        if backup:
+            payload["backup_power"] = backup
         return payload
 
     def _answers_count(self, part: str) -> int:

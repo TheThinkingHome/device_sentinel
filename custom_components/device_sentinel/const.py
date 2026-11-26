@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.4 (2026-11-23)
+# File: const.py, Version: 0.30.7 (2026-11-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -616,6 +616,11 @@ DATA_SERIES_STAMPS = "series_stamps"
 # another day (rule STOR-19).
 DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
 SIGNAL_DAY_REPAIR_MARK = "0.12.21"
+
+# One-shot marker for the daily battery series taking each day's highest
+# level in place of the one held at midnight (rules BAT-05, STOR-19).
+DATA_BATTERY_DAILY_HIGHS = "battery_daily_highs"
+BATTERY_DAILY_HIGHS_MARK = "0.30.7"
 
 # The mean and deviation changed from counting readings to weighing
 # minutes (rule SIG-05), so their recorded days are not comparable across
@@ -1398,6 +1403,14 @@ DEV_BATTERY_DAY_COUNTS = "battery_day_counts"
 # own entities, None until one is heard (rule BAT-16).
 DEV_BATTERY_VOLTS_TODAY_LOW = "battery_volts_today_low"
 DEV_BATTERY_VOLTS_TODAY_HIGH = "battery_volts_today_high"
+# The device's own temperature today: its lowest and highest, and what it
+# read at the moments of the day's lowest and highest battery voltage.
+# Recorded for the coin cell work to come and read by no judgment
+# (rule BAT-16).
+DEV_BATTERY_TEMP_TODAY_LOW = "battery_temp_today_low"
+DEV_BATTERY_TEMP_TODAY_HIGH = "battery_temp_today_high"
+DEV_BATTERY_TEMP_AT_VOLTS_LOW = "battery_temp_at_volts_low"
+DEV_BATTERY_TEMP_AT_VOLTS_HIGH = "battery_temp_at_volts_high"
 # Each day's lowest and highest level and voltage, one row a day the
 # device was heard, oldest first, kept for How Much History to Keep
 # (rules BAT-06, BAT-16). The replacement rule reads the newest rows.
@@ -1802,6 +1815,10 @@ EPOCH_KEPT = (
     DEV_BATTERY_DAY_COUNTS,
     DEV_BATTERY_VOLTS_TODAY_LOW,
     DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_TEMP_TODAY_LOW,
+    DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
     DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
@@ -1890,11 +1907,15 @@ CLOCK_FIELDS = (
     # The battery levels and voltages heard today change at each moment
     # the device speaks: kept only in the main file, a power cut would
     # lose the day's samples back to the last cold save (rules STOR-15,
-    # BAT-06).
+    # BAT-06). The day's temperatures beside them likewise (rule BAT-16).
     DEV_BATTERY_DAY_LEVELS,
     DEV_BATTERY_DAY_COUNTS,
     DEV_BATTERY_VOLTS_TODAY_LOW,
     DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_TEMP_TODAY_LOW,
+    DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"

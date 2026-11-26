@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.28.5 (2026-11-08)
+# File: stack_zha.py, Version: 0.30.7 (2026-11-26)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -657,6 +657,27 @@ def _proxy(hass: HomeAssistant, device: dr.DeviceEntry) -> Any:
     return next(
         proxy for key, proxy in proxies.items() if str(key).lower() == ieee
     )
+
+
+def mains_by_ieee(hass: HomeAssistant) -> dict[str, bool]:
+    """Whether ZHA counts each device as mains powered, by IEEE address,
+    read from ZHA's own objects without importing ZHA (rules STACK-08,
+    DEV-06). Anything not where it is expected reads as nothing known."""
+    found: dict[str, bool] = {}
+    try:
+        proxies = hass.data[STACK_ZHA].gateway_proxy.device_proxies
+        items = list(proxies.items())
+    except Exception:  # noqa: BLE001 - another integration's internals
+        return found
+    for key, proxy in items:
+        try:
+            mains = proxy.device.is_mains_powered
+        except Exception as err:  # noqa: BLE001 - another integration's internals
+            LOGGER.debug("ZHA power source not read for %s: %s", key, err)
+            mains = None
+        if isinstance(mains, bool):
+            found[str(key).lower()] = mains
+    return found
 
 
 def _timeouts(hass: HomeAssistant) -> tuple[int, int]:

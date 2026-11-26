@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.4 (2026-11-23)
+# File: report_brief.py, Version: 0.30.7 (2026-11-26)
 
 """The daily brief: the one report written for a person.
 
@@ -143,6 +143,7 @@ from .const import (
     SYS_RECOMMENDATIONS_TAB,
     SYS_DEVICE_ID,
 )
+from .device_recommendations import line_rank
 from .outage_detail import FAILED, REMOVED, STALLED, UNWATCHED, parse_detail
 
 
@@ -1404,10 +1405,13 @@ class BriefMixin:
         # outage at all, so it is asked in Simple too (rule REC-09).
         simple = ("target:", "no_target", "muted:", "offer:", "wifi_network")
         extras = {key: extra for key, _text, extra in offers}
-        return [
-            {"key": key, "text": text, "simple": key.startswith(simple), **extras.get(key, {})}
+        entries = [
+            {"key": key, "text": text, "simple": key.startswith(simple), "rank": line_rank(key), **extras.get(key, {})}
             for key, text in items
         ]
+        # Most severe first, the written order kept inside a place (rule REC-01).
+        entries.sort(key=lambda entry: entry["rank"])
+        return entries
 
     def _exclusion_offer_entries(self) -> list[tuple[str, str, dict[str, Any]]]:
         """One card for each integration Device Sentinel recommends
@@ -1568,8 +1572,8 @@ class BriefMixin:
         # the Brief (rule REC-07); the emailed Brief is the whole
         # Advanced list, each exclusion card every morning until it is
         # answered (rules REC-03, REC-10).
-        items = [
-            entry["text"] for entry in self.recommendation_lines()
+        ranked: list[tuple[int, str]] = [
+            (entry["rank"], entry["text"]) for entry in self.recommendation_lines()
             if not entry["acknowledged"]
         ]
         # One line for each kind of device recommendation, with its
@@ -1588,7 +1592,9 @@ class BriefMixin:
             url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
             if url:
                 self._brief_rec_links[line] = url
-            items.append(line)
+            ranked.append((card["rank"], line))
+        # The lines and the cards together, most severe first (rule REC-01).
+        items = [text for _rank, text in sorted(ranked, key=lambda pair: pair[0])]
         if not items:
             return []
         lines = ["## Recommendations", ""]

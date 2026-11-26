@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_evidence.py, Version: 0.30.1 (2026-11-21)
+# File: battery_evidence.py, Version: 0.30.7 (2026-11-26)
 
 """What a better battery forecast will need, kept from now.
 
@@ -47,6 +47,10 @@ from .const import (
     DATA_BATTERY_LIVES,
     DATA_DEVICES,
     DEV_BATTERY_EVIDENCE,
+    DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW,
+    DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_TODAY_LOW,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
     DEV_LAST_ACTIVITY,
@@ -64,6 +68,21 @@ EV_DAY, EV_VOLTS, EV_TEMPERATURE, EV_EVENTS = range(4)
     LIFE_END, LIFE_FIRST_DAY, LIFE_FIRST_LEVEL, LIFE_LAST_LEVEL, LIFE_LAST_HEARD, LIFE_STAMP,
 ) = range(13)
 LIFE_FIELDS = 13
+
+
+# The day's temperatures, emptied as each day's row is written (rule BAT-16).
+TEMPERATURE_TODAY_FIELDS = (
+    DEV_BATTERY_TEMP_TODAY_LOW, DEV_BATTERY_TEMP_TODAY_HIGH,
+    DEV_BATTERY_TEMP_AT_VOLTS_LOW, DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
+)
+
+
+def _degrees(value: Any) -> float | None:
+    """A kept temperature, or None for anything that is not one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    low, high = EVIDENCE_TEMPERATURE_RANGE
+    return round(float(value), 1) if low <= value <= high else None
 
 
 def _number(value: Any) -> float | None:
@@ -86,22 +105,40 @@ class BatteryEvidenceMixin:
         keep = max(1, int(getattr(self, "retention_days", 0) or 0))
         registry = er.async_get(self.hass)  # type: ignore[attr-defined]
         for device_id, record in self.watched_records():  # type: ignore[attr-defined]
-            if device_id not in self._battery_entity:  # type: ignore[attr-defined]
-                continue
-            heard = record.get(DEV_LAST_ACTIVITY)
-            if not isinstance(heard, (int, float)) or isinstance(heard, bool) or heard < start:
-                continue
-            rows = record.setdefault(DEV_BATTERY_EVIDENCE, [])
-            if rows and isinstance(rows[-1], list) and rows[-1] and rows[-1][EV_DAY] == stamp:
-                continue
-            events = record.get(DEV_EVENT_COUNT)
-            rows.append([
-                stamp,
-                self._evidence_voltage(device_id, registry),
-                self._evidence_temperature(device_id, registry),
-                int(events) if isinstance(events, int) and not isinstance(events, bool) and events >= 0 else None,
-            ])
-            del rows[:-keep]
+            try:
+                self._evidence_row(device_id, record, registry, start, stamp, keep)
+            finally:
+                # A new day's temperatures start empty, row or none.
+                for field in TEMPERATURE_TODAY_FIELDS:
+                    record[field] = None
+
+    def _evidence_row(
+        self, device_id: str, record: dict[str, Any], registry: Any, start: float, stamp: str, keep: int
+    ) -> None:
+        """The day's row for one battery device heard that day."""
+        if device_id not in self._battery_entity:  # type: ignore[attr-defined]
+            return
+        heard = record.get(DEV_LAST_ACTIVITY)
+        if not isinstance(heard, (int, float)) or isinstance(heard, bool) or heard < start:
+            return
+        rows = record.setdefault(DEV_BATTERY_EVIDENCE, [])
+        if rows and isinstance(rows[-1], list) and rows[-1] and rows[-1][EV_DAY] == stamp:
+            return
+        events = record.get(DEV_EVENT_COUNT)
+        rows.append([
+            stamp,
+            self._evidence_voltage(device_id, registry),
+            self._evidence_temperature(device_id, registry),
+            int(events) if isinstance(events, int) and not isinstance(events, bool) and events >= 0 else None,
+            # The day's temperatures, for the coin cell work to come
+            # (rule BAT-16): lowest, highest, and at the day's lowest
+            # and highest voltage.
+            _degrees(record.get(DEV_BATTERY_TEMP_TODAY_LOW)),
+            _degrees(record.get(DEV_BATTERY_TEMP_TODAY_HIGH)),
+            _degrees(record.get(DEV_BATTERY_TEMP_AT_VOLTS_LOW)),
+            _degrees(record.get(DEV_BATTERY_TEMP_AT_VOLTS_HIGH)),
+        ])
+        del rows[:-keep]
 
     def _own_readings(self, device_id: str, registry: Any, device_class: str) -> list[tuple[str, Any]]:
         """The device's own sensors of one device class with their states,
@@ -158,7 +195,7 @@ class BatteryEvidenceMixin:
     def battery_evidence_view(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """The newest day's evidence for the device page, with the day
         before's events taken away to give that day's messages."""
-        rows = [row for row in record.get(DEV_BATTERY_EVIDENCE) or [] if isinstance(row, list) and len(row) == 4]
+        rows = [row for row in record.get(DEV_BATTERY_EVIDENCE) or [] if isinstance(row, list) and len(row) in (4, 8)]
         if not rows:
             return None
         last = rows[-1]

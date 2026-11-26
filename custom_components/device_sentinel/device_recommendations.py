@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.30.4 (2026-11-23)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.30.7 (2026-11-26)
 
 """Recommendations about single devices, for the Recommendations tab.
 
@@ -94,9 +94,55 @@ KIND_SHARED_ADDRESS = "shared_address"
 # a working device or misses a dead one.
 KIND_RESTART_LIVE = "restart_live"
 KIND_RESTART_CACHED = "restart_cached"
+# A device whose power was typed under Other and saved as a battery
+# before Other asked battery or wired (rule DEV-08).
+KIND_OTHER_POWER = "other_power"
+
+# The whole tab in the order of what ignoring each costs, most first
+# (rule REC-01): an alarm that cannot reach you or cannot fire; a
+# working device that looks dead or a reading that is wrong; hardware
+# to put right; fewer false alarms and clearer reports; better charts
+# and forecasts; and the inventory last. A written line is named by
+# the start of its key, a card by its kind, the networks' own cards by
+# "network". Each item's place is its position here.
+SEVERITY_ORDER: tuple[str, ...] = (
+    "line:target:", "line:no_target", "line:muted:",
+    f"card:{KIND_NODE_STATUS_OFF}", f"card:{KIND_LAST_SEEN}", f"card:{KIND_BATTERY_OFF}", f"card:{KIND_HUB_LINK_OFF}",
+    "line:z2m_availability", "line:wifi_network",
+    f"card:{KIND_RESTART_CACHED}", f"card:{KIND_RESTART_LIVE}",
+    f"card:{KIND_SHARED_ADDRESS}", f"card:{KIND_BATTERY_CONFIRM}", f"card:{KIND_OTHER_POWER}", "line:links",
+    f"card:{KIND_FIRMWARE}", "network",
+    f"card:{KIND_SLOW}", "line:offer:", "line:router:", f"card:{KIND_NAMES}", f"card:{KIND_AREA}",
+    f"card:{KIND_SIGNAL_OFF}", f"card:{KIND_VOLTAGE_OFF}",
+    f"card:{KIND_POWER}", f"card:{KIND_TYPE}", f"card:{KIND_MIXED_TYPES}",
+)
+# An item not named above, which a later release may add, goes last
+# rather than ahead of a named one.
+SEVERITY_UNKNOWN = len(SEVERITY_ORDER)
+
+
+def card_rank(kind: str) -> int:
+    """A card's place on the tab, most severe first (rule REC-01)."""
+    name = f"card:{kind}"
+    return SEVERITY_ORDER.index(name) if name in SEVERITY_ORDER else SEVERITY_UNKNOWN
+
+
+def line_rank(key: str) -> int:
+    """A written line's place on the tab, by the start of its key (rule REC-01)."""
+    for place, name in enumerate(SEVERITY_ORDER):
+        if not name.startswith("line:"):
+            continue
+        start = name[len("line:"):]
+        if key == start or (start.endswith(":") and key.startswith(start)):
+            return place
+    return SEVERITY_UNKNOWN
+
+
+NETWORK_RANK = SEVERITY_ORDER.index("network")
 # A device behind on firmware is in Simple too: a firmware update
 # changes how the device works (rule REC-09).
 SIMPLE_CARDS = frozenset({
+    KIND_OTHER_POWER,
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
     KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF, KIND_SHARED_ADDRESS,
     KIND_RESTART_LIVE, KIND_RESTART_CACHED, KIND_FIRMWARE, KIND_HUB_LINK_OFF,
@@ -228,6 +274,32 @@ class DeviceRecommendationsMixin:
                     ) + ". Confirm "
                     + ("it" if len(listed) == 1 else "them")
                     + " on the Recommendations tab."
+                ),
+            })
+        # Words typed under Other and saved as a battery before Other
+        # asked battery or wired, naming no battery Device Sentinel knows
+        # (rules DEV-08, REC-04). In Simple too: until answered, a wired
+        # device sits in the battery lists.
+        typed = {d: self.power_other_unasked(d) for d in watched}  # type: ignore[attr-defined]
+        other_ids = [d for d, words in typed.items() if words]
+        if other_ids:
+            listed = rows(other_ids)
+            for row in listed:
+                row["detail"] = typed[row["device_id"]]
+                # Kept when answered battery, so the count stays as given.
+                row["quantity"] = (self._power_entry(row["device_id"])[0] or {}).get("quantity")  # type: ignore[attr-defined]
+            cards.append({
+                "kind": KIND_OTHER_POWER,
+                "title": "Check Power Typed Under Other",
+                "body": (
+                    f"{_count(len(other_ids), 'device has', 'devices have')} power typed under Other, "
+                    "saved before Device Sentinel asked whether it is a battery or wired. Until it "
+                    "is answered, each is treated as a battery device. Answer each one here."
+                ),
+                "devices": listed,
+                "brief_words": lambda n: (
+                    f"{_count(n, 'device has', 'devices have')} power typed under Other that is treated "
+                    "as a battery. Answer battery or wired on the Recommendations tab."
                 ),
             })
         power = [d for d in watched if self.power_of(d) is None]  # type: ignore[attr-defined]
@@ -528,11 +600,25 @@ class DeviceRecommendationsMixin:
             card["card_acknowledged"] = kind != KIND_BATTERY_CONFIRM and bool(whole.get(kind, False))
             if card["card_acknowledged"]:
                 active = 0
-            card["active"] = active
+            # What the title counts: the answers still needed. One answer
+            # covers a model on a grouped card, so a model counts once
+            # however many of its devices wait (rule REC-08).
+            if card.get("grouped") and active:
+                card["active"] = len({
+                    row.get("model_key") or row["device_id"]
+                    for row in card["devices"] if not row["acknowledged"]
+                })
+            else:
+                card["active"] = active
             card["simple"] = kind in SIMPLE_CARDS
+            card["rank"] = card_rank(kind)
             words = card.pop("brief_words", None)
             if callable(words):
+                # The brief's words count the devices still waiting.
                 card["brief"] = words(active) if active else None
+        # Most severe first; the order within a place is the order built
+        # (rule REC-01).
+        cards.sort(key=lambda card: card["rank"])
         return cards
 
     def recommendation_lines(self) -> list[dict[str, Any]]:

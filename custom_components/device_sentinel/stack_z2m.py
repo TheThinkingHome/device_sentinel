@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.28.12 (2026-11-11)
+# File: stack_z2m.py, Version: 0.30.7 (2026-11-26)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -305,6 +305,17 @@ class Z2MBridgeReader:
         "no opinion" and carries on with the verdict it already had.
         """
         return bool(self._availability_enabled and self._devices_by_name)
+
+    def power_source(self, key: str | None) -> str | None:
+        """What Zigbee2MQTT says powers one device, as it words it
+        ("Battery", "Mains (single phase)"), or None (rule DEV-06)."""
+        if not key:
+            return None
+        for entry in self._devices_by_name.values():
+            if entry.get("ieee_address") == key:
+                said = entry.get("power_source")
+                return said if isinstance(said, str) else None
+        return None
 
     def reachability(self, key: str | None) -> dict[str, Any] | None:
         """Return what Zigbee2MQTT says about one device, or None.

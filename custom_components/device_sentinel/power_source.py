@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.30.0 (2026-11-21)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.30.7 (2026-11-26)
 
 """What powers each device (rule DEV-06).
 
@@ -29,6 +29,8 @@ MANUAL gives none, as Battery Notes skips it.
 from __future__ import annotations
 
 import json
+import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,9 +46,13 @@ from .const import (
     BATTERY_GROUP_LITHIUM,
     BATTERY_GROUP_RECHARGEABLE,
     DATA_DEVICES,
+    DEV_BATTERY_VALUE,
     LOGGER,
+    STACK_Z2M,
+    STACK_ZHA,
 )
 from .device_fields import device_field
+from .stack_zha import mains_by_ieee
 
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
 
@@ -72,6 +78,11 @@ OTHER_MAX_LENGTH = 40
 
 SOURCE_OWNER = "owner"
 SOURCE_LIBRARY = "library"
+# Mains, as the device's own Zigbee coordinator reports it (rule DEV-06).
+SOURCE_STACK = "stack"
+# How long the coordinators' word on mains is kept before it is read
+# again: every list asks for every device's power.
+STACK_POWER_SECONDS = 60.0
 KIND_BATTERY = "battery"
 KIND_MAINS = "mains"
 KIND_USB = "usb"
@@ -134,6 +145,44 @@ def battery_group(battery_type: Any) -> str:
     if folded in ALKALINE_TYPES:
         return BATTERY_GROUP_ALKALINE
     return BATTERY_GROUP_LITHIUM
+
+
+# Battery words a person may type under Other, any one of which makes
+# the text a battery Device Sentinel knows (rule DEV-08): a cell's code
+# such as CR2032, LR44, LIR2450 or 18650, or a size or chemistry word.
+KNOWN_BATTERY_WORDS = frozenset({
+    "AA", "AAA", "AAAA", "C", "D", "9V", "PP3", "CR123A", "CR2", "CR-P2", "RECHARGEABLE",
+    "LITHIUM", "ALKALINE", "NIMH", "LIFEPO4", "LIPO", "LI-ION", "LIION", "BATTERY",
+})
+# A cell's code: letters then digits, such as CR2032, LR44 or INR18650.
+# Bare digits only for the cylinder sizes, so "UPS 1500" is not a battery.
+_BATTERY_CODE = re.compile(r"^(?:CR|BR|LR|SR|LIR|ER|ML|PR|ICR|INR|IMR)\d+[A-Z]*$")
+_CYLINDER_SIZES = frozenset({"10440", "14250", "14500", "16340", "18350", "18500", "18650", "21700", "26650", "32650"})
+
+
+def known_battery_type(text: Any) -> bool:
+    """Whether words typed under Other name a battery (rule DEV-08).
+
+    Any one word is enough: "2 AA lithium" and "LR44" are batteries,
+    "UPS" and "switched mains" are not."""
+    if not isinstance(text, str):
+        return False
+    folded = text.upper().replace("×", " ")
+    words = [w for w in re.split(r"[\s,/+()]+", folded) if w]
+    for word in words:
+        bare = word.strip(".")
+        if bare in KNOWN_BATTERY_WORDS or bare.rstrip("S") in KNOWN_BATTERY_WORDS:
+            return True
+        if _BATTERY_CODE.match(bare) or bare in _CYLINDER_SIZES:
+            return True
+        if bare.replace("-", "") in KNOWN_BATTERY_WORDS:
+            return True
+    return bare_choice(folded)
+
+
+def bare_choice(folded: str) -> bool:
+    """A battery choice from the list, typed as it is listed."""
+    return any(folded.strip() == choice.upper() for choice in BATTERY_CHOICES)
 
 
 def power_words(battery_type: str, quantity: int | None) -> str:
@@ -475,7 +524,12 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     else:
         quantity = None
     set_at = raw.get("set") if isinstance(raw.get("set"), str) else None
-    return {"kind": kind, "type": battery_type, "quantity": quantity, "set": set_at}
+    cleaned = {"kind": kind, "type": battery_type, "quantity": quantity, "set": set_at}
+    # Typed under Other and answered battery or wired, so the Other card
+    # asks no more (rule DEV-08).
+    if raw.get("asked") is True:
+        cleaned["asked"] = True
+    return cleaned
 
 
 class PowerMixin:
@@ -645,7 +699,78 @@ class PowerMixin:
                 "type": answer.battery_type,
                 "quantity": answer.quantity,
             }
+        # Last, the device's own Zigbee coordinator, which knows a mains
+        # device from a battery one. Only mains is taken: a battery
+        # device still needs its battery named (rule DEV-06).
+        record = self.data.get(DATA_DEVICES, {}).get(device_id)  # type: ignore[attr-defined]
+        has_battery = isinstance(record, dict) and record.get(DEV_BATTERY_VALUE) is not None
+        # A device reporting a battery level is not taken as mains on
+        # the coordinator's word: the two disagree, and the battery is
+        # the device's own report.
+        reported = None if has_battery else self.stack_mains(device_id)
+        if reported is not None:
+            return {
+                "words": POWER_MAINS,
+                "source": SOURCE_STACK,
+                "kind": KIND_MAINS,
+                "type": POWER_MAINS,
+                "quantity": None,
+                "reported_by": reported,
+            }
         return None
+
+    def power_other_unasked(self, device_id: str) -> str | None:
+        """The words typed under Other, when they were saved as a battery
+        before Other asked battery or wired and name no battery Device
+        Sentinel knows ("UPS", "switched mains"), or None (rule DEV-08)."""
+        entry, _key = self._power_entry(device_id)
+        if entry is None or entry.get("kind") != KIND_BATTERY or entry.get("asked"):
+            return None
+        typed = entry.get("type")
+        if not isinstance(typed, str) or known_battery_type(typed):
+            return None
+        return typed
+
+    def stack_mains(self, device_id: str) -> str | None:
+        """Which Zigbee coordinator reports the device as mains powered,
+        "Zigbee2MQTT" or "ZHA", or None (rule DEV-06).
+
+        Zigbee2MQTT words it "Mains (single phase)" or "Mains (3
+        phase)"; ZHA keeps it as a flag on its own device object. A
+        battery, a DC source or nothing said leaves the device to its
+        owner. Read again at most once a minute, since every list asks
+        for every device.
+        """
+        now = time.monotonic()
+        cache = getattr(self, "_stack_mains_cache", None)
+        if cache is None or now - cache[0] > STACK_POWER_SECONDS:
+            cache = (now, self._read_stack_mains())
+            self._stack_mains_cache = cache
+        return cache[1].get(device_id)
+
+    def _read_stack_mains(self) -> dict[str, str]:
+        found: dict[str, str] = {}
+        keys: dict[str, tuple[str, str]] = getattr(self, "_stack_keys", {}) or {}
+        readers: dict[str, Any] = getattr(self, "_bridge_readers", {}) or {}
+        for device_id, (stack, key) in list(keys.items()):
+            if stack != STACK_Z2M:
+                continue
+            said = getattr(readers.get(stack), "power_source", None)
+            try:
+                words = said(key) if callable(said) else None
+            except Exception:  # noqa: BLE001 - a reader never raises up
+                words = None
+            if isinstance(words, str) and words.strip().casefold().startswith("mains"):
+                found[device_id] = "Zigbee2MQTT"
+        zha = mains_by_ieee(self.hass)  # type: ignore[attr-defined]
+        if zha:
+            registry = dr.async_get(self.hass)  # type: ignore[attr-defined]
+            for device_id in list(getattr(self, "_watched", {}) or {}):
+                device = registry.async_get(device_id)
+                for domain, ident in getattr(device, "identifiers", None) or ():
+                    if domain == STACK_ZHA and zha.get(str(ident).lower()) is True:
+                        found[device_id] = "ZHA"
+        return found
 
     def battery_lithium(self, device_id: str) -> str | None:
         """The device's battery type when it is a lithium primary cell,
@@ -728,6 +853,12 @@ class PowerMixin:
         return {
             "words": known["words"] if known else NOT_KNOWN,
             "source": known["source"] if known else None,
+            # Which coordinator reported mains, for a stack answer (rule DEV-06).
+            "reported_by": known.get("reported_by") if known else None,
+            # Wired or battery, and the UPS or Battery Backup tick, which
+            # is offered only while the power is wired (rule DEV-20).
+            "kind": known.get("kind") if known else None,
+            "backup_power": self.device_backup(device_id),  # type: ignore[attr-defined]
             "entry": {f: entry[f] for f in ("kind", "type", "quantity", "set")} if entry else None,
             # Where an owner's entry was set, and how many devices it
             # covers: "set on Button Master Shower, covers 4" (rule DEV-07).
@@ -761,7 +892,10 @@ class PowerMixin:
         if known is None:
             return None
         entry, key = self._power_entry(device_id)
-        return {"words": known["words"], "source": known["source"], "entry": entry, "model": key}
+        return {
+            "words": known["words"], "source": known["source"], "entry": entry, "model": key,
+            "backup_power": self.device_backup(device_id),  # type: ignore[attr-defined]
+        }
 
     def page_set_power(
         self,
@@ -769,8 +903,14 @@ class PowerMixin:
         choice: str | None,
         quantity: int | None = None,
         other: str | None = None,
+        wired: bool | None = None,
     ) -> None:
         """Set the owner's answer from the device page; None clears it.
+
+        Words typed under Other are a battery or a wired source, as the
+        person answers (rule DEV-08): wired takes no quantity and is
+        judged as mains. Without an answer, as from an older page, they
+        are a battery, as before.
 
         The answer covers every device of the same model. Clearing a
         model answer clears it for all of them; a device's own answer is
@@ -807,6 +947,11 @@ class PowerMixin:
             choice = typed_wired
         if choice in WIRED_KINDS:
             entry = {"kind": WIRED_KINDS[choice], "type": choice, "quantity": None}
+        elif choice == POWER_OTHER and wired is True:
+            text = clean_other(other)
+            if text.casefold() in (NOT_KNOWN.casefold(), "not set"):
+                raise ValueError("Type the battery or power source.")
+            entry = {"kind": KIND_MAINS, "type": text, "quantity": None, "asked": True}
         else:
             if choice in BATTERY_CHOICES:
                 battery_type = choice
@@ -825,6 +970,9 @@ class PowerMixin:
             ):
                 raise ValueError(f"The quantity is {QUANTITY_MIN} to {QUANTITY_MAX}.")
             entry = {"kind": KIND_BATTERY, "type": battery_type, "quantity": quantity}
+            if choice == POWER_OTHER and wired is False:
+                # Answered battery: the Other card asks no more (rule REC-04).
+                entry["asked"] = True
         entry["set"] = dt_util.utcnow().isoformat()
         if key is not None:
             self._power_models[key] = {**entry, "device_id": device_id}
