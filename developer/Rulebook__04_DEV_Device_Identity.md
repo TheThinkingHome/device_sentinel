@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Device Identity (DEV)
 
-*Version: rulebook, 17 November 2026, on Device Sentinel 0.29.5. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 26 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers what a device is called, what kind of device it is, what powers it and how it connects. It also covers which other devices it is grouped with and what firmware it has run. How the battery itself is read and judged is under [BAT](Rulebook__09_BAT_Battery.md), and where the answers are stored is under [STOR](Rulebook__18_STOR_Storage.md). The Power Not Set, Type Not Set and Model With More Than One Type cards are under [REC](Rulebook__15_REC_Recommendations.md); the rest of the device page is under [DASH](Rulebook__14_DASH_Dashboard.md).
 
@@ -44,9 +44,10 @@ This section covers what a device is called, what kind of device it is, what pow
 
 ### DEV-06 What Powers a Device
 
-**What powers a device comes from, in order: the answer given for that device, the answer given for its model, then the Battery Notes library shipped inside Device Sentinel. Otherwise it reads "Not known".**
+**What powers a device comes from, in order: the answer given for that device, the answer given for its model, the Battery Notes library shipped inside Device Sentinel, then, since 0.30.7, its own Zigbee coordinator. Otherwise it reads "Not known".**
 - **A model's answer:** an answer entered on one device covers each device of the same model, meaning the same manufacturer, model and model ID exactly as Home Assistant reports them. The hardware version is left out. A device with no manufacturer or no model keeps its answer to itself.
 - **A maker or model that stands for none (since 0.28.10):** "Default-Manufacturer", "Default-Model", "Unknown" and the like, compared without capitals, count as none: devices that share one are not the same hardware, so an answer on one covers only that one. An answer stored that way before belongs to the device that gave it. On a tester's house, four HomeKit accessories reported Default-Manufacturer and Default-Model. Tasmota's "Generic" counts as none, and so does a maker that names the chip, not the product: ESPHome reports a device built on a bare board as made by Espressif, with the board as its model, and on two testers' houses one board name covered a dryer sensor, a furnace monitor and a display, or a dimmer and audio boards. Since 0.28.12 the other chip makers ESPHome reports do too: Beken, Realtek and Lightning, as converted Tuya hardware reports, and Nordic Semiconductor. Raspberry Pi does not, since its own products report that maker. A device given its own project name keeps it as its model.
+- **The Zigbee coordinator (since 0.30.7; James, 26 November 2026):** a device Zigbee2MQTT or ZHA reports as mains is Mains Powered, reported by that coordinator, and leaves Power Not Set. Only mains is taken: a battery or DC answer is left to the person, who must still name the battery. A device that reports a battery level is never taken as mains on the coordinator's word. Read again at most once a minute.
 - **The library:** it is read-only and never downloaded while running. An installed Battery Notes is never read, linked or depended on.
 - **No looser match:** the lookup is Battery Notes' own and nothing looser, because a match that is not certain is worse than "Not known" and a report to the library.
 - **Bad entries:** a malformed library entry is skipped and the rest kept, with one warning naming the count. A device's own fields are read as text.
@@ -57,6 +58,7 @@ This section covers what a device is called, what kind of device it is, what pow
 
 **The device page's Power row reads, for example, "2× CR2032", "USB Powered" or "Not Set", with an icon for where the answer came from and a pencil.**
 - **The icons:** the library's icon is redrawn from Battery Notes' own, in light and dark, and opens the Battery Notes repository in a new tab. A person's answer carries Device Sentinel's shield.
+- **The coordinator's icon (since 0.30.7):** a plug, whose hover reads "Reported by Zigbee2MQTT" or "Reported by ZHA".
 - **Hovering:** it names the source. On a device covered by another device's answer it names that device, "Entered on Button Master Shower".
 - **A model's answer:** an answer that covers a model reads "set on Button Master Shower, covers 4 devices of this model". The brief records where it was set: "power set to 2× AAA, for all 4 devices of this model, from its device page", or "from the Recommendations tab".
 - **Where power is set:** on the device page, in the Recommendations tab's Power Not Set list, and from "Not Set" in Battery Trends' CELL column ([DASH-04](Rulebook__14_DASH_Dashboard.md#dash-04-what-simple-shows)). The battery problem row and the Daily Brief show it as plain text, with no icons.
@@ -71,7 +73,8 @@ This section covers what a device is called, what kind of device it is, what pow
 **The pencil offers AA, AAA, CR2032, CR2450, Rechargeable, CR123A, CR2, CR2477, CR1632 and CR2430, then Mains Powered, USB Powered, USB Direct to Server and PoE Powered, then Other with a text box.**
 - **Quantity:** a quantity of 1 to 8 sits beside the battery choices.
 - **Use the library:** "Use the library" clears this device's answer. Where its model has an answer, the button reads "Use the model's answer" instead.
-- **Not offered:** there is no "Irreplaceable" or "Not Replaceable", and no "Mains" or "Backup power" label until the mains power project ships.
+- **Not offered:** there is no "Irreplaceable" or "Not Replaceable", and no "Mains" label until the mains power project ships. Switched mains is typed under Other (James, 26 November 2026). A UPS or battery backup is its own tick box, never a power choice ([DEV-20](#dev-20-ups-or-battery-backup)).
+- **Battery or wired (since 0.30.7; James, 26 November 2026):** text typed under Other asks whether it is a battery or wired, on the device page and on the Recommendations tab, and is not saved until one is chosen ("Choose battery or wired."). Battery asks how many and is tracked as a battery. Wired asks no quantity and is judged as a mains device, the typed words kept as its name. Before 0.30.7 everything typed under Other was saved as a battery with a count of 1, so "UPS" made a device a battery device. Such an answer, whose words name no battery Device Sentinel knows (any one word such as AA, LR44 or CR2032 is enough), is listed on Check Power Typed Under Other until answered ([REC-04](Rulebook__15_REC_Recommendations.md#rec-04-the-device-cards)), and treated as a battery meanwhile.
 - **Text under Other:** it is tidied to single spaces, and refused if empty, over 40 characters, or holding hidden or control characters. Text that means USB Direct to Server, whatever its capitals, reads as that choice from the moment it is saved.
 
 *Proof:* `check_power_row.js`, [`test_power_source.py`](../tests/test_power_source.py), [`test_hostile_names.py`](../tests/test_hostile_names.py).
@@ -186,3 +189,13 @@ This section covers what a device is called, what kind of device it is, what pow
 - **The download:** the words are never in it, since a note can hold anything; each device says only whether it has one ([STOR-21](Rulebook__18_STOR_Storage.md#stor-21-the-diagnostics-download)).
 
 *Proof:* [`test_device_notes.py`](../tests/test_device_notes.py), [`tools/panel_checks/check_device_notes.js`](../tools/panel_checks/check_device_notes.js).
+
+### DEV-20 UPS or Battery Backup
+
+**Since 0.30.7 (James, 26 November 2026, 09:10 to 09:17; asked for by Walter and Tim), a wired device's page has a "UPS or Battery Backup" tick box under Power, for that one device.**
+- **Why its own line:** a UPS is where a device is plugged in, not what powers it. A plug on a UPS still runs on mains, and a USB device charging from one still runs on USB, so Powered By keeps one answer per model ([DEV-06](#dev-06-what-powers-a-device)) with no exception. As a power choice, the last answer on any device of a model would turn the others to it without a word.
+- **Where:** shown only while the device's power is mains, USB or PoE. A battery device, or one whose power is not known, cannot be ticked. A tick on a device whose power later turns battery is kept but not shown.
+- **Kept** in the answers file, by device, as a mark and never as words; it goes once the device has left Home Assistant and its held record is gone, as a note does ([DEV-19](#dev-19-notes)).
+- **What it changes:** nothing yet. It records the fact, which the mains power project will read as the device's backup mark.
+
+*Proof:* [`test_backup_power.py`](../tests/test_backup_power.py), [`tools/panel_checks/check_power_row.js`](../tools/panel_checks/check_power_row.js).

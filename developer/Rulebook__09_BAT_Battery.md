@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.4. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 26 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -50,6 +50,9 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 ### BAT-05 One Reading a Day
 
 **At each midnight, a battery device heard that day keeps one level for the day, with the day's date. A day the device was not heard writes nothing, so a gap never reads as a flat stretch.**
+- **Which level (since 0.30.7; James, 26 November 2026):** the day's highest, not the level held at midnight, so a battery that sags under load or in the night cold is judged by what it recovers to. Of the levels heard ([BAT-06](#bat-06-a-new-battery-is-detected)), one held at two moments or more decides; a day with none held takes the highest heard. The level carried in at midnight counts only once the device is heard at it again that day, or a device that reports once a day would carry yesterday's level as today's high. Where the level held at midnight rounds to the day's high, the level held is kept, so a half step is not lost.
+- **The trends and forecasts** read this series, so they judge by the day's highest from 0.30.7 on. The low warning still reads the level the device holds now.
+- **The upgrade:** once, at the first start on 0.30.7, each kept day with a day range takes that day's highest in place of its midnight level, except a high equal to the day before's level, which is the level carried in. The mark that it is done is kept with the history ([STOR-19](Rulebook__18_STOR_Storage.md#stor-19-upgrades-and-older-releases)).
 
 *Proof:* [`test_battery_trend.py`](../tests/test_battery_trend.py), [`test_battery_last_replaced.py`](../tests/test_battery_last_replaced.py).
 
@@ -175,7 +178,8 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 **These are shown or kept for a better forecast later, and nothing is judged on them:**
 - **Lithium.** A battery whose type starts with CR is lithium. Its page says its level holds near full until close to its end while it is not falling, and Battery Trends says it once under Other Cells.
 - **Its model's pace.** A battery's page and Battery Trends row show the slowest and fastest weekly fall of the other devices of the same maker and model that have a weekly fall, as "Others of this model lose 0.8 to 1.6 points a week", when at least two qualify. A device with no weekly fall yet is left out, and so is one with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), since 0.28.11.
-- **Voltage, temperature and messages.** At each midnight, each battery device heard that day keeps its battery voltage, its own temperature and its message count, from its own entities only. Since 0.29.3 the day's lowest and highest voltage, read each moment the device is heard once its message is written, are kept too, in the day's row of [BAT-06](#bat-06-a-new-battery-is-detected), for How Much History to Keep. A voltage outside 0.5 to 15 volts is left out. The rows are kept for the How Much History to Keep setting's days, and Advanced shows the newest day. A battery device whose voltage sensor is switched off is listed on the Battery Voltage Switched Off card (REC).
+- **Voltage, temperature and messages.** At each midnight, each battery device heard that day keeps its battery voltage, its own temperature and its message count, from its own entities only. Since 0.29.3 the day's lowest and highest voltage, read each moment the device is heard once its message is written, are kept too, in the day's row of [BAT-06](#bat-06-a-new-battery-is-detected), for How Much History to Keep. A voltage outside 0.5 to 15 volts is left out.
+- **Temperature beside the voltage (since 0.30.7; James, 26 November 2026):** each day also keeps the device's own lowest and highest temperature, and its temperature at the moment of the day's lowest and highest voltage, None where it has none; a reading outside -100 to 150 °C is left out. Kept so that a coin cell's voltage, which falls in the cold, can later be judged with its temperature; nothing reads it yet, and no trend reads voltage yet. A day's row written before 0.30.7, without them, is still read. The rows are kept for the How Much History to Keep setting's days, and Advanced shows the newest day. A battery device whose voltage sensor is switched off is listed on the Battery Voltage Switched Off card (REC).
 
 *Proof:* [`test_battery_lithium.py`](../tests/test_battery_lithium.py), [`test_battery_model_pace.py`](../tests/test_battery_model_pace.py), [`test_battery_evidence.py`](../tests/test_battery_evidence.py), [`test_battery_voltage_card.py`](../tests/test_battery_voltage_card.py), [`test_battery_day_ranges.py`](../tests/test_battery_day_ranges.py).
 

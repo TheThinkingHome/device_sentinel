@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 23 November 2026, on Device Sentinel 0.30.3. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 26 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -65,6 +65,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Standing verdicts:** a frozen verdict already standing stays until the device reports, and unavailable is judged as before.
 - **What the person sees:** while a device is spared, its page reads "Not called frozen while Home Assistant shows it available." and the Slow Reporting Devices card leaves it off.
 - **Next:** the upstream to build next is the Thread network: one problem when each border router carrying it is gone, from measured timings.
+- **The Thread role and contact (since 0.30.7):** each Matter device's Thread role is shown, never judged ([STACK-18](#stack-18-the-thread-role)), and Extended Diagnostics records Device Sentinel's own contact clock for each Matter device ([STACK-19](#stack-19-matter-in-extended-diagnostics)). A Matter goal of the 0.30 line (James, 26 November 2026): what the two show on real houses decides whether a router that others route through, or a sleepy sensor that checks in, is spared later.
 
 *Proof:* [`test_matter_awake.py`](../tests/test_matter_awake.py), [`tools/panel_checks/check_device_page_text.js`](../tools/panel_checks/check_device_page_text.js).
 
@@ -85,6 +86,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **Manifest and imports:** such an integration is named in the manifest's after_dependencies, never its dependencies. Nothing is imported from an integration read this way. Home Assistant's recorder is named there too, since 0.28.7, and its public statistics functions are imported for a Z-Wave controller's typical radio noise ([DASH-18](Rulebook__14_DASH_Dashboard.md#dash-18-a-networks-outage-patterns-and-radio-noise)).
 - **Listed:** the wiki lists each exception and its field.
 - **Who is read:** three integrations: ESPHome (deep sleep and connection), ZHA (when it last heard a device) and Lutron Caséta (the hub's session). Matter, Thread and Z-Wave JS are weighed against their probe data as it arrives.
+- **Shown, not judged (since 0.30.7):** Matter's network map, read through the Matter client Home Assistant holds, for the Thread role on the device page and the Networks tab ([STACK-18](#stack-18-the-thread-role)). It decides no verdict. ZHA's and Zigbee2MQTT's power source fill in Powered By ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)).
 - **Extended Diagnostics:** it may also read private state, since it records and never judges.
 
 *Proof:* [`test_manifest_dependencies.py`](../tests/test_manifest_dependencies.py), [`test_freeze.py`](../tests/test_freeze.py), [`test_zha_last_seen.py`](../tests/test_zha_last_seen.py), [`test_lutron_hub.py`](../tests/test_lutron_hub.py).
@@ -124,6 +126,7 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **SmartThings and Tuya:** they are there for a cloud outage. Once each has recorded a real one, one rule for cloud integrations is built from them and those probes retire.
 - **Tado (since 0.28.10):** read from the data Home Assistant's own coordinator holds, never from tado, whose free accounts have 100 requests a day. A line at each change of a device's Connection State, battery or firmware; one at each refresh with the interval set, whether it worked and the requests left; each room's link sensor when it changes; and one a day per device with how often its connection timestamp moved, which tells whether that timestamp is a clock each device could be judged by. The current values are in the download.
 - **Hub: Aqara (since 0.30.3):** offered where an Aqara device (maker Aqara or Lumi) reaches Home Assistant through Matter or HomeKit Device, as an Aqara hub shares its own devices. Read from Home Assistant's registries and states alone: a line when an Aqara device's entity turns unavailable or comes back, the hub's own included; a line when three or more Aqara devices report inside the same two seconds, with how many and through which integration; and a line a day per Aqara device with how long since it last reported and the hub it sits behind. The download lists each Aqara device, its integration, model, software, the hub it sits behind, how many devices sit behind it, how long since it reported and its entities' states. It answers whether Home Assistant ever marks a device behind the hub unavailable, which decides whether Device Sentinel can see a dead leak sensor there (James, 23 November 2026).
+- **Matter (more since 0.30.7):** see [STACK-19](#stack-19-matter-in-extended-diagnostics).
 - **Judging goes on:** whatever a studied library does, Device Sentinel goes on judging, listing, saving and folding.
 - **The page (since 0.29.8):** it opens with Share Names in Diagnostics ([STOR-21](Rulebook__18_STOR_Storage.md#stor-21-the-diagnostics-download)), then the list, with how to ask for support for listed hardware in the list's own help text.
 
@@ -203,3 +206,24 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 - **No Cloud Link sensor:** the hub stays set aside as a service, and its devices are judged as before.
 
 *Proof:* [`test_lightwave_hub.py`](../tests/test_lightwave_hub.py).
+
+### STACK-18 The Thread Role
+
+**Since 0.30.7 (James, 26 November 2026, 10:32), Device Sentinel shows each Matter device's Thread role from the map the Matter server keeps, and draws no map of its own: Home Assistant has drawn one on its Matter panel since 2026.9.**
+- **The device page, Advanced:** Thread Role, such as "Router, 3 devices route through it" or "Sleepy end device", with "Read from the Matter server's network map, which can lag a few minutes." and a link, Open Home Assistant's Matter map. Thread Link names its strongest link to a router: "Strong to SMHUB Nano". A Wi-Fi or Ethernet Matter device has neither row.
+- **The Networks tab:** a Thread card, "Your Thread network (home-thread): 2 border routers, 1 router, 1 end device, 4 sleepy end devices.", with the same note and link. Advanced adds each router, border routers first, with ROUTER (a link to its page where it has one), ROLE, CARRIES (the end devices linked to it) and LINK (its strongest link to another router).
+- **How it is read:** through the Matter client Home Assistant already holds, never by importing Matter ([STACK-08](#stack-08-reading-an-integrations-private-state)), on a server with the map (its schema 13 or later). Asked for at most every ten minutes, in the background, waiting at most 30 seconds, and never refreshed: a refresh reads every device over the radio. The server counts leader, router and router-eligible as routers, as Home Assistant's map does. A link reading "none" is no link.
+- **A hint, never proof:** the map can lag, and a router taken away can stay on it, so the role changes no verdict ([STACK-06](#stack-06-matter-and-thread)).
+- **Failure is safe:** an older server, no client, or a map that cannot be read leaves the rows and the card out, and never stops the minute; the rest of each page draws.
+
+*Proof:* [`test_matter_thread_role.py`](../tests/test_matter_thread_role.py), [`tools/panel_checks/check_thread_role.js`](../tools/panel_checks/check_thread_role.js).
+
+### STACK-19 Matter in Extended Diagnostics
+
+**Since 0.30.7 (James, 26 November 2026, 10:21 and 10:32), with Matter studied, the download carries more for each Matter device, recorded to learn whether Device Sentinel can judge Matter better. Nothing here judges, and nothing is stored.**
+- **Its own contact clock:** Device Sentinel listens to each Matter device through Home Assistant's Matter client and counts any value it sends as contact, even one no entity shows, and any event it sends, such as a press. A whole-node update comes from the server, also when it marks a device unavailable, so it is counted apart and is never contact. Per device: how many times heard, how long since, how long it has listened and the longest silence, a silence still running included. Set beside how long since its entities last reported. The clock starts again at each restart, at a Matter reload and when Matter is no longer studied. In October a tester's sleepy Thread devices sent a value no entity showed about every 2.2 hours.
+- **Check-in state:** from the server's own record (its schema 12 or later): supported, registered, operating mode, awake, available and the next expected check-in. Each is asked for at most five seconds, and once one answer is too slow the rest of that download is not asked.
+- **Power Source:** from the device's own Power Source cluster: wired or battery, rechargeable, replaceable, and the battery's description, designations and count where it gives them.
+- **The Thread map:** the routers and what each carries, and each device's role and best link, from the map of [STACK-18](#stack-18-the-thread-role), never refreshed.
+
+*Proof:* [`test_matter_contact_clock.py`](../tests/test_matter_contact_clock.py).
