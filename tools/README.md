@@ -1,4 +1,4 @@
-<!-- File: tools/README.md, Version: 0.30.10 (2026-11-25) -->
+<!-- File: tools/README.md, Version: 0.28.11 (2026-11-10) -->
 # Tools
 
 Scripts for working on Device Sentinel. None of them is part of the integration, and Home Assistant never runs them. Each one says how to run it at the top of the file.
@@ -10,6 +10,4 @@ Scripts for working on Device Sentinel. None of them is part of the integration,
 | `anonymise_fleet.py` | Makes the test houses from real houses' files. The names in them are replaced, so no house can be recognised, and the real files stay with their owners. |
 | `check_comments.py` | Lists any comment or docstring that tells the history of a line (a release, a date, a person) instead of naming the rule it follows. |
 | `compare_code.py` | Proves that two copies of the code differ only in comments and docstrings, or with `--text`, only in their words. |
-| `translation/phrase_sheet.py` | Builds a translation workbook for one block of the phrase files (Brief and Pushes, Dashboard, or the rest) and reads a returned workbook back into its language's phrase file, leaving out and listing any row whose placeholders or English no longer match. |
-| `translation/make_test_language.py` | Makes the test language: the English phrase file with every phrase wrapped in ⟦ ⟧ and every value in ⟨ ⟩, to see on a page or in a report which words are not yet in the phrase file. Made from each release's English and shipped as `phrases/test.json`; a house reads in it only while an empty file named `test_language` sits in its `device_sentinel` folder. |
 | `update_battery_library.py` | Refreshes the copy of the Battery Notes library that Device Sentinel ships. Run before each Latest release. |
