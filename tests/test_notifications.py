@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.30.4 (2026-11-23)
+# File: test_notifications.py, Version: 0.30.7 (2026-11-26)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -1112,7 +1112,7 @@ async def test_a_card_that_lists_anything_links_the_problem_list():
     await h.async_update_card()
     _domain, _service, payload = h.sent[0]
     assert PROBLEM_LIST_PATH == f"/{PANEL_URL_PATH}?open=today" and _daily_brief_is_first()
-    assert payload["message"].endswith(f"\n\n[Open the Problem List]({PROBLEM_LIST_PATH})")
+    assert payload["message"].endswith(f"\n\n[Open the Daily Brief]({PROBLEM_LIST_PATH})")
     assert payload["message"].startswith("Frozen") or "Door X unavailable" in payload["message"]
 
 

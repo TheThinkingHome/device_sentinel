@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.29.0 (2026-11-14)
+# File: tests/test_recommendations.py, Version: 0.30.7 (2026-11-26)
 
 """The brief's Recommendations section and the device cards (rules
 REC-02, REC-04, REC-10).
@@ -457,7 +457,7 @@ async def test_each_card_lists_its_devices(hass: HomeAssistant):
     assert ids["area"] == [unknown.id]
     assert set(ids["names"]) == {twin_a.id, twin_b.id}, "names compared without regard to capitals"
     # The two type cards come last; none of these devices has a type.
-    assert [card["kind"] for card in coord.device_recommendations()] == ["power", "last_seen", "area", "names", "type"]
+    assert [card["kind"] for card in coord.device_recommendations()] == ["last_seen", "names", "area", "power", "type"]
     assert cards["last_seen"]["body"].startswith("1 device has a Last Seen sensor")
     names = [row["name"] for row in cards["power"]["devices"]]
     assert names == sorted(names, key=str.casefold)
@@ -480,7 +480,7 @@ async def test_the_tab_carries_the_cards_and_the_power_choices(hass: HomeAssista
     reply = await client.receive_json()
     assert reply["success"], reply
     result = reply["result"]
-    assert [card["kind"] for card in result["devices"]] == ["power", "last_seen", "area", "names", "type"]
+    assert [card["kind"] for card in result["devices"]] == ["last_seen", "names", "area", "power", "type"]
     assert "PoE Powered" in result["power"]["choices"] and result["power"]["quantity"] == [1, 8]
     assert not any("Power Not Set" in line for line in result["lines"]), "the cards are not repeated as lines"
 

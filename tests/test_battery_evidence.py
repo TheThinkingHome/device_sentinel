@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_evidence.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_battery_evidence.py, Version: 0.30.7 (2026-11-26)
 
 """Each battery device's day kept for a better forecast later
 (rule BAT-16).
@@ -72,11 +72,11 @@ async def test_a_day_keeps_volts_degrees_and_events(hass: HomeAssistant):
     coord.battery_evidence_fold(today)
     coord.battery_evidence_fold(today)
     rows = {d.name: coord.data["devices"][d.id].get(DEV_BATTERY_EVIDENCE) for d in (coin, zha, plug, quiet)}
-    assert rows["coin"] == [[today.isoformat(), 2.95, 21.5, 400]]
+    assert rows["coin"] == [[today.isoformat(), 2.95, 21.5, 400, None, None, None, None]]
     # ZHA's battery_voltage on the battery sensor.
-    assert rows["zha"] == [[today.isoformat(), 2.8, None, 400]]
+    assert rows["zha"] == [[today.isoformat(), 2.8, None, 400, None, None, None, None]]
     # A mains reading is not a battery's.
-    assert rows["plug"] == [[today.isoformat(), None, None, 400]]
+    assert rows["plug"] == [[today.isoformat(), None, None, 400, None, None, None, None]]
     # A device not heard that day measured nothing.
     assert rows["quiet"] == []
     for device in (coin, zha, plug):

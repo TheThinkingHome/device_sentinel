@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_tables.py, Version: 0.29.8 (2026-11-20)
+# File: test_storage_tables.py, Version: 0.30.7 (2026-11-26)
 
 """The shape check reads every table and the clocks file, not only the
 device records (rule STOR-05).
@@ -79,6 +79,11 @@ def _clock(**over):
         "battery_day_counts": [3, 1],
         "battery_volts_today_low": None,
         "battery_volts_today_high": None,
+        # The day's temperatures beside the voltage (rule BAT-16).
+        "battery_temp_today_low": None,
+        "battery_temp_today_high": None,
+        "battery_temp_at_volts_low": None,
+        "battery_temp_at_volts_high": None,
     }
     row.update(over)
     return row
