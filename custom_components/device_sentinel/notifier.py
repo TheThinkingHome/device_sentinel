@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.30.11 (2026-11-25)
+# File: notifier.py, Version: 0.29.7 (2026-11-18)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -52,8 +52,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
-from .narrative import BRIEF_STATE_WORDS, kind_text
-from .phrases import say
+from .narrative import BRIEF_STATE_WORDS
 from .const import (
     ENTITY_TARGET_PREFIX,
     NOTIFY_ENTITY_SEND,
@@ -136,29 +135,10 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # read the Daily Brief's words, as its Right Now table says them:
 # "stopped reporting", "signal railed" (rules NOTE-01, LIST-02).
 _SUMMARY_WORD = {
-    TODO_KIND_FLAPPING: "push.card.short_drop_outs",
-    SIGNAL_ROW_LOW: "push.card.low_signal",
+    TODO_KIND_FLAPPING: "has short drop-outs",
+    SIGNAL_ROW_LOW: "low signal",
     **BRIEF_STATE_WORDS,
 }
-
-# The family names a push's title and the card's lines carry.
-_FAMILY_TITLE = {
-    NOTIFY_FAMILY_BATTERY: "push.family.battery",
-    NOTIFY_FAMILY_SIGNAL: "push.family.signal",
-    NOTIFY_FAMILY_FREEZE: "push.family.freeze",
-}
-
-
-def _summary_word(kind: str) -> str:
-    """A kind as the card and a push summary say it, in the house's
-    language (rule GEN-12)."""
-    key = _SUMMARY_WORD.get(kind)
-    return say(key) if key else kind_text(kind)
-
-
-def _family_title(family: str) -> str:
-    key = _FAMILY_TITLE.get(family)
-    return say(key) if key else str(NOTIFY_FAMILY_TITLES.get(family, family))
 
 
 def _in_quiet_hours(options: dict[str, Any], now_hms: str) -> bool:
@@ -351,12 +331,7 @@ def fitted_for(hass: Any, target: str, payload: dict[str, Any]) -> dict[str, Any
             plain["data"]["disable_notification"] = True
         message = str(plain.get("message") or "")
         if len(message) > TELEGRAM_LONGEST:
-            # The cut leaves 60 characters for the note, or more where a
-            # language's note is longer, so the message stays inside the
-            # limit whatever the note says.
-            rest = "\n\n" + say("push.telegram_rest")
-            keep = max(0, min(TELEGRAM_LONGEST - 60, TELEGRAM_LONGEST - len(rest)))
-            plain["message"] = message[:keep].rstrip() + rest
+            plain["message"] = message[: TELEGRAM_LONGEST - 60].rstrip() + "\n\n(The rest is in Home Assistant.)"
         return plain
     if platform == "group":
         return plain
@@ -435,10 +410,8 @@ class NotifierMixin:
         rest = len(entries) - len(named)
         parts = [*always, *named]
         if rest > 0:
-            parts.append(say("push.summary.more_devices", count=rest))
-        if not parts:
-            return say("push.summary.all_clear")
-        return say("push.sentence", clause=say("push.summary.separator").join(parts))
+            parts.append(f"and {rest} more device{'s' if rest != 1 else ''}")
+        return ", ".join(parts) + "." if parts else "All clear."
 
     def _with_area(self, device_id: str | None, name: Any) -> str:
         """A device's name as a phone message says it: with its area in
@@ -498,7 +471,8 @@ class NotifierMixin:
                 # as devices return, and printed alone it reads as one
                 # figure that will not hold still (rule UP-11).
                 always.append(
-                    say("push.card.upstream_down", count=behind, name=display, down=count)
+                    f"{display} down, {count} of {behind} devices "
+                    "unavailable"
                 )
         if family == NOTIFY_FAMILY_BATTERY:
             # Two sources, because low and falling are two questions
@@ -530,26 +504,26 @@ class NotifierMixin:
                         _rank(TODO_KIND_LOW_BATTERY), _since(row),
                         # As reported, the same on every surface, so 15.5 never
                         # reads "15%", a level the threshold did not call low.
-                        say("push.card.battery_level", name=name, level=level_text(level)),
+                        f"{name} {level_text(level)}",
                     )
                 else:
                     rows[_key(row, len(rows))] = (
-                        _rank(TODO_KIND_LOW_BATTERY), _since(row), say("push.card.battery_low", name=name),
+                        _rank(TODO_KIND_LOW_BATTERY), _since(row), f"{name} low",
                     )
             for row in self.battery_falling_list:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
-                left = row.get("until") or (say("push.card.empty_in", left=row["left"]) if row.get("left") else None)
-                clause = left or say("push.card.running_down")
+                left = row.get("until") or (f"empty in {row['left']}" if row.get("left") else None)
+                clause = left or "running down"
                 key = _key(row, len(rows))
                 if key in rows:
                     rank, since, said = rows[key]
-                    rows[key] = (rank, since, say("push.card.also", said=said, clause=clause))
+                    rows[key] = (rank, since, f"{said}, {clause}")
                 else:
                     rows[key] = (
                         _rank(TODO_KIND_FALLING_BATTERY), _since(row),
-                        say("push.card.name_words", name=name, words=clause),
+                        f"{name} {clause}",
                     )
             entries.extend(rows.values())
         elif family == NOTIFY_FAMILY_SIGNAL:
@@ -565,7 +539,7 @@ class NotifierMixin:
                 kind = row.get("kind") or SIGNAL_ROW_LOW
                 entries.append((
                     _rank(TODO_KIND_RAILED_SIGNAL), _since(row),
-                    say("push.card.name_words", name=name, words=_summary_word(kind)),
+                    f"{name} {_SUMMARY_WORD.get(kind, kind)}",
                 ))
             # Short drop-outs are a signal problem, named with how many
             # (rules NOTE-01, SIG-17).
@@ -574,10 +548,10 @@ class NotifierMixin:
                     continue
                 name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
                 words = (
-                    say("push.card.has_flap", words=self.flap_words(row["device_id"]))  # type: ignore[attr-defined]
-                    if row.get("device_id") else _summary_word(TODO_KIND_FLAPPING)
+                    f"has {self.flap_words(row['device_id'])}"  # type: ignore[attr-defined]
+                    if row.get("device_id") else _SUMMARY_WORD[TODO_KIND_FLAPPING]
                 )
-                entries.append((_rank(TODO_KIND_FLAPPING), _since(row), say("push.card.name_words", name=name, words=words)))
+                entries.append((_rank(TODO_KIND_FLAPPING), _since(row), f"{name} {words}"))
         elif family == NOTIFY_FAMILY_FREEZE:
             down_rows = self.reportable_down_rows
             for row in down_rows:
@@ -595,11 +569,11 @@ class NotifierMixin:
                 word = (
                     f"{hub_words[:1].lower()}{hub_words[1:]}"
                     if hub_words
-                    else _summary_word(kind)
+                    else _SUMMARY_WORD.get(kind, kind)
                 )
-                entries.append((_rank(kind), _since(row), say("push.card.name_words", name=name, words=word)))
+                entries.append((_rank(kind), _since(row), f"{name} {word}"))
         if not entries and not always:
-            return say("push.summary.all_clear")
+            return "All clear."
         return self._capped(entries, always)
 
     def _family_payload(
@@ -612,8 +586,8 @@ class NotifierMixin:
         recovery carries the silent flags for both mobile platforms; a
         fault leaves them off so the phone's own sound plays.
         """
-        title = say("push.title.family", family=_family_title(family))
-        message = say("push.message", line=event_line, summary=self._family_summary(family))
+        title = f"Device Sentinel: {NOTIFY_FAMILY_TITLES.get(family, family)}"
+        message = f"{event_line} Summary: {self._family_summary(family)}"
         data: dict[str, Any] = {"tag": NOTIFY_FAMILY_IDS[family]}
         if recovery:
             data.update(_ANDROID_SILENT)
@@ -632,7 +606,7 @@ class NotifierMixin:
         summary, _ = self._upstream_item_text(  # type: ignore[attr-defined]
             name, {UPSTREAM_KIND: since}, count
         )
-        return say("push.sentence", clause=summary)
+        return f"{summary}."
 
     def _upstream_return_words(self, name: str) -> str:
         """The recovery push, in the Daily Brief's words for the return.
@@ -661,7 +635,7 @@ class NotifierMixin:
         for row in reversed(self.data.get(DATA_SYSTEM_EVENTS) or []):  # type: ignore[attr-defined]
             if (row.get(SYS_KIND), row.get(SYS_SCOPE)) == wanted:
                 return self._system_event_sentence(row)  # type: ignore[attr-defined]
-        return say("push.upstream_back", name=self._integration_title(name))  # type: ignore[attr-defined]
+        return f"{self._integration_title(name)} is back."  # type: ignore[attr-defined]
 
     async def async_push_upstream(
         self, name: str, count: int, recovered: bool = False
@@ -683,7 +657,7 @@ class NotifierMixin:
             self._upstream_announced[name] = count
             message = self._upstream_down_words(name, count)
         payload: dict[str, Any] = {
-            "title": say("push.title.upstream"),
+            "title": "Device Sentinel: upstream",
             "message": message,
             "data": {"tag": f"device_sentinel_upstream_{name}"},
         }
@@ -840,21 +814,21 @@ class NotifierMixin:
         lines: list[str] = []
         for family in ("freeze", "battery", "signal"):
             summary = self._family_summary(family)
-            if summary != say("push.summary.all_clear"):
-                title = _family_title(family)
+            if summary != "All clear.":
+                title = NOTIFY_FAMILY_TITLES[family]
                 # The card is drawn as Markdown and the summary names
                 # devices, whose names may come from the device itself:
                 # escaped here, and only here, since the same
                 # summary goes to phones as plain text.
-                lines.append(say("push.card.line", family=title, summary=_card_text(summary)))
+                lines.append(f"{title}: {_card_text(summary)}")
         # A card that lists anything ends with a link to the Problem
         # List, which names every device the card counts (rule NOTE-11).
         # Home Assistant draws the card as Markdown and leaves a link
         # inside Home Assistant as a plain link, so it opens in place.
         message = (
-            "\n".join(lines) + "\n\n" + say("push.card.open_list", path=PROBLEM_LIST_PATH)
+            "\n".join(lines) + f"\n\n[Open the Problem List]({PROBLEM_LIST_PATH})"
             if lines
-            else say("push.card.all_reporting")
+            else "All devices reporting."
         )
         if message == getattr(self, "_card_written", None):
             return

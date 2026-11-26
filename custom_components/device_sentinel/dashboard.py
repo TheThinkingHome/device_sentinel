@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.30.9 (2026-11-25)
+# File: dashboard.py, Version: 0.30.2 (2026-11-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -192,7 +192,7 @@ from .const import (
 from .escalation import fold, withdrawals_once
 from .networks import problem_groups
 from .outage_detail import STALLED, pair_key, parse_detail
-from .report_brief import repeat_paragraph
+from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import area_name_of, device_field
 from .power_source import stands_for_none
 from .stacks import shows_status_row
@@ -2237,7 +2237,7 @@ class BriefViewMixin:
                 for row in rows
             ]
             if rows:
-                repeat["paragraph"] = repeat_paragraph()
+                repeat["paragraph"] = REPEAT_PARAGRAPH
             else:
                 repeat["words"] = (
                     "No device failed more than once in the seven days "

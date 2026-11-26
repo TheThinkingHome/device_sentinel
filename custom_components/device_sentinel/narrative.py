@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.30.11 (2026-11-25)
+# File: narrative.py, Version: 0.30.4 (2026-11-23)
 
 """How to say what happened: the composer.
 
@@ -31,10 +31,9 @@ from datetime import datetime
 
 from homeassistant.util import dt as dt_util
 
-from .restart_values import confirmed_by, is_confirmed_cause
+from .restart_values import CONFIRMED_ON_DASHBOARD, confirmed_by, is_confirmed_cause
 from .battery_level import level_text
 from . import clock
-from .phrases import say
 from .const import (
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_INTERVENTION,
@@ -86,41 +85,21 @@ from .escalation import ESCALATED_FROM, state_word
 # Kitchen Motion became unavailable."); the state words are what it is,
 # for a list line, as the brief's Right Now table says it. A hub that
 # goes down, and a dropping-out device's count, are worded where the
-# device is known (rules NOTE-01, LIST-02, UNAV-08). Each table holds
-# the phrase's key; say() gives the words in the house's language
-# (rule GEN-12).
+# device is known (rules NOTE-01, LIST-02, UNAV-08).
 BRIEF_EVENT_WORDS = {
-    TODO_KIND_FROZEN: "push.kind.event.frozen",
-    TODO_KIND_NEVER_REPORTED: "push.kind.event.never_reported",
-    TODO_KIND_UNAVAILABLE: "push.kind.event.unavailable",
-    TODO_KIND_UNKNOWN: "push.kind.event.unknown",
-    TODO_KIND_RAILED_SIGNAL: "push.kind.event.railed_signal",
+    TODO_KIND_FROZEN: "stopped reporting",
+    TODO_KIND_NEVER_REPORTED: "never reported",
+    TODO_KIND_UNAVAILABLE: "became unavailable",
+    TODO_KIND_UNKNOWN: "went unknown",
+    TODO_KIND_RAILED_SIGNAL: "signal railed",
 }
 BRIEF_STATE_WORDS = {
-    TODO_KIND_FROZEN: "push.kind.state.frozen",
-    TODO_KIND_NEVER_REPORTED: "push.kind.state.never_reported",
-    TODO_KIND_UNAVAILABLE: "push.kind.state.unavailable",
-    TODO_KIND_UNKNOWN: "push.kind.state.unknown",
-    TODO_KIND_RAILED_SIGNAL: "push.kind.state.railed_signal",
+    TODO_KIND_FROZEN: "stopped reporting",
+    TODO_KIND_NEVER_REPORTED: "never reported",
+    TODO_KIND_UNAVAILABLE: "unavailable",
+    TODO_KIND_UNKNOWN: "unknown",
+    TODO_KIND_RAILED_SIGNAL: "signal railed",
 }
-
-
-def kind_text(kind: str) -> str:
-    """A kind no phrase covers, as words rather than its code name."""
-    return str(kind).replace("_", " ")
-
-
-def event_words(kind: str) -> str:
-    """A kind as what a device did, "stopped reporting", in the house's
-    language; a kind with no phrase reads as itself, in words."""
-    key = BRIEF_EVENT_WORDS.get(kind) or NarrativeMixin._EVENT_WORDING.get(kind)
-    return say(key) if key else kind_text(kind)
-
-
-def state_words(kind: str) -> str:
-    """A kind as what a device is, "unavailable", in the house's language."""
-    key = BRIEF_STATE_WORDS.get(kind)
-    return say(key) if key else kind_text(kind)
 
 
 class NarrativeMixin:
@@ -194,16 +173,16 @@ class NarrativeMixin:
     )
 
     _EVENT_WORDING = {
-        TODO_KIND_FLAPPING: "push.kind.event.short_drop_outs",
-        TODO_KIND_FROZEN: "push.kind.event.frozen",
+        TODO_KIND_FLAPPING: "started having short drop-outs",
+        TODO_KIND_FROZEN: "stopped reporting",
         # The brief's own word for the kind (rule UNAV-08).
-        TODO_KIND_UNAVAILABLE: "push.kind.event.unavailable",
-        TODO_KIND_UNKNOWN: "push.kind.event.unknown",
-        TODO_KIND_RAILED_SIGNAL: "push.kind.event.railed_signal",
+        TODO_KIND_UNAVAILABLE: "became unavailable",
+        TODO_KIND_UNKNOWN: "went unknown",
+        TODO_KIND_RAILED_SIGNAL: "signal railed",
         # Present tense, because nothing happened to the device: what
         # changed is what the readings now say about where it is
         # heading (rule LIST-02).
-        TODO_KIND_FALLING_BATTERY: "push.kind.event.falling_battery",
+        TODO_KIND_FALLING_BATTERY: "battery is running down",
     }
 
     # Each kind carries its own duration template rather than sharing
@@ -213,39 +192,31 @@ class NarrativeMixin:
     # second form is used when no duration is known.
     _STATE_TEMPLATE = {
         TODO_KIND_FLAPPING: (
-            "push.line.short_drop_outs_for",
-            "push.line.short_drop_outs",
+            "has had short drop-outs for {ago}",
+            "has short drop-outs",
         ),
         TODO_KIND_FROZEN: (
-            "push.line.frozen_for",
-            "push.line.frozen",
+            "stopped reporting {ago} ago",
+            "stopped reporting",
         ),
         TODO_KIND_UNAVAILABLE: (
-            "push.line.unavailable_for",
-            "push.line.unavailable",
+            "has been unavailable for {ago}",
+            "is unavailable",
         ),
-        TODO_KIND_UNKNOWN: ("push.line.unknown_for", "push.line.unknown"),
+        TODO_KIND_UNKNOWN: ("has been unknown for {ago}", "is unknown"),
         TODO_KIND_RAILED_SIGNAL: (
-            "push.line.railed_signal_for",
-            "push.line.railed_signal",
+            "signal has been railed for {ago}",
+            "signal is railed",
         ),
         # No duration, because how long the projection has stood is
         # not the interesting number; how long the cell has is, and
         # the brief's own falling line carries that.
         TODO_KIND_FALLING_BATTERY: (
-            "push.line.falling_battery",
-            "push.line.falling_battery",
+            "battery is running down",
+            "battery is running down",
         ),
     }
 
-
-    # Each form of the change clause: any kind, a battery, and a battery
-    # with its level.
-    _CHANGE_KEYS = {
-        "sentence": ("push.change.sentence", "push.change.battery_sentence", "push.change.battery_sentence_level"),
-        "table": ("push.change.table", "push.change.battery_table", "push.change.battery_table_level"),
-        "flood": ("push.change.flood", "push.change.battery_flood", "push.change.battery_flood_level"),
-    }
 
     @staticmethod
     def _clock(epoch: float) -> str:
@@ -271,8 +242,8 @@ class NarrativeMixin:
         if isinstance(level, (int, float)):
             shown = level_text(level)
             if state:
-                return say("push.battery.is_at", level=shown)
-            if self._battery_still_low(device_id):
+                return f"battery is at {shown}"
+            if level <= self.threshold_for(device_id) + BATTERY_CLEAR_MARGIN:  # type: ignore[attr-defined]
                 # When it crossed, and where it stands, because "fell"
                 # reads as a fall at a level it may have risen to since
                 # (rule BAT-03). A row of history is told by its own
@@ -280,31 +251,20 @@ class NarrativeMixin:
                 # carries no other, or `crossed_at` for its day; the
                 # device's own crossing is the latest one.
                 if at is not None:
-                    return say("push.battery.crossed_at", time=at, level=shown)
-                crossed = self._crossed_day(record, crossed_at)
-                if crossed:
-                    return say("push.battery.crossed_on", day=crossed, level=shown)
-                return say("push.battery.crossed", level=shown)
+                    on = f" at {at}"
+                else:
+                    crossed = self._crossed_day(record, crossed_at)
+                    on = f" on {crossed}" if crossed else ""
+                return f"battery crossed the threshold{on}. Its current level is {shown}"
             # Back above the line. The level it fell to is not stored,
             # so no number is given: "now 55%" would read as if 55 were
             # the low reading. A cell back at the level the replacement
             # rule calls full may be new or recharged, and the brief
             # does not claim which (rule BAT-06).
             if level >= BATTERY_REPLACED_LANDS:
-                return say("push.battery.read_low_replaced")
-            return say("push.battery.read_low_recovered")
-        return say("push.battery.is_low") if state else say("push.battery.read_low")
-
-    def _battery_still_low(self, device_id: str) -> bool:
-        """Whether the device's level still reads low, so a battery
-        sentence carries its level and the time it crossed (rule BAT-03)."""
-        record = self.data[DATA_DEVICES].get(device_id) or {}
-        level = record.get(DEV_BATTERY_VALUE)
-        return (
-            isinstance(level, (int, float))
-            and not isinstance(level, bool)
-            and level <= self.threshold_for(device_id) + BATTERY_CLEAR_MARGIN  # type: ignore[attr-defined]
-        )
+                return "battery read low, since replaced or recharged"
+            return "battery read low, since recovered"
+        return "battery is low" if state else "battery read low"
 
     @staticmethod
     def _crossed_day(record: dict[str, Any], crossed_at: float | None = None) -> str | None:
@@ -320,16 +280,16 @@ class NarrativeMixin:
         return clock.day_text(dt_util.as_local(moment))
 
     def _change_clause(
-        self, row: dict[str, Any], form: str = "sentence", name: str = "", time: str = ""
+        self, row: dict[str, Any], form: str = "sentence"
     ) -> str | None:
         """Return how a worse problem replaced a lesser one, else None.
 
         In these words: "Soil Irrigation (Monstera) was marked
         unavailable from frozen at 3:43 AM", and "Door 2nd Bedroom's
         battery was marked low (18%) from running down" (rule LIST-07).
-        The form follows where the clause lands: a whole sentence with
-        the name and the time given, alone in a table cell whose row
-        already names the device, or after "N devices" in a flood.
+        The form follows where the clause lands: after the name in a
+        sentence, alone in a table cell whose row already names the
+        device, or after "N devices" in a flood.
 
         The level follows the low battery rule: shown only while the
         cell still reads low, because a row carries no reading of its
@@ -340,14 +300,27 @@ class NarrativeMixin:
             return None
         worse = row[INC_KIND]
         if worse == TODO_KIND_LOW_BATTERY:
-            device_id = row[INC_DEVICE_ID]
-            level = self.data[DATA_DEVICES].get(device_id, {}).get(DEV_BATTERY_VALUE)
-            shown = level_text(level) if self._battery_still_low(device_id) else ""
-            key = self._CHANGE_KEYS[form][2 if shown else 1]
-            return say(key, name=name, time=time, level=shown, lesser=state_word(lesser))
-        return say(
-            self._CHANGE_KEYS[form][0], name=name, time=time, worse=state_word(worse), lesser=state_word(lesser)
-        )
+            level = self.data[DATA_DEVICES].get(row[INC_DEVICE_ID], {}).get(
+                DEV_BATTERY_VALUE
+            )
+            shown = (
+                f" ({level_text(level)})"
+                if isinstance(level, (int, float))
+                and level <= self.threshold_for(row[INC_DEVICE_ID]) + BATTERY_CLEAR_MARGIN  # type: ignore[attr-defined]
+                else ""
+            )
+            core = f"marked low{shown} from {state_word(lesser)}"
+            return {
+                "sentence": f"'s battery was {core}",
+                "table": f"battery {core}",
+                "flood": f"had their battery {core}",
+            }[form]
+        core = f"marked {state_word(worse)} from {state_word(lesser)}"
+        return {
+            "sentence": f" was {core}",
+            "table": core,
+            "flood": f"were {core}",
+        }[form]
 
     def _recovery_tail(self, row: dict[str, Any]) -> str:
         """Return what ended a silence, as a trailing clause.
@@ -360,48 +333,23 @@ class NarrativeMixin:
         says plainly that nobody saw the recovery (rule BRIEF-01).
         """
         cause = row.get(INC_CAUSE)
-        if cause == RECOVERY_CAUSE_UNOBSERVED:
-            return say("push.tail.clause", clause=say("push.cause.unobserved"))
-        if is_confirmed_cause(cause):
-            return say("push.tail.clause", clause=self._confirmed_words(cause))
+        if cause == RECOVERY_CAUSE_UNOBSERVED or is_confirmed_cause(cause):
+            return f", {cause}"
         if cause in RECOVERY_CAUSES_RESTART:
             # Stored by an older release: a restart or an outage
             # revived nothing, so the recovery is told plainly
             # (rule BRIEF-05).
             return ""
         if cause == RECOVERY_CAUSE_PAIRING:
-            return say("push.tail.revived_by_pairing")
+            return f", revived by a {cause}"
         if cause in RECOVERY_CAUSES_INTERVENTION:
             # A person's own act, already a phrase: "handled at the
             # device". Glued to "revived by a" it would read "revived
             # by a handled at the device".
-            return say("push.tail.clause", clause=say("push.cause.handled_at_device"))
+            return f", {cause}"
         if cause:
-            return say("push.tail.revived_by_a", cause=cause)
+            return f", revived by a {cause}"
         return ""
-
-    def _cause_words(self, cause: str) -> str:
-        """A recovery's stored cause, as a table cell names it, in the
-        house's language: the causes Device Sentinel writes by name, and
-        any other as it was stored."""
-        if cause == RECOVERY_CAUSE_UNOBSERVED:
-            return say("push.cause.unobserved")
-        if is_confirmed_cause(cause):
-            return self._confirmed_words(cause)
-        if cause == RECOVERY_CAUSE_PAIRING:
-            return say("brief.stored.pairing_window")
-        if cause in RECOVERY_CAUSES_INTERVENTION:
-            return say("push.cause.handled_at_device")
-        return cause
-
-    @staticmethod
-    def _confirmed_words(cause: str) -> str:
-        """A confirmed recovery's stored cause, "confirmed working by"
-        and the person's name, in the house's language (rule WATCH-12)."""
-        who = confirmed_by(cause)
-        if who:
-            return say("push.cause.confirmed_by", who=who)
-        return say("push.cause.confirmed_on_dashboard")
 
     @staticmethod
     def _began_at(row: dict[str, Any]) -> float:
@@ -437,25 +385,24 @@ class NarrativeMixin:
         kind = row[INC_KIND]
         # A worse problem replacing a lesser one is one change, told
         # as that change (rule LIST-07).
-        change = self._change_clause(row, name=name, time=self._clock(row[INC_WHEN]))
+        change = self._change_clause(row)
         if change is not None:
-            return change
+            return f"{name}{change} at {self._clock(row[INC_WHEN])}"
         when = self._clock(self._began_at(row))
         if kind == TODO_KIND_LOW_BATTERY:
             # Its time inside the first sentence, not after the level
             # (rule BAT-03).
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False, at=when)
-            if self._battery_still_low(row[INC_DEVICE_ID]):
-                return say("push.opening.timed", name=name, words=phrase)
-            return say("push.opening.at", name=name, words=phrase, time=when)
-        key = self._EVENT_WORDING.get(kind)
-        wording = say(key) if key else kind_text(kind)
+            if " at " in phrase:
+                return f"{name} {phrase}"
+            return f"{name} {phrase} at {when}"
+        wording = self._EVENT_WORDING.get(kind, kind)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         if kind == TODO_KIND_UNAVAILABLE and hub:
             # A hub went down (rule STACK-10); a Z-Wave device became
             # unavailable (rule UNAV-08).
             wording = hub[0]
-        return say("push.opening.at", name=name, words=wording, time=when)
+        return f"{name} {wording} at {when}"
 
     def _compose_event(self, row: dict[str, Any]) -> str:
         """Return one incident as a sentence of history.
@@ -477,17 +424,13 @@ class NarrativeMixin:
             tail = self._recovery_tail(row)
             # A closed signal problem says so: the device never stopped
             # reporting, and "recovered" alone reads as if it had.
-            at, after = (
-                ("push.event.signal_recovered_at", "push.event.signal_recovered_after")
-                if kind == TODO_KIND_RAILED_SIGNAL
-                else ("push.event.recovered_at", "push.event.recovered_after")
-            )
+            what = "signal recovered" if kind == TODO_KIND_RAILED_SIGNAL else "recovered"
             if row.get(INC_DURATION) is None:
-                return say(at, name=name, time=when, tail=tail)
-            return say(after, name=name, time=when, span=span, tail=tail)
+                return f"{name} {what} at {when}{tail}."
+            return f"{name} {what} at {when} after {span}{tail}."
         if kind == TODO_KIND_NEVER_REPORTED:
-            return say("push.event.never_reported", name=name)
-        return say("push.sentence", clause=self._opening_clause(row))
+            return f"{name} has never reported since it was discovered."
+        return f"{self._opening_clause(row)}."
 
     def _confirmed_sentence(self, row: dict[str, Any]) -> str:
         """A recovery a person confirmed with It's Back, as its own
@@ -496,13 +439,14 @@ class NarrativeMixin:
         name = self._told_name(row)
         when = self._clock(row[INC_WHEN])
         who = confirmed_by(row[INC_CAUSE])
-        listed = row.get(INC_DURATION) is not None
-        span = self._human_span(row.get(INC_DURATION)) if listed else ""
+        after = (
+            ""
+            if row.get(INC_DURATION) is None
+            else f", after {self._human_span(row.get(INC_DURATION))} listed as down"
+        )
         if who:
-            key = "push.confirmed.by_after" if listed else "push.confirmed.by"
-            return say(key, time=when, who=who, name=name, span=span)
-        key = "push.confirmed.dashboard_after" if listed else "push.confirmed.dashboard"
-        return say(key, time=when, name=name, span=span)
+            return f"At {when}, {who} confirmed {name} was working{after}."
+        return f"At {when}, {name} was confirmed working {CONFIRMED_ON_DASHBOARD}{after}."
 
     def _action_sentence(
         self, name: str, cause: str | None, when: str
@@ -514,29 +458,32 @@ class NarrativeMixin:
         deleting a row does not silence anything.
         """
         if cause == ACTION_UNACKNOWLEDGED:
-            return say("push.action.unacknowledged", name=name, time=when)
+            return f"{name} acknowledgment removed at {when}."
         if cause == ACTION_DELETED:
-            return say("push.action.deleted", name=name, time=when)
+            return f"{name} deleted from the list at {when}."
         if cause == ACTION_READDED:
-            return say("push.action.readded", name=name, time=when)
+            return (
+                f"{name} re-added to the list at {when} because the "
+                "problem is still there."
+            )
         if cause == ACTION_ACKNOWLEDGED:
-            return say("push.action.acknowledged", name=name, time=when)
+            return f"{name} acknowledged at {when}."
         if cause == ACTION_MUTED:
             # A person's mute, not a recovery (rule LIST-09).
-            return say("push.action.muted", name=name, time=when)
+            return f"{name} was muted at {when}."
         if cause == ACTION_REMOVED:
             # Removed from Home Assistant, its record held (rule WATCH-07).
-            return say("push.action.removed", name=name, time=when)
+            return f"{name} was removed from Home Assistant at {when}."
         if cause == ACTION_SET_ASIDE:
             # Not a recovery and not an acknowledgment. The device
             # left the watched set with its problem standing, which
             # the reader deserves to hear in those words rather than
             # as an action nobody took (rule LIST-09).
-            return say("push.action.set_aside", name=name, time=when)
+            return f"{name} was set aside at {when} and is no longer watched."
         # A cause this renderer has not learned yet. The check is by
         # far the common case, so it is the safest thing to say, and
         # a legacy row carries no cause at all.
-        return say("push.action.acknowledged", name=name, time=when)
+        return f"{name} acknowledged at {when}."
 
     def _compose_episode(
         self,
@@ -566,29 +513,28 @@ class NarrativeMixin:
             # that happened, told the way an opening and its
             # recovery are (rule BRIEF-02).
             when = self._clock(opened[INC_WHEN])
-            return say("push.episode.deleted_readded", name=self._told_name(opened), time=when)
+            return (
+                f"{self._told_name(opened)} deleted from the list at {when}, "
+                "and re-added because the problem is still there."
+            )
         if is_confirmed_cause(resolved.get(INC_CAUSE)):
             # A person said it was working: told as that, in its own
             # sentence, whatever else was open at the time (rule WATCH-12).
-            return say(
-                "push.episode.confirmed",
-                clause=self._opening_clause(opened),
-                confirmed=self._confirmed_sentence(resolved),
-            )
+            return f"{self._opening_clause(opened)}. {self._confirmed_sentence(resolved)}"
         tail = (
-            say("push.tail.revived_by", cause=clause)
+            f", revived by {clause}"
             if clause
             else self._recovery_tail(resolved)
         )
         opening = self._opening_clause(opened)
         if resolved.get(INC_DURATION) is None:
             when = self._clock(resolved[INC_WHEN])
-            return say("push.episode.recovered_at", clause=opening, time=when, tail=tail)
+            return f"{opening} and recovered at {when}{tail}."
         frozen = self._frozen_span_sentence(opened, resolved, tail)
         if frozen is not None:
             return frozen
         span = self._human_span(resolved.get(INC_DURATION))
-        return say("push.episode.recovered_later", clause=opening, span=span, tail=tail)
+        return f"{opening} and recovered {span} later{tail}."
 
     def _frozen_span_sentence(
         self, opened: dict[str, Any], resolved: dict[str, Any], tail: str
@@ -628,19 +574,19 @@ class NarrativeMixin:
         if local_start.utcoffset() != local_end.utcoffset():
             # The clock changed inside the silence: the zone names keep
             # the two times true.
-            quiet = say("push.time_zone", time=quiet, zone=local_start.strftime("%Z"))
-            back = say("push.time_zone", time=back, zone=local_end.strftime("%Z"))
+            quiet = f"{quiet} {local_start.strftime('%Z')}"
+            back = f"{back} {local_end.strftime('%Z')}"
         if local_start.date() != local_end.date():
             # Across midnight both times carry their day, or a stop at
             # 1:04 AM and a return at 1:48 AM the next night read as 44
             # minutes (rule BRIEF-02).
-            quiet = say("push.day_time", day=clock.day_text(local_start), time=quiet)
-            back = say("push.day_time", day=clock.day_text(local_end), time=back)
+            quiet = f"{clock.day_text(local_start)}, {quiet}"
+            back = f"{clock.day_text(local_end)}, {back}"
         name = self._told_name(opened)
         # "Recovered", not "reported again": a freeze can also clear
         # because its wait grew, with no report, and the row cannot
         # tell the two apart.
-        return say("push.episode.frozen_span", name=name, quiet=quiet, back=back, tail=tail)
+        return f"{name} stopped reporting at {quiet} and recovered at {back}{tail}."
 
     def _pair_incidents(
         self, rows: list[dict[str, Any]]
@@ -728,27 +674,29 @@ class NarrativeMixin:
         )
         if worst == TODO_KIND_NEVER_REPORTED:
             clause = (
-                say("push.line.never_reported_in", ago=ago)
+                f"has never reported in {ago}"
                 if ago
-                else say("push.line.never_reported")
+                else "has never reported"
             )
         elif worst == TODO_KIND_LOW_BATTERY:
             clause = self._battery_phrase(device_id, True)
-        elif worst not in self._STATE_TEMPLATE:
-            # A kind with no words of its own, an outage's row: its age
-            # where known, as it has always read.
-            clause = ago or kind_text(worst)
         else:
-            with_age, without_age = self._STATE_TEMPLATE[worst]
+            with_age, without_age = self._STATE_TEMPLATE.get(
+                worst, ("{ago}", worst)
+            )
             if worst == TODO_KIND_UNAVAILABLE and self.is_hub(device_id):  # type: ignore[attr-defined]
                 # A hub is down, not unavailable (rule STACK-10).
-                with_age, without_age = "push.line.hub_down_for", "push.line.hub_down"
-            clause = say(with_age, ago=ago) if ago else say(without_age)
+                with_age, without_age = "has been down for {ago}", "is down"
+            clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
         # The same device, so say so: "and 1 more problem" alone would
         # read as a second device.
-        if extra:
-            return say("push.line.more_problems", count=extra, name=name, clause=clause)
-        return say("push.line.one_problem", name=name, clause=clause)
+        tail = (
+            f", and {extra} more problem{'s' if extra != 1 else ''} "
+            "on the same device"
+            if extra
+            else ""
+        )
+        return f"{name} {clause}{tail}."
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.10 (2026-11-25)
+# File: coordinator.py, Version: 0.30.4 (2026-11-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -141,7 +141,6 @@ from .store import _version_tuple as _store_version_tuple
 from .removed_days import counted_gaps, prune_removed
 from .report_brief import brief_title_when
 from . import clock
-from . import phrases
 from .const import (
     BROKER_RIDER_DOMAINS,
     DOMAIN,
@@ -1188,11 +1187,6 @@ class DeviceSentinelCoordinator(
         except Exception as err:  # noqa: BLE001 - the language still decides
             LOGGER.debug("device_sentinel: the owner's time and date choices not read: %s", err)
         clock.bind(store, getattr(self.hass.config, "language", None))
-        # The words are read once, off the event loop (rule GEN-12), with
-        # the flag that puts the house in testing mode.
-        await self.hass.async_add_executor_job(
-            phrases.load, None, self.hass.config.path("device_sentinel", phrases.TEST_FLAG)
-        )
 
     async def async_setup(self) -> None:
         """Load storage, build the registry view, and start listening.

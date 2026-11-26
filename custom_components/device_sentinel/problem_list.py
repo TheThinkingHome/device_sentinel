@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.30.11 (2026-11-25)
+# File: problem_list.py, Version: 0.30.5 (2026-11-23)
 
 """The problem list: the single memory every channel renders.
 
@@ -44,8 +44,7 @@ from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
 from .events import sort_kinds
-from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS, kind_text, state_words
-from .phrases import say
+from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS
 from .normalise import row_damage
 from .removed_days import counted_gaps
 from . import clock
@@ -101,7 +100,7 @@ from .const import (
 # else; a railed signal row carries TODO_KIND_RAILED_SIGNAL, so the
 # two vocabularies are one (rule LIST-02).
 _EVENT_WORD = {
-    TODO_KIND_LOW_BATTERY: "push.kind.marked.low_battery",
+    TODO_KIND_LOW_BATTERY: "low",
 }
 # A device problem's push line says what the device did in the Daily
 # Brief's words, "At 3:04 pm, Kitchen Motion stopped reporting." (rules
@@ -117,18 +116,18 @@ _EVENT_WORD = {
 # which of them ended (rule NOTE-10).
 _FAULT_LINE = {
     TODO_KIND_FLAPPING: (
-        "push.fault.short_drop_outs",
-        "push.fault.short_drop_outs",
+        "{name} has short drop-outs",
+        "{name} has short drop-outs",
     ),
     TODO_KIND_FALLING_BATTERY: (
-        "push.fault.falling_battery_left",
-        "push.fault.falling_battery",
+        "{name} battery is running down, {left}",
+        "{name} battery is running down",
     ),
 }
 _RECOVERY_LINE = {
-    TODO_KIND_FLAPPING: "push.recovery.short_drop_outs",
-    TODO_KIND_LOW_BATTERY: "push.recovery.low_battery",
-    TODO_KIND_FALLING_BATTERY: "push.recovery.falling_battery",
+    TODO_KIND_FLAPPING: "{name} no longer has short drop-outs",
+    TODO_KIND_LOW_BATTERY: "{name} battery is no longer low",
+    TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
 }
 
 # The faults held for their notification debounce when the file was
@@ -486,8 +485,8 @@ class ProblemListMixin:
         # The rest in the Daily Brief's words, as its Right Now table
         # says them: "stopped reporting", "signal railed" (rule LIST-02).
         if kind in BRIEF_STATE_WORDS:
-            return state_words(kind)
-        return kind_text(kind)
+            return BRIEF_STATE_WORDS[kind]
+        return kind.replace("_", " ")
 
     def _upstream_item_text(
         self, name: str, kinds: dict[str, float | None], count: Any
@@ -1064,22 +1063,22 @@ class ProblemListMixin:
         was missed (rules LIST-02, NOTE-01, UNAV-08).
         """
         if not recovery and said:
-            return say("push.fault.words", time=when, name=name, words=said)
+            return f"At {when}, {name} {said}."
         if not recovery and kind in BRIEF_EVENT_WORDS:
-            return say("push.fault.words", time=when, name=name, words=say(BRIEF_EVENT_WORDS[kind]))
+            return f"At {when}, {name} {BRIEF_EVENT_WORDS[kind]}."
         if recovery:
             written = _RECOVERY_LINE.get(kind)
             if written is not None:
-                return say(written, time=when, name=name)
-            return say("push.recovery.recovered", time=when, name=name)
+                return f"At {when}, {written.format(name=name)}."
+            return f"At {when}, {name} recovered."
         pair = _FAULT_LINE.get(kind)
         if pair is not None:
             with_left, without = pair
             if left:
-                return say(with_left, time=when, name=name, left=left)
-            return say(without, time=when, name=name)
-        key = _EVENT_WORD.get(kind)
-        return say("push.fault.detected", time=when, name=name, word=say(key) if key else kind_text(kind))
+                return f"At {when}, {with_left.format(name=name, left=left)}."
+            return f"At {when}, {without.format(name=name)}."
+        word = _EVENT_WORD.get(kind, kind)
+        return f"At {when}, {name} was detected {word}."
 
     @callback
     def _collect_event(
@@ -1143,7 +1142,7 @@ class ProblemListMixin:
             words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
             said = words[0] if words else None
         elif not recovery and kind == TODO_KIND_FLAPPING:
-            said = say("push.fault.flap_check", words=self.flap_words(device_id))  # type: ignore[attr-defined]
+            said = f"has {self.flap_words(device_id)}. Check its signal"  # type: ignore[attr-defined]
         elif not recovery and kind == TODO_KIND_LOW_BATTERY:
             # A low battery reads as the brief says it, "battery
             # crossed the threshold on <date>. Its current level is
@@ -1161,7 +1160,7 @@ class ProblemListMixin:
         if confirmed is not None:
             # A person pressed It's Back: the push says who said the
             # device was working (rule WATCH-12).
-            line = say("push.recovery.confirmed", time=when, name=name, confirmed=self._confirmed_words(confirmed))  # type: ignore[attr-defined]
+            line = f"At {when}, {name} was {confirmed}."
         if recovery:
             cancel = self._held_events.pop(key, None)
             if cancel is not None:

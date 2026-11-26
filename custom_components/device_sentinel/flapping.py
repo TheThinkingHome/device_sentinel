@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.30.11 (2026-11-25)
+# File: flapping.py, Version: 0.28.6 (2026-11-08)
 
 """A device with short drop-outs (rule SIG-17).
 
@@ -48,7 +48,6 @@ from .const import (
     SHORT_DROPS_TO_START,
 )
 from .short_drops import is_short
-from .phrases import say
 
 
 def _number(value: Any) -> float | None:
@@ -215,7 +214,9 @@ class FlapMixin:
         SIG-17)."""
         count, longest = self._recent_short_drops(device_id, dt_util.utcnow().timestamp())
         if not count:
-            return say("push.flap.none", hours=SHORT_DROP_HOURS)
+            return f"short drop-outs in the last {SHORT_DROP_HOURS} hours"
         minutes = max(1, math.ceil(longest / 60.0))
-        within = say("push.flap.minutes", count=minutes)
-        return say("push.flap.count", count=count, hours=SHORT_DROP_HOURS, within=within)
+        within = f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+        noun = "short drop-out" if count == 1 else "short drop-outs"
+        each = "back within" if count == 1 else "each back within"
+        return f"{count} {noun} in the last {SHORT_DROP_HOURS} hours, {each} {within}"

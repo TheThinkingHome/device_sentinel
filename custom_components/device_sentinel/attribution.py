@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.30.11 (2026-11-25)
+# File: attribution.py, Version: 0.28.12 (2026-11-11)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -63,7 +63,6 @@ from .const import (
     SYS_INTEGRATION_UP,
 )
 from .outage_detail import pair_key
-from .phrases import say
 
 # The pairs, opening kind to closing kind. Each becomes one window
 # running from the opening to the close, or left open where the close
@@ -358,14 +357,14 @@ def attribute(
 # prose, the tables and any future notification cannot describe one
 # event three ways.
 _PHRASE = {
-    SYS_STORM_OPEN: "push.window.storm",
-    SYS_PAIRING_OPEN: "push.window.pairing",
-    SYS_DEVICE_HANDLED: "push.window.handled",
-    SYS_BRIDGE_DOWN: "push.window.bridge_down",
-    SYS_BROKER_DOWN: "push.window.broker_down",
-    SYS_UNCLEAN_RESTART: "push.window.unclean_restart",
-    SYS_RESTART: "push.window.restart",
-    SYS_RELOAD: "push.window.reload",
+    SYS_STORM_OPEN: "{scope} updating its devices all at once",
+    SYS_PAIRING_OPEN: "a {scope} pairing window",
+    SYS_DEVICE_HANDLED: "somebody handling the device",
+    SYS_BRIDGE_DOWN: "the {scope} bridge going down and coming back",
+    SYS_BROKER_DOWN: "the MQTT broker going down and coming back",
+    SYS_UNCLEAN_RESTART: "an unclean restart",
+    SYS_RESTART: "a restart",
+    SYS_RELOAD: "a reload",
 }
 
 
@@ -374,8 +373,8 @@ _PHRASE = {
 # "going down and coming back". For an inferred end the thing ended
 # but may not have come back, so that claim is dropped (rule STOR-18).
 _PHRASE_INFERRED = {
-    SYS_BRIDGE_DOWN: "push.window.bridge_down_inferred",
-    SYS_BROKER_DOWN: "push.window.broker_down_inferred",
+    SYS_BRIDGE_DOWN: "the {scope} bridge going down",
+    SYS_BROKER_DOWN: "the MQTT broker going down",
 }
 
 
@@ -399,8 +398,7 @@ def phrase(window: Window, name: Callable[[str], str] | None = None) -> str:
     """
     scope = name(str(window.scope)) if name is not None and window.scope else window.scope
     if getattr(window, "inferred_end", False):
-        key = _PHRASE_INFERRED.get(window.kind)
-        if key is not None:
-            return say(key, scope=scope)
-    key = _PHRASE.get(window.kind)
-    return say(key, scope=scope) if key else str(window.kind)
+        wording = _PHRASE_INFERRED.get(window.kind)
+        if wording is not None:
+            return wording.format(scope=scope)
+    return _PHRASE.get(window.kind, window.kind).format(scope=scope)

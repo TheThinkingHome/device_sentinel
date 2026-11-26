@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.30.11 (2026-11-25)
+# File: reports.py, Version: 0.30.4 (2026-11-23)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -43,6 +43,7 @@ from . import clock
 from .const import (
     LOGGER,
     CLASSIFICATION_SETTLED_TRIGGER,
+    UNASSIGNED_AREA,
     CONF_REPORT_LINKS,
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
@@ -66,7 +67,6 @@ from .report_signal import SignalReportMixin
 from .report_maintainer import MaintainerReportMixin
 from .device_fields import area_name_of
 from .naming import area_is_said
-from .phrases import say
 
 
 class ReportWritingMixin(
@@ -286,7 +286,7 @@ class ReportWritingMixin(
         # area beside every other name should not be left wondering
         # whether this one was looked up at all. In the word the bus
         # events use, Unassigned, so the reports and the events agree.
-        return say("brief.cell.name_area", name=cell, area=escape(room) if room else say("brief.cell.unassigned"))
+        return f"{cell} [{escape(room) if room else UNASSIGNED_AREA}]"
 
     def _device_status(self, device_id: str) -> str:
         """Return a device's muting status for the report column.
