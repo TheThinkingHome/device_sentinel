@@ -1,6 +1,6 @@
 # Device Sentinel Images
 
-The screenshots used in the [README](../../README.md) and the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki/Screenshots), with what each one shows. They are from a real house running Device Sentinel.
+The screenshots used in the [README](../../README.md) and the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki/Screenshots), with what each one shows. They are from a real house running Device Sentinel, except the Recommendations pictures added for 0.30.7, which show an example house so that all the new parts show at once.
 
 To use one from the wiki, link to its raw address: `https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/<file name>`, with each space written as `%20`.
 
@@ -73,6 +73,44 @@ The Devices tab: every device Device Sentinel found, opening on the watched ones
 The Recommendations tab with one card: the Wi-Fi channel overlapping a neighbour's network, and the clearer channel to move to. Each card has its Acknowledged box.
 
 ![Device Detail - Recommendations Open](./Device%20Detail%20-%20Recommendations%20Open.png)
+
+### Dashboard Recommendations.png
+
+The Recommendations tab from 0.30.7, most serious first and least serious last. The tab and the Active Recommendations button count the answers needed, so "Power Not Set (4)" is 4 answers for 25 devices.
+
+![Dashboard Recommendations](./Dashboard%20Recommendations.png)
+
+### Dashboard Recommendations - Power Not Set Selected.png
+
+Power Not Set open, with two models selected. The bar reads "2 models selected, 18 devices", and one answer with Set selected sets them all. Each row can still be answered on its own.
+
+![Dashboard Recommendations - Power Not Set Selected](./Dashboard%20Recommendations%20-%20Power%20Not%20Set%20Selected.png)
+
+### Dashboard Recommendations - Check Power Typed Under Other.png
+
+A card for power typed under Other before Device Sentinel asked whether it is a battery or wired. Each row shows what was typed, with a Battery and a Wired button and what each one does.
+
+![Dashboard Recommendations - Check Power Typed Under Other](./Dashboard%20Recommendations%20-%20Check%20Power%20Typed%20Under%20Other.png)
+
+### Dashboard Recommendations - Turn All On.png
+
+Last Seen Sensor Switched Off open, with Turn All On above the rows. It turns on each sensor Home Assistant switched off and leaves alone one you switched off yourself.
+
+![Dashboard Recommendations - Turn All On](./Dashboard%20Recommendations%20-%20Turn%20All%20On.png)
+
+### Dashboard Recommendations - Type Not Set.png
+
+Type Not Set open, one row a model, each with a box to select it.
+
+![Dashboard Recommendations - Type Not Set](./Dashboard%20Recommendations%20-%20Type%20Not%20Set.png)
+
+### Dashboard Recommendations - No Area Assigned.png
+
+No Area Assigned open, one row a device, each with a box to select it.
+
+![Dashboard Recommendations - No Area Assigned](./Dashboard%20Recommendations%20-%20No%20Area%20Assigned.png)
+
+Each picture has a dark version, its name ending in " - Dark", and a version marked in purple with what is new, its name ending in " - New in 0.30.7" (" - New in 0.30.7 - Dark" for the dark one).
 
 ## A Device's Page
 
