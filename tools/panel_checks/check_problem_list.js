@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_problem_list.js, Version: 0.30.8 (2026-11-24)
+// File: tools/panel_checks/check_problem_list.js, Version: 0.28.10 (2026-11-10)
 // Panel checks: the Problem List, a section of the Daily Brief tab
 // (rule DASH-02). Today it is the list to act on, with its filters,
 // sorts, ticks and mutes; a past day's is the problems that stood that
@@ -176,7 +176,7 @@ async function open(path, answers = {}) {
     check("and the marker leaves the address", card.window.location.search === "" && card.window.location.pathname === PREFIX,
       card.window.location.href);
     const fresh = await open(`${PREFIX}?open=today`, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }) });
-    check("opened fresh from the card, the dashboard shows today's Daily Brief", fresh.panel._tab === "daily-brief"
+    check("opened fresh from the card, the dashboard shows today's Daily Brief", fresh.panel._tab === "Daily Brief"
       && !fresh.panel._briefDay && fresh.window.location.search === "", fresh.window.location.href);
   }
 

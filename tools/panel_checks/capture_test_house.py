@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/panel_checks/capture_test_house.py, Version: 0.30.8 (2026-11-24)
+# File: tools/panel_checks/capture_test_house.py, Version: 0.27.10 (2026-10-27)
 
 """Capture the dashboard's replies from a three-device test house.
 
@@ -25,7 +25,7 @@ from tests.test_battery_report import _seed
 # Run from tests/, so the repository root is one level up.
 OUT = Path(__file__).resolve().parents[1] / "tools" / "panel_checks" / "payloads.json"
 TYPES = ["status", "classification", "problem_list", "recommendations", "integrations",
-         "devices", "brief", "battery_trends", "signal_trends", "phrases"]
+         "devices", "brief", "battery_trends", "signal_trends"]
 
 
 async def test_capture(hass, hass_ws_client):
