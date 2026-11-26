@@ -3,15 +3,15 @@
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_recommendation_models.js, Version: 0.28.10 (2026-11-10)
+// File: tools/panel_checks/check_recommendation_models.js, Version: 0.30.7 (2026-11-26)
 //
 // Panel checks: the Recommendations tab's cards whose answer covers a
 // model, one row per model (rules DEV-06, REC-04). Power Not Set, Type
 // Not Set and Model With More Than One Type: a row for each model with
 // the maker and model, how many devices, one chooser and one tick for
 // them all, and its devices listed when the row is opened. A device with
-// no model keeps its own row. The title counts the models and the
-// devices.
+// no model keeps its own row. The title counts the answers needed: one
+// for each model, one for each device with no model (rule REC-08).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendation_models.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -128,7 +128,7 @@ const MIXED = {
   const card = (kind) => [...page.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === kind);
   console.log("One row per model (rules DEV-06, REC-04)");
   const power = card("power");
-  check("The title counts the models and the devices", power.querySelector("h3").textContent === "Power Not Set (2 models, 5 devices)",
+  check("The title counts the answers needed: two models and a device with no model", power.querySelector("h3").textContent === "Power Not Set (3)",
     power.querySelector("h3").textContent);
   const rows = [...power.querySelectorAll("table > tbody > tr")];
   check("Three rows: the model of three, the model of one, and the device with no model", rows.length === 3, rows.length);
@@ -158,7 +158,7 @@ const MIXED = {
   await settle(); await settle(); await settle();
   const acks = page.calls.filter((c) => c.type === "device_sentinel/recommendation_ack").map((c) => c.device_id);
   check("One tick acknowledges each of the model's devices", JSON.stringify(acks) === JSON.stringify(["a1", "a2", "a3"]), acks);
-  check("The title then counts what is left", card("power").querySelector("h3").textContent === "Power Not Set (1 model, 2 devices)",
+  check("The title then counts what is left", card("power").querySelector("h3").textContent === "Power Not Set (2)",
     card("power").querySelector("h3").textContent);
   console.log("\nModel With More Than One Type");
   const mixed = card("mixed_types");

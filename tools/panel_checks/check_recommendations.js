@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.29.5 (2026-11-17)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.30.7 (2026-11-26)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // rows and lines not ticked, as the tab and the button do, says they
 // help Device Sentinel run better and that none is required, singles
@@ -315,8 +315,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   const quiet = await open({ path: PREFIX, answers: { recommendations: recs } });
   check("With nothing active it says nothing", quiet.root.querySelector("p.recline") === null);
 
-  // The opening line, the tab and the button agree (rule REC-01): one card
-  // of five devices reads five on each, never "1 recommendation".
+  // The opening line, the tab and the button agree (rule REC-08): they
+  // count cards, so the line and one card of five devices read two.
   console.log("\nThe opening line counts what the tab counts (REC-01)");
   const FIVE = {
     kind: "battery_off", title: "Battery Sensor Switched Off", simple: true, active: 5,
@@ -340,7 +340,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
       [opening, tabNow, bandNow && bandNow.textContent]);
     return v;
   };
-  await agree(0, "6 recommendations to help Device Sentinel run better. None of them is required.", "Recommendations (6)", "Active Recommendations (6)");
+  await agree(0, "2 recommendations to help Device Sentinel run better. None of them is required.", "Recommendations (2)", "Active Recommendations (2)");
   await agree(4, "1 recommendation to help Device Sentinel run better. None of them is required.", "Recommendations (1)", "Active Recommendations (1)");
   const done = await agree(5, "Nothing to recommend right now.", "Recommendations", null);
   check("Every row ticked: the card is still drawn, to untick", !!done.root.querySelector('article.rec[data-kind="battery_off"]'));
@@ -376,7 +376,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     Boolean(areaSelect) && [...areaSelect.options].map((o) => o.textContent).join("|") === "Choose…|Porch|Hall",
     areaRow && areaRow.innerHTML.slice(0, 400));
   check("No Area Assigned: its AREA column reads Not Set, with nothing more to press there",
-    areaRow && areaRow.children[1].textContent === "Not Set" && !areaRow.children[1].querySelector("button"));
+    areaRow && areaRow.children[2].textContent === "Not Set" && !areaRow.children[2].querySelector("button"));
   areaSelect.value = "porch"; areaSelect.dispatchEvent(new three.window.Event("change"));
   [...areaRow.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
   await settle(); await settle();

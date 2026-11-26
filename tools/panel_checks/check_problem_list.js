@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_problem_list.js, Version: 0.28.10 (2026-11-10)
+// File: tools/panel_checks/check_problem_list.js, Version: 0.30.7 (2026-11-26)
 // Panel checks: the Problem List, a section of the Daily Brief tab
 // (rule DASH-02). Today it is the list to act on, with its filters,
 // sorts, ticks and mutes; a past day's is the problems that stood that
@@ -175,9 +175,23 @@ async function open(path, answers = {}) {
       && card.root.querySelectorAll('.pane tbody input[type="checkbox"]').length >= 2, asked);
     check("and the marker leaves the address", card.window.location.search === "" && card.window.location.pathname === PREFIX,
       card.window.location.href);
+    // The page scrolls to the Problem List once, after the link (rule NOTE-11).
+    let scrolled = [];
+    const origin = card.window.HTMLElement.prototype.scrollIntoView;
+    card.window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.textContent); };
     const fresh = await open(`${PREFIX}?open=today`, { problem_list: () => ({ rows: JSON.parse(JSON.stringify(rows)) }) });
+    check("the link's request to show the Problem List was taken when the brief was drawn", fresh.panel._toProblemList === false,
+      fresh.panel._toProblemList);
+    fresh.window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.textContent); };
+    fresh.panel._toProblemList = true;
+    fresh.panel._paintBrief();
     check("opened fresh from the card, the dashboard shows today's Daily Brief", fresh.panel._tab === "Daily Brief"
       && !fresh.panel._briefDay && fresh.window.location.search === "", fresh.window.location.href);
+    check("and brings the Problem List into view, once", scrolled.join("|") === "Problem List" && fresh.panel._toProblemList === false, scrolled);
+    scrolled = [];
+    fresh.panel._paintBrief();
+    check("a later redraw leaves the page where it is", scrolled.length === 0, scrolled);
+    card.window.HTMLElement.prototype.scrollIntoView = origin;
   }
 
   console.log("\nA late reply is not drawn over another tab");

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_power_row.js, Version: 0.30.7 (2026-11-26)
 // Panel checks: the Power row. Words, the source icon in light and
 // dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library; the Battery Last
@@ -164,13 +164,25 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   await choose("PoE Powered");
   check("Pencil: no quantity and no text box for PoE Powered", qty.style.display === "none" && other.style.display === "none");
   await choose("Other");
-  check("Pencil: Other shows its text box and a quantity", other.style.display === "" && qty.style.display === "");
+  // Other asks battery or wired (rule DEV-08); the quantity waits for battery.
+  const how = cell.querySelector('select[aria-label="Battery or wired"]');
+  check("Pencil: Other shows its text box and asks battery or wired, with no quantity yet",
+    other.style.display === "" && how && how.style.display === "" && qty.style.display === "none");
   other.value = "9V"; other.dispatchEvent(new (other.ownerDocument.defaultView.Event)("input"));
-  qty.value = "2"; qty.dispatchEvent(new (qty.ownerDocument.defaultView.Event)("change"));
+  await click(buttonIn(cell, "Save"));
+  check("Save waits for battery or wired, and says so",
+    !calls.some((c) => c.type === "device_sentinel/device_power") && rowCell(root, "Powered by").textContent.includes("Choose battery or wired."));
+  cell = rowCell(root, "Powered by");
+  const how2 = cell.querySelector('select[aria-label="Battery or wired"]');
+  how2.value = "battery"; how2.dispatchEvent(new (how2.ownerDocument.defaultView.Event)("change"));
+  const qty2 = cell.querySelector('select[aria-label="How many"]');
+  check("Pencil: a battery answer shows the quantity", qty2.style.display === "");
+  qty2.value = "2"; qty2.dispatchEvent(new (qty2.ownerDocument.defaultView.Event)("change"));
   current.power = OWNER;
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_power");
-  check("Save sends the choice, the text and the quantity", sent && sent.choice === "Other" && sent.other === "9V" && sent.quantity === 2, sent);
+  check("Save sends the choice, the text, battery and the quantity",
+    sent && sent.choice === "Other" && sent.other === "9V" && sent.quantity === 2 && sent.wired === false, sent);
   // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
   check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   cell = rowCell(root, "Powered by");
@@ -252,6 +264,27 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
     day: "2026-10-18", how: "detected", waiting: true });
   bcell = rowCell(bpage.root, "Battery Last Charged");
   check("A rechargeable cell reads charged", !!bcell && /Detected charged on/.test(bcell.textContent), bcell && bcell.textContent);
+
+  console.log("\nUPS or Battery Backup (0.30.7)");
+  const MAINS = block({ words: "Mains Powered", source: "owner", kind: "mains", backup_power: false,
+    entry: { kind: "mains", type: "Mains Powered", quantity: null, set: "2026-11-26T12:00:00+00:00" } });
+  let ups = await open({}, MAINS);
+  let ucell = rowCell(ups.root, "Powered by");
+  const tick = ucell && ucell.querySelector('input[aria-label="UPS or Battery Backup"]');
+  check("A wired device offers UPS or Battery Backup, unticked", !!tick && !tick.checked && ucell.textContent.includes("UPS or Battery Backup"));
+  tick.checked = true; tick.dispatchEvent(new (tick.ownerDocument.defaultView.Event)("change"));
+  await settle(); await settle();
+  const marked = ups.calls.find((c) => c.type === "device_sentinel/device_backup_power");
+  check("Ticking it marks this one device", marked && marked.device_id === DEVICE && marked.on === true && marked.source === undefined, marked);
+  ups = await open({}, OWNER);
+  ucell = rowCell(ups.root, "Powered by");
+  check("A battery device is not offered it", ucell && !ucell.querySelector('input[aria-label="UPS or Battery Backup"]'));
+  ups = await open({}, block({ words: "Mains Powered", source: "stack", kind: "mains", backup_power: true, reported_by: "ZHA" }));
+  ucell = rowCell(ups.root, "Powered by");
+  const shown = ucell && ucell.querySelector('input[aria-label="UPS or Battery Backup"]');
+  check("A mark already given shows ticked", shown && shown.checked);
+  const plug = ucell && ucell.querySelector(".powericon");
+  check("Mains from the coordinator says who reported it", plug && plug.getAttribute("title") === "Reported by ZHA", plug && plug.outerHTML);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.29.8 (2026-11-19)
+// File: tools/panel_checks/check_acknowledged_rows.js, Version: 0.30.7 (2026-11-26)
 // Panel checks: an acknowledged row (rule REC-07). On the Daily Brief's Problem List,
 // the Daily Brief tab and the Recommendations cards the row fades to
 // 75%, all but its tick and the word beside it, so the tick still reads
@@ -141,7 +141,8 @@ const PROBLEM = (uid, name, acknowledged) => ({ uid, device_id: uid, name, integ
   reticked.panel.remove();
 
   const counted = await open("/recommendations", { recommendations: (reply) => ({ ...reply, devices: [named] }) });
-  check("an unticked card counts each row", counted.panel._activeRecs() === base + 12, [counted.panel._activeRecs(), base]);
+  // Cards, not rows (rule REC-08): a card with rows waiting counts once.
+  check("an unticked card counts once", counted.panel._activeRecs() === base + 1, [counted.panel._activeRecs(), base]);
   counted.panel.remove();
   const confirm = { kind: "battery_confirm", title: "Battery Replaced?", body: "Was it replaced?",
     devices: [{ device_id: "b1", name: "Door", area: "Hall", acknowledged: false }] };

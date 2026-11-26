@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_exclusion_card.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_exclusion_card.js, Version: 0.30.7 (2026-11-26)
 // Panel checks: the Recommendations tab card that recommends excluding an
 // integration, one card each (rules MUTE-02, REC-03), and Send to Battery Notes offered
 // after a battery type is saved from the Power Not Set card (rule DEV-09).
@@ -144,7 +144,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     device_power: () => { saved = true; return { report_url: "https://github.com/andrew-codechimp/HA-Battery-Notes/issues/new?x=1" }; },
   } });
   const card = [...page.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "power");
-  const select = card && card.querySelector("select");
+  const select = card && card.querySelector("tbody select");
   check("The card offers the choices", !!select);
   if (select) {
     select.value = "CR2032";
