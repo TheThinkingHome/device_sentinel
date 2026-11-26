@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_wording.py, Version: 0.30.10 (2026-11-25)
+# File: tests/test_outage_wording.py, Version: 0.30.5 (2026-11-23)
 
 """What a bridge's row says, down and recovering (rule UP-11).
 
@@ -135,9 +135,9 @@ async def test_an_outage_is_told_from_its_start_until_its_return(hass: HomeAssis
     await hass.config.async_set_time_zone("America/Guayaquil")
     coord = await setup_coordinator(hass)
     back = dt_util.as_utc(dt_util.parse_datetime("2026-09-28T07:37:49-05:00")).timestamp()
-    sentence = coord._outage_span_sentence("bridge", {"when": back, "duration": 14146.0}, title="Zigbee2MQTT")
+    sentence = coord._outage_span_sentence("The Zigbee2MQTT bridge", {"when": back, "duration": 14146.0})
     assert sentence.startswith("The Zigbee2MQTT bridge was down for 3.9h, from ")
     assert "3:42" in sentence and "until 7:37" in sentence, sentence
-    assert coord._outage_span_sentence("broker", {"when": back, "duration": None}).startswith(
+    assert coord._outage_span_sentence("The MQTT broker", {"when": back, "duration": None}).startswith(
         "The MQTT broker came back at "
     )

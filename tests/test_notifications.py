@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.30.8 (2026-11-24)
+# File: test_notifications.py, Version: 0.30.4 (2026-11-23)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -1094,7 +1094,7 @@ def _daily_brief_is_first() -> bool:
     text = panel.read_text(encoding="utf-8")
     tabs = re.search(r"const TABS = \[(.*?)\];", text, re.S).group(1)
     names = re.findall(r'"([^"]+)"', tabs)
-    return names[0] == "daily-brief" and "problem-list" not in names
+    return names[0] == "Daily Brief" and "Problem List" not in names
 
 
 async def test_a_card_that_lists_anything_links_the_problem_list():

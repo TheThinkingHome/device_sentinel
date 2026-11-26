@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.30.9 (2026-11-25)
+# File: tests/test_recovery_one_way.py, Version: 0.27.15 (2026-10-30)
 
 """A recovery goes one way, and the other rules it travels with
 (rules LIST-08, UP-06, FRZ-11, GEN-07, GEN-08, UNAV-07).
@@ -55,7 +55,7 @@ from custom_components.device_sentinel.const import (
     STACK_Z2M,
     TODO_KINDS,
 )
-from custom_components.device_sentinel.report_brief import repeat_paragraph
+from custom_components.device_sentinel.report_brief import REPEAT_PARAGRAPH
 
 from .helpers import register_device, setup_coordinator, setup_entry
 from .test_bridge_hold import _house, _minutes
@@ -220,8 +220,8 @@ async def test_an_integration_is_named_as_home_assistant_shows_it(hass: HomeAssi
 
 
 def test_the_legend_does_not_say_we():
-    assert "Device Sentinel ruled out the usual causes" in repeat_paragraph()
-    assert " We " not in f" {repeat_paragraph()} "
+    assert "Device Sentinel ruled out the usual causes" in REPEAT_PARAGRAPH
+    assert " We " not in f" {REPEAT_PARAGRAPH} "
 
 
 # ---------------------------------------------------- the upgrade's lines
