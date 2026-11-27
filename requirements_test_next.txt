@@ -13,6 +13,10 @@ httpx==0.28.1
 httpcore==1.0.9
 pytest-timeout==2.4.0
 pytest-unordered==0.8.0
+# The Supervisor library Home Assistant 2026.11.0 pins for hassio. The
+# MQTT integration's setup imports hassio, and this harness, unlike the
+# older one, does not bring it, so the tests that set up MQTT need it.
+aiohasupervisor==0.8.1
 #
 # Serial only, for the reason requirements_test.txt gives.
 # The libraries Home Assistant 2026.11.0 pins, for the reasons
