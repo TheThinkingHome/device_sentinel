@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.7 (2026-11-26)
+// File: panel.js, Version: 0.30.8 (2026-11-26)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -545,7 +545,14 @@ function pinTable(table) {
       : table.dataset.shares === "devices" ? DEVICES_SHARE : null;
   if (own && heads) shares = heads.map((head) => own[head] ?? 1);
   else if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
-  else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
+  else if (!heads) {
+    // A recommendation card's tick box to select its row takes only the
+    // room of the box (rule REC-04).
+    const cells = table.rows[0] ? [...table.rows[0].cells] : [];
+    shares = count === 2 ? [1, 2]
+      : cells.length === count ? cells.map((cell) => (cell.classList.contains("selhold") ? 0.25 : 1))
+        : Array(count).fill(1);
+  }
   else {
     shares = heads.map((head, index) => {
       const share = COLUMN_SHARE[head] || (head === "" ? 0.5 : 1);
@@ -769,6 +776,8 @@ const STYLE = `
   /* A card's heading with the tick that silences the whole card (rule REC-07). */
   .rechead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .recselect { margin: 6px 0; flex-wrap: wrap; }
+  /* Shown only once a row is selected (rule REC-04). */
+  .recselect[hidden] { display: none; }
   td.selhold { width: 1%; }
   .rec.acked .rechead > h3 { opacity: 0.75; }
   .maint { display: flex; align-items: center; border: 1px solid var(--divider-color); border-radius: 22px;
@@ -1446,6 +1455,14 @@ class DeviceSentinelPanel extends HTMLElement {
         "Read from the Matter server's network map, which can lag a few minutes. ",
         typeof t.map_path === "string" && t.map_path.startsWith("/config/")
           ? this._link("Open Home Assistant's Matter map", t.map_path) : null));
+  }
+
+  // A temperature kept in °C, in the unit Home Assistant is set to.
+  _temperatureWords(celsius) {
+    const unit = this._hass && this._hass.config && this._hass.config.unit_system
+      ? this._hass.config.unit_system.temperature : "\u00b0C";
+    const minus = (n) => (n < 0 ? `\u2212${Math.abs(n)}` : `${n}`);
+    return unit === "\u00b0F" ? `${minus(Math.round(celsius * 9 / 5 + 32))} \u00b0F` : `${minus(Math.round(celsius))} \u00b0C`;
   }
 
   _link(text, path) {
@@ -6692,9 +6709,24 @@ class DeviceSentinelPanel extends HTMLElement {
         ? el("p", { class: "small muted", style: "margin:4px 0 0;line-height:1.5" },
           `Saved for future battery forecasts: ${evParts.length > 1 ? `${evParts.slice(0, -1).join(", ")} and ${evParts[evParts.length - 1]}` : evParts.join("")} on ${fmtDay(new Date(`${ev.day}T12:00:00`), { local: true })}.`)
         : null;
+      // The resting voltage: a coin cell's, which judges it low at 2.9 V,
+      // always; an AA or AAA pack's only when it is cold. Below 10 °C it is
+      // shown as it would read at 20 °C, beside the reading, and a coin
+      // cell is judged by that (rule BAT-03). The temperature in the
+      // house's own unit.
+      const rest = b.resting;
+      const cold = rest && typeof rest.corrected === "number" && typeof rest.celsius === "number";
+      // Millivolts where the device reports them, so 2.965 V is not shown
+      // as 2.96 V next to the 2.9 V line.
+      const volts = (v) => (Math.round(v * 1000) % 10 ? v.toFixed(3) : v.toFixed(2));
+      const restingNote = rest && typeof rest.volts === "number" && (rest.judged || cold)
+        ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, `Resting voltage ${volts(rest.volts)} V`
+          + (cold ? ` (${volts(rest.corrected)} V corrected for ${this._temperatureWords(rest.celsius)})` : "")
+          + ".")
+        : null;
       const modelNote = modelPaceWords(b.model_pace)
         ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, modelPaceWords(b.model_pace)) : null;
-      batteryCard = card("Battery", b.now != null ? `${percent ? levelText(b.now) : b.now} now` : "", figures, meaning, lithiumNote, modelNote, evidenceNote, earlier,
+      batteryCard = card("Battery", b.now != null ? `${percent ? levelText(b.now) : b.now} now` : "", figures, meaning, lithiumNote, restingNote, modelNote, evidenceNote, earlier,
         future && b.projection ? this._batteryFutureChart(b, { future: "advanced" }) : bat.g,
         future && b.projection ? null : el("div", { class: "legend" }, ...legend));
     }
