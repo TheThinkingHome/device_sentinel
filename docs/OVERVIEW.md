@@ -71,7 +71,7 @@ Device Sentinel watches the devices in Home Assistant from the moment you instal
 Every fault lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick the item to acknowledge it, and it stops making noise on your phone while staying on the list until it recovers.
 
 **One Alert When a Coordinator, Broker or Wi-Fi Network Goes Down**
-When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, Device Sentinel gives each device time to rejoin, then reports only the ones that didn't. 
+When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, Device Sentinel gives each device time to rejoin, then reports only the ones that didn't. A house with two or more Zigbee2MQTT bridges gets this for each bridge on its own, so one bridge going down never takes the blame for the devices on another.
 
 ![The Networks tab: the Wi-Fi networks the server hears beside the Zigbee channels, and each network with its devices and last outage](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Detail%20-%20Network%20Tab.png)
 

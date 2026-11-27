@@ -9,6 +9,7 @@ The people:
 - Christopher Robert ([@Ranger2959](https://github.com/Ranger2959)), on his house in September 2026.
 - A friend of Tim Plas, on his house in the United States since October 2026.
 - Chris Jenkins ([@ChrisJ60](https://github.com/ChrisJ60)), on his house in the United Kingdom since November 2026, with Home Assistant in Docker.
+- Reifircax ([@Reifircax](https://github.com/Reifircax)), on his house with two Zigbee2MQTT bridges since November 2026.
 
 ## Zigbee2MQTT
 
@@ -16,8 +17,9 @@ The people:
 |---|---|---|
 | SMLIGHT SLZB-06M, on the network | EmberZNet | @TheThinkingHome |
 | XZG UZG-01, on the network | Z-Stack | @tplas |
+| Two SMLIGHT SLZB-06, one for each of two bridges | Z-Stack | @Reifircax |
 
-**What was tested:** the bridge stopped and restarted, power cuts, and devices re-paired. A bridge outage is one alert, not one per device, and a re-pair is not mistaken for a fault.
+**What was tested:** the bridge stopped and restarted, power cuts, and devices re-paired. A bridge outage is one alert, not one per device, and a re-pair is not mistaken for a fault. Two bridges in one house, each on its own base topic, are watched side by side, each with its own Bridge sensor.
 
 ## ZHA
 
