@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_multiple_z2m_bridges.py, Version: 0.30.9 (2026-11-27)
+# File: tests/test_multiple_z2m_bridges.py, Version: 0.30.10 (2026-11-27)
 
 """Independent MQTT bridge discovery, ownership and pairing (rule STACK-03)."""
 

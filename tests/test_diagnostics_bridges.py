@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_bridges.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_diagnostics_bridges.py, Version: 0.30.10 (2026-11-27)
 
 """What the diagnostics download says about each bridge's pairing
 window: whether every join of it was heard, and when the bridge last
