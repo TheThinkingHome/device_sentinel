@@ -768,11 +768,11 @@ class PowerMixin:
     def _read_stack_mains(self) -> dict[str, str]:
         found: dict[str, str] = {}
         keys: dict[str, tuple[str, str]] = getattr(self, "_stack_keys", {}) or {}
-        readers: dict[str, Any] = getattr(self, "_bridge_readers", {}) or {}
         for device_id, (stack, key) in list(keys.items()):
             if stack != STACK_Z2M:
                 continue
-            said = getattr(readers.get(stack), "power_source", None)
+            reader = self._reader_for_device(device_id)  # type: ignore[attr-defined]
+            said = getattr(reader, "power_source", None)
             try:
                 words = said(key) if callable(said) else None
             except Exception:  # noqa: BLE001 - a reader never raises up

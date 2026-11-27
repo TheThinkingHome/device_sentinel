@@ -542,6 +542,9 @@ async def test_the_sensor_arrives_when_the_capability_does(
     class _Entry:
         runtime_data = coord
 
+        def async_on_unload(self, callback):
+            coord.entry.async_on_unload(callback)
+
     await sensor_mod.async_setup_entry(
         hass, _Entry(), lambda ents, **kw: added.extend(ents)
     )
@@ -588,6 +591,9 @@ async def test_the_adder_removing_itself_does_not_cost_the_next_listener(
 
     class _Entry:
         runtime_data = coord
+
+        def async_on_unload(self, callback):
+            coord.entry.async_on_unload(callback)
 
     await sensor_mod.async_setup_entry(
         hass, _Entry(), lambda ents, **kw: None

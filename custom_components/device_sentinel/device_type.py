@@ -518,10 +518,10 @@ class TypeMixin:
             host = _host(device.get("path") if isinstance(device, dict) else None)
             if host:
                 hosts[host] = ZIGBEE_COORDINATOR_ZHA
-        reader = (getattr(self, "_bridge_readers", None) or {}).get(STACK_Z2M)
-        host = _host(getattr(reader, "serial_port", None))
-        if host:
-            hosts[host] = ZIGBEE_COORDINATOR_Z2M
+        for reader in (getattr(self, "_bridge_readers", None) or {}).values():
+            host = _host(getattr(reader, "serial_port", None))
+            if host:
+                hosts[host] = ZIGBEE_COORDINATOR_Z2M
         # A coordinator served from Home Assistant's own machine (an
         # add-on) shares its address with every other device served
         # there, such as a camera's add-on, so that address names
@@ -533,7 +533,7 @@ class TypeMixin:
     def _zigbee_router(self, device_id: str) -> bool:
         """Whether Zigbee2MQTT lists the device as a router."""
         key = (getattr(self, "_stack_keys", None) or {}).get(device_id)
-        reader = (getattr(self, "_bridge_readers", None) or {}).get(STACK_Z2M)
+        reader = self._reader_for_device(device_id)  # type: ignore[attr-defined]
         if not key or reader is None or key[0] != STACK_Z2M:
             return False
         try:

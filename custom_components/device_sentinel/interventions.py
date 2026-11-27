@@ -33,11 +33,12 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers import device_registry as dr
 from .stacks import (
     availability_view,
     make_join_observer,
-    make_reader,
-    reader_for_domain,
+    make_readers,
+    reader_for_device,
 )
 from .transport_mqtt import MQTTBrokerReader
 from .normalise import COUNT_HIGHEST, MOMENT_HIGHEST, MOMENT_LOWEST
@@ -348,16 +349,39 @@ class InterventionMixin:
         something to read. The reader is kept regardless of whether it
         connected, because MQTT may come up after Device Sentinel.
         """
+        discovered = {}
         for stack in sorted(self._stacks):
-            if stack in self._bridge_readers:
-                continue
-            reader = make_reader(stack, self.hass)
-            if reader is None:
-                continue
-            self._bridge_readers[stack] = reader
-            # A reader that names the device joining while pairing is
-            # open is told whom to tell, before it subscribes, so no
-            # join is heard with nobody to tell (rule FRZ-05).
+            discovered.update(make_readers(stack, self.hass))
+        for scope, previous in list(self._bridge_readers.items()):
+            if getattr(previous, "bridge_device_id", None) is not None and scope not in discovered:
+                previous.async_stop()
+                self._bridge_readers.pop(scope)
+                self._bridge_down_pending.pop(scope, None)
+                self._bridge_down_at.pop(scope, None)
+                self._bridge_handback.pop(scope, None)
+        for scope, reader in discovered.items():
+            migrate = getattr(reader, "migrate_scope", None)
+            if callable(migrate) and migrate(self.data):
+                for states in (
+                    self._bridge_seen, self._bridge_down_at, self._bridge_down_pending,
+                    self._bridge_handback, self._bridge_recovering_at, self._bridge_fell,
+                    self._upstream_announced,
+                ):
+                    if reader.stack in states and scope not in states:
+                        states[scope] = states.pop(reader.stack)
+                self._dirty = True
+            previous = self._bridge_readers.get(scope)
+            if previous is not None:
+                if getattr(previous, "base_topic", None) == getattr(reader, "base_topic", None):
+                    if getattr(previous, "bridge_device_id", None) is not None:
+                        previous.name = reader.name
+                        if not previous.subscribed:
+                            await previous.async_start()
+                    continue
+                if getattr(reader, "base_topic", None) is None:
+                    continue
+                previous.async_stop()
+            self._bridge_readers[scope] = reader
             give = getattr(reader, "set_join_recorder", None)
             if callable(give):
                 give(self._record_repaired)
@@ -477,7 +501,7 @@ class InterventionMixin:
         already tells the window.
         """
         for device_id, owner in list(self._stack_keys.items()):
-            if owner != (stack, key):
+            if owner[1] != key or self._stack_for_device(device_id) != stack:
                 continue
             record = self.data[DATA_DEVICES].get(device_id)
             if not isinstance(record, dict):
@@ -514,6 +538,20 @@ class InterventionMixin:
         """Return the reader for a stack, or None if there is none."""
         return self._bridge_readers.get(stack)
 
+    def _reader_for_device(self, device_id: str, domain: str | None = None) -> Any | None:
+        """Read only the bridge that owns this device (rule STACK-03)."""
+        owner = self._stack_keys.get(device_id)
+        legacy = self._bridge_readers.get(owner[0]) if owner else None
+        if legacy is not None and getattr(legacy, "bridge_device_id", None) is None:
+            return legacy
+        domain = domain or self._watched.get(device_id)
+        if domain is None:
+            device = dr.async_get(self.hass).async_get(device_id)
+            domain = self._primary_domain(device) if device is not None else None
+        return reader_for_device(
+            self._bridge_readers, self.hass, domain, device_id,
+        )
+
     @property
     def bridge_stacks(self) -> list[str]:
         """Return the stacks that have a bridge reader, sorted."""
@@ -531,7 +569,7 @@ class InterventionMixin:
         if owner is None:
             return None
         stack, key = owner
-        reader = self._bridge_readers.get(stack)
+        reader = self._reader_for_device(device_id)
         if reader is None:
             return None
         try:
@@ -1995,7 +2033,7 @@ class InterventionMixin:
             return self._upstream_devices(None)
         if name == WIFI_KEY:
             return len(getattr(self, "_wifi_ties", {}) or {})
-        if name in self._stacks:
+        if name in self._stacks or name in self._bridge_readers:
             return self._upstream_devices(name)
         # While its outage stands, an integration's row counts its own
         # down entries' devices, muted or not, not the whole
@@ -2180,11 +2218,9 @@ class InterventionMixin:
 
     def _stack_for_device(self, device_id: str) -> str | None:
         """Return the stack whose bridge owns this device, if any."""
-        domain = self._watched.get(device_id)
-        if domain is None:
-            return None
-        for stack, reader in self._bridge_readers.items():
-            if reader_for_domain({stack: reader}, domain) is not None:
+        reader = self._reader_for_device(device_id)
+        for stack, candidate in self._bridge_readers.items():
+            if candidate is reader:
                 return stack
         return None
 

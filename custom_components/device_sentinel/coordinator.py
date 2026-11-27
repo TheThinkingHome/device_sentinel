@@ -400,7 +400,6 @@ from .status_readings import (
     restart_moment,
     restart_sensor,
 )
-from .stacks import reader_for_domain
 from .stacks import last_heard as stack_last_heard
 from .firmware_updates import FirmwareUpdatesMixin
 from .restart_values import RESTORES_BEHIND_ITS_CLOCK, RestartValuesMixin
@@ -824,8 +823,8 @@ class DeviceSentinelCoordinator(
         # temporary file of a fixed name, so two writes at once would
         # share it and one report would be lost.
         self._report_lock = asyncio.Lock()
-        # One bridge reader per detected stack that has one, Zigbee2MQTT
-        # and ZHA; Z-Wave and Matter have none (rule STACK-03). Filled
+        # One reader per bridge instance, with separate outage scopes;
+        # stacks without a reader have none (rule STACK-03). Filled
         # in at setup, once the registry view has found the stacks.
         self._bridge_readers: dict[str, Any] = {}
         # The last bridge state and pairing flag seen per
@@ -5844,7 +5843,7 @@ class DeviceSentinelCoordinator(
             device = dr.async_get(self.hass).async_get(device_id)
             domain = self._primary_domain(device) if device is not None else None  # type: ignore[arg-type]
         for domain in [domain] if domain else []:
-            reader = reader_for_domain(self._bridge_readers, domain)
+            reader = self._reader_for_device(device_id, domain)
             try:
                 pairing = reader is not None and reader.pairing_active_within(
                     PAIRING_GRACE_SECONDS_DEFAULT, dt_util.utcnow().timestamp()
@@ -6431,6 +6430,7 @@ class DeviceSentinelCoordinator(
             self._confirm_firmware(dt_util.utcnow().timestamp())
         self._expire_maintenance(dt_util.utcnow().timestamp())
         await self._close_brief_if_skipped()
+        await self._start_bridge_readers()
         self._sample_bridges()
         # Each hub's connection, read before the devices are judged
         # (rule STACK-09).

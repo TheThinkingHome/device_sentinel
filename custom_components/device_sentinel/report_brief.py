@@ -42,6 +42,7 @@ from .const import (
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
+    STACK_Z2M,
     DEV_SIGNAL_VALUE,
     FLOOD_MIN_DAYS,
     FLOOD_MIN_STORMS,
@@ -145,6 +146,7 @@ from .const import (
 )
 from .device_recommendations import line_rank
 from .outage_detail import FAILED, REMOVED, STALLED, UNWATCHED, parse_detail
+from .stack_z2m import instance_label, is_instance as is_z2m_instance
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -1192,6 +1194,11 @@ class BriefMixin:
         the boxes and the outage lines call it ZHA, and one thing has
         one name (rule GEN-07).
         """
+        if domain != STACK_Z2M and is_z2m_instance(domain):
+            reader = getattr(self, "_bridge_readers", {}).get(domain)
+            label = instance_label(reader)
+            name = STACK_DISPLAY_NAMES[STACK_Z2M]
+            return f"{name}: {label}" if label != name else name
         if domain in STACK_DISPLAY_NAMES:
             return STACK_DISPLAY_NAMES[domain]
         try:

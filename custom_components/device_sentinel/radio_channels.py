@@ -267,13 +267,17 @@ class RadioChannelsMixin:
     def zigbee_networks(self) -> list[dict[str, Any]]:
         """Each Zigbee network with its channel."""
         found: list[dict[str, Any]] = []
-        reader = self.bridge_reader(STACK_Z2M)  # type: ignore[attr-defined]
-        try:
-            channel = _int((getattr(reader, "hardware", None) or {}).get("channel")) if reader else None
-        except Exception:  # noqa: BLE001 - a reader never breaks a page
-            channel = None
-        if channel is not None:
-            found.append({"key": STACK_Z2M, "name": STACK_DISPLAY_NAMES[STACK_Z2M], "channel": channel})
+        from .stack_z2m import is_instance
+
+        for key, reader in (getattr(self, "_bridge_readers", {}) or {}).items():
+            if not is_instance(key):
+                continue
+            try:
+                channel = _int((getattr(reader, "hardware", None) or {}).get("channel"))
+            except Exception:  # noqa: BLE001 - a reader never breaks a page
+                channel = None
+            if channel is not None:
+                found.append({"key": key, "name": self.network_name(key), "channel": channel})
         try:
             channel = self._zha_channel()
         except Exception:  # noqa: BLE001 - ZHA's own objects may move
@@ -389,6 +393,7 @@ class RadioChannelsMixin:
         or None where nothing says (rule SIG-19)."""
         stack = getattr(self, "_radio_stack", {}).get(device_id)
         if stack in ZIGBEE_STACKS:
+            stack = self._stack_for_device(device_id) or stack  # type: ignore[attr-defined]
             net = next((n for n in self.zigbee_networks() if n["key"] == stack), None)
             if net is None:
                 return None
@@ -459,7 +464,7 @@ class RadioChannelsMixin:
             channels = {r["channel"] for r in mine}
             if self._open_card(WIFI_KEY, lambda c: c.get("reason") in {f"wifi:{ch}:covered" for ch in channels}):
                 radio["warn"] = f"Your own Wi-Fi on channel {mine[0]['channel']} covers this channel."
-        elif over and network in ZIGBEE_STACKS and self._open_card(network, lambda c: True):
+        elif over and network is not None and (network in ZIGBEE_STACKS or network.startswith(f"{STACK_Z2M}:")) and self._open_card(network, lambda c: True):
             strongest = max(over, key=lambda r: r["signal"] or 0)
             radio["warn"] = (
                 f"A neighbour's Wi-Fi on channel {strongest['channel']}, heard at "
@@ -576,7 +581,7 @@ class RadioChannelsMixin:
         try:
             if key == WIFI_KEY:
                 return self._wifi_channel_cards()
-            if key in ZIGBEE_STACKS:
+            if key in ZIGBEE_STACKS or key.startswith(f"{STACK_Z2M}:"):
                 return self._zigbee_channel_cards(key)
         except Exception as err:  # noqa: BLE001 - a card never breaks a page
             LOGGER.debug("device_sentinel: channel card for %s not made: %s", key, err)
@@ -745,7 +750,7 @@ class RadioChannelsMixin:
             "thread": self._thread_channels(),
             "cards": {
                 key: [{k: c[k] for k in ("kind", "channel", "reason", "sentence")} for c in self._channel_cards(key)]
-                for key in (WIFI_KEY, *ZIGBEE_STACKS)
+                for key in dict.fromkeys((WIFI_KEY, *ZIGBEE_STACKS, *(net["key"] for net in self.zigbee_networks())))
             },
             "acknowledged": sorted(k for k, on in (self._acks().get("lines") or {}).items()  # type: ignore[attr-defined]
                                    if on and k.startswith("net:")),

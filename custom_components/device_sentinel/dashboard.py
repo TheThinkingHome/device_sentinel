@@ -180,7 +180,6 @@ from .const import (
     TODO_SUMMARY,
     BRIDGE_DOWN,
     BRIDGE_RUNNING,
-    BRIDGE_SENSOR_NAMES,
     BRIDGE_UNKNOWN,
     BROKER_SCOPE,
     BROKER_SENSOR_NAME,
@@ -195,7 +194,7 @@ from .outage_detail import STALLED, pair_key, parse_detail
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import area_name_of, device_field
 from .power_source import stands_for_none
-from .stacks import shows_status_row
+from .stacks import bridge_name, shows_status_row
 
 
 
@@ -338,7 +337,7 @@ class DashboardMixin:
             state = self.bridge_state(stack)
             parts.append({
                 "key": stack,
-                "name": BRIDGE_SENSOR_NAMES.get(stack, f"{stack} Bridge"),
+                "name": bridge_name(stack, self.bridge_reader(stack)),
                 "state": state if state is not None else BRIDGE_UNKNOWN,
             })
         # The broker watch runs in every house and reads unknown where
@@ -429,7 +428,7 @@ class IntegrationViewMixin:
 
     def _outage_label(self, kind: str, scope: Any, detail: Any = None) -> str:
         if kind in (SYS_BRIDGE_DOWN, SYS_BRIDGE_UP):
-            return BRIDGE_SENSOR_NAMES.get(scope, f"{scope} Bridge")
+            return bridge_name(str(scope), self.bridge_reader(scope))  # type: ignore[attr-defined]
         if kind in (SYS_BROKER_DOWN, SYS_BROKER_UP):
             return BROKER_SENSOR_NAME
         if kind in (SYS_WIFI_DOWN, SYS_WIFI_UP):

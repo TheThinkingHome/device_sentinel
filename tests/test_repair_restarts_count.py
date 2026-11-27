@@ -152,11 +152,11 @@ class _PairingClosed(_PairingOpen):
 async def _removed_and_back(hass, monkeypatch, reader):
     """A device removed from Home Assistant and added again with its old
     id, its coordinator's pairing open or closed as the reader says."""
-    from custom_components.device_sentinel import coordinator as module
+    from custom_components.device_sentinel.coordinator import DeviceSentinelCoordinator
     from tests.helpers import registry_settled
     from tests.test_removed_hold import Hardware
 
-    monkeypatch.setattr(module, "reader_for_domain", lambda readers, domain: reader)
+    monkeypatch.setattr(DeviceSentinelCoordinator, "_reader_for_device", lambda self, device_id, domain=None: reader)
     hw = Hardware(hass, "zr1", "Z2M Removed")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0

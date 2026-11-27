@@ -3316,7 +3316,7 @@ class DeviceSentinelPanel extends HTMLElement {
       return;
     }
     const simple = this._isSimple();
-    const domain = NETWORK_INTEGRATION[page.key];
+    const domain = page.key.startsWith("z2m:") ? "mqtt" : NETWORK_INTEGRATION[page.key];
     const hub = page.key.startsWith("hub:") ? page.key.slice(4) : null;
     const open = domain ? this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(domain)}`)
       : hub ? this._link("Open the hub", this._devicePath(hub)) : null;

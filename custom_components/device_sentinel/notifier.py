@@ -465,7 +465,7 @@ class NotifierMixin:
             # because they say what is true rather than what is worth
             # reading.
             for name, count in self.suppressed_down_counts.items():
-                display = STACK_DISPLAY_NAMES.get(name, name)
+                display = self._integration_title(name) if name in self._bridge_readers else STACK_DISPLAY_NAMES.get(name, name)  # type: ignore[attr-defined]
                 behind = max(self.upstream_membership(name), count)
                 # Casualties against membership, because the count drains
                 # as devices return, and printed alone it reads as one
