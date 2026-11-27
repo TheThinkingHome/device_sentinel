@@ -20,6 +20,7 @@ import time
 from datetime import date, timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DEV_BATTERY_DAILY,
@@ -194,7 +195,10 @@ async def test_the_days_temperatures_go_into_its_row_and_start_again(hass: HomeA
               "last_activity": time.time(), "event_count": 10}
     coord._battery_entity["dev-t"] = "sensor.t_battery"
     coord.watched_records = lambda: [("dev-t", record)]
-    coord.battery_evidence_fold(date.today())
+    # Home Assistant's own day, as the midnight fold passes, not the
+    # machine's: the two differ for hours each night when they sit in
+    # different time zones.
+    coord.battery_evidence_fold(dt_util.now().date())
     assert record[DEV_BATTERY_EVIDENCE][-1][4:] == [-3.0, 21.0, 4.5, 21.0]
     for field in (DEV_BATTERY_TEMP_TODAY_LOW, DEV_BATTERY_TEMP_TODAY_HIGH,
                   DEV_BATTERY_TEMP_AT_VOLTS_LOW, DEV_BATTERY_TEMP_AT_VOLTS_HIGH):
