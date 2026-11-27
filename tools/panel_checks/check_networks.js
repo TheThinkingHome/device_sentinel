@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_networks.js, Version: 0.28.7 (2026-11-09)
+// File: tools/panel_checks/check_networks.js, Version: 0.30.9 (2026-11-27)
 // Panel checks: the Networks tab and a network's page (rule DASH-17).
 // Simple shows the tab, each network's state, its devices and anything to
 // turn on; Advanced adds the last outage, the coordinator, the outages,
