@@ -8,9 +8,12 @@ from pathlib import Path
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import area_registry as ar, device_registry as dr, label_registry as lr
 from homeassistant.helpers.storage import Store
 
+from custom_components.device_sentinel.answers_store import ANSWERS_STORE_KEY
 from custom_components.device_sentinel.const import (
+    BACKUP_LAST_GOOD_SUFFIX,
     CONF_KEEP_CONFIG_ON_REMOVAL,
     CONF_REPEAT_FLOOR,
     CONF_RETENTION_DAYS,
@@ -21,7 +24,7 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
 )
 from custom_components.device_sentinel.kept_config import KEPT_CONFIG_KEY
-from tests.helpers import setup_entry
+from tests.helpers import register_device, setup_entry
 
 
 async def _add(hass):
@@ -88,6 +91,52 @@ async def test_saved_options_migrate_without_replaying_trim(hass: HomeAssistant,
     assert entry.options[CONF_RETENTION_DAYS] == DEFAULT_RETENTION_DAYS
     assert CONF_TRIM_DEVICES not in entry.options
     assert CONF_TRIM_INTEGRATIONS not in entry.options
+
+
+async def test_reinstall_keeps_device_answers_and_respects_home_assistant_areas(
+    hass: HomeAssistant, real_disk,
+):
+    device, _ = register_device(hass, "remote", "Remote")
+    devices = dr.async_get(hass)
+    areas = ar.async_get(hass)
+    living_room = areas.async_create("Living room")
+    kitchen = areas.async_create("Kitchen")
+    label = lr.async_get(hass).async_create("Remotes")
+    devices.async_update_device(device.id, manufacturer="Example", model="Remote")
+    entry = await setup_entry(hass, {CONF_KEEP_CONFIG_ON_REMOVAL: True})
+    coord = entry.runtime_data
+    coord.page_set_area(device.id, living_room.id)
+    devices.async_update_device(device.id, name_by_user="My remote", labels={label.label_id})
+    coord.page_set_power(device.id, "AAA", 2)
+    await coord.async_flush_answers()
+    coord.page_set_type(device.id, "Button")
+    coord.page_set_note(device.id, "Spare batteries in the drawer")
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    folder = Path(real_disk)
+    answers = folder / ANSWERS_STORE_KEY
+    last_good = folder / f"{ANSWERS_STORE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+    assert answers.exists() and last_good.exists()
+    assert not (folder / STORAGE_KEY).exists()
+    assert devices.async_get(device.id).area_id == living_room.id
+    devices.async_update_device(device.id, area_id=kitchen.id)
+
+    new_entry = await _add(hass)
+    coord = new_entry.runtime_data
+    assert coord.power_view(device.id)["words"] == "2× AAA"
+    assert coord.type_words(device.id) == "Button"
+    assert coord.device_note(device.id) == "Spare batteries in the drawer"
+    restored = devices.async_get(device.id)
+    assert restored.area_id == kitchen.id
+    assert restored.name_by_user == "My remote"
+    assert restored.labels == {label.label_id}
+
+    hass.config_entries.async_update_entry(new_entry, options={CONF_KEEP_CONFIG_ON_REMOVAL: False})
+    await hass.async_block_till_done()
+    await hass.config_entries.async_remove(new_entry.entry_id)
+    assert not answers.exists() and not last_good.exists()
+    assert (await _add(hass)).runtime_data.device_note(device.id) is None
+    assert devices.async_get(device.id).area_id == kitchen.id
 
 
 async def test_malformed_kept_options_do_not_block_setup(hass: HomeAssistant, real_disk):

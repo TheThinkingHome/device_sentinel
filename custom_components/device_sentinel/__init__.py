@@ -36,6 +36,8 @@ from homeassistant.loader import async_get_integration
 
 from .dashboard_api import async_register_dashboard_api
 from .const import (
+    BACKUP_LAST_GOOD_SUFFIX,
+    CONF_KEEP_CONFIG_ON_REMOVAL,
     CONF_FREEZE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_LABELS,
     CONF_UNAVAILABLE_MUTED_DEVICES,
@@ -554,9 +556,9 @@ async def async_remove_entry(
     tool whose pitch is that it costs almost nothing must also cost
     nothing to leave: every storage file with every backup copy taken
     beside them, every file it wrote in the reports folder, and the www
-    folder all go. A person can opt in to keeping only the entry's
-    settings for the next install. Only its own: the reports folder goes
-    once it is empty, so a file another tool or a person keeps there
+    folder all go. A person can opt in to keeping the entry's settings
+    and their answers on device pages for the next install. Only its own:
+    the reports folder goes once it is empty, so a file another tool or a person keeps there
     stays. Deliberately not part of unload, which also runs on every
     restart and reconfiguration; only deletion reaches here.
 
@@ -565,7 +567,13 @@ async def async_remove_entry(
     abort the removal of the rest, and Home Assistant ignores errors
     from this hook anyway.
     """
-    kept = await async_save_kept_options(hass, entry)
+    kept_files: set[str] = set()
+    if entry.options.get(CONF_KEEP_CONFIG_ON_REMOVAL) is True:
+        # Unload has already flushed any pending device-page edits.
+        # Keep the normal last-good copy too, so recovery still works.
+        kept_files.update((ANSWERS_STORE_KEY, f"{ANSWERS_STORE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"))
+        if await async_save_kept_options(hass, entry):
+            kept_files.add(KEPT_CONFIG_KEY)
     storage = Path(hass.config.path(STORAGE_DIR))
     report_dir = Path(hass.config.path(REPORT_DIR))
     www_dir = Path(hass.config.path(REPORT_WWW_DIR))
@@ -582,7 +590,7 @@ async def async_remove_entry(
             STAND_INS_KEY, KEPT_CONFIG_KEY,
         ):
             for path in storage.glob(f"{key}*"):
-                if kept and path.name == KEPT_CONFIG_KEY:
+                if path.name in kept_files:
                     continue
                 try:
                     path.unlink()
