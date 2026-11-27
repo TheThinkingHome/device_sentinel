@@ -91,7 +91,7 @@ The hardware that has already run on real houses is listed in [TESTED_HARDWARE.m
 | **Battery** | Stable | Low batteries, and batteries falling or speeding up, predicting their time left. |
 | **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
 | **Storage** | Hardened | Survives power cuts and restores itself from a backup. |
-| **Zigbee2MQTT** | Working | Multiple bridges, with automatic MQTT base-topic discovery regardless of their names. Outages and pairing are isolated per bridge. Requires Home Assistant MQTT discovery; missing or ambiguous discovery stays unknown rather than guessing a topic. |
+| **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. Each bridge is watched on its own, whatever its base topic. |
 | **MQTT** | Working | A broker outage is one alert, not one per device. |
 | **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
 | **WiFi** | Working | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
