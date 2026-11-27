@@ -36,7 +36,7 @@ async def test_the_download_names_each_bridge_s_join_state(hass: HomeAssistant):
     reader._joins_live = True
     reader._on_state(_msg("online"))
     reader._on_info(_msg('{"permit_join": false}'))
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     coord._bridge_readers[STACK_Z2M] = reader
     payload = await async_get_config_entry_diagnostics(hass, entry)
     joins = payload["classification"]["bridge_joins"][STACK_Z2M]
@@ -46,7 +46,7 @@ async def test_the_download_names_each_bridge_s_join_state(hass: HomeAssistant):
     # whose joins were not all heard.
     late = Z2MBridgeReader(hass)
     late._joins_live = True
-    late._on_info(_msg('{"permit_join": true, "permit_join_end": 1}', retain=True))
+    late._on_info(_msg('{"permit_join": true}', retain=True))
     coord._bridge_readers[STACK_Z2M] = late
     payload = await async_get_config_entry_diagnostics(hass, entry)
     assert payload["classification"]["bridge_joins"][STACK_Z2M]["joins_heard"] is False

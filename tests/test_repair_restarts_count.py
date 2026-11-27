@@ -226,7 +226,7 @@ def _live_reader(coord, opened_live=True):
     reader._on_state(_msg("online"))
     if opened_live:
         reader._on_info(_msg('{"permit_join": false}'))
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     coord._bridge_readers[STACK_Z2M] = reader
     return reader
 
@@ -344,7 +344,7 @@ async def test_a_window_replayed_after_a_broker_reconnect_falls_back_to_the_sile
     reader._joins_live = True
     reader._on_state(_msg("online"))
     reader._on_info(_msg('{"permit_join": false}'))
-    replay = SimpleNamespace(payload='{"permit_join": true, "permit_join_end": 1}', retain=True)
+    replay = SimpleNamespace(payload='{"permit_join": true}', retain=True)
     reader._on_info(replay)
     assert reader.joins_seen() is False
     coord._bridge_readers[STACK_Z2M] = reader
@@ -383,7 +383,7 @@ async def test_a_window_open_across_a_broker_reconnect_falls_back_to_the_silence
     record = _armed(coord, device, 7200.0)
     reader = _live_reader(coord)
     assert reader.joins_seen() is True
-    reader._on_info(SimpleNamespace(payload='{"permit_join": true, "permit_join_end": 1}', retain=True))
+    reader._on_info(SimpleNamespace(payload='{"permit_join": true}', retain=True))
     assert reader.joins_seen() is False
     coord._record_activity(device.id, coord.entry.entry_id)
     del coord._bridge_readers[STACK_Z2M]
@@ -401,7 +401,7 @@ def test_a_pairing_window_is_dated_from_the_bridge_s_own_message(hass: HomeAssis
     assert reader.pairing_changed_at is None
     reader._on_info(_msg('{"permit_join": false}'))
     assert reader.pairing_changed_at is None
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     opened = reader.pairing_changed_at
     assert opened is not None
     assert _pairing_moment(reader, opened + 40.0) == opened

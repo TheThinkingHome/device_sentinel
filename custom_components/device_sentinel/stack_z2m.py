@@ -41,6 +41,7 @@ than one made without it (rule FRZ-15).
 from __future__ import annotations
 
 import json
+from math import isfinite
 from typing import Any
 
 from homeassistant.components import mqtt
@@ -391,6 +392,7 @@ class Z2MBridgeReader:
         self.came_online_at: float | None = None
         self._permit_join: bool = False
         self._permit_join_end: str | None = None
+        self._permit_join_deadline: float | None = None
         self._last_heard: str | None = None
         # When a pairing window last closed, as a UTC timestamp. A
         # device paired near the end of a window may not report until
@@ -606,6 +608,7 @@ class Z2MBridgeReader:
             return BRIDGE_UNKNOWN
         if self._online is not True:
             return BRIDGE_DOWN
+        self._expire_pairing(dt_util.utcnow().timestamp())
         if self._permit_join:
             return BRIDGE_BINDING
         return BRIDGE_RUNNING
@@ -647,6 +650,7 @@ class Z2MBridgeReader:
     @property
     def pairing_changed_at(self) -> float | None:
         """When the bridge last said pairing opened or closed, or None."""
+        self._expire_pairing(dt_util.utcnow().timestamp())
         return self._pairing_changed_at
 
     def joins_seen(self) -> bool:
@@ -783,6 +787,15 @@ class Z2MBridgeReader:
         self._online = online
 
     @callback
+    def _expire_pairing(self, now: float) -> None:
+        """Close a heard window at its deadline even if MQTT misses the close."""
+        end = self._permit_join_deadline
+        if self._permit_join and end is not None and end <= now:
+            self._permit_join = False
+            self._pairing_closed_at = end
+            self._pairing_changed_at = end
+
+    @callback
     def _on_info(self, msg: mqtt.ReceiveMessage) -> None:
         """Handle bridge/info: read permit_join and permit_join_end.
 
@@ -790,19 +803,24 @@ class Z2MBridgeReader:
         permit_join_timeout. A payload that will not parse leaves the
         prior pairing state untouched rather than dropping it.
         """
-        self._last_heard = dt_util.utcnow().isoformat()
+        received = dt_util.utcnow()
+        self._last_heard = received.isoformat()
         data = _load(_decode(msg.payload))
         if not isinstance(data, dict):
             return
+        now = received.timestamp()
+        self._expire_pairing(now)
         was_open = self._permit_join
-        self._permit_join = bool(data.get("permit_join", False))
+        end = data.get("permit_join_end")
+        deadline = _pairing_deadline(end)
+        self._permit_join = data.get("permit_join") is True and (deadline is None or deadline > now)
         # Note the moment a window closes, so a device that reports
         # just after it can still be credited to the pairing rather
         # than to itself (rule FRZ-16).
         if was_open and not self._permit_join:
-            self._pairing_closed_at = dt_util.utcnow().timestamp()
+            self._pairing_closed_at = now
         if was_open != self._permit_join:
-            self._pairing_changed_at = dt_util.utcnow().timestamp()
+            self._pairing_changed_at = now
         # A window opening heard live, after bridge/event was
         # subscribed, is one whose joins are all heard. The retained
         # info read at subscribe, already open, is not; nor is the one
@@ -819,8 +837,8 @@ class Z2MBridgeReader:
             # joins sent while it was cut off were never heard.
             self._window_heard = False
         self._info_heard = True
-        end = data.get("permit_join_end")
         self._permit_join_end = str(end) if end is not None else None
+        self._permit_join_deadline = deadline
         self._read_hardware(data)
         # The availability settings, read rather than assumed. Absent
         # or malformed leaves the previous reading alone, so one bad
@@ -976,6 +994,19 @@ class Z2MBridgeReader:
         if not isinstance(state, str) or state not in ("online", "offline"):
             return
         self._availability[name] = (state, dt_util.utcnow().isoformat())
+
+
+def _pairing_deadline(value: Any) -> float | None:
+    """Read Zigbee2MQTT's epoch deadline, in seconds or milliseconds."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        stamp = float(value)
+    except (ValueError, OverflowError):
+        return None
+    if not isfinite(stamp):
+        return None
+    return stamp / 1000 if stamp >= 1_000_000_000_000 else stamp
 
 
 def _decode(payload: Any) -> str:

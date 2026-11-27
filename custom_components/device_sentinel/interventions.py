@@ -369,7 +369,17 @@ class InterventionMixin:
         }
         for scope, previous in list(self._bridge_readers.items()):
             held = getattr(previous, "bridge_device_id", None)
-            if held is not None and scope not in discovered and held not in pending:
+            # Once all known bridges have custom topics, retire the
+            # startup probe only if it never heard from a default bridge.
+            unconfirmed_probe = (
+                held is None
+                and not pending
+                and any(key.startswith(f"{scope}:") for key in discovered)
+                and previous.state == BRIDGE_UNKNOWN
+            )
+            if scope not in discovered and (
+                (held is not None and held not in pending) or unconfirmed_probe
+            ):
                 previous.async_stop()
                 self._bridge_readers.pop(scope)
                 self._bridge_down_pending.pop(scope, None)

@@ -334,11 +334,20 @@ class DashboardMixin:
         """
         parts: list[dict[str, str]] = []
         for stack in self.bridge_stacks:
-            state = self.bridge_state(stack)
+            reader = self.bridge_reader(stack)
+            state = self.bridge_state(stack) or BRIDGE_UNKNOWN
+            # The default topic is probed for compatibility. Until it
+            # identifies a bridge or reports a state, it is not a status card.
+            if (
+                stack == STACK_Z2M
+                and state == BRIDGE_UNKNOWN
+                and getattr(reader, "bridge_device_id", None) is None
+            ):
+                continue
             parts.append({
                 "key": stack,
-                "name": bridge_name(stack, self.bridge_reader(stack)),
-                "state": state if state is not None else BRIDGE_UNKNOWN,
+                "name": bridge_name(stack, reader),
+                "state": state,
             })
         # The broker watch runs in every house and reads unknown where
         # there is no MQTT, so the header shows it only where an MQTT

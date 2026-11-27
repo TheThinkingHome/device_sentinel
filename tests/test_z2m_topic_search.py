@@ -230,6 +230,51 @@ async def test_two_bridges_are_each_read_on_their_own_topic(hass, mqtt_mock):
     await coord.async_shutdown()
 
 
+async def test_two_custom_bridges_replace_the_unconfirmed_default_reader(hass, mqtt_mock):
+    entry = hass.config_entries.async_entries("mqtt")[0]
+    bases = ("zigbee2mqtt-home", "zigbee2mqtt-garage")
+    coord = await setup_coordinator(hass)
+    coord._stacks.add(STACK_Z2M)
+    await coord._start_bridge_readers()
+    assert coord.bridge_reader(STACK_Z2M) is not None
+    assert STACK_Z2M not in {part["key"] for part in coord.dashboard_status()["parts"]}
+
+    for index, base in enumerate(bases):
+        address = f"0x{index:016x}"
+        identifier = f"zigbee2mqtt_bridge_{address}"
+        await _heard(hass, f"homeassistant/sensor/{base}_bridge/config", json.dumps({
+            "unique_id": f"{base}_bridge_state",
+            "state_topic": f"{base}/bridge/state",
+            "device": {"identifiers": [identifier], "name": "Renamed bridge",
+                       "manufacturer": "Zigbee2MQTT", "model": "Bridge"},
+        }))
+        roll = []
+        for child in range(index + 1):
+            ieee = f"0x{index * 10 + child + 10:016x}"
+            roll.append({"ieee_address": ieee, "friendly_name": f"sensor_{child}"})
+            await _heard(hass, f"homeassistant/sensor/{base}_{child}/config", json.dumps({
+                "unique_id": f"{base}_sensor_{child}",
+                "state_topic": f"{base}/sensor_{child}",
+                "availability_topic": f"{base}/bridge/state",
+                "device": {"identifiers": [f"zigbee2mqtt_{ieee}"], "name": f"{base} sensor {child}"},
+            }))
+        await _heard(hass, f"{base}/bridge/info", _info(address), retain=True)
+        await coord._start_bridge_readers()
+        await _heard(hass, f"{base}/bridge/devices", json.dumps(roll), retain=True)
+    assert len(dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)) == 5
+    coord._rebuild_registry_view()
+    await coord._start_bridge_readers()
+    assert coord.bridge_reader(STACK_Z2M) is None
+    for base in bases:
+        await _heard(hass, f"{base}/bridge/state", '{"state":"online"}')
+
+    parts = {part["name"]: part["state"] for part in coord.dashboard_status()["parts"] if part["key"].startswith("z2m")}
+    assert parts == {f"Bridge: {base}": BRIDGE_RUNNING for base in bases}
+    rows = {row["name"]: row["watched"] for row in coord.dashboard_networks() if row["kind"] == STACK_Z2M}
+    assert rows == {f"Zigbee2MQTT: {base}": index + 1 for index, base in enumerate(bases)}
+    await coord.async_shutdown()
+
+
 async def test_a_bridge_deeper_than_four_levels_waits_unknown(hass, mqtt_mock):
     """Not found, so not guessed: the other bridge is read, and this one
     gets no reader of its own rather than a wrong one."""
