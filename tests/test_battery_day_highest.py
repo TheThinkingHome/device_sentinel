@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_day_highest.py, Version: 0.30.7 (2026-11-26)
+# File: tests/test_battery_day_highest.py, Version: 0.30.8 (2026-11-26)
 
 """Battery trends read each day's highest level (rule BAT-05), and each
 day keeps the device's own temperatures (rule BAT-16).
@@ -111,6 +111,40 @@ def test_a_high_that_is_only_the_carried_level_is_not_taken():
     record[DEV_BATTERY_DAY_RANGES] = [[days[1], 81.0, 84.0, None, None]]
     assert highs_into_daily(record, last) is False
     assert record[DEV_BATTERY_DAILY] == [84.0, 81.0]
+
+
+def test_the_upgrade_keeps_a_half_step_that_rounds_to_the_high():
+    """The day's levels are kept as whole numbers, so a level held at a
+    half step reads below its own high; the half step stays, as the
+    nightly roll keeps it. Otherwise a sensor that reports in half steps
+    loses half a point on many of its days."""
+    last = date(2026, 11, 25)
+    record = {DEV_BATTERY_DAILY: [88.5, 89.5, 45.5]}
+    days = _dated(record[DEV_BATTERY_DAILY], last)
+    record[DEV_BATTERY_DAY_RANGES] = [
+        [days[0], 88.0, 88.0, None, None],
+        [days[1], 89.0, 90.0, None, None],
+        [days[2], 45.0, 48.0, None, None],
+    ]
+    assert highs_into_daily(record, last) is True
+    assert record[DEV_BATTERY_DAILY] == [88.5, 89.5, 48.0]
+
+
+def test_the_level_carried_in_is_the_midnight_one_not_the_raised_high():
+    """A battery reporting in steps of ten held 30 at each midnight and
+    was heard at 50 on two days running. The second day's 50 is not the
+    level carried in, which was 30: both days take 50. Found on the
+    reference house, where every other such day kept its midnight level."""
+    last = date(2026, 11, 25)
+    record = {DEV_BATTERY_DAILY: [30.0, 30.0, 30.0]}
+    days = _dated(record[DEV_BATTERY_DAILY], last)
+    record[DEV_BATTERY_DAY_RANGES] = [
+        [days[0], 30.0, 50.0, None, None],
+        [days[1], 30.0, 50.0, None, None],
+        [days[2], 30.0, 30.0, None, None],
+    ]
+    assert highs_into_daily(record, last) is True
+    assert record[DEV_BATTERY_DAILY] == [50.0, 50.0, 30.0]
 
 
 def test_the_upgrade_leaves_odd_records_alone():
