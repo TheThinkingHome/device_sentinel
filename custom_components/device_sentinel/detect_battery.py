@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.30.7 (2026-11-26)
+# File: detect_battery.py, Version: 0.30.8 (2026-11-26)
 
 """Battery: the level threshold and what is tracked.
 
@@ -95,6 +95,10 @@ from .const import (
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     DATA_DEVICES,
+    COIN_CORRECT_BELOW_C,
+    DEV_BATTERY_EVIDENCE,
+    COIN_REFERENCE_C,
+    COIN_VOLTS_PER_DEGREE,
     LITHIUM_CLEAR_VOLTS,
     LITHIUM_LOW_VOLTS,
     LOW_THRESHOLD_KEYS,
@@ -324,12 +328,30 @@ def note_battery_volts(record: dict[str, Any], volts: Any, celsius: Any = None) 
         # first: start the day again.
         low = high = volts
     degrees = _celsius(celsius)
-    if fresh or volts < float(low):
+    # A temperature is kept with the moment the day's lowest or highest
+    # was set, or with the first moment after it heard at the same
+    # voltage, so a day begun before a temperature was read still gets
+    # one (rules BAT-16, BAT-03).
+    if fresh or volts < float(low) or (volts == float(low) and record.get(DEV_BATTERY_TEMP_AT_VOLTS_LOW) is None):
         record[DEV_BATTERY_TEMP_AT_VOLTS_LOW] = degrees
-    if fresh or volts > float(high):
+    if fresh or volts > float(high) or (volts == float(high) and record.get(DEV_BATTERY_TEMP_AT_VOLTS_HIGH) is None):
         record[DEV_BATTERY_TEMP_AT_VOLTS_HIGH] = degrees
     record[DEV_BATTERY_VOLTS_TODAY_LOW] = min(float(low), volts)
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = max(float(high), volts)
+
+
+def corrected_volts(
+    volts: float, celsius: Any, per_degree: float = COIN_VOLTS_PER_DEGREE,
+) -> tuple[float, float | None]:
+    """A battery's voltage as it would read at 20 °C, and the temperature
+    it was corrected for; the voltage as read, and None, at 10 °C or warmer
+    or with no temperature (rule BAT-03). The cold lowers the voltage for as
+    long as the cell is cold and the loss comes back when it warms, so a
+    healthy cell outdoors in winter would otherwise read as nearly empty."""
+    degrees = _celsius(celsius)
+    if degrees is None or degrees >= COIN_CORRECT_BELOW_C:
+        return volts, None
+    return round(volts + per_degree * (COIN_REFERENCE_C - degrees), 3), degrees
 
 
 def _celsius(value: Any) -> float | None:
@@ -444,11 +466,14 @@ def highs_into_daily(record: dict[str, Any], last_day: date) -> bool:
         high = highs.get(day.isoformat())
         # A kept high equal to the day before's level may be only the
         # level carried in at midnight, never heard that day: the level
-        # held at midnight stays, as before (rule BAT-05).
-        if high is not None and high != before and float(value) != high:
+        # held at midnight stays, as before. The level carried in is the
+        # one held at the midnight before, never that day's high. A level
+        # held that rounds to the high keeps its half step, as the
+        # nightly roll does (rule BAT-05).
+        if high is not None and high != before and float(round(value)) != high:
             series[index] = high
             changed = True
-        before = float(value) if high is None or high == before else high
+        before = float(value)
     return changed
 
 
@@ -802,18 +827,45 @@ class BatteryMixin:
         return self.low_thresholds[self.battery_group_of(device_id)]  # type: ignore[attr-defined]
 
     def resting_volts(self, device_id: str | None, record: dict[str, Any]) -> float | None:
-        """A coin cell's resting voltage: the higher of today's highest and
-        the last day's, so a reading taken in a transmit's sag decides
+        """A coin cell's resting voltage as judged: the higher of today's
+        highest and the last day's, each corrected for the cold, so a
+        reading taken in a transmit's sag or on a frozen night decides
         nothing. None for a device that is not one coin cell, or reports
         no voltage (rule BAT-03)."""
         if not self.coin_cell(device_id):  # type: ignore[attr-defined]
             return None
-        heard = [record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)]
+        view = self.resting_volts_view(device_id, record)
+        return view["corrected"] if view else None
+
+    def resting_volts_view(self, device_id: str | None, record: dict[str, Any]) -> dict[str, Any] | None:
+        """The resting voltage as read, as corrected for the cold, the
+        temperature it was corrected for (None when it was not), and
+        whether it judges the battery low, for one coin cell or AA and AAA
+        cells with a count. None for any other battery (rule BAT-03)."""
+        per_degree = self.volts_per_degree(device_id)  # type: ignore[attr-defined]
+        if per_degree is None:
+            return None
+        heard = [(record.get(DEV_BATTERY_VOLTS_TODAY_HIGH), record.get(DEV_BATTERY_TEMP_AT_VOLTS_HIGH))]
         rows = _rows(record)
         if rows:
-            heard.append(rows[-1][RANGE_VOLTS_HIGH])
-        volts = [float(v) for v in heard if _level(v)]
-        return max(volts) if volts else None
+            # The last day's highest, with the temperature its evidence row
+            # kept at that moment (rule BAT-16).
+            day = rows[-1][RANGE_DAY]
+            evidence = next((
+                row for row in reversed(record.get(DEV_BATTERY_EVIDENCE) or [])
+                if isinstance(row, list) and len(row) == 8 and row[0] == day
+            ), None)
+            heard.append((rows[-1][RANGE_VOLTS_HIGH], evidence[7] if evidence else None))
+        best: dict[str, Any] | None = None
+        for volts, celsius in heard:
+            if not _level(volts):
+                continue
+            corrected, degrees = corrected_volts(float(volts), celsius, per_degree)
+            if best is None or corrected > best["corrected"]:
+                best = {"volts": float(volts), "corrected": corrected, "celsius": degrees}
+        if best is not None:
+            best["judged"] = bool(self.coin_cell(device_id))  # type: ignore[attr-defined]
+        return best
 
     @callback
     def _evaluate_battery(

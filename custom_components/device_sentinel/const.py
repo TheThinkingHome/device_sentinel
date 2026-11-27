@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.7 (2026-11-26)
+# File: const.py, Version: 0.30.8 (2026-11-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1666,6 +1666,19 @@ LOW_THRESHOLD_KEYS = {
 # its resting voltage, near where the cliff starts, and clears above it
 # by the margin (rule BAT-03).
 LITHIUM_LOW_VOLTS = 2.9
+# A coin cell's voltage falls in the cold and comes back when it warms, so
+# below COIN_CORRECT_BELOW_C its voltage is judged as it would read at
+# COIN_REFERENCE_C, close to the 21 °C of the makers' charts: 5.5 mV a
+# degree, measured on a tester's outdoor CR2032 from -9 to 19 °C and about
+# half Energizer's 1 mA chart, as a sensor draws less (rule BAT-03).
+COIN_VOLTS_PER_DEGREE = 0.0055
+# An AA or AAA cell, alkaline or lithium, loses about 3 mV a degree in the
+# makers' charts; a device reports its whole pack, so this is multiplied by
+# the number of cells. Only shown beside the reading, as nothing judges an
+# AA or AAA by its voltage (rule BAT-03).
+CELL_VOLTS_PER_DEGREE = 0.003
+COIN_REFERENCE_C = 20.0
+COIN_CORRECT_BELOW_C = 10.0
 LITHIUM_CLEAR_VOLTS = 0.05
 # The single threshold every type shared, kept for the migration that
 # set it and the setup that retires it (rule STOR-19).

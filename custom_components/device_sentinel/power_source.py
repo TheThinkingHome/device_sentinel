@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.30.7 (2026-11-26)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.30.8 (2026-11-26)
 
 """What powers each device (rule DEV-06).
 
@@ -42,6 +42,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CELL_VOLTS_PER_DEGREE,
+    COIN_VOLTS_PER_DEGREE,
     BATTERY_GROUP_ALKALINE,
     BATTERY_GROUP_LITHIUM,
     BATTERY_GROUP_RECHARGEABLE,
@@ -120,6 +122,21 @@ def lithium_cell(battery_type: Any) -> bool:
     whole time, often exactly 100% for months. A steady reading from
     one says nothing about how long it has left (rule BAT-16)."""
     return isinstance(battery_type, str) and battery_type.strip().upper().startswith("CR")
+
+
+# AA and AAA cells, by the names the library and people give them, with
+# their chemistry after the size or not: "AAA", "LR03", "AA Lithium".
+_PENCIL_SIZES = frozenset({"AA", "AAA", "LR6", "LR03"})
+
+
+def pencil_cell(battery_type: Any) -> bool:
+    """Whether a battery type is an AA or AAA cell, alkaline or lithium,
+    whose voltage is corrected for the cold on the device page (rule
+    BAT-03)."""
+    if not isinstance(battery_type, str):
+        return False
+    words = battery_type.upper().split()
+    return bool(words) and words[0] in _PENCIL_SIZES and all(w in ("LITHIUM", "ALKALINE") for w in words[1:])
 
 
 # Alkaline cells, by the names the library and people give them.
@@ -799,6 +816,21 @@ class PowerMixin:
             and lithium_cell(known.get("type"))
             and known.get("quantity") in (None, 1)
         )
+
+    def volts_per_degree(self, device_id: str | None) -> float | None:
+        """How much the device's reported voltage falls for each degree of
+        cold: one coin cell's, or an AA or AAA cell's times the number of
+        cells, as a device reports its whole pack. None for any other
+        battery, or AA and AAA cells with no count (rule BAT-03)."""
+        if self.coin_cell(device_id):
+            return COIN_VOLTS_PER_DEGREE
+        known = self.power_of(device_id) if device_id else None
+        if not known or known.get("kind") != KIND_BATTERY or not pencil_cell(known.get("type")):
+            return None
+        count = known.get("quantity")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            return None
+        return CELL_VOLTS_PER_DEGREE * count
 
     def battery_cell(self, device_id: str) -> tuple[str | None, str | None]:
         """The battery a device takes as its Power row says it, "2× AAA",

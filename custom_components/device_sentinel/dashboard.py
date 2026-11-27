@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.30.7 (2026-11-26)
+# File: dashboard.py, Version: 0.30.8 (2026-11-26)
 
 """What the dashboard reads from the coordinator.
 
@@ -1861,6 +1861,9 @@ class DeviceViewMixin:
             # The newest day's voltage, messages and temperature, kept
             # for a later forecast (rule BAT-16).
             "evidence": self.battery_evidence_view(record),  # type: ignore[attr-defined]
+            # A coin cell's resting voltage as read and as judged, with the
+            # temperature it was corrected for (rule BAT-03).
+            "resting": self.resting_volts_view(device_id, record) if device_id else None,  # type: ignore[attr-defined]
         }
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
