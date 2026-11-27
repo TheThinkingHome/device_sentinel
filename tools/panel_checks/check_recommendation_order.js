@@ -3,7 +3,7 @@
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_recommendation_order.js, Version: 0.30.7 (2026-11-26)
+// File: tools/panel_checks/check_recommendation_order.js, Version: 0.30.8 (2026-11-26)
 //
 // The Recommendations tab: most severe first (rule REC-01),
 // each card drawn on its own and a missing day read as unknown (rule
@@ -153,6 +153,12 @@ const LINES = () => [
   check("Each row has a box to select it", boxes.length >= 2, boxes.length);
   const bar = power.querySelector(".recselect");
   check("The answer at the top waits for a selection", bar && bar.hidden);
+  // A browser lets a class's display beat the hidden attribute, so the page
+  // carries its own rule; jsdom applies neither, so the rule itself is read.
+  const css = [...page.root.querySelectorAll("style")].map((st) => st.textContent).join("\n");
+  check("A hidden selection bar stays hidden in a browser", /\.recselect\[hidden\]\s*\{\s*display:\s*none/.test(css));
+  const cols = [...(power.querySelector("table colgroup") || { children: [] }).children].map((c) => parseFloat(c.style.width));
+  check("The box to select a row takes a narrow column", cols.length > 2 && cols[0] < cols[1] / 2, cols);
   const all = power.querySelector('input[aria-label="Select all"]');
   all.checked = true; all.dispatchEvent(new page.window.Event("change"));
   check("Select all says what is selected", !bar.hidden && bar.textContent.startsWith("1 model and 1 device selected, 3 devices"), bar.textContent);

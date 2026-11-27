@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.0 (2026-11-21)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.8 (2026-11-26)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -54,6 +54,7 @@ async function open(address, extra) {
     },
     connection: { subscribeMessage: async () => () => {} },
     states: {},
+    config: extra && extra.__config ? extra.__config : undefined,
   };
   await settle();
   return { window, panel, root: panel.shadowRoot };
@@ -209,6 +210,28 @@ const trends = {
     device: (page) => { steady.device(page); Object.assign(page.battery, { lithium: "CR2032", reading: "falling" }); return page; },
   });
   check("a falling lithium cell is not given the note", !text(falling.root).includes("A lithium cell"));
+
+  console.log("A cold battery's voltage, as read and corrected to 20 \u00b0C (BAT-03)");
+  const resting = (rest, config) => open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); Object.assign(page.battery, { lithium: "CR2032", resting: rest }); return page; },
+    __config: config,
+  });
+  const frozen = await resting({ volts: 2.844, corrected: 2.965, celsius: -2, judged: true });
+  check("a cold coin cell shows the reading, then the corrected value",
+    text(frozen.root).includes("Resting voltage 2.844 V (2.965 V corrected for \u22122 \u00b0C)."), (text(frozen.root).match(/Resting voltage.{0,60}/) || [""])[0]);
+  const fahrenheit = await resting({ volts: 2.844, corrected: 2.965, celsius: -2, judged: true },
+    { unit_system: { temperature: "\u00b0F" } });
+  check("in \u00b0F where the house uses it", text(fahrenheit.root).includes("corrected for 28 \u00b0F)"),
+    (text(fahrenheit.root).match(/Resting voltage.{0,60}/) || [""])[0]);
+  const warm = await resting({ volts: 3.01, corrected: 3.01, celsius: null, judged: true });
+  check("a warm coin cell shows its reading alone", text(warm.root).includes("Resting voltage 3.01 V.")
+    && !text(warm.root).includes("corrected for"));
+  const pack = await resting({ volts: 4.2, corrected: 4.47, celsius: -10, judged: false });
+  check("a cold AAA pack shows both too", text(pack.root).includes("Resting voltage 4.20 V (4.47 V corrected for \u221210 \u00b0C)."));
+  const warmPack = await resting({ volts: 3.0, corrected: 3.0, celsius: null, judged: false });
+  check("a warm AAA pack shows no voltage line", !text(warmPack.root).includes("Resting voltage"));
+  const nothing = await resting(null);
+  check("no resting voltage sent, no line", !text(nothing.root).includes("Resting voltage"));
 
   console.log("Battery Trends");
   const tab = await open(`${PREFIX}/battery-trends`, trends);
