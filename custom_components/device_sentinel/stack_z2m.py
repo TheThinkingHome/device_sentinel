@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.30.9 (2026-11-27)
+# File: stack_z2m.py, Version: 0.30.10 (2026-11-27)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
