@@ -89,11 +89,10 @@ def owns_domain(domain: str) -> bool:
     Z2M is the one stack whose own name is not its integration
     domain: its devices arrive through MQTT discovery and carry the
     `mqtt` domain, shared with every other MQTT thing in the house.
-    That is why presence is told by the bridge device rather than by
-    this test (rule STACK-01), and why ownership is the widest claim
-    this stack can make about a single device: a non-Z2M MQTT device
-    reads as Z2M's here. The only consequence is a discarded gap,
-    which is the fail-safe direction (rule FRZ-16).
+    Presence is told by the bridge device rather than by this test
+    (rule STACK-01). This only selects the stack's resolver; actual
+    ownership requires a registry parent or an unambiguous device roll
+    (rule STACK-03), so unrelated MQTT devices are not claimed.
     """
     return domain == "mqtt"
 
@@ -127,7 +126,7 @@ def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     return owns_domain(domain) and is_bridge_device(device)
 
 
-def device_key(device: dr.DeviceEntry) -> str | None:
+def device_key(device: Any) -> str | None:
     """Return the IEEE address Zigbee2MQTT knows this device by.
 
     Z2M publishes through MQTT discovery with an identifier of the
@@ -157,17 +156,122 @@ def make_reader(hass: HomeAssistant) -> Z2MBridgeReader:
     return Z2MBridgeReader(hass)
 
 
+def is_instance(key: str) -> bool:
+    """Whether a bridge scope belongs to this stack (rule STACK-03)."""
+    return key == STACK or key.startswith(f"{STACK}:")
+
+
+def instance_label(reader: Z2MBridgeReader | None) -> str:
+    """Show the exact MQTT prefix, or a readable name before discovery."""
+    if reader is not None:
+        return reader.base_topic or reader.name or "Zigbee2MQTT"
+    return "Zigbee2MQTT"
+
+
+def _base_from_info(info: dict[str, Any]) -> str | None:
+    """Read a single exact prefix, never a guessed name (rule STACK-03)."""
+    bases: set[str] = set()
+    for entity in info.get("entities", []):
+        discovery = entity.get("discovery_data") or {}
+        payload = discovery.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        replacement = payload.get("~")
+        topics = [item.get("topic") for item in entity.get("subscriptions", [])]
+        # Availability remains present even on bridge entities whose own
+        # state uses another bridge topic. Commands are never considered.
+        topics.extend(payload.get(field) for field in ("state_topic", "stat_t", "availability_topic", "avty_t"))
+        availability = payload.get("availability", payload.get("avty", []))
+        if isinstance(availability, list):
+            topics.extend(item.get("topic", item.get("t")) for item in availability if isinstance(item, dict))
+        for topic in topics:
+            if not isinstance(topic, str):
+                continue
+            if isinstance(replacement, str):
+                if topic.startswith("~"):
+                    topic = replacement + topic[1:]
+                elif topic.endswith("~"):
+                    topic = topic[:-1] + replacement
+            for leaf in (Z2M_TOPIC_STATE, Z2M_TOPIC_INFO, Z2M_TOPIC_DEVICES):
+                suffix = f"/{leaf}"
+                if topic.endswith(suffix):
+                    base = topic[:-len(suffix)]
+                    if base and not any(char in base for char in ("+", "#", "\x00")):
+                        bases.add(base)
+    return next(iter(bases)) if len(bases) == 1 else None
+
+
+def make_readers(hass: HomeAssistant) -> dict[str, Z2MBridgeReader]:
+    """Discover every registry bridge without assuming its topic (rule STACK-03).
+
+    The MQTT helper may be unavailable early in setup. Keep a reader with
+    no subscriptions then, and retry discovery on the next sweep.
+    """
+    from homeassistant.components.mqtt import debug_info
+
+    readers: dict[str, Z2MBridgeReader] = {}
+    registry = dr.async_get(hass)
+    devices = {
+        device.id: device
+        for entry in hass.config_entries.async_entries("mqtt")
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+    for device in devices.values():
+        if not is_bridge_device(device) or device.disabled_by is not None:
+            continue
+        if not any(domain == "mqtt" for domain, _parts in identifier_values(device)):
+            continue
+        try:
+            base = _base_from_info(debug_info.info_for_device(hass, device.id))
+        except Exception as err:  # noqa: BLE001 - MQTT may still be loading
+            LOGGER.debug("MQTT discovery for bridge %s is not ready: %s", device.id, err)
+            base = None
+        key = f"{STACK}:{device.id}"
+        reader = Z2MBridgeReader(hass, base)
+        reader.bridge_device_id = device.id
+        reader.instance_key = key
+        reader.name = device.name_by_user or device.name
+        readers[key] = reader
+    return readers
+
+
+def reader_for_device(
+    readers: dict[str, Any], hass: HomeAssistant, device_id: str
+) -> Any | None:
+    """Use the registry parent first, then an unambiguous IEEE (rule STACK-03)."""
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return None
+    key = device_key(device)
+    candidates = [reader for scope, reader in readers.items() if is_instance(scope)]
+    parent = device_field(device, "via_device_id")
+    if parent is not None:
+        matches = [reader for reader in candidates if getattr(reader, "bridge_device_id", None) == parent]
+        # A known parent must never fall through to another bridge's old roll.
+        if matches or any(getattr(reader, "bridge_device_id", None) for reader in candidates):
+            return matches[0] if len(matches) == 1 else None
+    if key:
+        matches = [reader for reader in candidates if callable(getattr(reader, "has_device", None)) and reader.has_device(key)]
+        if matches:
+            return matches[0] if len(matches) == 1 else None
+    # Legacy readers are used only by callers with no discovered bridge.
+    legacy = readers.get(STACK)
+    return legacy if legacy is not None and getattr(legacy, "bridge_device_id", None) is None else None
+
+
 def is_bridge_device(device: dr.DeviceEntry) -> bool:
     """Recognize the Zigbee2MQTT bridge device (rule STACK-01).
 
-    Z2M publishes its bridge through MQTT discovery with a name
-    ending "Zigbee2MQTT Bridge", or a model of "Bridge" under the
-    manufacturer "Zigbee2MQTT". The name is checked first because
-    it holds whatever coordinator hardware sits behind it, so the
-    tell does not depend on any one adapter. This is the clean
-    signal that Z2M is running, since the mqtt domain alone cannot
-    tell Z2M apart from any other MQTT device.
+    The MQTT identifier survives display-name changes. Manufacturer/model
+    and the original bridge name also recognise older discovery data;
+    the shared mqtt domain alone never proves the stack is present.
     """
+    for domain, parts in identifier_values(device):
+        if domain == "mqtt" and any(
+            isinstance(value, str) and value.startswith(f"{Z2M_IDENTIFIER_MARK}bridge_")
+            for value in parts
+        ):
+            return True
     name = device.name_by_user or device.name or ""
     if isinstance(name, str) and Z2M_BRIDGE_NAME_MARK in name:
         return True
@@ -188,11 +292,14 @@ class Z2MBridgeReader:
     """
 
     def __init__(
-        self, hass: HomeAssistant, base_topic: str = Z2M_BASE_TOPIC_DEFAULT
+        self, hass: HomeAssistant, base_topic: str | None = Z2M_BASE_TOPIC_DEFAULT
     ) -> None:
         """Initialize the reader for one Z2M bridge."""
         self._hass = hass
         self._base = base_topic
+        self.bridge_device_id: str | None = None
+        self.instance_key = STACK
+        self.name: str | None = None
         self._unsubs: list[Any] = []
         # What the reader has heard. online is None until bridge/state arrives;
         # permit_join and its end come from bridge/info. last_heard is
@@ -284,6 +391,15 @@ class Z2MBridgeReader:
                 return role if isinstance(role, str) else None
         return None
 
+    def has_device(self, ieee: str) -> bool:
+        """Whether the bridge's current device roll owns this IEEE."""
+        return any(entry.get("ieee_address") == ieee for entry in self._devices_by_name.values())
+
+    @property
+    def subscribed(self) -> bool:
+        """Whether setup has established this reader's subscriptions."""
+        return bool(self._unsubs)
+
     @property
     def availability_enabled(self) -> bool | None:
         """Return whether Zigbee2MQTT's availability feature is on.
@@ -366,13 +482,35 @@ class Z2MBridgeReader:
             if name not in self._devices_by_name
         )
 
+    def migrate_scope(self, data: dict[str, Any]) -> bool:
+        """Move an old single-bridge scope only when its prefix proves ownership.
+
+        Older releases listened only to the default prefix. Their saved
+        outage belongs to that bridge, never an arbitrary first instance
+        (rule STACK-03).
+        """
+        from .const import DATA_BRIDGE_SEEN, DATA_SYSTEM_EVENTS, SYS_SCOPE
+
+        if self._base != Z2M_BASE_TOPIC_DEFAULT:
+            return False
+        changed = False
+        seen = data.get(DATA_BRIDGE_SEEN) or {}
+        if STACK in seen and self.instance_key not in seen:
+            seen[self.instance_key] = seen.pop(STACK)
+            changed = True
+        for event in data.get(DATA_SYSTEM_EVENTS) or []:
+            if isinstance(event, dict) and event.get(SYS_SCOPE) == STACK:
+                event[SYS_SCOPE] = self.instance_key
+                changed = True
+        return changed
+
     @property
     def stack(self) -> str:
         """Return the stack this reader speaks for."""
         return STACK_Z2M
 
     @property
-    def base_topic(self) -> str:
+    def base_topic(self) -> str | None:
         """Return the configured Z2M base topic."""
         return self._base
 
@@ -469,6 +607,8 @@ class Z2MBridgeReader:
         swallowed: the reader simply stays at unknown, and every
         consumer treats unknown as "cannot tell", which is safe.
         """
+        if self._base is None:
+            return False
         # Ask before waiting. async_wait_for_mqtt_client answers an
         # absent MQTT integration by waiting its full timeout, fifty
         # seconds, so calling it unconditionally would hold Device
@@ -714,7 +854,7 @@ class Z2MBridgeReader:
             # Named by its address, the key Device Sentinel already
             # keeps for each Zigbee2MQTT device (`device_key`); the
             # recorder finds the device it belongs to.
-            self._join_recorder(STACK_Z2M, ieee)
+            self._join_recorder(self.instance_key, ieee)
         except Exception as err:  # noqa: BLE001 - a join never breaks the reader
             LOGGER.debug("Zigbee2MQTT join for %s not recorded: %s", ieee, err)
 
@@ -746,7 +886,7 @@ class Z2MBridgeReader:
                 "power_source": entry.get("power_source"),
                 "type": entry.get("type"),
             }
-        if roll:
+        if roll or not data:
             self._devices_by_name = roll
 
     @callback

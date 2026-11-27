@@ -25,10 +25,9 @@ STACK_Z2M = "z2m"
 STACK_ZHA = "zha"
 STACK_ZWAVE = "zwave_js"
 STACK_MATTER = "matter"
-# The portable tell for the Z2M bridge device: Z2M publishes it via
-# MQTT discovery with a name ending "Zigbee2MQTT Bridge", or a model of
-# "Bridge" under manufacturer "Zigbee2MQTT". The name is matched first
-# because it survives whatever coordinator hardware sits behind it.
+# Older discovery data identifies a bridge by manufacturer/model or
+# its original name; the MQTT identifier also survives a rename
+# (rule STACK-03).
 Z2M_BRIDGE_NAME_MARK = "Zigbee2MQTT Bridge"
 Z2M_BRIDGE_MODEL = "Bridge"
 Z2M_BRIDGE_MANUFACTURER = "Zigbee2MQTT"

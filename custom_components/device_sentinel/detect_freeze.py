@@ -42,7 +42,7 @@ from .device_fields import device_field
 from .device_type import SOURCE_OWNER, TYPES_THAT_REPORT_ON_USE, list_name, measures
 from .records import BAD_STATES, restart_lognormal
 from .outage_detail import parse_detail
-from .stacks import available_speaks, node_dead, node_up, reader_for_domain, spares_while_up
+from .stacks import available_speaks, node_dead, node_up, spares_while_up
 
 from .removed_days import REMOVED, counted_gaps, set_removed
 from .rhythm_rules import lognormal_days, lognormal_rhythm
@@ -694,17 +694,13 @@ class FreezeMixin:
         A pairing window is open for the whole coordinator, so any device
         behind it that recovers while the window is open, or within the grace
         after it closed, is a pairing candidate (rule FRZ-16). The per-device
-        signal is the integration domain, and which stack owns a domain is
-        that stack's own question, not this detector's (rule STACK-01): a
-        domain no stack claims, or a stack with no reader, gives no reader
-        here. A device that merely shares a domain with the stack is caught
-        too, but that costs one discarded gap, the safe direction. No reader,
+        signal is the owning bridge, resolved from the registry parent or
+        an unambiguous device-list entry (rule STACK-03). Another bridge's
+        pairing window must not discard this device's silence. No reader,
         no bridge, or any failure returns False and the taint decision stands
         (rule FRZ-15).
         """
-        reader = reader_for_domain(
-            self._bridge_readers, self._watched.get(device_id)
-        )
+        reader = self._reader_for_device(device_id)
         if reader is None:
             return False
         try:
@@ -726,9 +722,7 @@ class FreezeMixin:
         reader that names no joins, a window already open when Device
         Sentinel started, or any fault: the caller then judges by the
         silence, as before."""
-        reader = reader_for_domain(
-            self._bridge_readers, self._watched.get(device_id)
-        )
+        reader = self._reader_for_device(device_id)
         seen = getattr(reader, "joins_seen", None)
         if not callable(seen):
             return False

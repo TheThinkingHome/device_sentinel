@@ -72,7 +72,6 @@ from .const import (
     PATTERN_MIN_TIMES,
     PATTERN_SHARE,
     STACK_MATTER,
-    STACK_Z2M,
     STACK_ZHA,
     STACK_ZWAVE,
     SYS_BRIDGE_UP,
@@ -556,10 +555,10 @@ class NetworkExtrasMixin:
         """A Zigbee device's part in its mesh: Router or End device, as
         its stack says. None where the stack does not say."""
         try:
-            if key == STACK_Z2M:
-                from .stack_z2m import device_key
+            from .stack_z2m import device_key, is_instance
 
-                reader = self.bridge_reader(STACK_Z2M)  # type: ignore[attr-defined]
+            if is_instance(key):
+                reader = self.bridge_reader(key)  # type: ignore[attr-defined]
                 ieee = device_key(device)
                 role = reader.zigbee_role(ieee) if reader is not None and ieee else None
             elif key == STACK_ZHA:

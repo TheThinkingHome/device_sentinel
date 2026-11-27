@@ -81,14 +81,18 @@ from .const import (
     SENTINEL_TYPE_SIGNAL_RAILS,
     SENTINEL_TYPE_SIGNAL_WEAK,
     SENTINEL_TYPE_STATUS,
+    STACK_Z2M,
     STATUS_LEARNING,
     STATUS_PROBLEM,
     STATUS_WATCHING,
     UNIT_BATTERIES,
     UNIT_DEVICES,
     UNIT_SIGNALS,
+    Z2M_BASE_TOPIC_DEFAULT,
 )
 from .coordinator import DeviceSentinelCoordinator
+from .stack_z2m import is_instance as is_z2m_instance
+from .stacks import bridge_name
 
 
 async def async_setup_entry(
@@ -112,14 +116,39 @@ async def async_setup_entry(
             DeviceSentinelMaintenanceSensor(coordinator),
         ]
     )
-    # One bridge sensor per detected coordinator stack, enabled by
-    # default (rule CFG-08). Created from the readers the coordinator started, so a
-    # house with no capable stack gets none and a house with several
-    # gets one each.
-    async_add_entities(
-        DeviceSentinelBridgeSensor(coordinator, stack)
-        for stack in coordinator.bridge_stacks
-    )
+    # Each discovered bridge gets its own sensor, including bridges
+    # discovered after setup; injected or orphan readers do not create
+    # entities on an unrelated refresh (rules CFG-08, STACK-03).
+    added_bridges: set[str] = set()
+    legacy_z2m_added = False
+
+    @callback
+    def _add_bridge_sensors() -> None:
+        """Discovery can complete after the sensor platform starts."""
+        nonlocal legacy_z2m_added
+        new = []
+        for scope in coordinator.bridge_stacks:
+            if scope in added_bridges:
+                continue
+            reader = coordinator.bridge_reader(scope)
+            if scope not in coordinator._stacks and getattr(reader, "bridge_device_id", None) is None:
+                continue
+            identity = scope
+            if scope != STACK_Z2M and is_z2m_instance(scope):
+                # Wait for discovery rather than assigning an identity
+                # that would have to change when the topic is known.
+                if reader.base_topic is None:
+                    continue
+                if reader.base_topic == Z2M_BASE_TOPIC_DEFAULT and not legacy_z2m_added:
+                    identity = STACK_Z2M
+            legacy_z2m_added |= identity == STACK_Z2M
+            added_bridges.add(scope)
+            new.append(DeviceSentinelBridgeSensor(coordinator, scope, identity=identity))
+        if new:
+            async_add_entities(new)
+
+    _add_bridge_sensors()
+    entry.async_on_unload(coordinator.async_add_listener(_add_bridge_sensors))
     async_add_entities([DeviceSentinelBrokerSensor(coordinator)])
     # The Wi-Fi sensor only where the capability exists: at least one
     # watched device tied to a router tracker. A house without ties
@@ -704,18 +733,28 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     _attr_options = BRIDGE_STATES
 
     def __init__(
-        self, coordinator: DeviceSentinelCoordinator, stack: str
+        self, coordinator: DeviceSentinelCoordinator, stack: str, *, identity: str | None = None
     ) -> None:
-        """Initialize the bridge sensor for one stack."""
+        """Track the instance while retaining the entity identity it was assigned."""
         self._stack = stack
-        self.sentinel_type = f"{SENTINEL_TYPE_BRIDGE}_{stack}"
+        self._identity_stack = identity if identity is not None else stack
+        self.sentinel_type = f"{SENTINEL_TYPE_BRIDGE}_{self._identity_stack}"
         super().__init__(coordinator)
         # A stack with a name of its own is translated; any other
         # stack's bridge keeps the name built from it.
-        if stack in BRIDGE_TRANSLATION_KEYS:
-            self._attr_translation_key = BRIDGE_TRANSLATION_KEYS[stack]
+        if self._identity_stack in BRIDGE_TRANSLATION_KEYS:
+            self._attr_translation_key = BRIDGE_TRANSLATION_KEYS[self._identity_stack]
         else:
-            self._attr_name = f"{stack} Bridge"
+            self._attr_name = bridge_name(stack, coordinator.bridge_reader(stack))
+
+    @callback
+    def _handle_refresh(self) -> None:
+        """Update the label when MQTT discovery supplies a topic."""
+        if self._identity_stack not in BRIDGE_TRANSLATION_KEYS:
+            self._attr_name = bridge_name(
+                self._stack, self._coordinator.bridge_reader(self._stack)
+            )
+        super()._handle_refresh()
 
     @property
     def native_value(self) -> str:
@@ -730,7 +769,7 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
         reader = self._coordinator.bridge_reader(self._stack)
         attrs: dict[str, Any] = {
             **self._identity(),
-            ATTR_BRIDGE_STACK: self._stack,
+            ATTR_BRIDGE_STACK: self._identity_stack,
         }
         if reader is not None:
             # Only what this reader actually knows. Z2M answers all

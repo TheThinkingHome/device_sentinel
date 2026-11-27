@@ -77,6 +77,7 @@ from .const import (
 from .const import ADDR_AP, DEV_SIGNAL_DAILY_P5, LOGGER
 from .daily_dates import FAMILY_SIGNAL, dates_for
 from .device_fields import device_field
+from .stack_z2m import is_instance as is_z2m_instance
 
 # How far back a network page looks: outages, pairing and new devices.
 NETWORK_WINDOW_DAYS = 30
@@ -174,6 +175,8 @@ class NetworksMixin:
         """
         found: list[str] = []
         stack = self._radio_stack.get(device_id)
+        if stack == STACK_Z2M:
+            stack = self._stack_for_device(device_id) or stack  # type: ignore[attr-defined]
         if stack is not None:
             found.append(stack)
         else:
@@ -187,7 +190,7 @@ class NetworksMixin:
             elif device_id in self._wifi_ties:  # type: ignore[attr-defined]
                 found.append(WIFI_KEY)
         domain = self._watched.get(device_id)  # type: ignore[attr-defined]
-        if domain in BROKER_RIDER_DOMAINS or (domain == BROKER_SCOPE and stack != STACK_Z2M):
+        if domain in BROKER_RIDER_DOMAINS or (domain == BROKER_SCOPE and not is_z2m_instance(stack or "")):
             found.append(BROKER_SCOPE)
         return found
 
@@ -208,6 +211,12 @@ class NetworksMixin:
         stacks.update(self.bridge_stacks)  # type: ignore[attr-defined]
         keys: list[str] = []
         for key in NETWORK_ORDER:
+            if key == STACK_Z2M:
+                instances = sorted(scope for scope in stacks if scope != STACK_Z2M and is_z2m_instance(scope))
+                if instances:
+                    if BROKER_SCOPE not in self.excluded_integrations:  # type: ignore[attr-defined]
+                        keys.extend(instances)
+                    continue
             if key == WIFI_KEY:
                 have = (
                     key in members
@@ -247,6 +256,8 @@ class NetworksMixin:
             return WIFI_BAND_NAME
         if key == BROKER_SCOPE:
             return BROKER_NETWORK_NAME
+        if is_z2m_instance(key) and key != STACK_Z2M:
+            return self._integration_title(key)  # type: ignore[attr-defined]
         return STACK_DISPLAY_NAMES.get(key, key)
 
     # ----------------------------------------------------------- status
@@ -330,7 +341,7 @@ class NetworksMixin:
         # Zigbee2MQTT reaches Home Assistant through the MQTT integration,
         # and its bridge reader keeps its last reading while that is not
         # loaded, so the integration is asked first.
-        if key == STACK_Z2M and self._entries_state(BROKER_SCOPE) == "not_loaded":
+        if is_z2m_instance(key) and self._entries_state(BROKER_SCOPE) == "not_loaded":
             return {"state": "down", "words": "Integration not loaded", "since": None}
         bridge = self.bridge_state(key)  # type: ignore[attr-defined]
         if bridge is not None:
@@ -356,7 +367,7 @@ class NetworksMixin:
                     "since": None if first else _iso(since),
                 }
         # Zigbee2MQTT's devices come through the MQTT integration.
-        loaded = self._entries_state(BROKER_SCOPE if key == STACK_Z2M else key)
+        loaded = self._entries_state(BROKER_SCOPE if is_z2m_instance(key) else key)
         if loaded == "loaded":
             return {"state": "ok", "words": "Integration loaded", "since": None}
         if loaded == "not_loaded":
@@ -423,11 +434,11 @@ class NetworksMixin:
             wanted = [(SYS_WIFI_DOWN, WIFI_KEY)]
         elif key == BROKER_SCOPE:
             wanted = [(SYS_BROKER_DOWN, BROKER_SCOPE), (SYS_INTEGRATION_DOWN, BROKER_SCOPE)]
-        elif key == STACK_Z2M:
+        elif is_z2m_instance(key):
             # Zigbee2MQTT reaches Home Assistant through the broker, so
             # the broker's outages took its devices too.
             wanted = [
-                (SYS_BRIDGE_DOWN, STACK_Z2M),
+                (SYS_BRIDGE_DOWN, key),
                 (SYS_BROKER_DOWN, BROKER_SCOPE),
                 (SYS_INTEGRATION_DOWN, BROKER_SCOPE),
             ]
@@ -445,7 +456,7 @@ class NetworksMixin:
                     # A broker outage on Zigbee2MQTT's page is the
                     # broker's own: only the broker's expected times
                     # cover it (rule DASH-18).
-                    **({"source": BROKER_SCOPE} if key == STACK_Z2M and scope == BROKER_SCOPE else {}),
+                    **({"source": BROKER_SCOPE} if is_z2m_instance(key) and scope == BROKER_SCOPE else {}),
                 })
         return rows
 
@@ -468,7 +479,7 @@ class NetworksMixin:
             rows.append({
                 "key": key,
                 "name": self.network_name(key),
-                "kind": "hub" if key.startswith(HUB_PREFIX) else key,
+                "kind": "hub" if key.startswith(HUB_PREFIX) else STACK_Z2M if is_z2m_instance(key) else key,
                 "status": self.network_status(key),
                 "watched": len(devices),
                 "with_problem": with_problem,
@@ -497,7 +508,7 @@ class NetworksMixin:
         return {
             "key": key,
             "name": self.network_name(key),
-            "kind": "hub" if key.startswith(HUB_PREFIX) else key,
+            "kind": "hub" if key.startswith(HUB_PREFIX) else STACK_Z2M if is_z2m_instance(key) else key,
             "status": status,
             "watched": len(members),
             "with_problem": with_problem,
@@ -557,8 +568,8 @@ class NetworksMixin:
         from .device_type import _host, _zwave_node
 
         rows: list[dict[str, Any] | None] = []
-        if key == STACK_Z2M:
-            reader = self.bridge_reader(STACK_Z2M)  # type: ignore[attr-defined]
+        if is_z2m_instance(key):
+            reader = self.bridge_reader(key)  # type: ignore[attr-defined]
             info: dict[str, Any] = {}
             try:
                 info = dict(getattr(reader, "hardware", None) or {})
@@ -630,8 +641,8 @@ class NetworksMixin:
         """A setting of the network's own that would help, with where to
         change it. Device Sentinel never changes it (rule STACK-13)."""
         notices: list[dict[str, Any]] = []
-        if key == STACK_Z2M:
-            reader = self.bridge_reader(STACK_Z2M)  # type: ignore[attr-defined]
+        if is_z2m_instance(key):
+            reader = self.bridge_reader(key)  # type: ignore[attr-defined]
             enabled = getattr(reader, "availability_enabled", None) if reader is not None else None
             if enabled is False:
                 notices.append({
@@ -652,7 +663,7 @@ class NetworksMixin:
         """For each sensor the network's devices are expected to have: how
         many devices have it, how many have it on, and the devices with it
         switched off, each to be turned on one at a time (rule REC-05)."""
-        kinds = SENSOR_KINDS.get(key, ())
+        kinds = SENSOR_KINDS.get(STACK_Z2M if is_z2m_instance(key) else key, ())
         rows = []
         for kind in kinds:
             have = 0
@@ -674,7 +685,7 @@ class NetworksMixin:
             if not have:
                 continue
             off.sort(key=lambda row: str(row["name"]).lower())
-            label = Z2M_SIGNAL_LABEL if key == STACK_Z2M and kind == "signal" else SENSOR_LABELS[kind]
+            label = Z2M_SIGNAL_LABEL if is_z2m_instance(key) and kind == "signal" else SENSOR_LABELS[kind]
             rows.append({"kind": kind, "label": label, "have": have, "on": have - len(off), "off": off})
         return rows
 
@@ -729,11 +740,11 @@ class NetworksMixin:
         """The last pairing window in the window, how many windows, and
         the network's devices added to Home Assistant in it. None for a
         network with no pairing of its own."""
-        if key not in (STACK_Z2M, STACK_ZHA, STACK_ZWAVE, STACK_MATTER):
+        if not is_z2m_instance(key) and key not in (STACK_ZHA, STACK_ZWAVE, STACK_MATTER):
             return None
         # Only Zigbee2MQTT says when pairing opens and closes; the others
         # keep no window, so theirs give the devices added alone.
-        windowed = key == STACK_Z2M
+        windowed = is_z2m_instance(key)
         now = dt_util.utcnow().timestamp()
         since = now - NETWORK_WINDOW_DAYS * 86400.0
         rows = sorted(

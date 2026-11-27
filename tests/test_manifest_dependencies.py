@@ -32,6 +32,9 @@ ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs
            # controller's radio noise, and named in after_dependencies
            # (rule DASH-18).
            "recorder",
+           # Bridge topics come from MQTT's guarded discovery helper,
+           # already a soft dependency (rule STACK-03).
+           "mqtt",
            # Home Assistant's core: its settings for what Assist and the
            # voice assistants see, to hide the Problem List from them
            # (rule LIST-14). It is not an integration a manifest names;

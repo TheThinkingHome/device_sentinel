@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from . import lightwave, stack_matter, stack_z2m, stack_zha, stack_zwave
+from .const import BRIDGE_SENSOR_NAMES
 
 # The one line of registration (rule STACK-01).
 STACK_MODULES = (stack_zha, stack_zwave, stack_matter, stack_z2m)
@@ -36,6 +37,13 @@ STACK_MODULES = (stack_zha, stack_zwave, stack_matter, stack_z2m)
 # Integrations that are not stacks but give each device a link sensor
 # read as a node status is (rule STACK-16).
 STATUS_MODULES = (lightwave,)
+
+
+def bridge_name(scope: str, reader: Any) -> str:
+    """Return a bridge's display name, not its internal scope."""
+    if scope != stack_z2m.STACK and stack_z2m.is_instance(scope):
+        return f"Bridge: {stack_z2m.instance_label(reader)}"
+    return BRIDGE_SENSOR_NAMES.get(scope, f"{scope} Bridge")
 
 
 def detect(domain: str, device: dr.DeviceEntry) -> str | None:
@@ -118,6 +126,33 @@ def make_reader(stack: str, hass: HomeAssistant) -> Any | None:
     for module in STACK_MODULES:
         if module.STACK == stack:
             return module.make_reader(hass)
+    return None
+
+
+def make_readers(stack: str, hass: HomeAssistant) -> dict[str, Any]:
+    """Create independently scoped readers where a stack has instances."""
+    for module in STACK_MODULES:
+        if module.STACK != stack:
+            continue
+        factory = getattr(module, "make_readers", None)
+        if factory is not None:
+            return factory(hass)
+        reader = module.make_reader(hass)
+        return {stack: reader} if reader is not None else {}
+    return {}
+
+
+def reader_for_device(
+    readers: dict[str, Any], hass: HomeAssistant, domain: str | None, device_id: str
+) -> Any | None:
+    """Resolve the owning instance without leaking another bridge's state."""
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        resolver = getattr(module, "reader_for_device", None)
+        if resolver is not None:
+            return resolver(readers, hass, device_id)
+        return readers.get(module.STACK)
     return None
 
 

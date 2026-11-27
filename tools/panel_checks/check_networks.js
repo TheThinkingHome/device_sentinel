@@ -140,6 +140,17 @@ const noStrays = (root) => !/\b(null|undefined|NaN)\b|\[object/.test(text(root))
   check("Networks is on Simple's tab row", tabs(root).includes("Networks"), tabs(root));
   check("Simple leaves out LAST OUTAGE", !heads(root).includes("LAST OUTAGE"), heads(root));
 
+  console.log("Independently scoped Zigbee2MQTT bridges");
+  const scope = "z2m:stable-bridge-id";
+  const multi = (await open(`/network/${encodeURIComponent(scope)}`, "advanced", {
+    network: async (message) => ({ ...JSON.parse(JSON.stringify(PAGE)), key: message.key,
+      name: "Zigbee2MQTT: Renamed coordinator (house/radio)", kind: "z2m" }),
+  })).root;
+  check("the instance keeps its own title", multi.querySelector(".pane h2").textContent.includes("house/radio"));
+  check("the instance links to MQTT in Home Assistant",
+    [...multi.querySelectorAll(".pane a")].some((a) => a.getAttribute("href") === "/config/integrations/integration/mqtt"));
+  check("no stray words on an instance page", noStrays(multi), text(multi));
+
   console.log("A network's page, Advanced");
   let calls;
   ({ root, calls } = await open("/network/z2m?from=networks"));
