@@ -63,7 +63,6 @@ def _house(hass) -> list[str]:
     entities = er.async_get(hass)
     made = []
     entity_ids = []
-    bridge_id = None
     for uid, name in (
         ("bridge", "SLZB-06M Zigbee2MQTT Bridge"),
         ("d1", "Door Master"),
@@ -81,10 +80,7 @@ def _house(hass) -> list[str]:
             device_id=device.id, config_entry=source,
         )
         entity_ids.append(entity.entity_id)
-        if uid == "bridge":
-            bridge_id = device.id
-        else:
-            registry.async_update_device(device.id, via_device_id=bridge_id)
+        if uid != "bridge":
             made.append(device.id)
     _unavailable(hass, entity_ids)
     return made
@@ -142,14 +138,9 @@ def _plant(hass_storage, device_ids: list[str], down_at: float) -> None:
 
 
 @pytest.fixture
-def _quiet_mqtt(hass, monkeypatch):
+def _quiet_mqtt(hass):
     """The reader subscribes if MQTT is there and reports unknown if
     it is not, which is the state a stopped broker leaves."""
-    from homeassistant.components.mqtt import debug_info
-
-    monkeypatch.setattr(debug_info, "info_for_device", lambda *_args: {
-        "entities": [{"subscriptions": [{"topic": "zigbee2mqtt/bridge/state"}]}],
-    })
     yield
 
 
@@ -184,11 +175,10 @@ async def test_the_bridge_claims_them_from_the_first_write(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
 
-    scope = coord.bridge_stacks[0]
-    assert coord._bridge_down_at.get(scope) == down_at
+    assert coord._bridge_down_at.get(STACK_Z2M) == down_at
     for device_id in device_ids:
         found = coord.upstream_down_since(device_id)
-        assert found is not None and found[0] == scope
+        assert found is not None and found[0] == STACK_Z2M
 
 
 async def test_a_device_broken_on_its_own_still_reaches_the_list(

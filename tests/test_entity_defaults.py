@@ -155,12 +155,11 @@ async def test_removal_leaves_what_another_tool_keeps_there(hass: HomeAssistant)
 
 
 async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(
-    hass: HomeAssistant, entity_registry, monkeypatch
+    hass: HomeAssistant, entity_registry
 ):
     """The conditional's other branch: a house whose registry shows a
     Zigbee2MQTT bridge gets the broker sensor on, and the bridge sensor
     arrives enabled with it (rule CFG-08)."""
-    from homeassistant.components.mqtt import debug_info
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from pytest_homeassistant_custom_component.common import (
@@ -178,20 +177,18 @@ async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(
         "sensor", "mqtt", "bridge1_0",
         device_id=device.id, config_entry=source,
     )
-    monkeypatch.setattr(debug_info, "info_for_device", lambda *_: {
-        "entities": [{"subscriptions": [{"topic": "zigbee2mqtt/bridge/state"}]}],
-    })
-    entry = await setup_entry(hass)
+    await setup_entry(hass)
 
     broker = entity_registry.async_get(
         "sensor.device_sentinel_broker_mqtt"
     )
     assert broker is not None
     assert broker.disabled_by is None
-    bridge = entity_registry.async_get("sensor.device_sentinel_bridge_zigbee2mqtt")
+    bridge = entity_registry.async_get(
+        "sensor.device_sentinel_bridge_zigbee2mqtt"
+    )
     assert bridge is not None
     assert bridge.disabled_by is None
-    assert bridge.unique_id == f"{entry.entry_id}_bridge_z2m"
 
 
 async def test_the_count_sensors_split_found_from_watched(

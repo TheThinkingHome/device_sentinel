@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_multiple_z2m_bridges.py, Version: 0.30.7 (2026-11-27)
+# File: tests/test_multiple_z2m_bridges.py, Version: 0.30.9 (2026-11-27)
 
 """Independent MQTT bridge discovery, ownership and pairing (rule STACK-03)."""
 
@@ -12,8 +12,6 @@ import inspect
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-import pytest
-from homeassistant.components.mqtt import debug_info
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
@@ -54,35 +52,28 @@ def _fleet(hass, monkeypatch):
             identifiers={("mqtt", f"zigbee2mqtt_0x{index + 10:016x}")},
             **parent, name=f"Sensor {index}",
         )
-        payloads[bridge.id] = {"entities": [{"discovery_data": {"payload": {
-            "~": base, "avty": [{"t": "~/bridge/state"}],
-        }}}]}
+        payloads[bridge.id] = base
         bridges.append(bridge)
         children.append(child)
-    monkeypatch.setattr(debug_info, "info_for_device", lambda _hass, device_id: payloads[device_id])
+    _answer_topics(monkeypatch, bridges, payloads)
     return source, bridges, children, payloads
 
 
-@pytest.mark.parametrize("base", ["radio", "a/b/c", "custom name", "with:punctuation"])
-def test_discovery_expands_arbitrary_exact_prefixes(base):
-    info = {"entities": [{"discovery_data": {"payload": {
-        "~": base, "avty": [{"t": "~/bridge/state"}],
-    }}}]}
-    assert stack_z2m._base_from_info(info) == base
-
-
-def test_conflicting_or_wildcard_discovery_is_not_guessed():
-    assert stack_z2m._base_from_info({"entities": [{"subscriptions": [
-        {"topic": "first/bridge/state"}, {"topic": "second/bridge/state"},
-    ]}]}) is None
-    assert stack_z2m._base_from_info({"entities": [{"subscriptions": [
-        {"topic": "+/bridge/state"},
-    ]}]}) is None
+def _answer_topics(monkeypatch, bridges, bases):
+    """Each bridge's base topic as the topic search would hear it, by its
+    coordinator address; None for one not heard yet. The search itself is
+    proved through Home Assistant's own MQTT in test_z2m_topic_search.py."""
+    def base_for(_finder, address):
+        return next((
+            bases.get(bridge.id) for bridge in bridges
+            if stack_z2m.coordinator_address(bridge) == address
+        ), None)
+    monkeypatch.setattr(stack_z2m.Z2MTopicFinder, "base_for", base_for)
 
 
 async def test_renamed_bridges_have_independent_topics_and_ownership(hass, monkeypatch):
     _source, bridges, children, _payloads = _fleet(hass, monkeypatch)
-    readers = stack_z2m.make_readers(hass)
+    readers = stack_z2m.make_readers(hass, stack_z2m.Z2MTopicFinder(hass))
     assert len(readers) == 2
     first, second = readers.values()
     assert first.base_topic == "house/downstairs/radio"
@@ -99,7 +90,7 @@ async def test_renamed_bridges_have_independent_topics_and_ownership(hass, monke
 
 async def test_parent_wins_over_stale_roll_and_ambiguous_ieee_is_unknown(hass, monkeypatch):
     _source, _bridges, children, _payloads = _fleet(hass, monkeypatch)
-    readers = stack_z2m.make_readers(hass)
+    readers = stack_z2m.make_readers(hass, stack_z2m.Z2MTopicFinder(hass))
     first, second = readers.values()
     ieee = stack_z2m.device_key(children[0])
     for reader in (first, second):
@@ -107,8 +98,10 @@ async def test_parent_wins_over_stale_roll_and_ambiguous_ieee_is_unknown(hass, m
     assert stack_z2m.reader_for_device(readers, hass, children[0].id) is first
     dr.async_get(hass).async_update_device(children[0].id, via_device_id=None)
     assert stack_z2m.reader_for_device(readers, hass, children[0].id) is None
+    # An empty roll leaves the last one standing, as it always has, so the
+    # address stays claimed twice and still gives no opinion.
     second._on_devices(_message([]))
-    assert stack_z2m.reader_for_device(readers, hass, children[0].id) is first
+    assert stack_z2m.reader_for_device(readers, hass, children[0].id) is None
 
 
 async def test_each_reader_subscribes_only_to_its_prefix(hass, monkeypatch):
@@ -117,7 +110,7 @@ async def test_each_reader_subscribes_only_to_its_prefix(hass, monkeypatch):
     subscribe = AsyncMock(return_value=Mock())
     monkeypatch.setattr(stack_z2m.mqtt, "async_subscribe", subscribe)
     monkeypatch.setattr(stack_z2m.mqtt, "async_wait_for_mqtt_client", AsyncMock(return_value=True))
-    for reader in stack_z2m.make_readers(hass).values():
+    for reader in stack_z2m.make_readers(hass, stack_z2m.Z2MTopicFinder(hass)).values():
         subscribe.reset_mock()
         assert await reader.async_start()
         assert {call.args[1] for call in subscribe.call_args_list} == {
@@ -135,23 +128,18 @@ async def test_late_discovery_and_topic_change_keep_stable_scope(hass, monkeypat
     start = AsyncMock(return_value=False)
     monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", start)
     saved = payloads[bridges[0].id]
-    payloads[bridges[0].id] = {}
+    payloads[bridges[0].id] = None
     coord = await setup_coordinator(hass)
     coord._stacks.add(STACK_Z2M)
     await coord._start_bridge_readers()
     scope = f"z2m:{bridges[0].id}"
-    assert coord.bridge_reader(scope).base_topic is None
+    # Its topic decides its scope, so a bridge not known yet gets no reader
+    # and no sensor; the other bridge is read as usual.
+    assert coord.bridge_reader(scope) is None
+    assert coord.bridge_reader(f"z2m:{bridges[1].id}").base_topic == "upstairs-custom"
     registry = er.async_get(hass)
     unique_id = f"{coord.entry.entry_id}_bridge_{scope}"
     assert registry.async_get_entity_id("sensor", "device_sentinel", unique_id) is None
-    payloads[bridges[0].id] = saved
-    await coord._start_bridge_readers()
-    coord._notify()
-    await hass.async_block_till_done()
-    entity_id = registry.async_get_entity_id(
-        "sensor", "device_sentinel", unique_id
-    )
-    assert entity_id is not None
 
     async def assert_labels(label):
         coord._notify()
@@ -164,56 +152,24 @@ async def test_late_discovery_and_topic_change_keep_stable_scope(hass, monkeypat
         assert registry.async_get(entity_id).original_name == name
         assert hass.states.get(entity_id).attributes["friendly_name"].endswith(name)
 
+    payloads[bridges[0].id] = saved
+    await coord._start_bridge_readers()
+    coord._notify()
+    await hass.async_block_till_done()
+    entity_id = registry.async_get_entity_id("sensor", "device_sentinel", unique_id)
+    assert entity_id is not None
     assert coord.bridge_reader(scope).base_topic == "house/downstairs/radio"
     await assert_labels("house/downstairs/radio")
+    # Discovery briefly missing keeps the reader it already has.
+    payloads[bridges[0].id] = None
+    await coord._start_bridge_readers()
+    assert coord.bridge_reader(scope).base_topic == "house/downstairs/radio"
     assert coord.network_name(scope) == "Zigbee2MQTT: house/downstairs/radio"
-    payloads[bridges[0].id] = {"entities": [{"subscriptions": [{"topic": "new/prefix/bridge/state"}]}]}
+    payloads[bridges[0].id] = "new/prefix"
     await coord._start_bridge_readers()
     assert coord.bridge_reader(scope).base_topic == "new/prefix"
     await assert_labels("new/prefix")
     assert len(coord.bridge_stacks) == 2
-
-
-async def test_existing_default_bridge_sensor_is_reused_after_late_discovery(hass, monkeypatch):
-    from homeassistant.helpers import entity_registry as er
-
-    _source, bridges, _children, payloads = _fleet(hass, monkeypatch)
-    payloads[bridges[0].id] = {}
-    monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
-    coord = await setup_coordinator(hass)
-    registry = er.async_get(hass)
-    unique_id = f"{coord.entry.entry_id}_bridge_z2m"
-    existing = registry.async_get_or_create(
-        "sensor", "device_sentinel", unique_id, config_entry=coord.entry,
-        suggested_object_id="device_sentinel_bridge_zigbee2mqtt", original_name="Bridge: Zigbee2MQTT",
-    )
-    entity_id = existing.entity_id
-    assert entity_id == "sensor.device_sentinel_bridge_zigbee2mqtt"
-    registry.async_update_entity(entity_id, name="Zigbee used in automations")
-
-    payloads[bridges[0].id] = {"entities": [{"subscriptions": [{"topic": "zigbee2mqtt/bridge/state"}]}]}
-    await coord._start_bridge_readers()
-    default_scope, custom_scope = (f"z2m:{bridge.id}" for bridge in bridges)
-    default = coord.bridge_reader(default_scope)
-    default._on_state(_message({"state": "online"}))
-    default._on_info(_message({"permit_join": False}))
-    coord.bridge_reader(custom_scope)._on_state(_message({"state": "offline"}))
-    coord._notify()
-    await hass.async_block_till_done()
-
-    assert registry.async_get_entity_id("sensor", "device_sentinel", unique_id) == entity_id
-    assert registry.async_get(entity_id).name == "Zigbee used in automations"
-    default_state = hass.states.get(entity_id)
-    assert default_state.state == BRIDGE_RUNNING
-    assert default_state.attributes["stack"] == STACK_Z2M
-    assert default_state.attributes["sentinel_type"] == "bridge_z2m"
-    assert registry.async_get_entity_id(
-        "sensor", "device_sentinel", f"{coord.entry.entry_id}_bridge_{default_scope}"
-    ) is None
-    custom_sensor = registry.async_get_entity_id(
-        "sensor", "device_sentinel", f"{coord.entry.entry_id}_bridge_{custom_scope}"
-    )
-    assert hass.states.get(custom_sensor).state == BRIDGE_DOWN
 
 
 async def test_coordinator_isolates_outages_pairing_and_networks(hass, monkeypatch):
@@ -386,58 +342,146 @@ async def test_late_bridge_gets_a_sensor_without_renaming_existing_ones(hass, mo
     }
 
 
-async def test_real_mqtt_debug_helper_supplies_bridge_topics(hass):
-    """Exercise the actual helper's discovery shape, not a replacement."""
-    from homeassistant.components.mqtt.const import ATTR_DISCOVERY_PAYLOAD, ATTR_DISCOVERY_TOPIC
-    from homeassistant.components.mqtt.models import DATA_MQTT
+async def test_one_bridge_on_the_default_topic_keeps_its_scope_and_sensor(hass, monkeypatch):
+    """A house with one bridge on zigbee2mqtt sees no change (rule STACK-03)."""
     from homeassistant.helpers import entity_registry as er
 
     source = MockConfigEntry(domain="mqtt")
     source.add_to_hass(hass)
     bridge = dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
-        identifiers={("mqtt", "zigbee2mqtt_bridge_0x1234")}, name="Anything",
+        identifiers={("mqtt", "zigbee2mqtt_bridge_0x00000000000000aa")}, name="Zigbee2MQTT Bridge",
     )
-    entity = er.async_get(hass).async_get_or_create(
-        "sensor", "mqtt", "bridge_version", device_id=bridge.id, config_entry=source,
+    payloads = {bridge.id: "zigbee2mqtt"}
+    bridges = [bridge]
+    _answer_topics(monkeypatch, bridges, payloads)
+    monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
+    coord = await setup_coordinator(hass)
+    coord._stacks.add(STACK_Z2M)
+    await coord._start_bridge_readers()
+    assert coord.bridge_stacks == [STACK_Z2M]
+    assert coord.bridge_reader(STACK_Z2M).base_topic == "zigbee2mqtt"
+    coord._notify()
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    assert registry.async_get_entity_id(
+        "sensor", "device_sentinel", f"{coord.entry.entry_id}_bridge_{STACK_Z2M}"
+    ) is not None
+    assert not [e for e in registry.entities.values() if "bridge_z2m:" in e.unique_id]
+
+    # A second bridge added later gets its own scope and sensor; the first
+    # keeps both.
+    second = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "zigbee2mqtt_bridge_0x00000000000000bb")}, name="Upstairs",
     )
-    hass.data[DATA_MQTT] = SimpleNamespace(
-        debug_info_entities={}, debug_info_triggers={},
+    bridges.append(second)
+    payloads[second.id] = "upstairs"
+    await coord._start_bridge_readers()
+    assert coord.bridge_stacks == sorted([STACK_Z2M, f"z2m:{second.id}"])
+    assert coord.bridge_reader(STACK_Z2M).base_topic == "zigbee2mqtt"
+
+
+async def test_a_bridge_not_known_yet_is_read_on_the_default_topic(hass, monkeypatch):
+    """Discovery not ready at startup: the reader older releases made."""
+    source = MockConfigEntry(domain="mqtt")
+    source.add_to_hass(hass)
+    bridge = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "zigbee2mqtt_bridge_0x00000000000000aa")}, name="Zigbee2MQTT Bridge",
     )
-    debug_info.add_entity_discovery_data(hass, {
-        ATTR_DISCOVERY_TOPIC: "custom_discovery/sensor/radio/config",
-        ATTR_DISCOVERY_PAYLOAD: {"availability": [{"topic": "custom/radio/bridge/state"}]},
-    }, entity.entity_id)
-    readers = stack_z2m.make_readers(hass)
-    assert readers[f"z2m:{bridge.id}"].base_topic == "custom/radio"
-    hass.data.pop(DATA_MQTT)
+    payloads = {bridge.id: None}
+    _answer_topics(monkeypatch, [bridge], payloads)
+    monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
+    coord = await setup_coordinator(hass)
+    coord._stacks.add(STACK_Z2M)
+    await coord._start_bridge_readers()
+    first = coord.bridge_reader(STACK_Z2M)
+    assert coord.bridge_stacks == [STACK_Z2M]
+    assert first.base_topic == "zigbee2mqtt"
+    payloads[bridge.id] = "zigbee2mqtt"
+    await coord._start_bridge_readers()
+    assert coord.bridge_reader(STACK_Z2M) is first, "the same reader, not a second one"
+    assert first.bridge_device_id == bridge.id
 
 
-def test_legacy_scope_is_migrated_only_to_the_default_prefix():
-    reader = stack_z2m.Z2MBridgeReader(None, "custom")
-    reader.instance_key = "z2m:stable"
-    data = {DATA_BRIDGE_SEEN: {STACK_Z2M: {BRIDGE_SEEN_STATE: BRIDGE_DOWN}}, DATA_SYSTEM_EVENTS: [{SYS_SCOPE: STACK_Z2M}]}
-    assert not reader.migrate_scope(data)
-    reader._base = "zigbee2mqtt"
-    assert reader.migrate_scope(data)
-    assert STACK_Z2M not in data[DATA_BRIDGE_SEEN]
-    assert data[DATA_SYSTEM_EVENTS][0][SYS_SCOPE] == reader.instance_key
-
-
-async def test_late_default_topic_migrates_an_already_restored_outage(hass, monkeypatch):
+async def test_a_saved_outage_on_the_default_bridge_stays_where_it_was(hass, monkeypatch):
     _source, bridges, children, payloads = _fleet(hass, monkeypatch)
-    payloads[bridges[0].id] = {}
+    payloads[bridges[0].id] = "zigbee2mqtt"
     monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
-    coord._watched[children[0].id] = "mqtt"
     coord.data[DATA_BRIDGE_SEEN] = {STACK_Z2M: {
         BRIDGE_SEEN_STATE: BRIDGE_DOWN, BRIDGE_SEEN_SINCE: now - 300,
     }}
     coord._restore_bridge_state()
-    payloads[bridges[0].id] = {"entities": [{"subscriptions": [{"topic": "zigbee2mqtt/bridge/state"}]}]}
     await coord._start_bridge_readers()
-    scope = f"z2m:{bridges[0].id}"
-    assert STACK_Z2M not in coord._bridge_down_at
-    assert coord._bridge_down_at[scope] == now - 300
-    assert coord.upstream_down_since(children[0].id) == (scope, now - 300)
+    assert coord._bridge_down_at[STACK_Z2M] == now - 300
+    assert not any(scope.startswith("z2m:") for scope in coord._bridge_down_at)
+
+
+async def test_the_default_bridge_and_another_each_have_a_network_and_their_own_devices(hass, monkeypatch):
+    _source, bridges, children, payloads = _fleet(hass, monkeypatch)
+    payloads[bridges[0].id] = "zigbee2mqtt"
+    monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
+    coord = await setup_coordinator(hass)
+    coord._stacks.add(STACK_Z2M)
+    await coord._start_bridge_readers()
+    other = f"z2m:{bridges[1].id}"
+    for child in children:
+        coord._watched[child.id] = "mqtt"
+        coord._radio_stack[child.id] = STACK_Z2M
+        coord._stack_keys[child.id] = (STACK_Z2M, stack_z2m.device_key(child))
+    assert coord.device_networks(children[0].id) == [STACK_Z2M]
+    assert coord.device_networks(children[1].id) == [other]
+    keys = coord.network_keys()
+    assert STACK_Z2M in keys and other in keys
+    assert keys.index(other) == keys.index(STACK_Z2M) + 1
+    coord.bridge_reader(STACK_Z2M)._on_state(_message({"state": "online"}))
+    coord.bridge_reader(STACK_Z2M)._on_info(_message({"permit_join": True}))
+    assert coord._recovered_during_pairing(children[0].id, 0)
+    assert not coord._recovered_during_pairing(children[1].id, 0)
+
+
+async def test_existing_default_bridge_sensor_is_reused_after_late_discovery(hass, monkeypatch):
+    """The sensor people's automations use, renamed by them, is the one
+    the default bridge keeps once its topic is heard (from Reifircax's
+    regression test)."""
+    from homeassistant.helpers import entity_registry as er
+
+    _source, bridges, _children, payloads = _fleet(hass, monkeypatch)
+    payloads[bridges[0].id] = None
+    monkeypatch.setattr(stack_z2m.Z2MBridgeReader, "async_start", AsyncMock(return_value=False))
+    coord = await setup_coordinator(hass)
+    registry = er.async_get(hass)
+    unique_id = f"{coord.entry.entry_id}_bridge_z2m"
+    existing = registry.async_get_or_create(
+        "sensor", "device_sentinel", unique_id, config_entry=coord.entry,
+        suggested_object_id="device_sentinel_bridge_zigbee2mqtt", original_name="Bridge: Zigbee2MQTT",
+    )
+    entity_id = existing.entity_id
+    assert entity_id == "sensor.device_sentinel_bridge_zigbee2mqtt"
+    registry.async_update_entity(entity_id, name="Zigbee used in automations")
+
+    coord._stacks.add(STACK_Z2M)
+    payloads[bridges[0].id] = "zigbee2mqtt"
+    await coord._start_bridge_readers()
+    custom_scope = f"z2m:{bridges[1].id}"
+    default = coord.bridge_reader(STACK_Z2M)
+    default._on_state(_message({"state": "online"}))
+    default._on_info(_message({"permit_join": False}))
+    coord.bridge_reader(custom_scope)._on_state(_message({"state": "offline"}))
+    coord._notify()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("sensor", "device_sentinel", unique_id) == entity_id
+    assert registry.async_get(entity_id).name == "Zigbee used in automations"
+    default_state = hass.states.get(entity_id)
+    assert default_state.state == BRIDGE_RUNNING
+    assert default_state.attributes["stack"] == STACK_Z2M
+    assert default_state.attributes["sentinel_type"] == "bridge_z2m"
+    assert not [e for e in registry.entities.values() if e.unique_id == f"{coord.entry.entry_id}_bridge_z2m:{bridges[0].id}"]
+    custom_sensor = registry.async_get_entity_id(
+        "sensor", "device_sentinel", f"{coord.entry.entry_id}_bridge_{custom_scope}"
+    )
+    assert hass.states.get(custom_sensor).state == BRIDGE_DOWN

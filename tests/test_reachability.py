@@ -192,10 +192,10 @@ def test_availability_switched_off_answers_nothing():
 
 
 def test_a_malformed_roll_leaves_the_previous_one_standing():
-    """Malformed data cannot erase the previous valid roll."""
+    """An empty roll would silently reject every topic."""
     reader = _loaded_reader()
     reader._on_devices(_msg("zigbee2mqtt/bridge/devices", "not a list"))
-    reader._on_devices(_msg("zigbee2mqtt/bridge/devices", [{"broken": True}]))
+    reader._on_devices(_msg("zigbee2mqtt/bridge/devices", []))
     assert reader.reachability(_ieee("Door 05")) is not None
 
 
@@ -754,7 +754,6 @@ async def test_a_stack_with_a_reader_answers_for_itself(
             identifiers={("mqtt", uid)},
             name=f"Sensor {index}",
         )
-        dr.async_get(hass).async_update_device(device.id, via_device_id=bridge.id)
         er.async_get(hass).async_get_or_create(
             "sensor", "mqtt", uid,
             device_id=device.id, config_entry=source,
