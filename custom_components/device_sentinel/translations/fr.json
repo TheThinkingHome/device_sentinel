@@ -211,12 +211,14 @@
         "description": "Des réglages que la plupart des gens n'ont jamais besoin de modifier. [Avancé sur le wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Tableau de bord : Simple ou Avancé",
+          "keep_config_on_removal": "Conserver la configuration lors de la suppression de Device Sentinel",
           "repeat_floor": "Seuil de récidive",
           "storage_write_minutes": "Intervalle d'écriture du stockage",
           "history_days": "Durée d'historique conservée",
           "maintenance_minutes": "Fenêtre de maintenance (minutes)"
         },
         "data_description": {
+          "keep_config_on_removal": "Activez cette option avant de retirer l’intégration. Ses réglages seront restaurés lorsque vous l’ajouterez à nouveau sur cette installation Home Assistant. L’historique et les rapports seront supprimés.",
           "dashboard_mode": "Le mode dans lequel le tableau de bord s'ouvre dans chaque fenêtre. Simple montre ce qui est en panne et quoi faire ; Avancé ajoute les tendances, les graphiques et la configuration. Le sélecteur du tableau de bord le change jusqu'à ce que vous quittiez le tableau de bord.",
           "repeat_floor": "Nombre d'interruptions inexpliquées en une semaine qui fait apparaître un appareil dans la section Repeat Offenders du bilan quotidien. Une interruption est inexpliquée quand aucun redémarrage, panne, rechargement ou fenêtre d'appairage ne l'explique. Plus bas, les appareils sont cités plus tôt ; plus haut, on attend un schéma plus net.",
           "storage_write_minutes": "Durée pendant laquelle l'activité courante est gardée en mémoire avant d'être écrite sur le disque. Augmentez-la pour du matériel lent et les box qui écrivent sur une carte SD. Une valeur plus longue risque de faire perdre des données de minuterie en cas de coupure de courant. Les événements sont écrits au moment où ils se produisent, le risque est donc minime.",

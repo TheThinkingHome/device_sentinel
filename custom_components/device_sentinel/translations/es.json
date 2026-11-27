@@ -211,6 +211,7 @@
         "description": "Ajustes que la mayoría de la gente nunca necesita cambiar. [Avanzado en la wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Panel: Simple o Avanzado",
+          "keep_config_on_removal": "Conservar la configuración al eliminar Device Sentinel",
           "repeat_floor": "Umbral de reincidencia",
           "storage_write_minutes": "Intervalo de escritura en disco",
           "history_days": "Cuánto historial conservar",
@@ -218,6 +219,7 @@
           "cached_integrations": "Integraciones que devuelven valores en caché"
         },
         "data_description": {
+          "keep_config_on_removal": "Activa esta opción antes de eliminar la integración. Sus ajustes se restaurarán al añadirla de nuevo en esta instalación de Home Assistant. El historial y los informes se seguirán eliminando.",
           "dashboard_mode": "El modo en que se abre el panel en cada ventana. Simple muestra lo que está roto y qué hacer; Avanzado añade las tendencias, los gráficos y la configuración. El selector del panel lo cambia hasta que salgas del panel.",
           "repeat_floor": "Cuántas interrupciones sin explicar en una semana ponen un dispositivo en la sección Repeat Offenders del resumen diario. Una interrupción queda sin explicar cuando ningún reinicio, caída, recarga o ventana de emparejamiento la justifica. Un valor más bajo señala dispositivos antes; uno más alto espera a un patrón más claro.",
           "storage_write_minutes": "El tiempo que la actividad habitual se guarda en memoria antes de escribirse en disco. Ponlo más largo en hardware lento y en equipos que escriben en una tarjeta SD. Un valor más largo puede hacer perder datos de los temporizadores si tu sistema sufre un corte de luz. Los eventos se escriben en el momento en que ocurren, así que el riesgo es mínimo.",

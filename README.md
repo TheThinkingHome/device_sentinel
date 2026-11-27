@@ -44,6 +44,8 @@ Device Sentinel is in the HACS default store.
 
 *(Requires Home Assistant 2026.5 or newer)*
 
+To keep your settings for a later reinstall, enable **Configure > Advanced > Keep configuration when removing Device Sentinel** and save before removing the integration from Home Assistant. If you also remove it from HACS, remove the integration from Home Assistant first. When you add Device Sentinel again on the same installation, its settings are restored automatically. History, learned data, and reports are still deleted. Leave the option off for a clean start.
+
 ## Your First Two Weeks
 
 Device Sentinel works with its defaults at the start. It begins learning your house during the first two weeks.

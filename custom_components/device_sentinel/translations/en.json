@@ -213,6 +213,7 @@
         "description": "Settings most people never need to change. [Advanced on the wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Dashboard: Simple or Advanced",
+          "keep_config_on_removal": "Keep configuration when removing Device Sentinel",
           "repeat_floor": "Repeat Offender Threshold",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
@@ -220,6 +221,7 @@
           "cached_integrations": "Integrations That Report Cached Values"
         },
         "data_description": {
+          "keep_config_on_removal": "Enable before removing the integration. Its settings will be restored when you add it again on this Home Assistant installation. History and reports are still deleted.",
           "dashboard_mode": "The dashboard each window opens in. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. The switch on the dashboard changes it until you leave the dashboard.",
           "repeat_floor": "How many unexplained interruptions in a week put a device in the daily brief's Repeat Offenders section. An interruption is unexplained when no restart, outage, reload, or pairing window accounts for it. Lower names devices sooner; higher waits for a stronger pattern.",
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",

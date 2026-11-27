@@ -76,6 +76,7 @@ from .answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
 from .stand_ins import KEY_FILE, STAND_INS_KEY
 from .coordinator import DeviceSentinelCoordinator
 from .repairs import async_clear_all
+from .kept_config import KEPT_CONFIG_KEY, async_save_kept_options
 
 # No NUMBER platform. The battery threshold is set in the options
 # dialog with the setting beside it, so there is one place for both
@@ -109,25 +110,30 @@ async def async_migrate_entry(
     """
     if entry.minor_version >= OPTIONS_MINOR_VERSION:
         return True
-    options = dict(entry.options)
-    if entry.minor_version < 2:
-        options = _migrate_muting_names(options)
-    if entry.minor_version < 3:
-        options = _migrate_ignore_name(options)
-    if entry.minor_version < 4:
-        options = _migrate_retired_sliders(options)
-    if entry.minor_version < 5:
-        options = _migrate_persistent_default(options)
-    if entry.minor_version < 6:
-        options = _migrate_unavailable_mutes(options)
-    if entry.minor_version < 7:
-        options = _migrate_dashboard_mode(options)
-    if entry.minor_version < 8:
-        options = _migrate_history_floor(options)
+    options = migrate_options(dict(entry.options), entry.minor_version)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
     return True
+
+
+def migrate_options(options: dict[str, Any], minor_version: int) -> dict[str, Any]:
+    """Bring options from an older entry or saved configuration up to date."""
+    if minor_version < 2:
+        options = _migrate_muting_names(options)
+    if minor_version < 3:
+        options = _migrate_ignore_name(options)
+    if minor_version < 4:
+        options = _migrate_retired_sliders(options)
+    if minor_version < 5:
+        options = _migrate_persistent_default(options)
+    if minor_version < 6:
+        options = _migrate_unavailable_mutes(options)
+    if minor_version < 7:
+        options = _migrate_dashboard_mode(options)
+    if minor_version < 8:
+        options = _migrate_history_floor(options)
+    return options
 
 
 def _migrate_unavailable_mutes(options: dict[str, Any]) -> dict[str, Any]:
@@ -542,14 +548,14 @@ def _own_report_files() -> list[str]:
 async def async_remove_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Remove everything the integration ever wrote (rule STOR-24).
+    """Remove integration data, optionally keeping its settings (rule STOR-24).
 
     Runs when a person deletes the integration, after the unload. A
     tool whose pitch is that it costs almost nothing must also cost
     nothing to leave: every storage file with every backup copy taken
     beside them, every file it wrote in the reports folder, and the www
-    folder all go, so an uninstall leaves no trace for the person to
-    find later and wonder about. Only its own: the reports folder goes
+    folder all go. A person can opt in to keeping only the entry's
+    settings for the next install. Only its own: the reports folder goes
     once it is empty, so a file another tool or a person keeps there
     stays. Deliberately not part of unload, which also runs on every
     restart and reconfiguration; only deletion reaches here.
@@ -559,6 +565,7 @@ async def async_remove_entry(
     abort the removal of the rest, and Home Assistant ignores errors
     from this hook anyway.
     """
+    kept = await async_save_kept_options(hass, entry)
     storage = Path(hass.config.path(STORAGE_DIR))
     report_dir = Path(hass.config.path(REPORT_DIR))
     www_dir = Path(hass.config.path(REPORT_WWW_DIR))
@@ -572,9 +579,11 @@ async def async_remove_entry(
         # file it replaced, which older releases left behind on uninstall.
         for key in (
             STORAGE_KEY, STORAGE_CLOCKS_KEY, STORAGE_HISTORY_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY,
-            STAND_INS_KEY,
+            STAND_INS_KEY, KEPT_CONFIG_KEY,
         ):
             for path in storage.glob(f"{key}*"):
+                if kept and path.name == KEPT_CONFIG_KEY:
+                    continue
                 try:
                     path.unlink()
                     removed.append(path.name)

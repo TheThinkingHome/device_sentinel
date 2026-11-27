@@ -211,6 +211,7 @@
         "description": "Ustawienia, których większość osób nigdy nie musi zmieniać. [Zaawansowane na wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Panel: prosty lub zaawansowany",
+          "keep_config_on_removal": "Zachowaj konfigurację przy usuwaniu Device Sentinel",
           "repeat_floor": "Próg nawracających problemów",
           "storage_write_minutes": "Interwał zapisu danych",
           "history_days": "Ile historii przechowywać",
@@ -218,6 +219,7 @@
           "cached_integrations": "Integracje raportujące wartości z pamięci podręcznej"
         },
         "data_description": {
+          "keep_config_on_removal": "Włącz tę opcję przed usunięciem integracji. Jej ustawienia zostaną przywrócone, gdy ponownie dodasz ją w tej samej instalacji Home Assistant. Historia i raporty nadal zostaną usunięte.",
           "dashboard_mode": "Tryb, w którym otwiera się panel w każdym oknie. Prosty pokazuje, co jest zepsute i co z tym zrobić; Zaawansowany dodaje trendy, wykresy i konfigurację. Przełącznik na panelu zmienia tryb do czasu opuszczenia panelu.",
           "repeat_floor": "Ile niewyjaśnionych przerw w tygodniu umieszcza urządzenie w sekcji Nawracające problemy dziennego podsumowania. Przerwa jest niewyjaśniona, gdy nie tłumaczy jej żaden restart, awaria, przeładowanie ani okno parowania. Niższa wartość wskazuje urządzenia szybciej; wyższa czeka na wyraźniejszy wzorzec.",
           "storage_write_minutes": "Czas, przez jaki rutynowa aktywność jest przechowywana w pamięci, zanim zostanie zapisana na dysku. Ustaw dłużej dla wolniejszego sprzętu i hubów zapisujących dane na karcie SD. Dłuższy czas grozi utratą danych liczników w razie zaniku zasilania. Zdarzenia są zapisywane w chwili wystąpienia, więc ryzyko jest minimalne.",

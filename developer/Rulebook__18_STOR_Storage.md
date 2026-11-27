@@ -242,8 +242,9 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-24 Removing the Integration
 
 **Deleting Device Sentinel from Home Assistant deletes only what it wrote.** A restart or a reload deletes nothing.
+- **Keep settings (opt-in):** Advanced settings can keep the config entry's options on removal. Re-adding the integration on the same Home Assistant installation restores them, applying the normal options migrations. One-off data trim selections are never kept. This does not keep learned data, history, reports or Home Assistant entity registry customizations. Removing with the option off also deletes the saved settings, if any.
 - **What goes:** its four storage files with each copy beside them, the stand-ins file for the diagnostics download ([STOR-21](#stor-21-the-diagnostics-download)), the old power file if one is left, its own reports and the diagnostics key, the stack probe file and its numbered copies, the diagnostic folder, trim_backups and the www folder.
 - **Its folder in `config`:** it goes only if it is then empty, and the log says what was left.
 - **Failures:** each target is removed on its own, and a failure is logged, never raised.
 
-*Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py).
+*Proof:* [`test_entity_defaults.py`](../tests/test_entity_defaults.py), [`test_history_file_disk.py`](../tests/test_history_file_disk.py), [`test_kept_config.py`](../tests/test_kept_config.py).
