@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.30.7 (2026-11-26)
+# File: stack_z2m.py, Version: 0.30.9 (2026-11-27)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -168,47 +168,120 @@ def instance_label(reader: Z2MBridgeReader | None) -> str:
     return "Zigbee2MQTT"
 
 
-def _base_from_info(info: dict[str, Any]) -> str | None:
-    """Read a single exact prefix, never a guessed name (rule STACK-03)."""
-    bases: set[str] = set()
-    for entity in info.get("entities", []):
-        discovery = entity.get("discovery_data") or {}
-        payload = discovery.get("payload") or {}
-        if not isinstance(payload, dict):
-            payload = {}
-        replacement = payload.get("~")
-        topics = [item.get("topic") for item in entity.get("subscriptions", [])]
-        # Availability remains present even on bridge entities whose own
-        # state uses another bridge topic. Commands are never considered.
-        topics.extend(payload.get(field) for field in ("state_topic", "stat_t", "availability_topic", "avty_t"))
-        availability = payload.get("availability", payload.get("avty", []))
-        if isinstance(availability, list):
-            topics.extend(item.get("topic", item.get("t")) for item in availability if isinstance(item, dict))
-        for topic in topics:
-            if not isinstance(topic, str):
-                continue
-            if isinstance(replacement, str):
-                if topic.startswith("~"):
-                    topic = replacement + topic[1:]
-                elif topic.endswith("~"):
-                    topic = topic[:-1] + replacement
-            for leaf in (Z2M_TOPIC_STATE, Z2M_TOPIC_INFO, Z2M_TOPIC_DEVICES):
-                suffix = f"/{leaf}"
-                if topic.endswith(suffix):
-                    base = topic[:-len(suffix)]
-                    if base and not any(char in base for char in ("+", "#", "\x00")):
-                        bases.add(base)
-    return next(iter(bases)) if len(bases) == 1 else None
+# How deep a bridge's base topic is looked for: "zigbee2mqtt" is one
+# level, "home/zigbee2mqtt" two, up to "a/b/c/zigbee2mqtt" (rule STACK-03).
+# MQTT's "+" stands for exactly one level and "#" only ends a topic, so
+# each depth is its own subscription; one with nothing behind it costs
+# the broker nothing.
+Z2M_TOPIC_DEPTHS = 4
+_BRIDGE_ID_MARK = f"{Z2M_IDENTIFIER_MARK}bridge_"
 
 
-def make_readers(hass: HomeAssistant) -> dict[str, Z2MBridgeReader]:
-    """Discover every registry bridge without assuming its topic (rule STACK-03).
+def coordinator_address(device: Any) -> str | None:
+    """The coordinator address in a bridge device's MQTT identifier.
 
-    The MQTT helper may be unavailable early in setup. Keep a reader with
-    no subscriptions then, and retry discovery on the next sweep.
+    Zigbee2MQTT names its bridge device "zigbee2mqtt_bridge_" and the
+    coordinator's address, so it survives a rename (rule STACK-03).
     """
-    from homeassistant.components.mqtt import debug_info
+    for domain, parts in identifier_values(device):
+        if domain != "mqtt":
+            continue
+        for value in parts:
+            if isinstance(value, str) and value.startswith(_BRIDGE_ID_MARK):
+                address = value[len(_BRIDGE_ID_MARK):].strip().lower()
+                if address:
+                    return address
+    return None
 
+
+class Z2MTopicFinder:
+    """Each bridge's base topic, from the retained bridge/info message every
+    Zigbee2MQTT bridge publishes, by its coordinator address (rule STACK-03).
+
+    Only MQTT's public subscribe is used. A message that names no
+    coordinator is not Zigbee2MQTT's and is ignored, and an address two
+    topics claim gives no topic.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Hold the subscriptions and what they have heard."""
+        self._hass = hass
+        self._unsubs: list[Any] = []
+        self._address_of: dict[str, str] = {}
+
+    @property
+    def started(self) -> bool:
+        """Whether the subscriptions are in place."""
+        return bool(self._unsubs)
+
+    async def async_start(self) -> bool:
+        """Subscribe at each depth; False where MQTT is not there yet."""
+        if self._unsubs:
+            return True
+        if not any(
+            entry.state is ConfigEntryState.LOADED
+            for entry in self._hass.config_entries.async_entries("mqtt")
+        ):
+            return False
+        try:
+            for depth in range(1, Z2M_TOPIC_DEPTHS + 1):
+                topic = "/".join(["+"] * depth) + f"/{Z2M_TOPIC_INFO}"
+                self._unsubs.append(
+                    await mqtt.async_subscribe(self._hass, topic, self._on_info)
+                )
+        except Exception as err:  # noqa: BLE001 - asked again next time
+            LOGGER.debug("Zigbee2MQTT topic search could not subscribe: %s", err)
+            self.async_stop()
+            return False
+        return True
+
+    @callback
+    def async_stop(self) -> None:
+        """Release the subscriptions."""
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception as err:  # noqa: BLE001 - never raise on teardown
+                LOGGER.debug("Zigbee2MQTT topic search unsubscribe failed: %s", err)
+        self._unsubs.clear()
+
+    @callback
+    def _on_info(self, msg: Any) -> None:
+        """Note which base topic speaks for which coordinator."""
+        topic = getattr(msg, "topic", None)
+        suffix = f"/{Z2M_TOPIC_INFO}"
+        if not isinstance(topic, str) or not topic.endswith(suffix):
+            return
+        base = topic[: -len(suffix)]
+        text = _decode(msg.payload)
+        if not text.strip():
+            # A retained message cleared: that bridge is gone.
+            self._address_of.pop(base, None)
+            return
+        data = _load(text)
+        coordinator = data.get("coordinator") if isinstance(data, dict) else None
+        address = coordinator.get("ieee_address") if isinstance(coordinator, dict) else None
+        if not isinstance(address, str) or not address.strip():
+            return
+        self._address_of[base] = address.strip().lower()
+
+    def base_for(self, address: str | None) -> str | None:
+        """The one base topic for this coordinator, or None."""
+        if not address:
+            return None
+        bases = [base for base, held in self._address_of.items() if held == address]
+        return bases[0] if len(bases) == 1 else None
+
+
+def make_finder(hass: HomeAssistant) -> Z2MTopicFinder:
+    """Return the base topic search for this stack (rule STACK-03)."""
+    return Z2MTopicFinder(hass)
+
+
+def make_readers(
+    hass: HomeAssistant, finder: Z2MTopicFinder | None = None
+) -> dict[str, Z2MBridgeReader]:
+    """Discover every registry bridge without assuming its topic (rule STACK-03)."""
     readers: dict[str, Z2MBridgeReader] = {}
     registry = dr.async_get(hass)
     devices = {
@@ -216,18 +289,26 @@ def make_readers(hass: HomeAssistant) -> dict[str, Z2MBridgeReader]:
         for entry in hass.config_entries.async_entries("mqtt")
         for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
     }
+    found: list[tuple[Any, str | None]] = []
     for device in devices.values():
         if not is_bridge_device(device) or device.disabled_by is not None:
             continue
-        if not any(domain == "mqtt" for domain, _parts in identifier_values(device)):
+        address = coordinator_address(device)
+        if address is None:
             continue
-        try:
-            base = _base_from_info(debug_info.info_for_device(hass, device.id))
-        except Exception as err:  # noqa: BLE001 - MQTT may still be loading
-            LOGGER.debug("MQTT discovery for bridge %s is not ready: %s", device.id, err)
-            base = None
-        key = f"{STACK}:{device.id}"
+        found.append((device, finder.base_for(address) if finder is not None else None))
+    # The bridge on the default topic keeps the scope, Bridge sensor and
+    # saved outages older releases gave it, so a house with one bridge on
+    # zigbee2mqtt sees no change; any other bridge is named by its own
+    # registry device, so adding or removing a bridge renames none of
+    # the others (rule STACK-03).
+    # A bridge whose topic is not known yet is pending: it holds on to a
+    # reader it already has, and gets none, and no sensor, until its topic
+    # is known, since that decides its scope.
+    for device, base in found:
+        key = STACK if base == Z2M_BASE_TOPIC_DEFAULT else f"{STACK}:{device.id}"
         reader = Z2MBridgeReader(hass, base)
+        reader.pending = base is None
         reader.bridge_device_id = device.id
         reader.instance_key = key
         reader.name = device.name_by_user or device.name
@@ -298,6 +379,7 @@ class Z2MBridgeReader:
         self._hass = hass
         self._base = base_topic
         self.bridge_device_id: str | None = None
+        self.pending = False
         self.instance_key = STACK
         self.name: str | None = None
         self._unsubs: list[Any] = []
@@ -481,28 +563,6 @@ class Z2MBridgeReader:
             for name in self._availability
             if name not in self._devices_by_name
         )
-
-    def migrate_scope(self, data: dict[str, Any]) -> bool:
-        """Move an old single-bridge scope only when its prefix proves ownership.
-
-        Older releases listened only to the default prefix. Their saved
-        outage belongs to that bridge, never an arbitrary first instance
-        (rule STACK-03).
-        """
-        from .const import DATA_BRIDGE_SEEN, DATA_SYSTEM_EVENTS, SYS_SCOPE
-
-        if self._base != Z2M_BASE_TOPIC_DEFAULT:
-            return False
-        changed = False
-        seen = data.get(DATA_BRIDGE_SEEN) or {}
-        if STACK in seen and self.instance_key not in seen:
-            seen[self.instance_key] = seen.pop(STACK)
-            changed = True
-        for event in data.get(DATA_SYSTEM_EVENTS) or []:
-            if isinstance(event, dict) and event.get(SYS_SCOPE) == STACK:
-                event[SYS_SCOPE] = self.instance_key
-                changed = True
-        return changed
 
     @property
     def stack(self) -> str:
@@ -886,7 +946,7 @@ class Z2MBridgeReader:
                 "power_source": entry.get("power_source"),
                 "type": entry.get("type"),
             }
-        if roll or not data:
+        if roll:
             self._devices_by_name = roll
 
     @callback

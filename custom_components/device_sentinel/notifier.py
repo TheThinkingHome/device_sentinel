@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.30.7 (2026-11-26)
+# File: notifier.py, Version: 0.30.9 (2026-11-27)
 
 """The event notification engine: per-family pushes and the card.
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.30.4 (2026-11-23)
+# File: detect_freeze.py, Version: 0.30.9 (2026-11-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 

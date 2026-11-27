@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: radio_channels.py, Version: 0.30.3 (2026-11-23)
+# File: radio_channels.py, Version: 0.30.9 (2026-11-27)
 
 """Which radio channel each network and device uses (rules SIG-19, SIG-20).
 

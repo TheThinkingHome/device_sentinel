@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.30.2 (2026-11-22)
+# File: stacks.py, Version: 0.30.9 (2026-11-27)
 
 """The one place a coordinator stack is registered.
 
@@ -129,16 +129,32 @@ def make_reader(stack: str, hass: HomeAssistant) -> Any | None:
     return None
 
 
-def make_readers(stack: str, hass: HomeAssistant) -> dict[str, Any]:
+def make_finder(stack: str, hass: HomeAssistant) -> Any | None:
+    """Return the stack's search for its bridges' topics, if it has one."""
+    for module in STACK_MODULES:
+        if module.STACK == stack:
+            factory = getattr(module, "make_finder", None)
+            return factory(hass) if factory is not None else None
+    return None
+
+
+def make_readers(stack: str, hass: HomeAssistant, finder: Any | None = None) -> dict[str, Any]:
     """Create independently scoped readers where a stack has instances."""
     for module in STACK_MODULES:
         if module.STACK != stack:
             continue
         factory = getattr(module, "make_readers", None)
         if factory is not None:
-            return factory(hass)
+            readers = factory(hass, finder)
+            if any(not getattr(reader, "pending", False) for reader in readers.values()):
+                return readers
+        else:
+            readers = {}
+        # No bridge whose topic its discovery data gives, yet or at all:
+        # the one reader older releases made, on the default topic, so a
+        # house set up that way sees no change (rule STACK-03).
         reader = module.make_reader(hass)
-        return {stack: reader} if reader is not None else {}
+        return {**readers, stack: reader} if reader is not None else readers
     return {}
 
 
@@ -172,6 +188,19 @@ def make_join_observer(
         factory = getattr(module, "make_join_observer", None)
         return factory(hass, record) if factory is not None else None
     return None
+
+
+def bridges_for_domain(readers: dict[str, Any], domain: str | None) -> int:
+    """How many bridges the stack that owns this domain has (rule STACK-03)."""
+    if domain is None:
+        return 0
+    for module in STACK_MODULES:
+        if module.owns_domain(domain):
+            return sum(
+                1 for scope in readers
+                if scope == module.STACK or str(scope).startswith(f"{module.STACK}:")
+            )
+    return 0
 
 
 def reader_for_domain(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: networks.py, Version: 0.29.7 (2026-11-18)
+# File: networks.py, Version: 0.30.9 (2026-11-27)
 
 """The Networks tab and each network's page (rule DASH-17).
 
@@ -211,12 +211,15 @@ class NetworksMixin:
         stacks.update(self.bridge_stacks)  # type: ignore[attr-defined]
         keys: list[str] = []
         for key in NETWORK_ORDER:
+            # Bridges other than the one on the default topic follow it,
+            # each its own network; the default one keeps its place, and is
+            # left out only where no bridge sits on the default topic
+            # (rule STACK-03).
+            instances: list[str] = []
             if key == STACK_Z2M:
                 instances = sorted(scope for scope in stacks if scope != STACK_Z2M and is_z2m_instance(scope))
-                if instances:
-                    if BROKER_SCOPE not in self.excluded_integrations:  # type: ignore[attr-defined]
-                        keys.extend(instances)
-                    continue
+                if BROKER_SCOPE in self.excluded_integrations:  # type: ignore[attr-defined]
+                    instances = []
             if key == WIFI_KEY:
                 have = (
                     key in members
@@ -234,8 +237,11 @@ class NetworksMixin:
                 have = key in members or (
                     key in stacks and domain not in self.excluded_integrations  # type: ignore[attr-defined]
                 )
+            if key == STACK_Z2M and instances and STACK_Z2M not in self.bridge_stacks and key not in members:  # type: ignore[attr-defined]
+                have = False
             if have:
                 keys.append(key)
+            keys.extend(instances)
         hubs = {
             HUB_PREFIX + hub for hub in getattr(self, "_hub_entry", {})
             if hub in self._watched  # type: ignore[attr-defined]

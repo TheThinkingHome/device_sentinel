@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.30.3 (2026-11-23)
+# File: interventions.py, Version: 0.30.9 (2026-11-27)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -38,7 +38,10 @@ from .stacks import (
     availability_view,
     make_join_observer,
     make_readers,
+    bridges_for_domain,
+    make_finder,
     reader_for_device,
+    reader_for_domain,
 )
 from .transport_mqtt import MQTTBrokerReader
 from .normalise import COUNT_HIGHEST, MOMENT_HIGHEST, MOMENT_LOWEST
@@ -351,29 +354,44 @@ class InterventionMixin:
         """
         discovered = {}
         for stack in sorted(self._stacks):
-            discovered.update(make_readers(stack, self.hass))
+            # The stack's search for its bridges' topics, started once MQTT
+            # is there, and asked again at each update until it is.
+            finder = self._topic_finders.get(stack)
+            if finder is None:
+                finder = make_finder(stack, self.hass)
+                if finder is not None:
+                    self._topic_finders[stack] = finder
+            if finder is not None and not finder.started:
+                await finder.async_start()
+            discovered.update(make_readers(stack, self.hass, finder))
+        pending = {
+            reader.bridge_device_id for reader in discovered.values() if getattr(reader, "pending", False)
+        }
         for scope, previous in list(self._bridge_readers.items()):
-            if getattr(previous, "bridge_device_id", None) is not None and scope not in discovered:
+            held = getattr(previous, "bridge_device_id", None)
+            if held is not None and scope not in discovered and held not in pending:
                 previous.async_stop()
                 self._bridge_readers.pop(scope)
                 self._bridge_down_pending.pop(scope, None)
                 self._bridge_down_at.pop(scope, None)
                 self._bridge_handback.pop(scope, None)
         for scope, reader in discovered.items():
-            migrate = getattr(reader, "migrate_scope", None)
-            if callable(migrate) and migrate(self.data):
-                for states in (
-                    self._bridge_seen, self._bridge_down_at, self._bridge_down_pending,
-                    self._bridge_handback, self._bridge_recovering_at, self._bridge_fell,
-                    self._upstream_announced,
-                ):
-                    if reader.stack in states and scope not in states:
-                        states[scope] = states.pop(reader.stack)
-                self._dirty = True
+            if getattr(reader, "pending", False):
+                continue
             previous = self._bridge_readers.get(scope)
             if previous is not None:
+                if getattr(reader, "bridge_device_id", None) is None:
+                    # The reader older releases made, already running: kept.
+                    continue
                 if getattr(previous, "base_topic", None) == getattr(reader, "base_topic", None):
-                    if getattr(previous, "bridge_device_id", None) is not None:
+                    found = getattr(reader, "bridge_device_id", None)
+                    if found is not None:
+                        # The default-topic reader started before its bridge
+                        # was known takes that bridge's identity, so a second
+                        # bridge added later still finds whose devices are
+                        # whose (rule STACK-03).
+                        previous.bridge_device_id = found
+                        previous.instance_key = reader.instance_key
                         previous.name = reader.name
                         if not previous.subscribed:
                             await previous.async_start()
@@ -548,9 +566,17 @@ class InterventionMixin:
         if domain is None:
             device = dr.async_get(self.hass).async_get(device_id)
             domain = self._primary_domain(device) if device is not None else None
+        # One bridge answers for every device on its domain, as it always
+        # has; only a house with several asks which one owns the device.
+        if not self.several_bridges(domain):
+            return reader_for_domain(self._bridge_readers, domain)
         return reader_for_device(
             self._bridge_readers, self.hass, domain, device_id,
         )
+
+    def several_bridges(self, domain: str | None) -> bool:
+        """Whether the stack owning this domain has more than one bridge."""
+        return bridges_for_domain(self._bridge_readers, domain) > 1
 
     @property
     def bridge_stacks(self) -> list[str]:

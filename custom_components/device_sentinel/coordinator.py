@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.7 (2026-11-26)
+# File: coordinator.py, Version: 0.30.9 (2026-11-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -400,6 +400,7 @@ from .status_readings import (
     restart_moment,
     restart_sensor,
 )
+from .stacks import reader_for_domain
 from .stacks import last_heard as stack_last_heard
 from .firmware_updates import FirmwareUpdatesMixin
 from .restart_values import RESTORES_BEHIND_ITS_CLOCK, RestartValuesMixin
@@ -827,6 +828,8 @@ class DeviceSentinelCoordinator(
         # stacks without a reader have none (rule STACK-03). Filled
         # in at setup, once the registry view has found the stacks.
         self._bridge_readers: dict[str, Any] = {}
+        # Each stack's search for its bridges' base topics (rule STACK-03).
+        self._topic_finders: dict[str, Any] = {}
         # The last bridge state and pairing flag seen per
         # stack, so the tick can tell a transition from a
         # steady reading. Nothing polls the reader
@@ -2506,6 +2509,9 @@ class DeviceSentinelCoordinator(
         for reader in self._bridge_readers.values():
             reader.async_stop()
         self._bridge_readers.clear()
+        for finder in self._topic_finders.values():
+            finder.async_stop()
+        self._topic_finders.clear()
         if self._wifi_unsub is not None:
             self._wifi_unsub()
             self._wifi_unsub = None
@@ -5843,7 +5849,10 @@ class DeviceSentinelCoordinator(
             device = dr.async_get(self.hass).async_get(device_id)
             domain = self._primary_domain(device) if device is not None else None  # type: ignore[arg-type]
         for domain in [domain] if domain else []:
-            reader = self._reader_for_device(device_id, domain)
+            reader = (
+                self._reader_for_device(device_id, domain) if self.several_bridges(domain)
+                else reader_for_domain(self._bridge_readers, domain)
+            )
             try:
                 pairing = reader is not None and reader.pairing_active_within(
                     PAIRING_GRACE_SECONDS_DEFAULT, dt_util.utcnow().timestamp()
