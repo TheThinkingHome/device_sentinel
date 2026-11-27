@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 26 November 2026, on Device Sentinel 0.30.7. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.9. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -25,18 +25,17 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 
 ### STACK-03 Zigbee2MQTT
 
-**Device Sentinel reads each Zigbee2MQTT bridge independently, using the base topic announced in its MQTT discovery data, never its display name.**
-- **Several bridges:** each registry bridge has its own reader, state, pairing window and outage scope. Its registry identity survives a rename or base-topic change. Devices are matched through their registry parent, or an unambiguous IEEE address in the bridge's device list; an ambiguous device gives no opinion.
-- **Discovery:** the bridge's MQTT identifier or manufacturer/model identifies it even when renamed. Home Assistant's MQTT debug-info helper supplies the discovery topics, including nested and abbreviated topics. Missing or conflicting data never guesses a bridge's prefix. Discovery is retried after startup and registry changes.
-- **Upgrade:** old single-bridge outage scopes are moved only to the bridge discovered on the former default prefix, `zigbee2mqtt`, never to an arbitrary instance.
+**Device Sentinel reads each Zigbee2MQTT bridge from its own retained topics, under the base topic that bridge publishes on, never its display name (since 0.30.9; contributed by Reifircax).**
+- **One bridge on the default topic:** the bridge on `zigbee2mqtt` keeps the scope, Bridge sensor and saved outages older releases gave it, so a house with one bridge there sees no change. Until a bridge's topic is known, Device Sentinel reads the default topic, as before.
+- **Several bridges:** any other bridge is named by its own registry device, so adding, removing or renaming a bridge changes no other bridge's sensor. Each has its own state, pairing window and outage. A house with one bridge reads it for every Zigbee2MQTT device, as before; with several, a device belongs to the bridge it sits under in the registry, or the one whose device list holds its address, and a device two bridges claim gets no opinion.
+- **Finding the topic (James, 27 November 2026):** every bridge publishes a retained bridge/info message under its base topic that names its coordinator's address, and Zigbee2MQTT names its bridge device "zigbee2mqtt_bridge_" and that address, which a rename does not change. Device Sentinel listens for bridge/info one to four levels deep, through MQTT's own subscribe, and matches the two. A message that names no coordinator is ignored, and an address two topics claim gives no topic. A bridge whose topic is not found, deeper than four levels for one, gets no reader of its own rather than a guessed one; a bridge already read keeps its reader while its topic is briefly not known.
 - **MQTT is optional:** MQTT is a soft dependency, so a house without it still loads. The reader asks whether MQTT is loaded before it waits for it.
-- **Bridge sensor:** each Zigbee2MQTT instance and ZHA gets a Bridge sensor that reads running, binding, down or unknown. Late discovery also creates the sensor. It is switched on at install, since it exists only where its stack was found (see [CFG](Rulebook__17_CFG_Settings.md)). Z-Wave and Matter are detected but have no reader and no Bridge sensor. Detection works whether or not the sensor is on.
-- **Device rolls:** a valid empty list clears ownership; malformed data leaves the last valid list standing.
+- **Bridge sensor:** each Zigbee2MQTT bridge and ZHA gets a Bridge sensor that reads running, binding, down or unknown. A bridge found after startup gets its sensor then. It is switched on at install, since it exists only where its stack was found (see [CFG](Rulebook__17_CFG_Settings.md)). Z-Wave and Matter are detected but have no reader and no Bridge sensor. Detection works whether or not the sensor is on.
 - **Availability setting:** the sensor shows whether Zigbee2MQTT's availability setting is on, and Device Sentinel never changes it. Where it is off, a line on the Recommendations tab says what turning it on gives.
 - **Zigbee2MQTT's own view:** it confirms or doubts a freeze verdict and never decides one. It is matched through the bridge's device list, never by name. A topic with no device in that list answers nothing. An online reading never lifts a verdict.
 - **Timeout shown with it:** the timeout for the device's power class, read from the bridge, goes with the reading wherever it is shown, on the Problem List item and in the Daily Brief, never on the phone.
 
-*Proof:* [`test_multiple_z2m_bridges.py`](../tests/test_multiple_z2m_bridges.py), [`test_bridge_pairing.py`](../tests/test_bridge_pairing.py), [`test_maintenance.py`](../tests/test_maintenance.py), [`test_reachability.py`](../tests/test_reachability.py), [`test_recommendations.py`](../tests/test_recommendations.py), [`test_manifest_dependencies.py`](../tests/test_manifest_dependencies.py).
+*Proof:* [`test_multiple_z2m_bridges.py`](../tests/test_multiple_z2m_bridges.py), [`test_z2m_topic_search.py`](../tests/test_z2m_topic_search.py), [`test_bridge_pairing.py`](../tests/test_bridge_pairing.py), [`test_maintenance.py`](../tests/test_maintenance.py), [`test_reachability.py`](../tests/test_reachability.py), [`test_recommendations.py`](../tests/test_recommendations.py), [`test_manifest_dependencies.py`](../tests/test_manifest_dependencies.py).
 
 ### STACK-04 ZHA
 
@@ -88,7 +87,6 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 **Detection reads an integration's private state only where a rule names the integration and the one field.**
 - **Failure is safe:** each read is wrapped, so a missing field, a changed shape or any failure leaves the device on the ordinary rules and logs one line. A Home Assistant update that moves the field costs the exception, never a start, a verdict or a save.
 - **Manifest and imports:** such an integration is named in the manifest's after_dependencies, never its dependencies. Nothing is imported from an integration read this way. Home Assistant's recorder is named there too, since 0.28.7, and its public statistics functions are imported for a Z-Wave controller's typical radio noise ([DASH-18](Rulebook__14_DASH_Dashboard.md#dash-18-a-networks-outage-patterns-and-radio-noise)).
-- **MQTT discovery:** Zigbee2MQTT may read MQTT's guarded debug-info helper for discovery payloads and subscriptions to identify each bridge's actual base topic. Missing data gives no opinion and is retried; no message is published.
 - **Listed:** the wiki lists each exception and its field.
 - **Who is read:** three integrations: ESPHome (deep sleep and connection), ZHA (when it last heard a device) and Lutron Caséta (the hub's session). Matter, Thread and Z-Wave JS are weighed against their probe data as it arrives.
 - **Shown, not judged (since 0.30.7):** Matter's network map, read through the Matter client Home Assistant holds, for the Thread role on the device page and the Networks tab ([STACK-18](#stack-18-the-thread-role)). It decides no verdict. ZHA's and Zigbee2MQTT's power source fill in Powered By ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)).
