@@ -7,11 +7,13 @@
 
 """Independent MQTT bridge discovery, ownership and pairing (rule STACK-03)."""
 
-import json
 import inspect
+import json
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
@@ -26,8 +28,8 @@ from custom_components.device_sentinel.const import (
 from tests.helpers import setup_coordinator
 
 
-def _message(payload):
-    return SimpleNamespace(payload=json.dumps(payload), retain=False)
+def _message(payload, *, retain=False):
+    return SimpleNamespace(payload=json.dumps(payload), retain=retain)
 
 
 def _fleet(hass, monkeypatch):
@@ -102,6 +104,32 @@ async def test_parent_wins_over_stale_roll_and_ambiguous_ieee_is_unknown(hass, m
     # address stays claimed twice and still gives no opinion.
     second._on_devices(_message([]))
     assert stack_z2m.reader_for_device(readers, hass, children[0].id) is None
+
+
+@pytest.mark.parametrize("factor", [1, 1000])
+async def test_pairing_deadlines_are_independent_and_expire_without_mqtt(hass, monkeypatch, factor):
+    _source, _bridges, _children, _payloads = _fleet(hass, monkeypatch)
+    first, second = stack_z2m.make_readers(hass, stack_z2m.Z2MTopicFinder(hass)).values()
+    now = dt_util.utcnow()
+    end = now + timedelta(seconds=30)
+    monkeypatch.setattr(dt_util, "utcnow", lambda: now)
+    for reader in (first, second):
+        reader._on_state(_message({"state": "online"}))
+    first._on_info(_message({"permit_join": True, "permit_join_end": end.timestamp() * factor}, retain=True))
+    second._on_info(_message({"permit_join": True, "permit_join_end": (now.timestamp() - 1) * factor}, retain=True))
+    assert first.pairing_open
+    assert second.state == BRIDGE_RUNNING
+    assert second.pairing_changed_at is None
+    assert not second.pairing_active_within(10, now.timestamp())
+
+    now = end + timedelta(seconds=5)
+    assert first.state == BRIDGE_RUNNING
+    assert first.permit_join_end is None
+    assert first.pairing_changed_at == pytest.approx(end.timestamp())
+    assert first.pairing_active_within(10, now.timestamp())
+    assert not first.pairing_active_within(10, now.timestamp() + 6)
+    first._on_info(_message({"permit_join": "false"}))
+    assert first.state == BRIDGE_RUNNING
 
 
 async def test_each_reader_subscribes_only_to_its_prefix(hass, monkeypatch):

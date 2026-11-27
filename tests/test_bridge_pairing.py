@@ -179,7 +179,7 @@ def _binding_reader(hass):
     window open on the live system."""
     r = Z2MBridgeReader(hass)
     r._on_state(_msg("online"))
-    r._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    r._on_info(_msg('{"permit_join": true}'))
     return r
 
 
@@ -323,12 +323,11 @@ async def test_online_and_pairing_reads_binding(hass: HomeAssistant):
     window open reads binding, and the window end is surfaced."""
     r = _reader(hass)
     r._on_state(_msg("online"))
-    r._on_info(
-        _msg('{"permit_join": true, "permit_join_end": 1784800000}')
-    )
+    end = int(dt_util.utcnow().timestamp()) + 60
+    r._on_info(_msg(f'{{"permit_join": true, "permit_join_end": {end}}}'))
     assert r.state == BRIDGE_BINDING
     assert r.pairing_open is True
-    assert r.permit_join_end == "1784800000"
+    assert r.permit_join_end == str(end)
 
 
 async def test_offline_reads_down(hass: HomeAssistant):
@@ -366,7 +365,7 @@ async def test_malformed_info_does_not_raise_or_flip(hass: HomeAssistant):
     fail-safe the detector rests on."""
     r = _reader(hass)
     r._on_state(_msg("online"))
-    r._on_info(_msg('{"permit_join": true, "permit_join_end": 1784800000}'))
+    r._on_info(_msg('{"permit_join": true}'))
     assert r.state == BRIDGE_BINDING
     # garbage arrives; state must not change
     r._on_info(_msg("not json at all {["))
@@ -386,7 +385,7 @@ async def test_bytes_payload_is_decoded(hass: HomeAssistant):
     """MQTT payloads can be bytes; the reader decodes them."""
     r = _reader(hass)
     r._on_state(_msg(b"online"))
-    r._on_info(_msg(b'{"permit_join": true, "permit_join_end": 1}'))
+    r._on_info(_msg(b'{"permit_join": true}'))
     assert r.state == BRIDGE_BINDING
 
 
@@ -407,7 +406,6 @@ async def test_bridge_sensor_is_created_per_stack_and_enabled(
     er.async_get(hass).async_get_or_create(
         "sensor", "mqtt", "z2m_bridge_0", device_id=bridge.id, config_entry=src
     )
-
     entry = MockConfigEntry(domain="device_sentinel", title="Device Sentinel", data={})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -738,7 +736,7 @@ async def test_a_pairing_window_is_recorded_with_its_span(
     coord._bridge_readers[STACK_Z2M] = reader
     await coord._on_render_tick(None)
 
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     await coord._on_render_tick(None)
     assert len(_kinds(coord, SYS_PAIRING_OPEN)) == 1
 
@@ -764,7 +762,7 @@ async def test_a_pairing_window_is_dated_when_the_bridge_says_so(
     coord._bridge_readers[STACK_Z2M] = reader
     await coord._on_render_tick(None)
 
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     opened_at = dt_util.utcnow().timestamp()
     freezer.tick(40)
     await coord._on_render_tick(None)
@@ -796,7 +794,7 @@ async def test_a_window_closed_by_its_bridge_going_offline_is_dated_by_the_check
     reader = _running_reader(hass)
     coord._bridge_readers[STACK_Z2M] = reader
     await coord._on_render_tick(None)
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     opened_at = dt_util.utcnow().timestamp()
     freezer.tick(40)
     await coord._on_render_tick(None)
@@ -825,7 +823,7 @@ async def test_a_window_reopened_after_a_bridge_restart_is_not_dated_before_its_
     reader = _running_reader(hass)
     coord._bridge_readers[STACK_Z2M] = reader
     await coord._on_render_tick(None)
-    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    reader._on_info(_msg('{"permit_join": true}'))
     freezer.tick(40)
     await coord._on_render_tick(None)
     freezer.tick(20)
