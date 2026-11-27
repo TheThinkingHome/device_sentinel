@@ -427,6 +427,9 @@ async def test_a_bridge_not_known_yet_is_read_on_the_default_topic(hass, monkeyp
     first = coord.bridge_reader(STACK_Z2M)
     assert coord.bridge_stacks == [STACK_Z2M]
     assert first.base_topic == "zigbee2mqtt"
+    assert STACK_Z2M not in {part["key"] for part in coord.dashboard_status()["parts"]}
+    first._on_state(_message({"state": "online"}))
+    assert STACK_Z2M in {part["key"] for part in coord.dashboard_status()["parts"]}
     payloads[bridge.id] = "zigbee2mqtt"
     await coord._start_bridge_readers()
     assert coord.bridge_reader(STACK_Z2M) is first, "the same reader, not a second one"
