@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.8 (2026-11-26)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.11 (2026-11-27)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -307,6 +307,18 @@ const trends = {
   check("the summary counts a low cell that is not falling on its own, and a falling one once",
     countedLine.startsWith("4 cells report a level. 2 falling, 1 at or under its type's threshold and not falling, 1 not falling or not yet judged."),
     countedLine);
+  const two = await open(`${PREFIX}/battery-trends`, {
+    battery_trends: (page) => {
+      trends.battery_trends(page);
+      const low = (id, name) => ({ device_id: id, name, type: null, level: 0, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null });
+      page.low = [low("soil", "Soil Irrigation"), low("leak", "Leak Sink")];
+      page.steady = [];
+      page.cells = 3;
+      return page;
+    },
+  });
+  const twoLine = (two.root.querySelector(".pane > p") || {}).textContent || "";
+  check("two low cells read \"their type's threshold\"", twoLine.includes("2 at or under their type's threshold and not falling"), twoLine);
   const tabText = text(tab.root);
   check("a level reads as reported there too, 37.5%", tabText.includes("37.5%") && !tabText.includes("38%"), tabText.slice(0, 1600));
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
