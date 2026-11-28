@@ -211,21 +211,21 @@
         "description": "Ajustes que la mayoría de la gente nunca necesita cambiar. [Avanzado en la wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Panel: Simple o Avanzado",
-          "keep_config_on_removal": "Conservar la configuración al eliminar Device Sentinel",
           "repeat_floor": "Umbral de reincidencia",
           "storage_write_minutes": "Intervalo de escritura en disco",
           "history_days": "Cuánto historial conservar",
           "maintenance_minutes": "Ventana de mantenimiento en minutos",
-          "cached_integrations": "Integraciones que devuelven valores en caché"
+          "cached_integrations": "Integraciones que devuelven valores en caché",
+          "keep_config_on_removal": "Conservar la configuración al eliminar Device Sentinel"
         },
         "data_description": {
-          "keep_config_on_removal": "Activa esta opción antes de eliminar la integración. Sus ajustes y las respuestas de las fichas de dispositivos, incluidos los tipos de pilas y dispositivos, se restaurarán al añadirla de nuevo en esta instalación de Home Assistant. El historial y los informes se seguirán eliminando.",
           "dashboard_mode": "El modo en que se abre el panel en cada ventana. Simple muestra lo que está roto y qué hacer; Avanzado añade las tendencias, los gráficos y la configuración. El selector del panel lo cambia hasta que salgas del panel.",
           "repeat_floor": "Cuántas interrupciones sin explicar en una semana ponen un dispositivo en la sección Repeat Offenders del resumen diario. Una interrupción queda sin explicar cuando ningún reinicio, caída, recarga o ventana de emparejamiento la justifica. Un valor más bajo señala dispositivos antes; uno más alto espera a un patrón más claro.",
           "storage_write_minutes": "El tiempo que la actividad habitual se guarda en memoria antes de escribirse en disco. Ponlo más largo en hardware lento y en equipos que escriben en una tarjeta SD. Un valor más largo puede hacer perder datos de los temporizadores si tu sistema sufre un corte de luz. Los eventos se escriben en el momento en que ocurren, así que el riesgo es mínimo.",
           "history_days": "Cuántos días de registros diarios de batería, señal y pausas de «no disponible» y «congelado» se conservan para estudiar tendencias largas. 30 días son necesarios, pero algunas tendencias solo se ven con periodos más largos.",
           "maintenance_minutes": "Cuánto tiempo el botón Modo mantenimiento declara que estás trabajando en el hardware. Un dispositivo que se recupera dentro de la ventana se toma como tu arreglo, y su silencio no se aprende como normal.",
-          "cached_integrations": "Tras un reinicio, estas integraciones pueden devolver los últimos valores de un dispositivo antes de que el dispositivo haya podido despertar y comunicarse, así que un dispositivo que estaba caído no se considera recuperado hasta que cambie uno de sus valores. Desmarca una integración solo si estás seguro de que sus dispositivos informan en directo. Si marcas una por error, un dispositivo que funciona y que estaba caído durante un reinicio podría seguir apareciendo como caído. La marca y el modelo de cada dispositivo se pueden ajustar en su página de detalle."
+          "cached_integrations": "Tras un reinicio, estas integraciones pueden devolver los últimos valores de un dispositivo antes de que el dispositivo haya podido despertar y comunicarse, así que un dispositivo que estaba caído no se considera recuperado hasta que cambie uno de sus valores. Desmarca una integración solo si estás seguro de que sus dispositivos informan en directo. Si marcas una por error, un dispositivo que funciona y que estaba caído durante un reinicio podría seguir apareciendo como caído. La marca y el modelo de cada dispositivo se pueden ajustar en su página de detalle.",
+          "keep_config_on_removal": "Activa esta opción antes de eliminar la integración. Sus ajustes y las respuestas de las fichas de dispositivos, incluidos los tipos de pilas y dispositivos, se restaurarán al añadirla de nuevo en esta instalación de Home Assistant. El historial y los informes se seguirán eliminando."
         },
         "sections": {
           "data_trim": {
