@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.16 (2026-10-31)
+// File: tools/panel_checks/check_battery_steps.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: how a battery reports, on the device page and on Battery
 // Trends.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_steps.js [path/to/panel.js]
@@ -56,6 +56,11 @@ async function open(address, extra) {
     states: {},
   };
   await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
+  await settle();
   return { window, panel, root: panel.shadowRoot };
 }
 
@@ -108,17 +113,17 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
   // The total counted from the same cells as its parts (rule BAT-18).
   {
     const { root } = await open(`${PREFIX}/battery-trends`, {
-      battery_trends: (b) => ({ ...b, cells: 1, steady: [
+      battery_trends: (b) => ({ ...b, cells: 1, others: [
         { device_id: DEVICE, name: "Old Cell", level: 90, rate: 0, days: 20, steps: "Smooth" },
         { device_id: "new-cell", name: "New Cell", level: 100, rate: 0, days: 3, steps: "" },
       ] }),
     });
     const said = text(root);
-    check("the total adds up to its parts", said.includes("2 cells report a level. 0 falling, 2 not falling or not yet judged."), said.slice(0, 600));
+    check("the total adds up to its parts", said.includes("2 cells report a level. 0 below the threshold, 0 voltage falling, 0 accelerating, 0 charge falling at a steady pace, 2 not judged or steady."), said.slice(0, 600));
   }
   {
     const { root } = await open(`${PREFIX}/battery-trends`, {
-      battery_trends: (b) => ({ ...b, steady: [{ device_id: DEVICE, name: "Office Temp/Humid", level: 30, rate: -1.4, days: 14, steps: "Coarse" }] }),
+      battery_trends: (b) => ({ ...b, others: [{ device_id: DEVICE, name: "Office Temp/Humid", level: 30, rate: -1.4, days: 14, steps: "Coarse" }] }),
     });
     const heads = [...root.querySelectorAll("th")].map((th) => th.textContent);
     check("the steady table has a STEPS column", heads.includes("STEPS"), heads);

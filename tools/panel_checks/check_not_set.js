@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_not_set.js, Version: 0.28.9 (2026-11-10)
+// File: tools/panel_checks/check_not_set.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: "Not Set" (rules DASH-04, DEV-10, DASH-12). A type, an
 // area or a battery nobody has set reads "Not Set" on every tab and on
 // the device page, a link that opens the way to set it in place, saved
@@ -55,6 +55,11 @@ async function open(path, answers = {}, mode = "advanced") {
     connection: { subscribeMessage: async () => () => {} },
     states: {},
   };
+  await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
   await settle();
   return { window, panel, root: panel.shadowRoot, calls };
 }
@@ -114,7 +119,7 @@ const click = async (node) => { node.click(); await settle(); };
 
   console.log("\nBattery Trends: TYPE from the Battery Trends tab");
   const battery = (reply) => {
-    reply.steady = [{ device_id: "b1", name: "Mystery Tag", type: null, level: 80, steps: "Smooth", days: 30, month_drop: 0, cell: "CR2032", lithium: null, model_pace: null }];
+    reply.others = [{ device_id: "b1", name: "Mystery Tag", type: null, level: 80, steps: "Smooth", days: 30, month_drop: 0, cell: "CR2032", lithium: null, model_pace: null, state: "holding" }];
     return reply;
   };
   const recommendations = (reply) => ({ ...reply, types: { choices: ["Leak Sensor", "Tag"], other: "Other" } });

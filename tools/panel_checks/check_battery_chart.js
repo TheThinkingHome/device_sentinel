@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_chart.js, Version: 0.29.5 (2026-11-17)
+// File: tools/panel_checks/check_battery_chart.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: the weekly bars in orange and the fitted line, drawn only
 // at 30 and 14 days.
 // The fitted line is drawn for a cell falling at an even pace only: an
@@ -86,7 +86,7 @@ const accelerating = {
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
       fit: null,
-      sentence: "Falling faster each week, about 5.9 points a week today.",
+      sentence: "Battery decay is accelerating, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;
@@ -173,7 +173,7 @@ const daily = (root) => [...root.querySelectorAll("svg path")].find((p) => p.get
   check("at all 39 days: no fitted line", fitted(flat.root).length === 0);
   await range(flat.root, "30 Days");
   check("at 30 days: the fitted line, dashed", fitted(flat.root).length === 1);
-  check("said as an even pace", text(flat.root).includes("Falling at an even pace."));
+  check("said as a steady pace", text(flat.root).includes("Charge falling at a steady pace."));
   await range(flat.root, "14 Days");
   check("at 14 days: the line cut to the range", fitted(flat.root).length === 1);
   check("the five-week table stays at every range", text(fast.root).includes("28 DAYS AGO"));

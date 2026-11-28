@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_tables_hold_columns.js, Version: 0.28.8 (2026-11-09)
+// File: tools/panel_checks/check_tables_hold_columns.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: every table keeps its columns still, whatever is filtered
 // or sorted, on the reference fleet's real contents.
 // Run with: LC_ALL=en_US.UTF-8 node check_tables_hold_columns.js [path/to/panel.js]
@@ -55,6 +55,11 @@ async function open(address) {
     connection: { subscribeMessage: async () => () => {} },
     states: {},
   };
+  await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
   await settle();
   return { window, panel, root: panel.shadowRoot };
 }

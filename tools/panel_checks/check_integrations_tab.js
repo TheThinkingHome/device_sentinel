@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_integrations_tab.js, Version: 0.30.4 (2026-11-23)
+// File: tools/panel_checks/check_integrations_tab.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: the Integrations tab excludes and mutes whole
 // integrations, one press each (rules MUTE-02, MUTE-03, MUTE-09,
 // DASH-16), and Simple's Battery Trends and Devices leave columns out
@@ -81,6 +81,11 @@ async function open(answers, tweak = () => {}) {
     states: {},
   };
   panel.hass = hass;
+  await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
   await settle();
   return { window, panel, root: panel.shadowRoot, calls };
 }
@@ -203,7 +208,7 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   let text = root.querySelector(".pane").textContent;
   check("Simple: no TYPICAL LEVEL, LOWEST CELL or WHICH ONE", !/TYPICAL LEVEL|LOWEST CELL|WHICH ONE/.test(text));
   check("Simple: Other Cells leaves out DAYS RECORDED, STEPS and MODEL, A WEEK", !/DAYS RECORDED|STEPS|MODEL, A WEEK/.test(text));
-  check("Simple: Falling leaves out the weekly levels", !/DAYS AGO|THIS WEEK/.test(text));
+  check("Simple: no weekly levels", !/DAYS AGO|THIS WEEK/.test(text));
   check("Simple: no Not a Percentage", !/Not a Percentage/.test(text));
   // DEVICE, TYPE and LEVEL stand in the same place in each table, and a
   // short table ends short of the edge (rule DASH-04).
@@ -215,8 +220,11 @@ const named = (tr, words) => buttonsOf(tr).find((b) => b.textContent.replace("âœ
   const tables = [...root.querySelectorAll(".pane table")];
   const first = placed(tables[0]);
   check("each Battery Trends table is on one scale", tables.length >= 2 && tables.every((t) => t.dataset.base), tables.length);
+  // Batteries With Problems puts STATE before LEVEL, so it lines up its
+  // DEVICE and TYPE; the others line up LEVEL too (rule BAT-18).
+  const widest = tables.map(placed).reduce((a, b) => (b.length > a.length ? b : a));
   check("DEVICE, TYPE and LEVEL line up from table to table",
-    tables.every((t) => placed(t).every((w, i) => Math.abs(w - first[i]) < 0.01)), tables.map(placed));
+    tables.every((t) => placed(t).every((w, i) => Math.abs(w - widest[i]) < 0.01)), tables.map(placed));
   check("a short table ends short of the edge", parseFloat(tables[0].style.width) < 100, tables[0].style.width);
   ({ root } = await open({ __mode: "advanced", __path: "/battery-trends" }));
   text = root.querySelector(".pane").textContent;

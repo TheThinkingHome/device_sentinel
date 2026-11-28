@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_connects_line.js, Version: 0.27.10 (2026-10-27)
+// File: tools/panel_checks/check_connects_line.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: the Connects line on a device's page.
 // Run with: LC_ALL=en_US.UTF-8 node check_connects_line.js [path/to/panel.js]
 const fs = require("fs");
@@ -81,7 +81,7 @@ const accelerating = {
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
       fit: null,
-      sentence: "Falling faster each week, about 5.9 points a week today.",
+      sentence: "Battery decay is accelerating, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;

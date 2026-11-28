@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_learning_screens.js, Version: 0.30.0 (2026-11-21)
+// File: tools/panel_checks/check_learning_screens.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: Battery Trends and Signal Trends on a new install
 // (rules BAT-19, SIG-18). While no device has enough days, each tab
 // opens with a box saying when its trends start, why there is a wait,
@@ -56,6 +56,11 @@ async function open(address, extra) {
     connection: { subscribeMessage: async () => () => {} },
     states: {},
   };
+  await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
   await settle();
   return { window, panel, root: panel.shadowRoot };
 }
@@ -116,7 +121,8 @@ const text = (root) => root.querySelector(".pane").textContent.replace(/\s+/g, "
         { maker: "Aqara", model: "Motion", cells: 1, rate: 0, typical: 80, lowest: 80, lowest_name: "Kitchen Motion", lowest_id: "k", learning: true, types: [["Motion Sensor", 1]] }],
       bank: [0, 1, 0, 0, 0, 0, 0, 0, 1, 0], cells: 2,
       falling: [], low: [{ device_id: "c", name: "Door 2nd Bedroom", type: "Door/Window Sensor", level: 12, days: 7 }],
-      steady: [{ device_id: "k", name: "Kitchen Motion", type: "Motion Sensor", level: 80, days: 7 }],
+      problems: [{ device_id: "c", name: "Door 2nd Bedroom", type: "Door/Window Sensor", level: 12, days: 7, state: "low" }],
+      others: [{ device_id: "k", name: "Kitchen Motion", type: "Motion Sensor", level: 80, days: 7, state: "not_judged" }],
       unreadable: [], no_battery: 51,
       learning: { day: 7, need: 28, start: "2026-12-04", low_now: 1 } }),
   }));
@@ -128,7 +134,7 @@ const text = (root) => root.querySelector(".pane").textContent.replace(/\s+/g, "
     && /at or under its type's threshold \(10% for alkaline, 20% for lithium and other, 20% for rechargeable\) is reported from the first day: 1 is now\./.test(shown));
   check("Day 7 of 28, 21 days to go", /Day 7 of 28/.test(shown) && /21 days to go/.test(shown));
   check("The headline says only what is known",
-    /2 batteries report a level: 1 at or under its type's threshold \(10% for alkaline, 20% for lithium and other, 20% for rechargeable\), 1 above it\. 51 watched devices report no battery at all\./.test(shown), shown.slice(0, 600));
+    /2 cells report a level\. 1 below the threshold, 0 voltage falling, 0 accelerating, 0 charge falling at a steady pace, 1 not yet judged\. Device Sentinel needs four weeks of readings to judge a cell\./.test(shown), shown.slice(0, 600));
   const rates = [...root.querySelectorAll(".pane td")].map((td) => td.textContent.trim());
   check("The rate column reads learning", rates.filter((t) => t === "learning").length === 2 && !rates.includes("level"), rates.slice(0, 20));
   check("No null, undefined or NaN", !/null|undefined|NaN/.test(shown));

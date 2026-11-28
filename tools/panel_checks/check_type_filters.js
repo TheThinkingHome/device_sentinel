@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.29.3 (2026-11-15)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: types on Battery Trends, Devices (set-aside devices too) and Recommendations, and no "null" for a missing type (rule DEV-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -61,11 +61,18 @@ async function open(path, overrides) {
     themes: { darkMode: false },
   };
   await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
+  await settle();
   return { window, panel, root: panel.shadowRoot, calls };
 }
 
 const text = (node) => (node ? node.textContent.replace(/\s+/g, " ").trim() : "");
 const section = (root, title) => {
+  // Other Cells is a box of its own, not a heading (rule BAT-18).
+  if (title === "Other Cells") return root.querySelector(".otherbox .scroll");
   const heads = [...root.querySelectorAll("h3.section")];
   const at = heads.find((h) => h.textContent.startsWith(title));
   if (!at) return null;
@@ -99,9 +106,10 @@ const BATTERY = {
     { maker: "Third Reality", model: "Wireless motion sensor", cells: 3, rate: -0.3, typical: 52, lowest: 46, lowest_name: "Motion Laundry", lowest_id: "m1", types: [["Motion Sensor", 2], ["Presence Sensor", 1]] },
     { maker: "Acme", model: "Tag", cells: 1, rate: 0, typical: 88, lowest: 88, lowest_name: "Mystery Tag", lowest_id: "x1", types: [["", 1]] },
   ],
-  falling: [row(CELLS[4], { weeks: [23.4, 22.9, 22.7, 21.6, 19.4], reading: "falling", pace: 0.9, left: "about 6 months", left_soon: false })],
+  falling: [row(CELLS[4], { weeks: [23.4, 22.9, 22.7, 21.6, 19.4], reading: "accelerating", pace: 0.9, left: "about 6 months", left_soon: false })],
   low: [],
-  steady: [CELLS[0], CELLS[1], CELLS[2], CELLS[3], CELLS[5]].map((c) => row(c, { days: 83, month_drop: 0.5, steps: "Smooth" })),
+  problems: [row(CELLS[4], { reading: "accelerating", state: "accelerating", left: "about 6 months", month_drop: 4 })],
+  others: [CELLS[0], CELLS[1], CELLS[2], CELLS[3], CELLS[5]].map((c) => row(c, { days: 83, month_drop: 0.5, steps: "Smooth", state: "holding" })),
   unreadable: [],
   no_battery: 44,
   no_battery_types: { "Plug": 10, "Motion Sensor": 1 },
@@ -135,7 +143,7 @@ const BATTERY = {
     && /Showing Leak Sensor only/.test(root.textContent), tableRows(models).map((tr) => text(tr.children[1])));
   await click([...root.querySelectorAll("button.linkbtn")].find((b) => b.textContent === "Show all"));
   models = section(root, "By Model");
-  for (const title of ["Falling", "Other Cells"]) {
+  for (const title of ["Batteries With Problems", "Other Cells"]) {
     check(`${title} has a TYPE column`, headers(section(root, title)).includes("TYPE"), headers(section(root, title)));
   }
   const picker = root.querySelector('select[aria-label="Show one type"]');
@@ -150,11 +158,12 @@ const BATTERY = {
   check("By Model counts the model by the type chosen", tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "2", tableRows(models).map(text));
   check("The lists show only that type", tableRows(steady).map((tr) => tr.firstChild.textContent).join("|") === "Motion Laundry|Motion Closet", tableRows(steady).map(text));
   const summary = text(root.querySelector("p"));
-  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 falling, 2 not falling or not yet judged. 1 watched")
+  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 below the threshold, 0 voltage falling, 0 accelerating, 0 charge falling at a steady pace, 2 not judged or steady. 1 watched")
     && summary.includes("1 watched device reports no battery"), summary);
   const bands = [...root.querySelectorAll(".band .count")].map((n) => n.textContent);
   check("The bank counts only that type", bands.join(",") === ",,,,1,1,,,,", bands);
-  check("Falling says nothing of that type is falling", text(section(root, "Falling")) === "No cell is measurably falling.");
+  check("Batteries With Problems says no battery of that type has one",
+    tableRows(section(root, "Batteries With Problems")).map(text).join("|") === "No battery has a problem.");
 
   await click(linkNamed(root, "Show all"));
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Presence Sensor");

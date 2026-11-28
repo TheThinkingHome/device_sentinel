@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.29.5 (2026-11-17)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: the device page's Future view (rules BAT-13, BAT-17).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
 // The Future chart's scale fits what it draws (rule BAT-17): read its
@@ -150,13 +150,13 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   const toLow = withBattery({
     daily: LOW_DAILY, now: 36.5, threshold: 15, readable: true,
     weeks: [43.0, 42.4, 41.2, 39.4, 36.9], reading: "accelerating", fit: null,
-    sentence: "Falling faster each week, about 3.1 points a week today.", falling: true,
+    sentence: "Battery decay is accelerating, about 3.1 points a week today.", falling: true,
     left: "about 4 to 5 weeks", left_soon: true, target: 15, days_setting: 45,
     projection: { ...DOOR_PROJECTION, level: 36.5, target: 15, near: 33.1, far: 43.2, centre: 37 },
   });
   const t = await open(`${PREFIX}/device/${DEVICE}`, toLow);
   check("the page says where the time left ends, and why", text(t.root).includes(
-    "Falling faster each week, about 3.1 points a week today. It reaches your 15% in about 4 to 5 weeks. Many devices stop working before their battery reaches 0%."),
+    "Battery decay is accelerating, about 3.1 points a week today. It reaches your 15% in about 4 to 5 weeks. Many devices stop working before their battery reaches 0%."),
     text(t.root).slice(-900));
   button(t.root, "Future").click();
   await settle();

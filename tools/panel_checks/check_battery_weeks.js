@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.11 (2026-11-27)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.30.12 (2026-11-28)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // A model's pace is the slowest to the fastest of the other cells of
@@ -57,6 +57,11 @@ async function open(address, extra) {
     config: extra && extra.__config ? extra.__config : undefined,
   };
   await settle();
+  // Other Cells opens shut on Battery Trends (rule BAT-18): opened here,
+  // so its table can be read.
+  const show = panel.shadowRoot && [...panel.shadowRoot.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Show");
+  if (show) { show.click(); await settle(); }
+  await settle();
   return { window, panel, root: panel.shadowRoot };
 }
 
@@ -86,7 +91,7 @@ const accelerating = {
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
       fit: null,
-      sentence: "Falling faster each week, about 5.9 points a week today.",
+      sentence: "Battery decay is accelerating, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;
@@ -114,6 +119,10 @@ const trends = {
       since: null, steps: "Smooth", weeks: [36, 35, 34, 32.8, 31.6], reading: "falling", pace: 1.2,
       left: "about 3 to 5 weeks", until: "reaches 15% in about 3 to 5 weeks", left_soon: true, watch: true,
     }];
+    // As the server groups them (rule BAT-18): the accelerating cell is a
+    // problem, the steady one an other cell with its time left.
+    page.problems = [{ ...page.falling[0], state: "accelerating", left: page.falling[0].until, month_drop: 15 }];
+    page.others = [{ ...page.falling[1], state: "steady", left: page.falling[1].until, month_drop: 4.4 }];
     return page;
   },
 };
@@ -125,7 +134,7 @@ const trends = {
   const heads = [...fast.root.querySelectorAll("table.figures th")].map((th) => th.textContent);
   check("its table shows five weeks, oldest first", heads.join("|") === "LEVEL|28 DAYS AGO|21 DAYS AGO|14 DAYS AGO|7 DAYS AGO|THIS WEEK|READING|LEFT", heads);
   check("each week says what it lost", page.includes("down 6.4") && page.includes("down 5.2"), page.slice(-1500));
-  check("the sentence gives its pace today", page.includes("Falling faster each week, about 5.9 points a week today."), page.slice(-1500));
+  check("the sentence gives its pace today", page.includes("Battery decay is accelerating, about 5.9 points a week today."), page.slice(-1500));
   [...fast.root.querySelectorAll("button")].find((b) => b.textContent === "30 Days").click();
   await settle();
   check("the chart marks no knee", fast.root.querySelectorAll("svg circle").length === 0);
@@ -237,7 +246,7 @@ const trends = {
   const tab = await open(`${PREFIX}/battery-trends`, trends);
   const lithiumTab = await open(`${PREFIX}/battery-trends`, {
     battery_trends: (page) => {
-      page.steady = [{ device_id: DEVICE, name: "Door Bath Main", type: null, level: 100, steps: "Smooth", days: 60, month_drop: 0,
+      page.others = [{ device_id: DEVICE, name: "Door Bath Main", type: null, level: 100, steps: "Smooth", days: 60, month_drop: 0,
         cell: "CR1632", lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace_low: 0.8, pace_high: 1.6 } }];
       return page;
     },
@@ -245,7 +254,7 @@ const trends = {
   // Each known battery named, and one nobody has set says so, because
   // one blank would mean two things.
   const mixed = (page) => {
-    page.steady = [
+    page.others = [
       { device_id: "aaa1", name: "Door Kitchen", type: null, level: 80, steps: "Smooth", days: 60, month_drop: 1,
         cell: "2× AAA", lithium: null, model_pace: { model: "Third Reality Door sensor", others: 3, pace_low: 0.4, pace_high: 0.4 } },
       { device_id: "unk1", name: "Leak Sink", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0,
@@ -291,48 +300,60 @@ const trends = {
   check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest"));
   check("a range whose ends agree reads one number in the column",
     rowCells(cellTab.root, "Door Kitchen").some((td) => td.textContent === "0.4"), rowCells(cellTab.root, "Door Kitchen").map((td) => td.textContent));
-  // The summary's three parts add up to the cells, so a cell at 0% and
-  // not falling, like Soil Irrigation, is counted in one (rule BAT-18).
+  // The summary's parts add up to the cells, each counted once in its
+  // worst state (rule BAT-18).
   const counted = await open(`${PREFIX}/battery-trends`, {
     battery_trends: (page) => {
       trends.battery_trends(page);
       const soil = { device_id: "soil", name: "Soil Irrigation", type: null, level: 0, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null };
-      page.low = [{ ...page.falling[0], level: 12 }, soil];
-      page.steady = [{ device_id: "s1", name: "Door Hall", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null }];
-      page.cells = 4;
+      page.problems = [{ ...page.falling[0], level: 12, state: "low" }, { ...soil, state: "low" },
+        { device_id: "coin", name: "Thermometer", type: null, level: 59, volts: "2.6", coin: true, state: "volts" }];
+      page.others = [{ device_id: "s1", name: "Door Hall", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null, state: "holding" }];
       return page;
     },
   });
   const countedLine = (counted.root.querySelector(".pane > p") || {}).textContent || "";
-  check("the summary counts a low cell that is not falling on its own, and a falling one once",
-    countedLine.startsWith("4 cells report a level. 2 falling, 1 at or under its type's threshold and not falling, 1 not falling or not yet judged."),
+  check("the summary counts each cell once, in its worst state",
+    countedLine.startsWith("4 cells report a level. 2 below the threshold, 1 voltage falling, 0 accelerating, 0 charge falling at a steady pace, 1 not judged or steady."),
     countedLine);
-  const two = await open(`${PREFIX}/battery-trends`, {
-    battery_trends: (page) => {
-      trends.battery_trends(page);
-      const low = (id, name) => ({ device_id: id, name, type: null, level: 0, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null });
-      page.low = [low("soil", "Soil Irrigation"), low("leak", "Leak Sink")];
-      page.steady = [];
-      page.cells = 3;
-      return page;
-    },
-  });
-  const twoLine = (two.root.querySelector(".pane > p") || {}).textContent || "";
-  check("two low cells read \"their type's threshold\"", twoLine.includes("2 at or under their type's threshold and not falling"), twoLine);
+  const chipText = [...counted.root.querySelectorAll(".chips .chip")].map((b) => b.textContent);
+  check("the chips count each state", chipText.join("|") === "All 3|Below the Threshold 2|Accelerating 0|Voltage Falling 1", chipText);
+  const coinCells = rowCells(counted.root, "Thermometer").map((td) => td.textContent);
+  check("a falling voltage shows the coin cell scale and no time left yet",
+    coinCells.includes("voltage falling") && coinCells.includes("2.6 Vnew 3.0, spent 2.0") && coinCells.includes("not yet predicted"), coinCells);
+  const order = [...counted.root.querySelectorAll("tr")].map((tr) => tr.children[2] && tr.children[2].textContent)
+    .filter((t) => ["below the threshold", "decay accelerating", "voltage falling"].includes(t));
+  check("worst first: below the threshold, then voltage falling", order.join("|") === "below the threshold|below the threshold|voltage falling", order);
+  [...counted.root.querySelectorAll(".chips .chip")].find((b) => b.textContent.startsWith("Voltage Falling")).click();
+  await settle();
+  const filtered = [...counted.root.querySelectorAll("tr")].map((tr) => tr.children[0] && tr.children[0].textContent);
+  check("a chip shows only its state", filtered.includes("Thermometer") && !filtered.includes("Soil Irrigation"), filtered);
   const tabText = text(tab.root);
   check("a level reads as reported there too, 37.5%", tabText.includes("37.5%") && !tabText.includes("38%"), tabText.slice(0, 1600));
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
-  check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
-  check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 1600));
-  check("the Falling list says where judging starts",
-    tabText.includes("A cell is judged falling, and given a time left, at or under three times its type's threshold (10% for alkaline, 15% for lithium and other, 20% for rechargeable)."), tabText.slice(0, 900));
-  check("a steady fall inside the warning days is named under Batteries to Watch",
-    tabText.includes("Batteries to Watch") && tabText.includes("Back Door (reaches 15% in about 3 to 5 weeks)."), tabText.slice(0, 1200));
+  check("Batteries With Problems has a state, a voltage and a time left",
+    ["STATE", "VOLTAGE", "TIME LEFT"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
+  check("the order is the chart, the problems, how to read them, By Model, then Other Cells",
+    /The Bank.*Batteries With Problems.*How to read this table.*By Model.*Other Cells/s.test(tabText), tabText.slice(0, 600));
+  check("How to read this table says where judging starts",
+    tabText.includes("A cell's charge is judged, and given a time left, only at or under three times its type's threshold."), tabText.slice(0, 1600));
+  check("a steady fall is an other cell with its time left, and no Batteries to Watch section",
+    !tabText.includes("Batteries to Watch") && rowCells(tab.root, "Back Door").some((td) => td.textContent === "charge falling at a steady pace"),
+    rowCells(tab.root, "Back Door").map((td) => td.textContent));
   const leftCells = [...tab.root.querySelectorAll("td")].filter((td) => td.textContent.startsWith("reaches 15% in"));
   check("the time left reaches the threshold", leftCells.length === 2, leftCells.map((td) => td.textContent));
-  check("only the accelerating cell's time left is red",
-    leftCells.filter((td) => (td.getAttribute("style") || "").includes("error-color")).map((td) => td.textContent).join("|")
-      === "reaches 15% in about 3 to 4 weeks");
+  check("the accelerating cell's state is red",
+    [...tab.root.querySelectorAll("td")].some((td) => td.textContent === "decay accelerating" && (td.getAttribute("style") || "").includes("error-color")));
+  const shut = await open(`${PREFIX}/battery-trends`, trends);
+  check("Other Cells can be shut again", (() => {
+    const button = [...shut.root.querySelectorAll(".otherbox button")].find((b) => b.textContent === "Hide");
+    if (!button) return false;
+    button.click();
+    return true;
+  })());
+  await settle();
+  check("and then shows no table", !shut.root.querySelector(".otherbox table")
+    && [...shut.root.querySelectorAll(".otherbox button")].some((b) => b.textContent === "Show"));
   check("the other cells are not called steady", tabText.includes("Other Cells") && !/\bSteady\b/.test(tabText), tabText.slice(0, 900));
   check("the Steady table counts four weeks in points", tabHeads.some((t) => t.startsWith("4 WEEKS")), tabHeads);
   check("the models are read a week at a time", tabText.includes("points lost a week over the last four weeks"), tabText.slice(0, 600));
