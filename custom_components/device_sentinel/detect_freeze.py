@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.30.9 (2026-11-27)
+# File: detect_freeze.py, Version: 0.30.11 (2026-11-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -925,6 +925,12 @@ class FreezeMixin:
             # for: there is nothing to read and nothing coming, so the clock is the
             # whole story.
             if self._has_registered_entities(device_id):
+                if self._link_up(device_id):
+                    # A Lightwave device left with nothing but its Connected
+                    # sensor and firmware notice, as the 5.5 releases leave a
+                    # radio device: its hub reaches it, so it is never called
+                    # frozen (rule STACK-16). Z-Wave keeps the clock below.
+                    return None
                 if self._node_reads_up(device_id):  # type: ignore[attr-defined]
                     # Nothing readable but the node status, and it says the node is up:
                     # judged by the clock alone.
@@ -1095,6 +1101,28 @@ class FreezeMixin:
             self._unavailable_under_mute[device_id] = saved[0]  # type: ignore[attr-defined]
         return gone
 
+    def _link_heard_while_listed(self, device_id: str, record: dict[str, Any], now: float) -> None:
+        """A listed Lightwave device whose Connected sensor reads on is its
+        hub hearing it: it is heard, and its verdict clears as a recovery,
+        whether the sensor came on after off, after unavailable, or read on
+        all along (rule STACK-16). Not inside the startup grace, while a
+        restored reading could still be the one saved before the restart
+        (rule WATCH-10)."""
+        if record.get(DEV_FROZEN_CATEGORY) not in (FREEZE_CATEGORY_FROZEN, FREEZE_CATEGORY_NEVER_REPORTED):
+            return
+        if now < self._grace_until or not self._link_up(device_id):  # type: ignore[attr-defined]
+            return
+        # The silence it ends is not a gap the device made in its own
+        # reports, so it is not learned (rule FRZ-12).
+        today_max = record.get(DEV_TODAY_MAX)
+        self._record_activity(  # type: ignore[attr-defined]
+            device_id,
+            self._entry_of_device.get(device_id),  # type: ignore[attr-defined]
+            self._node_status_entity.get(device_id),
+            "on",
+        )
+        record[DEV_TODAY_MAX] = today_max
+
     def _listed_but_for_mute(self, device_id: str, record: dict[str, Any]) -> bool:
         """Whether this outage was hidden by an unavailable mute after it
         had lasted long enough to be listed (see _gone_under_mute)."""
@@ -1114,6 +1142,7 @@ class FreezeMixin:
         mid-transition flip; the frozen verdict needs no debounce
         because its window already is the wait.
         """
+        self._link_heard_while_listed(device_id, record, now)
         category = self._device_down_category(device_id, record, now)
         # A record missing these fields is filled at load (rule STOR-19), so
         # this is the sweep's own guard for a record made some other way:

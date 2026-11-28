@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.30.9 (2026-11-27)
+# File: notifier.py, Version: 0.30.11 (2026-11-27)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -827,11 +827,19 @@ class NotifierMixin:
         # List is a part of the Daily Brief tab. Home Assistant draws the
         # card as Markdown and leaves a link inside Home Assistant as a
         # plain link, so it opens in place.
-        message = (
-            "\n".join(lines) + f"\n\n[Open the Daily Brief]({PROBLEM_LIST_PATH})"
-            if lines
-            else "All devices reporting."
-        )
+        # Nothing new, but problems a person has acknowledged still stand:
+        # the card says so, rather than that everything is reporting, and
+        # links to the Problem List that holds them (rule NOTE-11).
+        acknowledged = 0 if lines else len(self._acknowledged_devices())  # type: ignore[attr-defined]
+        if lines:
+            message = "\n".join(lines) + f"\n\n[Open the Daily Brief]({PROBLEM_LIST_PATH})"
+        elif acknowledged:
+            message = (
+                f"No new problems. {acknowledged} acknowledged on the Problem List."
+                f"\n\n[Open the Daily Brief]({PROBLEM_LIST_PATH})"
+            )
+        else:
+            message = "All devices reporting."
         if message == getattr(self, "_card_written", None):
             return
         try:
