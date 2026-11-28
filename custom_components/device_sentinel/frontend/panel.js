@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.11 (2026-11-27)
+// File: panel.js, Version: 0.30.12 (2026-11-28)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -869,6 +869,12 @@ const STYLE = `
   .note { overflow-wrap: anywhere; }
   .pick { display: flex; align-items: center; gap: 8px; min-height: 30px; }
   .chip[aria-pressed="true"] { color: var(--primary-color); border-color: var(--primary-color); }
+  .otherbox { margin-top: 24px; border: 1px solid var(--divider-color, #3a3a3a); border-radius: 10px; padding: 12px 16px;
+    background: var(--secondary-background-color, transparent); }
+  .otherhead { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .othertitle { font-size: 16px; font-weight: 500; }
+  .otherhead .chip { margin-left: auto; }
+  .otherbox > .scroll { margin-top: 10px; }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   table.pinned { table-layout: fixed; }
@@ -3982,10 +3988,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const pick = (type) => { this._batteryType = type; again(); };
     const keep = (row) => this._typeMatch(chosen, row.type);
     const cells = allCells.filter(keep);
-    const falling = page.falling.filter(keep);
-    const watchRows = falling.filter((row) => row.watch);
-    const low = page.low.filter(keep);
-    const steadyAll = page.steady.filter(keep);
+    // Batteries With Problems and every other cell, as the server groups
+    // them, so this page says what the Problem List says (rule BAT-18).
+    const problemsAll = (page.problems || []).filter(keep);
+    const steadyAll = (page.others || []).filter(keep);
     const unreadableRows = page.unreadable.filter(keep);
     const noBattery = chosen
       ? ((page.no_battery_types || {})[chosen === NOT_KNOWN_TYPE ? "" : chosen] || 0) : page.no_battery;
@@ -4018,17 +4024,14 @@ class DeviceSentinelPanel extends HTMLElement {
           types: [[group[0].type || "", group.length]] };
       }).sort((a, b) => a.rate - b.rate || b.cells - a.cells);
     }
-    // Three parts that add up to the cells (rule BAT-18): a cell at or under
-    // the threshold that is also falling is counted once, as falling.
-    const fallingIds = new Set(falling.map((row) => row.device_id));
-    const lowOnly = low.filter((row) => !fallingIds.has(row.device_id)).length;
-    // The total counted from the same cells as its parts (rule BAT-18):
-    // a new cell, or one just replaced, is in both or neither.
-    const cellCount = falling.length + lowOnly + steadyAll.length;
+    // The parts add up to the cells (rule BAT-18): each cell is counted
+    // once, in its worst state.
+    const stateCount = (state) => problemsAll.filter((row) => row.state === state).length;
+    const steadyCount = steadyAll.filter((row) => row.state === "steady").length;
+    const cellCount = problemsAll.length + steadyAll.length;
     // While no battery has four weeks heard, a box says when forecasts
     // start, and the headline says only what is known (rule BAT-19).
     const learn = page.learning;
-    const atOrUnder = low.length;
     // Each battery type's low line (rule BAT-03): "10% for alkaline, 20% for
     // lithium and other, 20% for rechargeable".
     // An older server's answer carries one threshold for every type.
@@ -4042,15 +4045,14 @@ class DeviceSentinelPanel extends HTMLElement {
         + `battery at or under its type's threshold (${lines}) is reported from the first day: `,
       el("strong", {}, learn.low_now === 0 ? "none are now" : learn.low_now === 1 ? "1 is now" : `${learn.low_now} are now`), "."],
       learn.day, learn.need) : null;
-    const summary = learn ? el("p", { style: "margin:0;line-height:1.5" },
-      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under ${atOrUnder === 1 ? "its" : "their"} `
-      + `type's threshold (${lines}), ${cellCount - atOrUnder} above it. ${noBattery} watched `
-      + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all.`)
-    : el("p", { style: "margin:0;line-height:1.5" },
-      `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, `
-      + (lowOnly ? `${lowOnly} at or under ${lowOnly === 1 ? "its" : "their"} type's threshold and not falling, ` : "")
-      + `${steadyAll.length} not falling or not yet judged. ${noBattery} watched `
-      + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and ${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
+    const rest = steadyAll.length - steadyCount;
+    const summary = el("p", { style: "margin:0;line-height:1.5" },
+      `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${stateCount("low")} below the threshold, `
+      + `${stateCount("volts")} voltage falling, ${stateCount("accelerating")} accelerating, `
+      + `${steadyCount} charge falling at a steady pace, `
+      + (learn ? `${rest} not yet judged. Device Sentinel needs four weeks of readings to judge a cell. `
+        : `${rest} not judged or steady. ${noBattery} watched ${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and `)
+      + `${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
     const top = Math.max(...bankCounts, 1);
     const bank = el("div", {},
@@ -4109,74 +4111,86 @@ class DeviceSentinelPanel extends HTMLElement {
           el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))])))));
     const byType = (row) => (row.type || "￿").toLowerCase();
     const byName = (row) => (row.name || "").toLowerCase();
-    // The report's own groups. A falling cell shows its last five
-    // weekly averages and what each week lost (rule BAT-18).
-    const weekHeads = ["28 DAYS AGO", "21 DAYS AGO", "14 DAYS AGO", "7 DAYS AGO", "THIS WEEK"];
-    const fallingRows = this._sortRows(falling, this._batterySort, {
-      name: byName,
-      type: byType,
-      level: (row) => row.level,
-      rate: (row) => -(row.pace || 0),
-      reading: (row) => row.reading || "",
+    // Points lost over four weeks; "not yet" while a cell has too few
+    // weeks heard to say (rule BAT-19).
+    const fourWeeks = (row) => (row.month_drop === null || row.month_drop === undefined ? "not yet" : moved(row.month_drop));
+    // The voltage, and for a coin cell the scale it is read against
+    // (rule BAT-03).
+    const voltsCell = (row) => el("td", { class: "num" }, row.volts ? `${row.volts} V` : "\u2013",
+      row.volts && row.coin ? el("div", { class: "small", style: "white-space:nowrap" }, "new 3.0, spent 2.0") : "");
+    const cellWords = (row) => (row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
+      : this._notSet("power", row.device_id, { name: row.name }));
+    // Batteries With Problems, worst first: below the threshold, then
+    // accelerating, then voltage falling (rule BAT-18).
+    const STATES = [["all", "All"], ["low", "Below the Threshold"], ["accelerating", "Accelerating"], ["volts", "Voltage Falling"]];
+    const STATE_WORDS = { low: "below the threshold", accelerating: "decay accelerating", volts: "voltage falling" };
+    const STATE_RANK = { low: 0, accelerating: 1, volts: 2 };
+    this._batteryFilter = this._batteryFilter || "all";
+    const chosenProblems = problemsAll.filter((row) => this._batteryFilter === "all" || row.state === this._batteryFilter);
+    const ordered = this._batterySort.key ? chosenProblems
+      : [...chosenProblems].sort((x, y) => STATE_RANK[x.state] - STATE_RANK[y.state] || (x.level ?? 0) - (y.level ?? 0));
+    const problemRows = this._sortRows(ordered, this._batterySort, {
+      name: byName, type: byType, state: (row) => STATE_RANK[row.state], level: (row) => row.level ?? 0,
+      volts: (row) => Number(row.volts || 0), since: (row) => row.since || "",
     });
-    const fallingTable = falling.length
-      ? el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
-        el("thead", {}, el("tr", {},
-          this._sortHead(this._batterySort, "DEVICE", "name", again),
-          this._sortHead(this._batterySort, "TYPE", "type", again),
-          this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
-          // Simple leaves out the weekly levels (rule DASH-04).
-          ...(simpleView ? [] : weekHeads.map((label) => el("th", { class: "num" }, label))),
-          this._sortHead(this._batterySort, "PACE", "rate", again, "num"),
-          this._sortHead(this._batterySort, "READING", "reading", again),
-          el("th", {}, "LEFT"))),
-        el("tbody", {}, ...fallingRows.map((row) => {
-          const weeks = row.weeks || [];
-          const padded = [...Array(Math.max(0, 5 - weeks.length)).fill(null), ...weeks];
-          return el("tr", {},
-            el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-            el("td", {}, this._typeLink(row.type, row.device_id, pick)),
-            el("td", { class: "num" }, levelText(row.level)),
-            ...(simpleView ? [] : padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
-              i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : ""))),
-            el("td", { class: "num" }, perWeek(-(row.pace || 0))),
-            el("td", { style: row.reading === "accelerating" ? "color:var(--error-color, #db4437);font-weight:500" : "" }, row.reading || ""),
-            // Red for a warning, an accelerating cell inside Days Till Low;
-            // a cell to watch is named above the table instead (rule BAT-14).
-            el("td", row.left_soon && row.reading === "accelerating" ? { style: "color:var(--error-color, #db4437)" } : {},
-              row.until || row.left || ""));
-        }))))
-      : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
-    // A sort on a column a view leaves out does not order its rows.
-    const lowSort = simpleView && this._lowSort.key === "month" ? {} : this._lowSort;
-    const lowRows = this._sortRows(low, lowSort, { name: byName, type: byType, level: (row) => row.level,
-      month: (row) => row.month_drop || 0, since: (row) => row.since || "" });
-    const lowTable = low.length
-      ? el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
-        el("thead", {}, el("tr", {},
-          this._sortHead(this._lowSort, "DEVICE", "name", again),
-          this._sortHead(this._lowSort, "TYPE", "type", again),
-          this._sortHead(this._lowSort, "LEVEL", "level", again, "num"),
-          // Advanced shows whether a low cell is still falling (rule DASH-04).
-          simpleView ? null : this._sortHead(this._lowSort, "4 WEEKS", "month", again, "num"),
-          this._sortHead(this._lowSort, "SINCE", "since", again))),
-        el("tbody", {}, ...lowRows.map((row) => el("tr", {},
-          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-          el("td", {}, this._typeLink(row.type, row.device_id, pick)),
-          el("td", { class: "num" }, levelText(row.level)),
-          simpleView ? null : el("td", { class: "num" }, moved(row.month_drop)),
-          el("td", {}, row.since ? moment(row.since) : ""))))))
-      : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under its type's threshold.");
+    const chips = el("div", { class: "chips" }, ...STATES.map(([key, label]) => el("button", {
+      class: "chip", type: "button", "aria-pressed": String(key === this._batteryFilter),
+      onclick: () => { this._batteryFilter = key; again(); },
+    }, `${label} ${key === "all" ? problemsAll.length : stateCount(key)}`)));
+    const problemTable = el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
+      el("thead", {}, el("tr", {},
+        this._sortHead(this._batterySort, "DEVICE", "name", again),
+        this._sortHead(this._batterySort, "TYPE", "type", again),
+        this._sortHead(this._batterySort, "STATE", "state", again),
+        this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
+        this._sortHead(this._batterySort, "VOLTAGE", "volts", again, "num"),
+        el("th", {}, "CELL"),
+        // Simple leaves out the four weeks (rule DASH-04).
+        simpleView ? null : el("th", { class: "num" }, "4 WEEKS"),
+        this._sortHead(this._batterySort, "SINCE", "since", again),
+        el("th", {}, "TIME LEFT"))),
+      el("tbody", {}, ...(problemRows.length ? problemRows.map((row) => el("tr", {},
+        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        el("td", {}, this._typeLink(row.type, row.device_id, pick)),
+        el("td", { style: row.state === "volts" ? "color:var(--warning-color, #ff9800)" : "color:var(--error-color, #db4437)" },
+          STATE_WORDS[row.state]),
+        el("td", { class: "num" }, levelText(row.level)),
+        voltsCell(row),
+        el("td", {}, cellWords(row)),
+        simpleView ? null : el("td", { class: "num" }, fourWeeks(row)),
+        el("td", {}, row.since ? moment(row.since) : ""),
+        // A falling voltage has no time left until there is data to
+        // forecast from (rule BAT-03); a low cell shows its empty in once
+        // it is measurably falling (rule BAT-13).
+        el("td", {}, row.left || (row.state === "volts" ? "not yet predicted"
+          : row.state === "low" ? "not measurably falling" : "")))) : [el("tr", {},
+        el("td", { colspan: "9", class: "muted" }, this._batteryFilter === "all" ? "No battery has a problem." : "None."))]))));
+    // How to read the table, in the author's words (rule BAT-18).
+    const howTo = el("p", { class: "small", style: "margin:0;line-height:1.5" },
+      "How to read this table. ", el("strong", {}, "Below the threshold:"),
+      " a battery's percentage is at or under its type's threshold. ",
+      el("strong", {}, "Voltage falling:"),
+      " a coin cell has dropped under 2.9 V. For most of its life, a coin cell can deliver a steady 3.0 V, then drops quickly, "
+      + "and Energizer says it is fully discharged at 2.0 V. When a coin cell's voltage falls below 2.9 V, it is near its end, "
+      + "whatever its percentage shows. ", el("strong", {}, "Battery decay accelerating:"),
+      " when a battery's charge drops faster each week, this curve predicts a battery near its end. ",
+      el("strong", {}, "Charge falling at a steady pace:"),
+      " a battery's charge drops about the same each week. A cell's charge is judged, and given a time left, only at or "
+      + "under three times its type's threshold.");
+    const OTHER_WORDS = { steady: "charge falling at a steady pace", holding: "holding its charge", not_judged: "not judged" };
     const steadySort = simpleView && ["days", "steps"].includes(this._steadySort.key) ? {} : this._steadySort;
     const steadyRows = this._sortRows(steadyAll, steadySort, { name: byName, type: byType,
       level: (row) => row.level, month: (row) => row.month_drop || 0, days: (row) => row.days || 0,
-      steps: (row) => row.steps || "" });
+      steps: (row) => row.steps || "", reading: (row) => row.state || "" });
     const steady = el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
       el("thead", {}, el("tr", {},
         this._sortHead(this._steadySort, "DEVICE", "name", again),
         this._sortHead(this._steadySort, "TYPE", "type", again),
         this._sortHead(this._steadySort, "LEVEL", "level", again, "num"),
+        el("th", { class: "num" }, "VOLTAGE"),
         this._sortHead(this._steadySort, "4 WEEKS", "month", again, "num"),
+        this._sortHead(this._steadySort, "READING", "reading", again),
+        el("th", {}, "TIME LEFT"),
         // Simple leaves out how well each cell is measured (rule DASH-04).
         simpleView ? null : this._sortHead(this._steadySort, "DAYS RECORDED", "days", again, "num"),
         simpleView ? null : this._sortHead(this._steadySort, "STEPS", "steps", again),
@@ -4186,18 +4200,40 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._typeLink(row.type, row.device_id, pick)),
         el("td", { class: "num" }, levelText(row.level)),
-        el("td", { class: "num" }, moved(row.month_drop)),
-        simpleView ? null : el("td", { class: "num" }, String(row.days)),
+        voltsCell(row),
+        el("td", { class: "num" }, fourWeeks(row)),
+        el("td", {}, OTHER_WORDS[row.state] || ""),
+        el("td", {}, row.left || ""),
+        simpleView ? null : el("td", { class: "num" }, String(row.days ?? (row.weeks || []).length * 7)),
         // How the cell reports (rule BAT-09): a coarse cell that is falling
         // sits here with no forecast, and this says why.
         simpleView ? null : el("td", {}, row.steps || ""),
         // The battery it takes, as its Power row says it, lithium named
         // (rule BAT-16); "Not Set" when nobody has said, which opens the
         // way to set it in place, for the whole model (rule DASH-04).
-        el("td", {}, row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
-          : this._notSet("power", row.device_id, { name: row.name })),
+        el("td", {}, cellWords(row)),
         // How fast the others of its model fall (rule BAT-16).
         simpleView ? null : el("td", { class: "num" }, modelPaceRange(row.model_pace) || "\u2013"))))));
+    // Other Cells in a box across the page, shut until opened (rule BAT-18).
+    this._otherCellsOpen = !!this._otherCellsOpen;
+    const othersBox = el("div", { class: "otherbox" },
+      el("div", { class: "otherhead" },
+        el("span", { class: "othertitle" }, "Other Cells"),
+        el("span", { class: "small muted" },
+          `${steadyAll.length} ${steadyAll.length === 1 ? "cell that is" : "cells that are"} not below the threshold, not falling by voltage and not accelerating`),
+        el("button", { class: "chip", type: "button", "aria-expanded": String(this._otherCellsOpen),
+          onclick: () => { this._otherCellsOpen = !this._otherCellsOpen; again(); } },
+        this._otherCellsOpen ? "Hide" : "Show")),
+      ...(this._otherCellsOpen ? [steady,
+        // One line each, shown when its rows are there, so the MODEL, A
+        // WEEK line never hides behind the lithium one.
+        steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+          "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left.") : null,
+        !simpleView && steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+          "MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest: context, not this cell's time left.") : null,
+        !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+          "Not Set: no battery type is known for the device. Press Not Set to choose it; one answer covers every device of the same model.") : null,
+      ].filter((part) => part) : []));
     // A raw sensor value is no level to act on: Advanced only (rule DASH-04).
     const unreadable = unreadableRows.length && !simpleView
       ? el("div", {}, el("div", { class: "scroll" }, el("table", { "data-shares": "battery", "data-base": BATTERY_BASE },
@@ -4217,33 +4253,14 @@ class DeviceSentinelPanel extends HTMLElement {
       el("div", { class: "actrow" }, this._typePicker(types, chosen, pick)),
       this._typeShowing(chosen, pick),
       el("h3", { class: "section" }, "The Bank"), bank,
+      el("h3", { class: "section" }, "Batteries With Problems"), chips, problemTable,
+      el("div", { style: "margin-top:12px" }, howTo),
       el("h3", { class: "section" }, "By Model ",
         el("span", { class: "small" }, `${modelRows.length} ${modelRows.length === 1 ? "model" : "models"}, ${cellTotal} ${cellTotal === 1 ? "cell" : "cells"}${chosen ? "" : ", all of them"}`)),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells: points lost a week over the last four weeks, from weekly averages. Mains-powered devices are absent: they report no battery."),
       el("div", { class: "scroll" }, modelTable),
-      el("h3", { class: "section" }, "At or Under the Threshold"), lowTable,
-      // Falling at a steady pace inside Days Till Low (rule BAT-14): named, and
-      // no warning sent.
-      watchRows.length ? el("h3", { class: "section" }, "Batteries to Watch") : null,
-      watchRows.length ? el("p", { style: "margin:0;line-height:1.5" }, ...watchRows.flatMap((row, i) => [
-        i ? ", " : "", this._link(row.name, this._devicePath(row.device_id)), ` (${row.until || row.left})`]), ".") : null,
-      el("h3", { class: "section" }, "Falling"),
-      // Judged only near the threshold (rules BAT-10, BAT-13): with no
-      // battery yet watched from new to replaced, a date further out is
-      // a guess.
-      th || typeof page.threshold === "number" ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        `A cell is judged falling, and given a time left, at or under three times its type's threshold (${lines}). Above it, its last four weeks are shown under Other Cells.`) : null,
-      fallingTable,
-      el("h3", { class: "section" }, "Other Cells ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
-      // One line each, shown when its rows are there, so the MODEL, A
-      // WEEK line never hides behind the lithium one.
-      steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left.") : null,
-      !simpleView && steadyAll.some((row) => modelPaceRange(row.model_pace)) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "MODEL, A WEEK is how many points the other cells of the same model lose a week, slowest to fastest: context, not this cell's time left.") : null,
-      !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "Not Set: no battery type is known for the device. Press Not Set to choose it; one answer covers every device of the same model.") : null,
+      othersBox,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
@@ -6634,7 +6651,7 @@ class DeviceSentinelPanel extends HTMLElement {
           if (points.length >= 2) {
             bat.g.append(svg("polyline", { points: points.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
               fill: "none", stroke: colour, "stroke-width": 1.3, "stroke-dasharray": "6 5" }));
-            legend.push(key(colour, "Falling at an even pace.", true));
+            legend.push(key(colour, "Charge falling at a steady pace.", true));
           }
         }
       }
@@ -6709,8 +6726,9 @@ class DeviceSentinelPanel extends HTMLElement {
         ? el("p", { class: "small muted", style: "margin:4px 0 0;line-height:1.5" },
           `Saved for future battery forecasts: ${evParts.length > 1 ? `${evParts.slice(0, -1).join(", ")} and ${evParts[evParts.length - 1]}` : evParts.join("")} on ${fmtDay(new Date(`${ev.day}T12:00:00`), { local: true })}.`)
         : null;
-      // The resting voltage: a coin cell's, which judges it low at 2.9 V,
-      // always; an AA or AAA pack's only when it is cold. Below 10 °C it is
+      // The resting voltage: a coin cell's, whose voltage is falling under
+      // 2.9 V, or 2.8 V where the device reports only tenths of a volt, always;
+      // an AA or AAA pack's only when it is cold. Below 10 °C it is
       // shown as it would read at 20 °C, beside the reading, and a coin
       // cell is judged by that (rule BAT-03). The temperature in the
       // house's own unit.
@@ -6718,11 +6736,14 @@ class DeviceSentinelPanel extends HTMLElement {
       const cold = rest && typeof rest.corrected === "number" && typeof rest.celsius === "number";
       // Millivolts where the device reports them, so 2.965 V is not shown
       // as 2.96 V next to the 2.9 V line.
-      const volts = (v) => (Math.round(v * 1000) % 10 ? v.toFixed(3) : v.toFixed(2));
+      const fine = (v) => (Math.round(v * 1000) % 10 ? v.toFixed(3) : v.toFixed(2));
+      const volts = (v) => (b.volts_coarse ? v.toFixed(1) : fine(v));
       const restingNote = rest && typeof rest.volts === "number" && (rest.judged || cold)
         ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, `Resting voltage ${volts(rest.volts)} V`
-          + (cold ? ` (${volts(rest.corrected)} V corrected for ${this._temperatureWords(rest.celsius)})` : "")
-          + ".")
+          + (cold ? ` (${fine(rest.corrected)} V corrected for ${this._temperatureWords(rest.celsius)})` : "")
+          + "."
+          + (rest.judged && b.volts_coarse ? " This device reports its voltage in tenths of a volt, so its voltage is judged falling at 2.8 V." : "")
+          + (b.volts_falling ? " Battery voltage is falling: the cell is near its end." : ""))
         : null;
       const modelNote = modelPaceWords(b.model_pace)
         ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, modelPaceWords(b.model_pace)) : null;
