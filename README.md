@@ -44,7 +44,7 @@ Device Sentinel is in the HACS default store.
 
 *(Requires Home Assistant 2026.5 or newer)*
 
-To keep your settings for a later reinstall, enable **Configure > Advanced > Keep configuration when removing Device Sentinel** and save before removing the integration from Home Assistant. If you also remove it from HACS, remove the integration from Home Assistant first. When you add Device Sentinel again on the same installation, its settings and device-page answers (such as battery types, device types, and notes) are restored automatically. Areas, custom device names, and labels are managed by Home Assistant and are not changed by this option. History, learned data, and reports are still deleted. Leave the option off for a clean start.
+To reinstall later without setting Device Sentinel up again, see [Remove Device Sentinel](https://github.com/TheThinkingHome/device_sentinel/wiki/Installation-and-Setup#remove-device-sentinel).
 
 ## Your First Two Weeks
 
