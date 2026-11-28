@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.30.9 (2026-11-27)
+// File: panel.js, Version: 0.30.11 (2026-11-27)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -4043,12 +4043,12 @@ class DeviceSentinelPanel extends HTMLElement {
       el("strong", {}, learn.low_now === 0 ? "none are now" : learn.low_now === 1 ? "1 is now" : `${learn.low_now} are now`), "."],
       learn.day, learn.need) : null;
     const summary = learn ? el("p", { style: "margin:0;line-height:1.5" },
-      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under its `
+      `${cellCount} ${cellCount === 1 ? "battery reports" : "batteries report"} a level: ${atOrUnder} at or under ${atOrUnder === 1 ? "its" : "their"} `
       + `type's threshold (${lines}), ${cellCount - atOrUnder} above it. ${noBattery} watched `
       + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all.`)
     : el("p", { style: "margin:0;line-height:1.5" },
       `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, `
-      + (lowOnly ? `${lowOnly} at or under its type's threshold and not falling, ` : "")
+      + (lowOnly ? `${lowOnly} at or under ${lowOnly === 1 ? "its" : "their"} type's threshold and not falling, ` : "")
       + `${steadyAll.length} not falling or not yet judged. ${noBattery} watched `
       + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and ${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
