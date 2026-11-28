@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Stacks (STACK)
 
-*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel knows about each radio stack and hub a house runs, and what it reads from each: Zigbee2MQTT, ZHA, Z-Wave, Matter and Thread, Lutron Caséta hubs and ESPHome. This section also covers when an integration's private state may be read, Extended Diagnostics and its probe file, and what Device Sentinel never sends to a stack. A stack going down and coming back is under [UP](Rulebook__07_UP_Upstream_Outages.md). Frozen and unavailable in general are under [FRZ](Rulebook__05_FRZ_Freeze.md) and UNAV. Mutes, including a hub's, are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -186,14 +186,15 @@ What Device Sentinel knows about each radio stack and hub a house runs, and what
 **Since 0.30.0, a Lightwave Smart Series device is judged by its Connectivity sensor, which Lightwave Smart 5.5.0 adds to each device's radio device ("Office Light Device").**
 - **Off:** the hub cannot reach the device, about 30 minutes after it loses power. The device is unavailable, dated from the change, as a dead Z-Wave node is ([STACK-05](#stack-05-z-wave)). Off is never the device speaking. Since 0.30.2 it is listed at the next minute check, without the three-minute wait, as a hub's lost connection is ([UNAV-03](Rulebook__06_UNAV_Unavailable.md#unav-03-the-three-minute-debounce)): Lightwave has already waited about 30 minutes.
 - **Back on:** the hub has heard the device again, which counts as contact and ends the outage.
-- **On:** the device is never newly called frozen, as a connected ESPHome device is not ([STACK-07](#stack-07-esphome)). A dimmer used once a week says nothing between uses, and its hub reaches it all the same. A frozen verdict already standing stays until the device reports.
+- **On:** the device is never newly called frozen, as a connected ESPHome device is not ([STACK-07](#stack-07-esphome)), whatever else it has left to read: a radio device the 5.5 releases left with only this sensor and its firmware notice included (since 0.30.11; James, 27 November 2026). A dimmer used once a week says nothing between uses, and its hub reaches it all the same.
+- **A standing verdict (since 0.30.11):** a device listed frozen or never reported is heard when the sensor reads on, whether it came on after off, after unavailable, or read on all along, and its item closes as a recovery at the next minute check. Not inside the startup grace, while a restored reading may be the one saved before the restart ([WATCH-10](Rulebook__02_WATCH_What_Is_Watched.md#watch-10-the-startup-grace)). The silence it ends is not learned as a gap ([FRZ-12](Rulebook__05_FRZ_Freeze.md#frz-12-what-a-completed-gap-teaches)).
 - **Never reported:** a device whose sensor reads on is never called never reported. The radio device carries only this sensor and a firmware notice, and a socket nobody has switched since it was added has sent nothing either; the hub reaching them is enough. One that has never sent anything and whose sensor reads off is unavailable.
 - **Lights and sockets:** each is a device of its own registered via the radio device, and follows its sensor. Their own entities stay their reports.
 - **Says nothing:** unavailable (Home Assistant's Lightwave session down, the hub's own link lost, or a status other than connected or disconnected), not yet known, or switched off. The last word stands for an outage, and the freeze rule stands for a device not known to be down.
 - **The hub's Cloud Link sensor:** read since 0.30.2, under [STACK-17](#stack-17-lightwave-hubs-and-their-cloud-link). Connect Series devices, and Lightwave Smart before 5.5.0, have no Connectivity sensor and keep the ordinary rules.
 - **On the page:** no Z-Wave status row, and the Recommendations tab does not ask for the sensor switched on.
 
-*Proof:* [`test_lightwave_connectivity.py`](../tests/test_lightwave_connectivity.py).
+*Proof:* [`test_lightwave_connectivity.py`](../tests/test_lightwave_connectivity.py), [`test_lightwave_link_only_device.py`](../tests/test_lightwave_link_only_device.py).
 
 ### STACK-17 Lightwave Hubs and Their Cloud Link
 

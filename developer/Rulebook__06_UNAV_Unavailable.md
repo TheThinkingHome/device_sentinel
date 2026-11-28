@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Unavailable (UNAV)
 
-*Version: rulebook, 22 November 2026, on Device Sentinel 0.30.2. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 When a device is unavailable, when its outage began and ended, how a device that keeps dropping out is told, and how long a recovered device is said to have been down. Frozen and never reported devices, and what an outage does to learning, are under [FRZ](Rulebook__05_FRZ_Freeze.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). A bridge, broker or integration going down is under [UP](Rulebook__07_UP_Upstream_Outages.md), and the mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -17,7 +17,7 @@ When a device is unavailable, when its outage began and ended, how a device that
 ### UNAV-02 Unknown Counts as Nothing
 
 **For judging, unknown, and an event or button entity at rest, count as nothing.** There is no separate unknown problem.
-- **Only unknown or at rest:** a device whose deciding entities read only those is judged by its freeze clock, and a verdict already standing holds until the device reports.
+- **Only unknown or at rest:** a device whose deciding entities read only those is judged by its freeze clock, and a verdict already standing holds until the device reports. The one exception is a Lightwave device whose Connectivity sensor reads on, which is its hub hearing it ([STACK-16](Rulebook__08_STACK_Stacks.md#stack-16-lightwave-devices-and-their-connectivity-sensor)).
 - **Muted outages:** an unavailable outage hidden by an unavailable mute is listed unavailable when the mute is lifted, even if its entities have since turned unknown, as a device never muted would read.
 - **After a restart:** that memory is not saved. If the muted device's entities come back unknown before a check sees them unavailable, lifting the mute judges it by its freeze clock.
 - **Unknown for hours:** a device reading only unknown for hours, judged frozen, can turn unavailable at a one-minute stack blip without the three-minute wait, since its outage start is already hours old.
