@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.30.11 (2026-11-27)
+# File: detect_freeze.py, Version: 0.30.12 (2026-11-28)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -568,6 +568,7 @@ class FreezeMixin:
 
     def _note_frozen_listing(self, device_id: str, record: dict[str, Any], now: float) -> None:
         """Count a frozen listing made while the Log-Normal Percentile decided."""
+        self._gap_grew.pop(device_id, None)  # type: ignore[attr-defined]
         found = self._freeze_rhythm(record)
         if not found or found["rule"] != RULE_LOGNORMAL:
             return
@@ -577,6 +578,42 @@ class FreezeMixin:
         )
         self._lognormal_listings += 1
         self._lognormal_listed[device_id] = (now, lead)
+
+    def _note_gap_grew(self, device_id: str, record: dict[str, Any]) -> None:
+        """Note a frozen verdict ending without the device reporting.
+
+        The report path clears a verdict the moment the device speaks, so
+        a verdict this sweep takes away from a device not heard since it
+        was listed ended because its wait grew past its silence: at the
+        midnight fold, when a longer gap was learned, or when a slider was
+        moved. The wait before is the silence it was listed at (rule
+        FRZ-26).
+        """
+        heard = record.get(DEV_LAST_ACTIVITY)
+        since = record.get(DEV_FROZEN_SINCE)
+        window = self._freeze_window(record)
+        numbers = all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+            for value in (heard, since, window)
+        )
+        if numbers and heard < since:  # type: ignore[operator]
+            # The silence from when it went, which skips hours it was not
+            # watched (rule UNAV-07), never further back than its last report.
+            went = record.get(DEV_DOWN_FROM)
+            start = max(float(heard), float(went)) if isinstance(went, (int, float)) and not isinstance(went, bool) and math.isfinite(went) else float(heard)  # type: ignore[arg-type]
+            self._gap_grew[device_id] = (float(since) - start, float(window), float(heard))  # type: ignore[arg-type, attr-defined]
+
+    def _take_gap_grew(self, device_id: str) -> tuple[float, float] | None:
+        """The wait before and after for a frozen line leaving because its
+        wait grew, or None. A device heard since its verdict ended is
+        leaving because it reported, a recovery (rule FRZ-26)."""
+        noted = self._gap_grew.pop(device_id, None)  # type: ignore[attr-defined]
+        if noted is None:
+            return None
+        record = self.data[DATA_DEVICES].get(device_id) or {}  # type: ignore[attr-defined]
+        if record.get(DEV_LAST_ACTIVITY) != noted[2]:
+            return None
+        return noted[0], noted[1]
 
     def _note_frozen_cleared(self, device_id: str, now: float) -> None:
         """Count a recovery the Trimmed Maximum would never have listed."""
@@ -1236,6 +1273,12 @@ class FreezeMixin:
                 self._critical = True
             return False
 
+        if (
+            current == FREEZE_CATEGORY_FROZEN
+            and category is None
+            and device_id not in self._muted_down  # type: ignore[attr-defined]
+        ):
+            self._note_gap_grew(device_id, record)
         record[DEV_FROZEN_CATEGORY] = category
         # How the trouble began, saved with the record so a restart cannot turn
         # a freeze that went unavailable into a drop (rule UNAV-07). Kept while

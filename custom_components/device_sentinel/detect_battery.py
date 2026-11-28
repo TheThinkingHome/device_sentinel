@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.30.8 (2026-11-26)
+# File: detect_battery.py, Version: 0.30.12 (2026-11-28)
 
 """Battery: the level threshold and what is tracked.
 
@@ -101,15 +101,22 @@ from .const import (
     COIN_VOLTS_PER_DEGREE,
     LITHIUM_CLEAR_VOLTS,
     LITHIUM_LOW_VOLTS,
+    COARSE_LOW_VOLTS,
+    COIN_NEW_VOLTS,
+    COIN_SPENT_VOLTS,
+    COARSE_VOLTS_DAYS,
+    DEV_FIRMWARE_HISTORY,
     LOW_THRESHOLD_KEYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
     LOGGER,
     DEV_LAST_ACTIVITY,
 )
+from .battery_level import level_text
 from .records import BAD_STATES, SERIES_MEMO_SIZE, restart_lognormal, series_key
 from .normalise import day_range_row_ok
 from .device_fields import area_name_of
@@ -380,6 +387,47 @@ def _rows(record: dict[str, Any]) -> list[list[Any]]:
     if not isinstance(rows, list):
         return []
     return [row for row in rows if day_range_row_ok(row)]
+
+
+def _firmware_day(record: dict[str, Any]) -> str | None:
+    """The local day of the device's last firmware update, or None when
+    it has had none since it was first seen (rule BAT-03)."""
+    history = record.get(DEV_FIRMWARE_HISTORY)
+    if not isinstance(history, list) or len(history) < 2:
+        return None
+    last = history[-1]
+    if not isinstance(last, (list, tuple)) or len(last) != 2 or not _level(last[1]):
+        return None
+    return dt_util.as_local(dt_util.utc_from_timestamp(float(last[1]))).date().isoformat()
+
+
+def volts_coarse(record: dict[str, Any]) -> bool:
+    """Whether every voltage the device was heard at, today and on the
+    last COARSE_VOLTS_DAYS kept days after its last firmware update, is a
+    whole tenth of a volt (rule BAT-03)."""
+    seen: list[Any] = [record.get(DEV_BATTERY_VOLTS_TODAY_LOW), record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)]
+    updated = _firmware_day(record)
+    for row in _rows(record)[-COARSE_VOLTS_DAYS:]:
+        if updated is not None and str(row[RANGE_DAY]) <= updated:
+            continue
+        seen += [row[RANGE_VOLTS_LOW], row[RANGE_VOLTS_HIGH]]
+    values = [float(value) for value in seen if _level(value)]
+    return bool(values) and all(abs(value * 10 - round(value * 10)) < 1e-6 for value in values)
+
+
+def volts_text(volts: float, coarse: bool) -> str:
+    """A voltage as written: "2.9" for a device that reports tenths,
+    "2.965" where it reports millivolts, "3.00" otherwise."""
+    if coarse:
+        return f"{volts:.1f}"
+    return f"{volts:.3f}" if round(volts * 1000) % 10 else f"{volts:.2f}"
+
+
+def coin_low_volts(record: dict[str, Any]) -> float:
+    """The voltage at or under which a coin cell's voltage is falling:
+    just under 2.9 V, or 2.8 V for a device that reports only in tenths
+    (rule BAT-03)."""
+    return COARSE_LOW_VOLTS if volts_coarse(record) else LITHIUM_LOW_VOLTS
 
 
 def _ranges(record: dict[str, Any]) -> tuple[list[float], list[float]]:
@@ -712,6 +760,7 @@ class BatteryMixin:
             record[DEV_BATTERY_COARSE_DROPS] = 0
             record[DEV_BATTERY_LOW] = False
             record[DEV_BATTERY_SINCE] = None
+            record[DEV_BATTERY_VOLTS_FALLING_SINCE] = None
             series = record[DEV_BATTERY_DAILY] = carried
             self._record_system_event(
                 SYS_BATTERY_REPLACED,
@@ -825,6 +874,39 @@ class BatteryMixin:
         """The low line this device's battery is judged by: alkaline,
         lithium and other, or rechargeable (rule BAT-03)."""
         return self.low_thresholds[self.battery_group_of(device_id)]  # type: ignore[attr-defined]
+
+    def battery_level_words(self, device_id: str | None, level: Any) -> str:
+        """The level of a low battery as every surface says it: "9%", or
+        "9%, 2.4 V" for a coin cell whose voltage is also under 2.9 V, the
+        voltage beside the percentage it is listed by (rule BAT-03)."""
+        shown = level_text(level)
+        if not shown or not device_id:
+            return shown
+        record = self.data[DATA_DEVICES].get(device_id) or {}  # type: ignore[attr-defined]
+        volts = self.coin_volts_under(device_id, record)
+        return f"{shown}, {volts} V" if volts else shown
+
+    def coin_volts_under(self, device_id: str, record: dict[str, Any]) -> str | None:
+        """A coin cell's resting voltage to a tenth, "2.6", when it is at
+        or under its line, else None. To a tenth on every device, so a
+        cell just under the line reads 2.9 V everywhere (rule BAT-03)."""
+        view = self.resting_volts_view(device_id, record)
+        clear = LITHIUM_CLEAR_VOLTS if record.get(DEV_BATTERY_VOLTS_FALLING_SINCE) else 0.0
+        if not view or not view["judged"] or view["corrected"] > coin_low_volts(record) + clear:
+            return None
+        return f"{view['volts']:.1f}"
+
+    def volts_falling_text(self, device_id: str, record: dict[str, Any]) -> str | None:
+        """A coin cell's resting voltage to a tenth, "2.6", or None."""
+        view = self.resting_volts_view(device_id, record)
+        return f"{view['volts']:.1f}" if view else None
+
+    def volts_falling_words(self, device_id: str, record: dict[str, Any]) -> str:
+        """What a falling voltage is said as after "battery": "voltage is
+        falling, 2.6 V (new 3.0, spent 2.0)" (rule BAT-03)."""
+        shown = self.volts_falling_text(device_id, record)
+        volts = f", {shown} V" if shown else ""
+        return f"voltage is falling{volts} (new {COIN_NEW_VOLTS:.1f}, spent {COIN_SPENT_VOLTS:.1f})"
 
     def resting_volts(self, device_id: str | None, record: dict[str, Any]) -> float | None:
         """A coin cell's resting voltage as judged: the higher of today's
@@ -959,12 +1041,10 @@ class BatteryMixin:
                 is_low = level <= threshold + BATTERY_CLEAR_MARGIN
             else:
                 is_low = level <= threshold
-            # A coin cell is also low at its resting voltage of about
-            # 2.9 V, near where its cliff starts, whatever percentage
-            # its integration works out (rule BAT-03).
-            volts = self.resting_volts(device_id, record)
-            if volts is not None and volts <= LITHIUM_LOW_VOLTS + (LITHIUM_CLEAR_VOLTS if was_low else 0.0):
-                is_low = True
+            # A coin cell's voltage under 2.9 V is a state of its own,
+            # not low: it is near its end whatever its percentage says
+            # (rule BAT-03).
+            self._judge_volts_falling(device_id, record, is_low)
 
         new_level = record.get(DEV_BATTERY_VALUE) != level
         changed = is_low != was_low or new_level
@@ -1029,6 +1109,31 @@ class BatteryMixin:
                 self._notify()
 
     @callback
+    def _judge_volts_falling(self, device_id: str, record: dict[str, Any], is_low: bool) -> None:
+        """Mark or clear a coin cell whose voltage is falling.
+
+        At or under just below 2.9 V, or 2.8 V for a device that reports
+        only tenths, and cleared above it by the margin. A cell already
+        low by its percentage is low, not falling: one line says both
+        (rule BAT-03). A new mark waits out the startup window, as a new
+        low does."""
+        volts = self.resting_volts(device_id, record)
+        was = record.get(DEV_BATTERY_VOLTS_FALLING_SINCE) is not None
+        falling = (
+            not is_low
+            and volts is not None
+            and volts <= coin_low_volts(record) + (LITHIUM_CLEAR_VOLTS if was else 0.0)
+        )
+        if falling == was:
+            return
+        if falling and self._in_startup_grace():
+            return
+        record[DEV_BATTERY_VOLTS_FALLING_SINCE] = dt_util.utcnow().isoformat() if falling else None
+        self._dirty = True
+        self._critical = True
+        self._sync_problem_list()
+
+    @callback
     def _evaluate_all_batteries(self) -> None:
         """Judge every elected battery; used at setup and on options
         changes, so a threshold slid upward flags immediately."""
@@ -1079,6 +1184,9 @@ class BatteryMixin:
                     "entity_id": entity_id,
                     "area": area_name,
                     "level": record.get(DEV_BATTERY_VALUE),
+                    # As every surface says it: the voltage where the
+                    # voltage holds the cell low (rule BAT-03).
+                    "words": self.battery_level_words(device_id, record.get(DEV_BATTERY_VALUE)),
                     "since": since,
                     "last_seen": (
                         state.last_reported.isoformat()
@@ -1096,7 +1204,7 @@ class BatteryMixin:
     @property
     def battery_falling_list(self) -> list[dict[str, Any]]:
         """Return accelerating cells that reach their target inside Days
-        Till Low Warning.
+        Till Low Warning, and coin cells whose voltage is falling.
 
         The Battery: falling sensor. A different set from Battery:
         Low and a different question: low is a level that has been
@@ -1112,18 +1220,52 @@ class BatteryMixin:
         absent: they have their own count, and one thing should be
         counted once.
         """
-        return [
-            {
+        rows: list[dict[str, Any]] = []
+        for row in self._battery_brief_rows():
+            left = self.battery_time_left_range(row["days"], row.get("days_far"))  # type: ignore[attr-defined]
+            # The clause with its target: "reaches 15% in ..." (rule BAT-13).
+            until = self.battery_until_words(row)  # type: ignore[attr-defined]
+            clause = until or (f"empty in {left}" if left else None)
+            rows.append({
                 "device_id": row.get("device_id"),
                 "name": row["name"],
                 "level": row["level"],
                 "per_day": round(row["slope"], 2),
-                "left": self.battery_time_left_range(row["days"], row.get("days_far")),  # type: ignore[attr-defined]
-                # The clause with its target: "reaches 15% in ..." (rule BAT-13).
-                "until": self.battery_until_words(row),  # type: ignore[attr-defined]
-            }
-            for row in self._battery_brief_rows()
-        ]
+                "left": left,
+                "until": until,
+                "volts": False,
+                "since": None,
+                # Every surface says it after "battery" (rule BAT-14).
+                "words": "decay is accelerating" + (f", {clause}" if clause else ""),
+            })
+        # A coin cell whose voltage is falling joins the count, with no
+        # time left until there is data to forecast from. An
+        # accelerating cell is said once, as accelerating (rule BAT-03).
+        listed = {row["device_id"] for row in rows}
+        for device_id in self._battery_entity:
+            record = self.data[DATA_DEVICES].get(device_id) or {}
+            since = record.get(DEV_BATTERY_VOLTS_FALLING_SINCE)
+            if (
+                not since
+                or device_id in listed
+                or record.get(DEV_BATTERY_LOW)
+                or device_id in self._muted_devices
+                or self._battery_muted(device_id)
+            ):
+                continue
+            rows.append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "level": record.get(DEV_BATTERY_VALUE),
+                "per_day": None,
+                "left": None,
+                "until": None,
+                "volts": True,
+                "since": since,
+                "volts_text": self.volts_falling_text(device_id, record),
+                "words": self.volts_falling_words(device_id, record),
+            })
+        return rows
 
     @property
     def battery_falling_count(self) -> int:

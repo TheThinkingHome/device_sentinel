@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.29.1 (2026-11-14)
+# File: journal.py, Version: 0.30.12 (2026-11-28)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -39,6 +39,9 @@ from .const import (
     INC_SIGNAL,
     INC_SINCE,
     INC_SINCE_MAX_LEAD,
+    INC_WINDOWS,
+    INC_VOLTS,
+    TODO_KIND_FALLING_BATTERY,
     SYS_PAIRING_OPEN,
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_RESTART,
@@ -456,6 +459,7 @@ class JournalMixin:
         duration: float | None = None,
         since: float | None = None,
         at: float | None = None,
+        windows: tuple[float, float] | None = None,
     ) -> None:
         """Append one event to the incident log.
 
@@ -503,6 +507,19 @@ class JournalMixin:
             entry[INC_SIGNAL] = (
                 self._signal_snapshot(record) if record is not None else None
             )
+        if windows is not None:
+            # The wait before and after, for the sentence (rule FRZ-26).
+            entry[INC_WINDOWS] = {"before": round(windows[0], 1), "after": round(windows[1], 1)}
+        if (
+            kind == TODO_KIND_FALLING_BATTERY
+            and event == INCIDENT_OPENED
+            and device_id in getattr(self, "_volts_falling_items", ())
+        ):
+            # Its resting voltage when it opened, so its history reads
+            # as a falling voltage (rule BAT-03).
+            record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+            view = self.resting_volts_view(device_id, record)  # type: ignore[attr-defined]
+            entry[INC_VOLTS] = f"{view['volts']:.1f}" if view else ""
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
         if self._reopens_a_closing_episode(incidents, entry):
             return

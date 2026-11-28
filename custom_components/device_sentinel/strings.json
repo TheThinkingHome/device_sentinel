@@ -112,11 +112,11 @@
         },
         "data_description": {
           "low_threshold_alkaline": "AA, AAA and other alkaline cells are flagged low at or below this level.",
-          "low_threshold_lithium": "Coin cells, lithium AA and AAA, other batteries, and any battery whose type is not set are flagged low at or below this level. A coin cell that reports its voltage is also flagged low at about 2.9 V.",
+          "low_threshold_lithium": "Coin cells, lithium AA and AAA, other batteries, and any battery whose type is not set are flagged low at or below this level. A coin cell that reports its voltage under 2.9 V is listed as voltage falling, near its end whatever its percentage says.",
           "low_threshold_rechargeable": "Built-in rechargeable packs and NiMH cells are flagged low at or below this level.",
-          "battery_days_till_empty": "A falling battery is warned about this many days before it reaches your low threshold. Only a battery at or under three times the threshold is judged, and its date comes from its own history as a range: a battery falling faster each week is warned about when the near end of the range is inside these days, and one falling at a steady pace is listed under Batteries to Watch in the Daily Brief and on Battery Trends. A battery holding its charge is never warned about, and a cell already below your threshold is not flagged twice."
+          "battery_days_till_empty": "An accelerating battery is warned about this many days before it reaches your low threshold. Only a battery at or under three times the threshold is judged, and its date comes from its own history as a range: a battery whose decay is accelerating is warned about when the near end of the range is inside these days, and one whose charge is falling at a steady pace is listed under Batteries to Watch in the Daily Brief and under Other Cells on Battery Trends. A battery holding its charge is never warned about, and a cell already below your threshold is not flagged twice."
         },
-        "description": "Device Sentinel watches each battery it finds by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell is judged falling, and given a time left, only at or under three times the threshold: higher up, no battery has been watched long enough to say when it will reach it. A battery needs four weeks of readings in the last six before it is judged. Many devices stop working before their battery reaches 0%, so the time left runs to your threshold. Once a battery has been low, its time left runs to empty until you replace it, even if it reads above the threshold again. A battery is flagged when it is at or below the threshold.\n\n[Low Battery on the wiki]({wiki_link})",
+        "description": "Device Sentinel watches each battery it finds by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell is judged accelerating, and given a time left, only at or under three times the threshold: higher up, no battery has been watched long enough to say when it will reach it. A battery needs four weeks of readings in the last six before it is judged. Many devices stop working before their battery reaches 0%, so the time left runs to your threshold. Once a battery has been low, its time left runs to empty until you replace it, even if it reads above the threshold again. A battery is flagged when it is at or below the threshold.\n\n[Low Battery on the wiki]({wiki_link})",
         "sections": {
           "battery_muting": {
             "name": "Battery Muting",
@@ -213,21 +213,21 @@
         "description": "Settings most people never need to change. [Advanced on the wiki]({wiki_link})",
         "data": {
           "dashboard_mode": "Dashboard: Simple or Advanced",
-          "keep_config_on_removal": "Keep configuration when removing Device Sentinel",
           "repeat_floor": "Repeat Offender Threshold",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
           "maintenance_minutes": "Maintenance Window in Minutes",
-          "cached_integrations": "Integrations That Report Cached Values"
+          "cached_integrations": "Integrations That Report Cached Values",
+          "keep_config_on_removal": "Keep Settings After Removal"
         },
         "data_description": {
-          "keep_config_on_removal": "Enable before removing the integration. Its settings and device-page answers, including battery and device types, are restored when you add it again on this Home Assistant installation. History and reports are still deleted.",
           "dashboard_mode": "The dashboard each window opens in. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. The switch on the dashboard changes it until you leave the dashboard.",
           "repeat_floor": "How many unexplained interruptions in a week put a device in the daily brief's Repeat Offenders section. An interruption is unexplained when no restart, outage, reload, or pairing window accounts for it. Lower names devices sooner; higher waits for a stronger pattern.",
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
           "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods.",
           "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal.",
-          "cached_integrations": "After a restart, these integrations can report a device's last values before the device has had a chance to wake and speak, so a device that was down is not treated as back until one of its values changes. Untick an integration only if you're sure its devices report live. If you tick one by mistake, a working device that was down during a restart could remain listed as down. Each device's make and model can be set on its device detail page."
+          "cached_integrations": "After a restart, these integrations can report a device's last values before the device has had a chance to wake and speak, so a device that was down is not treated as back until one of its values changes. Untick an integration only if you're sure its devices report live. If you tick one by mistake, a working device that was down during a restart could remain listed as down. Each device's make and model can be set on its device detail page.",
+          "keep_config_on_removal": "Turn this on and save before you delete Device Sentinel. Its settings and the answers on device pages, such as battery and device types, come back when you add it again on this Home Assistant. History and reports are still deleted."
         },
         "sections": {
           "data_trim": {

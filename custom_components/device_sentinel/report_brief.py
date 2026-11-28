@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.30.9 (2026-11-27)
+# File: report_brief.py, Version: 0.30.12 (2026-11-28)
 
 """The daily brief: the one report written for a person.
 
@@ -30,14 +30,15 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
-from .battery_level import level_text
 from . import attribution, escalation
+from .narrative import gap_grew_words
 from .repairs import (
     delivery_is_configured,
     missing_targets,
 )
 from . import clock
 from .const import (
+    INC_VOLTS,
     BRIEF_SEND_NOW_TRIGGER,
     PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
@@ -60,6 +61,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_GAP_GREW,
     ACTION_MUTED,
     ACTION_REMOVED,
     ACTION_SET_ASIDE,
@@ -192,7 +194,7 @@ def _markdown_unescaped(text: str) -> str:
 # threshold crossing (rule BRIEF-09).
 _REPEAT_NOUNS = {
     TODO_KIND_LOW_BATTERY: "low-battery alarm",
-    TODO_KIND_FALLING_BATTERY: "falling-battery alarm",
+    TODO_KIND_FALLING_BATTERY: "accelerating-battery alarm",
 }
 
 # The author's own wording, printed verbatim beneath the Repeat
@@ -303,7 +305,7 @@ class BriefMixin:
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
-            return f"battery {level_text(level)}{self._brief_power(device_id)}"
+            return f"battery {self.battery_level_words(device_id, level)}{self._brief_power(device_id)}"  # type: ignore[attr-defined]
         return f"battery low{self._brief_power(device_id)}"
 
     def _brief_power(self, device_id: str) -> str:
@@ -349,6 +351,11 @@ class BriefMixin:
                 else what
             )
             return f"{base}, {cause}" if cause else base
+        if event == INCIDENT_ACTION and row.get(INC_CAUSE) == ACTION_GAP_GREW:
+            # Not a recovery: it has not spoken (rule FRZ-26).
+            grew = gap_grew_words(row)
+            spans = f" from {grew[0]} to {grew[1]}" if grew else ""
+            return f"left the Problem List: its gap grew{spans} and it has not been heard yet"
         if event == INCIDENT_ACTION:
             return {
                 ACTION_ACKNOWLEDGED: "acknowledged",
@@ -384,7 +391,7 @@ class BriefMixin:
             TODO_KIND_UNAVAILABLE: hub[0] if hub else "became unavailable",
             TODO_KIND_UNKNOWN: "went unknown",
             TODO_KIND_RAILED_SIGNAL: "signal railed",
-            TODO_KIND_FALLING_BATTERY: "battery is running down",
+            TODO_KIND_FALLING_BATTERY: "battery decay is accelerating",
         }
         return wording.get(kind, kind)
 
@@ -409,8 +416,8 @@ class BriefMixin:
         """
         for row in self.battery_falling_list:
             if row.get("device_id") == device_id:
-                return f"battery {row.get('until') or 'empty in ' + row['left']}{self._brief_power(device_id)}"
-        return f"battery running down{self._brief_power(device_id)}"
+                return f"battery {row['words']}{self._brief_power(device_id)}"
+        return f"battery decay is accelerating{self._brief_power(device_id)}"
 
     def _brief_now_rows(
         self,
@@ -2299,8 +2306,10 @@ class BriefMixin:
         # reported the whole time.
         if kind == TODO_KIND_LOW_BATTERY:
             return "battery read low", "low"
+        if kind == TODO_KIND_FALLING_BATTERY and opened.get(INC_VOLTS) is not None:
+            return "battery voltage began falling", "voltage falling"
         if kind == TODO_KIND_FALLING_BATTERY:
-            return "battery fell", "falling"
+            return "battery decay began accelerating", "accelerating"
         # A device with short drop-outs reports between its drops, so
         # the silence verbs would say the opposite (rule SIG-17).
         if kind == TODO_KIND_FLAPPING:
@@ -2352,7 +2361,9 @@ class BriefMixin:
             else "reported a low battery" if kind == TODO_KIND_LOW_BATTERY
             # And the two kinds whose words follow a device's name.
             else "had a signal railed" if kind == TODO_KIND_RAILED_SIGNAL
-            else "had a battery running down" if kind == TODO_KIND_FALLING_BATTERY
+            else "had battery voltage falling"
+            if kind == TODO_KIND_FALLING_BATTERY and members[0][0].get(INC_VOLTS) is not None
+            else "had battery decay accelerating" if kind == TODO_KIND_FALLING_BATTERY
             else self._EVENT_WORDING.get(kind, kind)
         )
         # From when the first of them went, as the table dates them.
@@ -2455,6 +2466,7 @@ class BriefMixin:
                 {
                     "device_id": device_id,
                     "kind": row.get(INC_KIND),
+                    "volts": row.get(INC_VOLTS) is not None,
                     "stored": row.get(INC_NAME),
                     "n": 0,
                     "days": {},
@@ -2491,7 +2503,11 @@ class BriefMixin:
                 # and a one-day pattern is not one of those.
                 continue
             entry["name"] = self._repeat_name(entry)
-            entry["what"] = self._repeat_verb(kind)
+            entry["what"] = (
+                "falling-voltage alarm"
+                if kind == TODO_KIND_FALLING_BATTERY and entry["volts"]
+                else self._repeat_verb(kind)
+            )
             words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
             if kind == TODO_KIND_UNAVAILABLE and words:
                 # A hub went down (rule STACK-10); a Z-Wave device
@@ -2924,7 +2940,16 @@ class BriefMixin:
                 f"{row['name']} ({self.battery_until_words(row)})"
                 for row in fallers[:5]
             )
-            battery_lines.append(f"Batteries falling faster each week: {named}.")
+            battery_lines.append(f"Battery decay accelerating: {named}.")
+        # A coin cell whose voltage is falling, near its end whatever
+        # its percentage says (rule BAT-03).
+        volts_rows = [row for row in self.battery_falling_list if row.get("volts")]
+        if volts_rows:
+            named = ", ".join(
+                f"{row['name']} ({row['volts_text']} V)" if row.get("volts_text") else row["name"]
+                for row in volts_rows[:5]
+            )
+            battery_lines.append(f"Battery voltage falling: {named}.")
         # A cell falling at a steady pace inside Days Till Low is named
         # here and on Battery Trends, and pushes nothing (rule BAT-14).
         watched = self.battery_watch_rows()

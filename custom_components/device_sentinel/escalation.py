@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: escalation.py, Version: 0.27.10 (2026-10-27)
+# File: escalation.py, Version: 0.30.12 (2026-11-28)
 
 """A problem replaced by a worse one, told as the change it is.
 
@@ -70,7 +70,7 @@ STATE_WORD = {
     TODO_KIND_UNKNOWN: "unknown",
     TODO_KIND_NEVER_REPORTED: "never reported",
     TODO_KIND_LOW_BATTERY: "low",
-    TODO_KIND_FALLING_BATTERY: "running down",
+    TODO_KIND_FALLING_BATTERY: "accelerating",
     TODO_KIND_RAILED_SIGNAL: "railed",
 }
 

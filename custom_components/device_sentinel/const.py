@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.30.9 (2026-11-27)
+# File: const.py, Version: 0.30.12 (2026-11-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -818,6 +818,11 @@ AUTO_EXCLUDED_INTEGRATIONS = (
 # then is still renamed to muted_devices on load.
 CONF_EXCLUDED_DEVICES = "devices_to_exclude"
 
+# Integrations whose battery is a power station's or a home battery's
+# charge, a store of energy that is used and refilled, not a cell wearing
+# out: its battery sensors are not read as a device's battery, so it is
+# never called low or falling (rule BAT-01).
+ENERGY_STORE_INTEGRATIONS = frozenset({"ecoflow_cloud", "ecoflow_api"})
 # The integrations that publish a tracker per client on the network. A
 # router integration registers every client as its own registry device,
 # which duplicates hardware another integration already watches and lets
@@ -834,6 +839,7 @@ ROUTER_INTEGRATIONS = (
     "netgear",
     "ubus",
     "upc_connect",
+    "bbox",
 )
 # Every integration excluded when first seen, routers and
 # AUTO_EXCLUDED_INTEGRATIONS alike: once listed here, never new again
@@ -1508,6 +1514,11 @@ DATA_BATTERY_FORECAST_TALLY = "battery_forecast_tally"
 # with DEV_BATTERY_REPLACED_AT rather than cleared, so a replacement
 # detected, cancelled or dated by a person moves the latch with it.
 DEV_BATTERY_FIRST_LOW = "battery_first_low"
+# When a coin cell's voltage was first judged falling, under 2.9 V while
+# its percentage was still over the threshold, or None. A state of its
+# own, not low: the cell is near its end whatever its percentage says
+# (rule BAT-03).
+DEV_BATTERY_VOLTS_FALLING_SINCE = "battery_volts_falling_since"
 # A battery's model pace is said only with at least this many other
 # cells of its maker and model, giving the slowest and fastest of them
 # (rule BAT-16).
@@ -1661,10 +1672,26 @@ LOW_THRESHOLD_KEYS = {
     BATTERY_GROUP_LITHIUM: (CONF_LOW_THRESHOLD_LITHIUM, DEFAULT_LOW_THRESHOLD_LITHIUM),
     BATTERY_GROUP_RECHARGEABLE: (CONF_LOW_THRESHOLD_RECHARGEABLE, DEFAULT_LOW_THRESHOLD_RECHARGEABLE),
 }
-# A coin cell that reports its voltage is also low at or below this,
-# its resting voltage, near where the cliff starts, and clears above it
-# by the margin (rule BAT-03).
-LITHIUM_LOW_VOLTS = 2.9
+# A coin cell that reports its voltage has its voltage falling at or
+# below this, just under its resting voltage of 2.9 V, near where the
+# cliff starts, and clears above it by the margin. Said as 2.9 V (rule
+# BAT-03).
+LITHIUM_LOW_VOLTS = 2.899
+# Most Zigbee devices report their voltage in tenths of a volt, so 2.9
+# stands for anything from 2.90 to 2.99 V and a healthy cell sits on the
+# line. A device heard only in whole tenths is coarse: its reading is the
+# bottom of its step, so its voltage is falling one step lower, at 2.8
+# (rule BAT-03).
+COARSE_LOW_VOLTS = 2.8
+# The scale a coin cell's falling voltage is said against: a new cell
+# rests at about 3.0 V and is spent at about 2.0 V (rule BAT-03).
+COIN_NEW_VOLTS = 3.0
+COIN_SPENT_VOLTS = 2.0
+# Coarse or fine is read from today and the last few kept days, and never
+# from before the device's last firmware update, so a stray reading ages
+# out and a firmware that changes how it reports is judged at once
+# (rule BAT-03).
+COARSE_VOLTS_DAYS = 3
 # A coin cell's voltage falls in the cold and comes back when it warms, so
 # below COIN_CORRECT_BELOW_C its voltage is judged as it would read at
 # COIN_REFERENCE_C, close to the 21 °C of the makers' charts: 5.5 mV a
@@ -1820,6 +1847,7 @@ EPOCH_KEPT = (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_FIRST_LOW,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_PENDING_HIGH,
@@ -2406,6 +2434,8 @@ WITHDRAWN_REASON_MUTED = "muted"
 WITHDRAWN_REASON_REPLACED = "replaced"
 # A device removed from Home Assistant, its record held (rule WATCH-07).
 WITHDRAWN_REASON_REMOVED = "removed"
+# A frozen device whose learned wait grew past its silence (rule FRZ-26).
+WITHDRAWN_REASON_GAP_GREW = "gap_grew"
 
 # The upstream pair. A stopped broker or bridge silences every device
 # behind it on purpose (rule UP-05), so without these the one failure
@@ -2703,6 +2733,14 @@ INC_SIGNAL = "signal"
 # and the recovery counts from when it went (rule UNAV-07). An older row
 # has none and reads as it did.
 INC_SINCE = "since"
+# The wait before and after, in seconds, on a row whose frozen verdict
+# ended because the wait grew past the silence (rule FRZ-26). Absent from
+# every other row and every older one.
+INC_WINDOWS = "windows"
+# A falling voltage's resting voltage as said, "2.8", on the row that
+# opened it, so its history reads as a falling voltage and not as an
+# accelerating decay (rule BAT-03).
+INC_VOLTS = "volts"
 # How far before the listing a kept start may lie: the debounce and a
 # late sweep. A start further back, such as one held while an unavailable
 # mute hid the device, keeps the listing time (rule BRIEF-07).
@@ -2731,6 +2769,11 @@ ACTION_REMOVED = "removed"
 # a person's act, not a recovery: nothing is pushed, no recovery reaches
 # the bus, and the brief never says "recovered" (rule MUTE-07).
 ACTION_MUTED = "muted"
+# A frozen device whose learned wait grew past its silence, at the
+# midnight fold or when a slider was moved, without it reporting. Not a
+# recovery: it has not spoken, so nothing is pushed and the bus hears a
+# withdrawal (rule FRZ-26).
+ACTION_GAP_GREW = "gap_grew"
 
 # How far before an incident opened an episode may have ended and still
 # be its explanation. A sampler notices an intervention up to one tick

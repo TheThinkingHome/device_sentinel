@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.30.11 (2026-11-27)
+# File: notifier.py, Version: 0.30.12 (2026-11-28)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -504,7 +504,7 @@ class NotifierMixin:
                         _rank(TODO_KIND_LOW_BATTERY), _since(row),
                         # As reported, the same on every surface, so 15.5 never
                         # reads "15%", a level the threshold did not call low.
-                        f"{name} {level_text(level)}",
+                        f"{name} {row.get('words') or level_text(level)}",
                     )
                 else:
                     rows[_key(row, len(rows))] = (
@@ -514,12 +514,13 @@ class NotifierMixin:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = self._with_area(row.get("device_id"), row.get("name") or row.get("device_id"))
-                left = row.get("until") or (f"empty in {row['left']}" if row.get("left") else None)
-                clause = left or "running down"
+                # As every surface says it (rules BAT-03, BAT-14).
+                clause = f"battery {row.get('words') or 'decay is accelerating'}"
                 key = _key(row, len(rows))
                 if key in rows:
                     rank, since, said = rows[key]
-                    rows[key] = (rank, since, f"{said}, {clause}")
+                    # The noun once, after the level (rule BAT-14).
+                    rows[key] = (rank, since, f"{said}, {clause.removeprefix('battery ')}")
                 else:
                     rows[key] = (
                         _rank(TODO_KIND_FALLING_BATTERY), _since(row),

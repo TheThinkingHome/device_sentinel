@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.30.4 (2026-11-23)
+# File: narrative.py, Version: 0.30.12 (2026-11-28)
 
 """How to say what happened: the composer.
 
@@ -32,8 +32,8 @@ from datetime import datetime
 from homeassistant.util import dt as dt_util
 
 from .restart_values import CONFIRMED_ON_DASHBOARD, confirmed_by, is_confirmed_cause
-from .battery_level import level_text
 from . import clock
+from .durations import compact_span
 from .const import (
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_INTERVENTION,
@@ -42,6 +42,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_GAP_GREW,
     ACTION_MUTED,
     ACTION_REMOVED,
     ACTION_SET_ASIDE,
@@ -59,6 +60,8 @@ from .const import (
     INC_NAME,
     INC_SINCE,
     INC_SINCE_MAX_LEAD,
+    INC_VOLTS,
+    INC_WINDOWS,
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
@@ -100,6 +103,30 @@ BRIEF_STATE_WORDS = {
     TODO_KIND_UNKNOWN: "unknown",
     TODO_KIND_RAILED_SIGNAL: "signal railed",
 }
+
+
+def gap_grew_words(row: dict[str, Any]) -> tuple[str, str] | None:
+    """The wait before and after on a row whose frozen verdict ended
+    because the wait grew, as "2.2h" and "8.4h", or None (rule FRZ-26)."""
+    windows = row.get(INC_WINDOWS)
+    if not isinstance(windows, dict):
+        return None
+    spans = []
+    for key in ("before", "after"):
+        value = windows.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            return None
+        spans.append(compact_span(float(value)))
+    return spans[0], spans[1]
+
+
+def after_midnight(when: Any) -> bool:
+    """Whether a moment falls in the first quarter hour after local
+    midnight, when the fold learns the day's gaps (rule FRZ-26)."""
+    if isinstance(when, bool) or not isinstance(when, (int, float)) or not math.isfinite(when):
+        return False
+    local = dt_util.as_local(dt_util.utc_from_timestamp(float(when)))
+    return local.hour == 0 and local.minute < 15
 
 
 class NarrativeMixin:
@@ -182,7 +209,7 @@ class NarrativeMixin:
         # Present tense, because nothing happened to the device: what
         # changed is what the readings now say about where it is
         # heading (rule LIST-02).
-        TODO_KIND_FALLING_BATTERY: "battery is running down",
+        TODO_KIND_FALLING_BATTERY: "battery decay is accelerating",
     }
 
     # Each kind carries its own duration template rather than sharing
@@ -212,8 +239,8 @@ class NarrativeMixin:
         # not the interesting number; how long the cell has is, and
         # the brief's own falling line carries that.
         TODO_KIND_FALLING_BATTERY: (
-            "battery is running down",
-            "battery is running down",
+            "battery decay is accelerating",
+            "battery decay is accelerating",
         ),
     }
 
@@ -240,7 +267,9 @@ class NarrativeMixin:
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
-            shown = level_text(level)
+            # A coin cell also under 2.9 V says its voltage beside its
+            # level (rule BAT-03).
+            shown = self.battery_level_words(device_id, level)  # type: ignore[attr-defined]
             if state:
                 return f"battery is at {shown}"
             if level <= self.threshold_for(device_id) + BATTERY_CLEAR_MARGIN:  # type: ignore[attr-defined]
@@ -286,7 +315,7 @@ class NarrativeMixin:
 
         In these words: "Soil Irrigation (Monstera) was marked
         unavailable from frozen at 3:43 AM", and "Door 2nd Bedroom's
-        battery was marked low (18%) from running down" (rule LIST-07).
+        battery was marked low (18%) from accelerating" (rule LIST-07).
         The form follows where the clause lands: after the name in a
         sentence, alone in a table cell whose row already names the
         device, or after "N devices" in a flood.
@@ -304,7 +333,7 @@ class NarrativeMixin:
                 DEV_BATTERY_VALUE
             )
             shown = (
-                f" ({level_text(level)})"
+                f" ({self.battery_level_words(row[INC_DEVICE_ID], level)})"  # type: ignore[attr-defined]
                 if isinstance(level, (int, float))
                 and level <= self.threshold_for(row[INC_DEVICE_ID]) + BATTERY_CLEAR_MARGIN  # type: ignore[attr-defined]
                 else ""
@@ -396,6 +425,14 @@ class NarrativeMixin:
             if " at " in phrase:
                 return f"{name} {phrase}"
             return f"{name} {phrase} at {when}"
+        if kind == TODO_KIND_FALLING_BATTERY and row.get(INC_VOLTS) is not None:
+            # A falling voltage says what to do, whatever the percentage
+            # reads (rule BAT-03).
+            volts = f" {row[INC_VOLTS]} V" if row[INC_VOLTS] else ""
+            return (
+                f"{name} battery voltage is falling:{volts} since {when}. The cell is near "
+                "its end; replace it regardless of its percentage"
+            )
         wording = self._EVENT_WORDING.get(kind, kind)
         hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         if kind == TODO_KIND_UNAVAILABLE and hub:
@@ -415,6 +452,8 @@ class NarrativeMixin:
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
         event = row[INC_EVENT]
+        if event == INCIDENT_ACTION and row.get(INC_CAUSE) == ACTION_GAP_GREW:
+            return self._gap_grew_sentence(name, row, when)
         if event == INCIDENT_ACTION:
             return self._action_sentence(name, row.get(INC_CAUSE), when)
         if event == INCIDENT_RESOLVED and is_confirmed_cause(row.get(INC_CAUSE)):
@@ -447,6 +486,21 @@ class NarrativeMixin:
         if who:
             return f"At {when}, {who} confirmed {name} was working{after}."
         return f"At {when}, {name} was confirmed working {CONFIRMED_ON_DASHBOARD}{after}."
+
+    def _gap_grew_sentence(self, name: str, row: dict[str, Any], when: str) -> str:
+        """A frozen device taken off the list because its wait grew past
+        its silence, told as what happened and never as a recovery: "LUX
+        Outdoors was removed from the Problem List at 00:01 without
+        reporting because its gap grew from 2.2h to 8.4h at midnight."
+        At midnight only when the midnight fold grew it (rule FRZ-26)."""
+        grew = gap_grew_words(row)
+        midnight = " at midnight" if after_midnight(row.get(INC_WHEN)) else ""
+        if grew is None:
+            return f"{name} was removed from the Problem List at {when} without reporting because its gap grew{midnight}."
+        return (
+            f"{name} was removed from the Problem List at {when} without reporting "
+            f"because its gap grew from {grew[0]} to {grew[1]}{midnight}."
+        )
 
     def _action_sentence(
         self, name: str, cause: str | None, when: str
@@ -684,6 +738,11 @@ class NarrativeMixin:
             with_age, without_age = self._STATE_TEMPLATE.get(
                 worst, ("{ago}", worst)
             )
+            if worst == TODO_KIND_FALLING_BATTERY and device_id in getattr(self, "_volts_falling_items", ()):
+                # A falling voltage, not an accelerating decay (rule BAT-03).
+                record_now = self.data[DATA_DEVICES].get(device_id) or {}
+                words = self.volts_falling_words(device_id, record_now)  # type: ignore[attr-defined]
+                with_age = without_age = f"battery {words}"
             if worst == TODO_KIND_UNAVAILABLE and self.is_hub(device_id):  # type: ignore[attr-defined]
                 # A hub is down, not unavailable (rule STACK-10).
                 with_age, without_age = "has been down for {ago}", "is down"

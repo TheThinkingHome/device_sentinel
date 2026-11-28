@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.30.3 (2026-11-23)
+# File: config_flow.py, Version: 0.30.12 (2026-11-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -2334,10 +2334,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_ADVANCED},
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_KEEP_CONFIG_ON_REMOVAL,
-                        default=options.get(CONF_KEEP_CONFIG_ON_REMOVAL, False),
-                    ): selector.BooleanSelector(),
                     # The dashboard each window opens in (rule DASH-03).
                     vol.Required(
                         CONF_DASHBOARD_MODE,
@@ -2433,6 +2429,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     ),
+                    # Last of the plain settings: it acts only when
+                    # the integration is deleted (rule STOR-24).
+                    vol.Optional(
+                        CONF_KEEP_CONFIG_ON_REMOVAL,
+                        default=options.get(CONF_KEEP_CONFIG_ON_REMOVAL, False),
+                    ): selector.BooleanSelector(),
                     # Optional rather than required: a save that
                     # omits the section entirely is a save that
                     # trims nothing, which is what every save of

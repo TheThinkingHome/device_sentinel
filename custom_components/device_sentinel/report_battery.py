@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.30.4 (2026-11-23)
+# File: report_battery.py, Version: 0.30.12 (2026-11-28)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -282,12 +282,12 @@ def battery_sentence(
     time left follows a curve (rule BAT-12).
     """
     if trend.get("reading") == READING_ACCELERATING and trend.get("pace"):
-        return f"Falling faster each week, about {trend['pace']:.1f} points a week today."
+        return f"Battery decay is accelerating, about {trend['pace']:.1f} points a week today."
     if trend.get("reading") == READING_FALLING and trend.get("pace"):
         pace = (projection or {}).get("pace")
         if (projection or {}).get("curved") and isinstance(pace, (int, float)) and pace > 0:
-            return f"Falling faster each week, about {pace:.1f} points a week today."
-        return f"Falling about {trend['pace']:.1f} points a week, at a steady pace."
+            return f"Battery decay is accelerating, about {pace:.1f} points a week today."
+        return f"Battery charge is falling at a steady pace, about {trend['pace']:.1f} points a week."
     return ""
 
 
@@ -541,7 +541,7 @@ class BatteryReportMixin:
             return f"{level:g} out of range"
         parts = [level_text(level)]
         if level <= self.threshold_for(device_id):  # type: ignore[attr-defined]
-            parts = [f"**{level_text(level)}**"]
+            parts = [f"**{self.battery_level_words(device_id, level)}**"]  # type: ignore[attr-defined]
         for days, label in ((7, "wk"), (30, "mo")):
             if len(levels) >= days + 1:
                 parts.append(f"{levels[-1] - levels[-1 - days]:+g}/{label}")

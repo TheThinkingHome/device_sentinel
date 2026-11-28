@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.30.9 (2026-11-27)
+# File: coordinator.py, Version: 0.30.12 (2026-11-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -155,6 +155,7 @@ from .const import (
     ACTIVE_REPORT_SECONDS,
     SET_ASIDE_NOTICES_ONLY,
     NOTICE_DOMAINS,
+    ENERGY_STORE_INTEGRATIONS,
     EVENT_RESTING,
     DATA_HISTORY_LINE,
     CLIP_MAX_DAYS,
@@ -589,6 +590,13 @@ class DeviceSentinelCoordinator(
         # down, so their item leaves silently; cleared when the device
         # reports or is judged down again (rule MUTE-07).
         self._muted_down: set[str] = set()
+        # Frozen devices whose learned wait grew past their silence without
+        # their reporting, with the wait before and after, so their item
+        # leaves as a withdrawal and not a recovery (rule FRZ-26).
+        self._gap_grew: dict[str, tuple[float, float, float]] = {}
+        # Devices listed for a falling voltage, whose falling kind is
+        # never pushed, its end included (rule BAT-03).
+        self._volts_falling_items: set[str] = set()
         # Outages an unavailable mute hid after they had lasted past
         # the debounce, by device, keyed to the saved outage start
         # (rules UNAV-02, UNAV-04).
@@ -3066,7 +3074,11 @@ class DeviceSentinelCoordinator(
                     signal_device_of[ent.entity_id] = ent.device_id
                     if own:
                         signal_own_entities.add(ent.entity_id)
-            if ent.disabled_by is None and self._is_battery(ent):
+            if (
+                ent.disabled_by is None
+                and self._is_battery(ent)
+                and ent.platform not in ENERGY_STORE_INTEGRATIONS
+            ):
                 is_binary = ent.entity_id.startswith("binary_sensor.")
                 current = battery_entity.get(ent.device_id)
                 # Percentage beats binary, then the device's own

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.30.0 (2026-11-21)
+# File: __init__.py, Version: 0.30.12 (2026-11-27)
 
 """The Device Sentinel integration.
 

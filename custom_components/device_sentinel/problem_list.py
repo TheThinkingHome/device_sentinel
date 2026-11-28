@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.30.5 (2026-11-23)
+# File: problem_list.py, Version: 0.30.12 (2026-11-28)
 
 """The problem list: the single memory every channel renders.
 
@@ -54,6 +54,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_GAP_GREW,
     ACTION_MUTED,
     ACTION_REMOVED,
     ACTION_SET_ASIDE,
@@ -90,6 +91,7 @@ from .const import (
     UPSTREAM_KIND,
     WIFI_KEY,
     UPSTREAM_SETTLE_SECONDS,
+    WITHDRAWN_REASON_GAP_GREW,
     WITHDRAWN_REASON_MUTED,
     WITHDRAWN_REASON_REMOVED,
     WITHDRAWN_REASON_SET_ASIDE,
@@ -120,14 +122,14 @@ _FAULT_LINE = {
         "{name} has short drop-outs",
     ),
     TODO_KIND_FALLING_BATTERY: (
-        "{name} battery is running down, {left}",
-        "{name} battery is running down",
+        "{name} battery {left}",
+        "{name} battery decay is accelerating",
     ),
 }
 _RECOVERY_LINE = {
     TODO_KIND_FLAPPING: "{name} no longer has short drop-outs",
     TODO_KIND_LOW_BATTERY: "{name} battery is no longer low",
-    TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
+    TODO_KIND_FALLING_BATTERY: "{name} battery decay has slowed",
 }
 
 # The faults held for their notification debounce when the file was
@@ -423,11 +425,23 @@ class ProblemListMixin:
         # forecast still watches it come true.
         for row in self.battery_falling_list:
             entry = _entry(row["device_id"], row.get("name"))
-            entry["kinds"][TODO_KIND_FALLING_BATTERY] = None
-            # The whole clause, "reaches 15% in about 2 weeks" (rule BAT-13).
-            entry["left"] = row.get("until") or row.get("left")
+            since = row.get("since")
+            since_dt = dt_util.parse_datetime(since) if since else None
+            entry["kinds"][TODO_KIND_FALLING_BATTERY] = since_dt.timestamp() if since_dt else None
+            # The whole clause after "battery": "decay is accelerating,
+            # reaches 15% in about 2 weeks" (rules BAT-13, BAT-14), or
+            # "voltage is falling, 2.6 V (new 3.0, spent 2.0)" (rule
+            # BAT-03).
+            entry["left"] = row.get("words")
             if entry["level"] is None:
                 entry["level"] = row.get("level")
+            # A falling voltage is listed and never pushed, its end
+            # included; remembered here, because by its recovery the
+            # row that said so is gone (rule BAT-03).
+            if row.get("volts"):
+                self._volts_falling_items.add(row["device_id"])
+            else:
+                self._volts_falling_items.discard(row["device_id"])
 
         for row in self.signal_problem_list:
             entry = _entry(row["device_id"], row.get("name"))
@@ -458,7 +472,7 @@ class ProblemListMixin:
 
     @staticmethod
     def _kind_word(
-        kind: str, level: Any, left: str | None = None
+        kind: str, level: Any, left: str | None = None, level_words: str | None = None
     ) -> str:
         """Return one kind as the person reads it in the item text.
 
@@ -471,17 +485,12 @@ class ProblemListMixin:
         if kind == TODO_KIND_LOW_BATTERY:
             if level is None:
                 return "battery low"
-            return f"battery {level_text(level)}"
+            return f"battery {level_words or level_text(level)}"
         if kind == TODO_KIND_FALLING_BATTERY:
             # The noun is carried, because the item may say this and
-            # nothing else: "Door 2nd Bedroom: empty in about 2 weeks"
-            # sitting beside "Soil Irrigation: battery 0%" leaves a
-            # reader to guess what is empty (rule BAT-14). It reads
-            # once when both kinds are present, because the level
-            # clause ahead of it has already said the word.
-            if left:
-                return left if left.startswith(("reaches ", "empty in ")) else f"empty in {left}"
-            return "battery running down"
+            # nothing else, and a low cell is never listed falling too
+            # (rules BAT-03, BAT-14).
+            return f"battery {left}" if left else "battery decay is accelerating"
         # The rest in the Daily Brief's words, as its Right Now table
         # says them: "stopped reporting", "signal railed" (rule LIST-02).
         if kind in BRIEF_STATE_WORDS:
@@ -773,19 +782,17 @@ class ProblemListMixin:
             if kind == TODO_KIND_FLAPPING and device_id is not None
             else hub_words
             if kind == TODO_KIND_UNAVAILABLE and hub_words
-            else self._kind_word(kind, level, left)
+            else self._kind_word(
+                kind, level, left,
+                self.battery_level_words(device_id, level),  # type: ignore[attr-defined]
+            )
             for kind in order
         ]
-        # The falling clause names the battery unless the level
-        # clause already did, so one item says the noun once and an
-        # item carrying only the forecast still says what is empty
-        # (rule BAT-14).
-        if TODO_KIND_FALLING_BATTERY in order and (
-            TODO_KIND_LOW_BATTERY not in order
-        ):
+        # The noun once: a level clause ahead of the falling clause has
+        # already said "battery" (rule BAT-14).
+        if TODO_KIND_FALLING_BATTERY in order and TODO_KIND_LOW_BATTERY in order:
             index = order.index(TODO_KIND_FALLING_BATTERY)
-            if words[index].startswith(("empty in ", "reaches ")):
-                words[index] = f"battery {words[index]}"
+            words[index] = words[index].removeprefix("battery ")
         summary = f"{name}: " + ", ".join(words)
         lines = []
         for kind, word in zip(order, words, strict=True):
@@ -1120,6 +1127,15 @@ class ProblemListMixin:
         (rule LIST-07).
         """
         key = (device_id, kind)
+        if kind == TODO_KIND_FALLING_BATTERY and device_id in self._volts_falling_items:
+            # A falling voltage is on the list and never on the phone,
+            # start or end (rule BAT-03).
+            if recovery:
+                self._volts_falling_items.discard(device_id)
+                cancel = self._held_events.pop(key, None)
+                if cancel is not None:
+                    cancel()
+            return
         if not final and self._todo_status_of(device_id) == "completed":
             # Ticked: nothing reaches the phone until the item leaves
             # (rule LIST-03). A fault held from before the tick is
@@ -1420,6 +1436,18 @@ class ProblemListMixin:
         # therefore fire more than one recovery in the same instant,
         # the lesser evil, because an automation pairing faults to
         # recoveries stays balanced (rule NOTE-12).
+        grew = self._take_gap_grew(device_id) if TODO_KIND_FROZEN in kinds else None  # type: ignore[attr-defined]
+        if grew is not None:
+            # Its wait grew past its silence; it has not spoken, so
+            # nothing recovered and nothing is pushed (rule FRZ-26).
+            cancel = self._held_events.pop((device_id, TODO_KIND_FROZEN), None)
+            if cancel is not None:
+                cancel()
+            self._record_incident(
+                device_id, name, TODO_KIND_FROZEN, INCIDENT_ACTION,
+                cause=ACTION_GAP_GREW, windows=grew,
+            )
+            self.fire_withdrawn(device_id, name, [TODO_KIND_FROZEN], WITHDRAWN_REASON_GAP_GREW)
         silenced = sort_kinds(
             [k for k in kinds if k != UPSTREAM_KIND and k in (muted or ())]
         )
@@ -1435,7 +1463,11 @@ class ProblemListMixin:
                 device_id, name, silenced, WITHDRAWN_REASON_MUTED
             )
         for kind in sort_kinds(
-            [k for k in kinds if k != UPSTREAM_KIND and k not in silenced]
+            [
+                k for k in kinds
+                if k != UPSTREAM_KIND and k not in silenced
+                and not (grew is not None and k == TODO_KIND_FROZEN)
+            ]
         ):
             # The incident being closed is what this recovery is
             # about, so its opening is what the duration measures.
@@ -1587,6 +1619,21 @@ class ProblemListMixin:
                 opened, (int, float)
             ):
                 opened = None
+            grew = self._take_gap_grew(device_id) if kind == TODO_KIND_FROZEN else None  # type: ignore[attr-defined]
+            if grew is not None:
+                # Its wait grew past its silence; it has not spoken, so
+                # nothing recovered (rule FRZ-26).
+                cancel = self._held_events.pop((device_id, kind), None)
+                if cancel is not None:
+                    cancel()
+                self._record_incident(
+                    device_id, problem["name"], kind, INCIDENT_ACTION,
+                    cause=ACTION_GAP_GREW, windows=grew,
+                )
+                self.fire_withdrawn(
+                    device_id, problem["name"], [kind], WITHDRAWN_REASON_GAP_GREW
+                )
+                continue
             if self._kind_muted(device_id, kind):
                 # A person muted it; nothing recovered (rule MUTE-07).
                 cancel = self._held_events.pop((device_id, kind), None)

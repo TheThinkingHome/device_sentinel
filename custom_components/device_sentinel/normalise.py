@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.30.7 (2026-11-26)
+# File: normalise.py, Version: 0.30.12 (2026-11-28)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (rule STOR-09).
@@ -65,6 +65,7 @@ from .const import (
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_FIRST_LOW,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_DAY_LEVELS,
     DEV_BATTERY_DAY_COUNTS,
@@ -336,6 +337,7 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_DAILY_PREVIOUS: LEVEL_SERIES,
     DEV_BATTERY_REPLACED_AT: STRING,
     DEV_BATTERY_FIRST_LOW: STRING,
+    DEV_BATTERY_VOLTS_FALLING_SINCE: STRING,
     DEV_BATTERY_REPLACED_PENDING: LEVEL,
     DEV_BATTERY_DAY_LEVELS: LEVEL_SERIES,
     DEV_BATTERY_DAY_COUNTS: INT_SERIES,
@@ -981,6 +983,10 @@ INCIDENT_SHAPE: dict[str, str] = {
     # The signal when a device went unavailable, on opening
     # rows only; absent from every other row and every older one.
     "signal": NULLABLE_MAPPING,
+    # The wait before and after, on a row whose frozen verdict ended
+    # because the wait grew past the silence (rule FRZ-26).
+    "windows": NULLABLE_MAPPING,
+    "volts": STRING,
 }
 
 EPISODE_SHAPE: dict[str, str] = {
@@ -1112,7 +1118,7 @@ PROBE_SHAPE: dict[str, str] = {
 TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     # The replaced-by-worse mark: absent from every older row, which
     # is not damage.
-    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded", "signal"})),
+    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded", "signal", "windows", "volts"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
     DATA_SHORT_DROPS: (DROP_SHAPE, frozenset()),

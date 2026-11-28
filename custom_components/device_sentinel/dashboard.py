@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.30.10 (2026-11-27)
+# File: dashboard.py, Version: 0.30.12 (2026-11-28)
 
 """What the dashboard reads from the coordinator.
 
@@ -35,6 +35,7 @@ from datetime import date, timedelta
 from .daily_dates import FAMILY_GAP, FAMILY_SIGNAL, dates_for, on_calendar
 from .device_addresses import addresses, shown
 from .battery_projection import battery_projection
+from .detect_battery import volts_coarse
 from .report_battery import (
     battery_calendar,
     battery_heard_days,
@@ -112,6 +113,8 @@ from .const import (
     SYS_UNCLEAN_RESTART,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
+    DEV_BATTERY_VOLTS_TODAY_HIGH,
     DATA_EPISODES,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
@@ -608,6 +611,8 @@ class IntegrationViewMixin:
         ("stopped reporting", TODO_KIND_FROZEN),
         ("unknown", TODO_KIND_UNKNOWN),
         ("signal", TODO_KIND_RAILED_SIGNAL),
+        ("decay is accelerating", TODO_KIND_FALLING_BATTERY),
+        ("voltage is falling", TODO_KIND_FALLING_BATTERY),
         ("empty in", TODO_KIND_FALLING_BATTERY),
         ("reaches", TODO_KIND_FALLING_BATTERY),
         ("battery", TODO_KIND_LOW_BATTERY),
@@ -1872,6 +1877,11 @@ class DeviceViewMixin:
             # A coin cell's resting voltage as read and as judged, with the
             # temperature it was corrected for (rule BAT-03).
             "resting": self.resting_volts_view(device_id, record) if device_id else None,  # type: ignore[attr-defined]
+            # Whether its voltage comes only in tenths, judged a step
+            # lower (rule BAT-03).
+            "volts_coarse": volts_coarse(record),
+            # A coin cell whose voltage is falling, near its end (rule BAT-03).
+            "volts_falling": record.get(DEV_BATTERY_VOLTS_FALLING_SINCE) is not None,
         }
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
@@ -2473,8 +2483,17 @@ class TrendsViewMixin:
                     # first week's average to the last's, rather than a
                     # rate per day, which describes a wobble.
                     item["month_drop"] = battery_month_drop(row.get("series") or [])
+                # The voltage beside the level, and the coin cell scale
+                # it is read against (rule BAT-03).
+                record = (self.data[DATA_DEVICES].get(device_id) or {}) if isinstance(device_id, str) else {}
+                view = self.resting_volts_view(device_id, record) if record else None  # type: ignore[attr-defined]
+                volts = view["volts"] if view else record.get(DEV_BATTERY_VOLTS_TODAY_HIGH)
+                item["volts"] = f"{volts:.1f}" if isinstance(volts, (int, float)) and not isinstance(volts, bool) else None
+                item["coin"] = bool(self.coin_cell(device_id)) if isinstance(device_id, str) else False  # type: ignore[attr-defined]
                 out.append(item)
             return out
+
+        problems, others = self._battery_page_groups(report, listed)
 
         return {
             "cells": sum(model["cells"] for model in models),
@@ -2483,6 +2502,10 @@ class TrendsViewMixin:
             "falling": listed(report["falling"], falling=True),
             "low": listed(report["low"]),
             "steady": listed(report["flat"]),
+            # Batteries With Problems, worst first, and every other cell
+            # (rule BAT-18).
+            "problems": problems,
+            "others": others,
             "unreadable": [
                 {"device_id": row.get("device_id"), "name": row.get("name"), "level": row.get("level"),
                  "type": type_of(row.get("device_id"))}
@@ -2497,6 +2520,71 @@ class TrendsViewMixin:
             "thresholds": self.low_thresholds,  # type: ignore[attr-defined]
             "learning": self._battery_learning(),
         }
+
+    def _battery_page_groups(
+        self, report: dict[str, Any], listed: Any
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Batteries With Problems and Other Cells, as Battery Trends
+        shows them (rule BAT-18).
+
+        A problem is a cell below its threshold, one whose decay is
+        accelerating, or a coin cell whose voltage is falling, said once
+        in that order, worst first, as the Problem List says it. Every
+        other cell is an other cell: falling at a steady pace with its
+        time left, holding its charge, or not judged, above three times
+        its threshold.
+        """
+        falling = {row["device_id"]: row for row in listed(report["falling"], falling=True)}
+        falling_rows = {row["device_id"]: row for row in report["falling"]}
+        volts = {row["device_id"]: row for row in self.battery_falling_list if row.get("volts")}
+        problems: list[dict[str, Any]] = []
+        told: set[str] = set()
+        for item in listed(report["low"]):
+            source = falling_rows.get(item["device_id"])
+            item.update({
+                "state": "low",
+                "month_drop": item.get("month_drop"),
+                # Empty in, once a low cell is measurably falling (rule BAT-13).
+                "left": self.battery_until_words(source) if source else None,
+            })
+            problems.append(item)
+            told.add(item["device_id"])
+        for device_id, item in falling.items():
+            if device_id in told or item.get("reading") != READING_ACCELERATING:
+                continue
+            item.update({"state": "accelerating", "left": item.get("until") or item.get("left")})
+            item["month_drop"] = battery_month_drop(falling_rows[device_id].get("series") or [])
+            problems.append(item)
+            told.add(device_id)
+        flat = {row["device_id"]: row for row in listed(report["flat"])}
+        for device_id, row in volts.items():
+            if device_id in told:
+                continue
+            item = flat.get(device_id) or falling.get(device_id)
+            if item is None:
+                continue
+            series = (falling_rows.get(device_id) or {}).get("series")
+            if series is not None:
+                item["month_drop"] = battery_month_drop(series)
+            # No time left until there is data to forecast from (rule BAT-03).
+            item.update({"state": "volts", "since": row.get("since"), "left": None})
+            problems.append(item)
+            told.add(device_id)
+        others: list[dict[str, Any]] = []
+        for device_id, item in falling.items():
+            if device_id in told:
+                continue
+            item["month_drop"] = battery_month_drop(falling_rows[device_id].get("series") or [])
+            item.update({"state": "steady", "left": item.get("until") or item.get("left")})
+            others.append(item)
+        for device_id, item in flat.items():
+            if device_id in told:
+                continue
+            level = item.get("level")
+            judged = isinstance(level, (int, float)) and level <= self.battery_ceiling_for(device_id)
+            item.update({"state": "holding" if judged else "not_judged", "left": None})
+            others.append(item)
+        return problems, others
 
     def _battery_learning(self) -> dict[str, Any] | None:
         """While no battery has four weeks heard, the box at the top of
