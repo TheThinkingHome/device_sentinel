@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.30.7 (2026-11-26)
+# File: test_notifications.py, Version: 0.30.11 (2026-11-27)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -641,7 +641,8 @@ async def test_card_omits_acknowledged_device():
     await h.async_update_card()
     domain, service, payload = h.sent[0]
     assert "Door Acked" not in payload["message"]
-    assert "All devices reporting" in payload["message"]
+    # Not named, and counted rather than called all well (rule NOTE-11).
+    assert payload["message"].startswith("No new problems. 1 acknowledged on the Problem List.")
 
 
 async def test_card_suppressed_and_dismissed_when_toggle_off():
