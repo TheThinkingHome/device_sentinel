@@ -45,6 +45,11 @@
             "battery_type": "CR123A"
         },
         {
+            "manufacturer": "_TYZB01_o63ssaah",
+            "model": "TS0207",
+            "battery_type": "CR2032"
+        },
+        {
             "manufacturer": "_TYZB01_ohyttvf6",
             "model": "TS0205",
             "battery_type": "CR123A"
@@ -665,6 +670,12 @@
             "battery_type": "Rechargeable"
         },
         {
+            "manufacturer": "_TZE200_jxyhl4eq",
+            "model": "TS0601",
+            "battery_type": "AAA",
+            "battery_quantity": 2
+        },
+        {
             "manufacturer": "_TZE200_kb5noeto",
             "model": "TS0601",
             "battery_type": "AAA",
@@ -743,6 +754,12 @@
             "model": "TS0601",
             "battery_type": "AA",
             "battery_quantity": 3
+        },
+        {
+            "manufacturer": "_TZE200_tyffvoij",
+            "model": "TS0601",
+            "battery_type": "AAA",
+            "battery_quantity": 2
         },
         {
             "manufacturer": "_TZE200_uebojraa",
@@ -2102,6 +2119,12 @@
             "battery_type": "Rechargeable"
         },
         {
+            "manufacturer": "Aroha",
+            "model": "SM1M",
+            "model_id": "22552",
+            "battery_type": "CR123A"
+        },
+        {
             "manufacturer": "arre home LLC",
             "model": "Temperature Sensor",
             "hw_version": "2.0",
@@ -2795,6 +2818,12 @@
             "manufacturer": "Danfoss",
             "model": "Ally thermostat (014G2461)",
             "battery_type": "AA",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Danfoss",
+            "model": "Danfoss Icon2 RT",
+            "battery_type": "AAA",
             "battery_quantity": 2
         },
         {
@@ -5455,6 +5484,12 @@
         },
         {
             "manufacturer": "HOBEIAN",
+            "model": "Smart knob",
+            "model_id": "ZG-101ZD",
+            "battery_type": "CR2450"
+        },
+        {
+            "manufacturer": "HOBEIAN",
             "model": "Soil moisture sensor",
             "model_id": "ZG-303Z",
             "hw_version": "0122052017",
@@ -7548,6 +7583,12 @@
         },
         {
             "manufacturer": "Nous",
+            "model": "Carbon monoxide alarm",
+            "model_id": "E12",
+            "battery_type": "CR123A"
+        },
+        {
+            "manufacturer": "Nous",
             "model": "Smoke sensor (E8)",
             "model_id": "E8",
             "battery_type": "CR123A"
@@ -8980,10 +9021,21 @@
         },
         {
             "manufacturer": "Shelly",
+            "model": "BLU H&T Display ZB",
+            "battery_type": "CR2032",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Shelly",
             "model": "BLU H&T display Zigbee",
             "model_id": "SBHT-103C",
             "battery_type": "CR2032",
             "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Shelly",
+            "model": "BLU H&T ZB",
+            "battery_type": "CR2032"
         },
         {
             "manufacturer": "Shelly",
@@ -9029,6 +9081,12 @@
             "manufacturer": "Shelly",
             "model": "Shelly BLU Motion",
             "model_id": "SBMO-003Z",
+            "battery_type": "CR2477"
+        },
+        {
+            "manufacturer": "Shelly",
+            "model": "Shelly BLU Motion ZB",
+            "model_id": "SBMO-103Z",
             "battery_type": "CR2477"
         },
         {
@@ -10200,6 +10258,12 @@
             "manufacturer": "switchbot",
             "model": "WoIOSensorTH",
             "battery_type": "AAA",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "switchbot",
+            "model": "WoKeypadTouch",
+            "battery_type": "CR123A",
             "battery_quantity": 2
         },
         {
