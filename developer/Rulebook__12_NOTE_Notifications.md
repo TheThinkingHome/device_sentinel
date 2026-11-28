@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Notifications (NOTE)
 
-*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.11. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 November 2026, on Device Sentinel 0.30.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel tells people and automations about the Problem List: phone pushes, the two priority tiers, quiet hours, the persistent card, the bus events, and the words they share with the Daily Brief. What reaches the Problem List, and when a change counts as new or as a recovery, is under [LIST](Rulebook__11_LIST_Problem_List.md). The Daily Brief itself, its targets and its email are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md). The push for an upstream outage is under [UP](Rulebook__07_UP_Upstream_Outages.md). Repairs cards are under [REP](Rulebook__16_REP_Repairs.md).
 
@@ -116,7 +116,7 @@ This section covers how Device Sentinel tells people and automations about the P
 - **`device_sentinel_fault`** when a device's line is added, gains a family it did not have, or carries a battery running down that crosses into low. It fires once per device, with its kinds worst first, "renewed" when an unticked item comes back, and the battery level and battery type or the signal value when a kind needs them.
 - **`device_sentinel_recovered`** when the worst kind on a line clears, with how long it lasted and what ended it. The next kind fires in turn when it clears. A device that has stopped reporting recovers only when it reports again: frozen giving way to unavailable, or unavailable to frozen, while it stays silent fires no recovery. The event means the worst thing is no longer wrong, not that the device is well.
 - **`device_sentinel_acknowledged`** when a person ticks the item. Unticking has no event of its own; the fault fires again, renewed.
-- **`device_sentinel_withdrawn`** when a line leaves without a recovery, with its kinds and the reason: set_aside, muted or removed.
+- **`device_sentinel_withdrawn`** when a line leaves without a recovery, with its kinds and the reason: set_aside, muted, removed, or gap_grew, a frozen device whose wait grew past its silence (since 0.30.12; [FRZ-26](Rulebook__05_FRZ_Freeze.md#frz-26-a-wait-that-grows-past-a-silence)).
 - **`device_sentinel_upstream_down` and `device_sentinel_upstream_restored`** for an outage (see [UP](Rulebook__07_UP_Upstream_Outages.md)).
 - **`device_sentinel_brief_sent`** (since 0.30.2) when a Daily Brief is sent, on its schedule or from the dashboard's menu ([BRIEF-18](Rulebook__13_BRIEF_Daily_Brief.md#brief-18-send-brief-from-the-dashboard)), with `on_demand`, `from` and `to` (the hours it covers), `targets` and `sent`. Never the brief's text.
 

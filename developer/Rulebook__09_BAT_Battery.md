@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Battery (BAT)
 
-*Version: rulebook, 26 November 2026, on Device Sentinel 0.30.8. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 November 2026, on Device Sentinel 0.30.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel reads a battery, says when it is low, judges where it is heading, and keeps what a better forecast will need. What powers a device (the Power row and its answers) is under [DEV](Rulebook__04_DEV_Device_Identity.md). Battery mutes are in [BAT-04](#bat-04-battery-mutes), and muting in general is under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md).
 
@@ -10,8 +10,9 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **Percentage first:** a percentage is chosen over a binary low sensor. The binary is used only where there is no percentage, and reads "on" as low.
 - **Several to choose from:** one from the device's own integration is chosen over one another integration added, and the lowest entity id breaks a tie.
 - **Added entities:** an entity another integration added, such as Battery Notes', never counts as the device reporting.
+- **A store of energy (since 0.30.12; James, 27 November 2026):** an EcoFlow power station's battery sensors (ecoflow_cloud, ecoflow_api) give its charge, which is used and refilled, not a cell wearing out. They are not read, so it is never called low or falling.
 
-*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_foreign_entities.py`](../tests/test_foreign_entities.py).
+*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_foreign_entities.py`](../tests/test_foreign_entities.py), [`test_energy_store_battery.py`](../tests/test_energy_store_battery.py).
 
 ### BAT-02 What Counts as a Reading
 
@@ -28,8 +29,11 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 **A battery is low when its reading is at or below the threshold for its battery type (since 0.30.0): Alkaline Batteries 10%, Lithium and Other Batteries 20%, Rechargeable Batteries 20%, each a setting on the Low Battery screen.**
 - **Which type:** from the owner's answer or Battery Notes' library ([DEV-08](Rulebook__04_DEV_Device_Identity.md)). Alkaline: AA, AAA, AAAA, C, D and their LR names. Rechargeable: anything named rechargeable, an LIR cell, an 18650, LiFePO4 or NiMH. Lithium and other: coin and CR cells, lithium AA and AAA, everything else, and a battery whose type is not known.
 - **Why these:** an alkaline cell at 10% still has weeks of use. A lithium cell holds near full and then falls fast, and a rechargeable is charged, not replaced.
-- **A coin cell's voltage:** a device with one coin or CR cell that reports its voltage is also low at a resting voltage of 2.9 V or under, wherever its percentage reads, and clears above 2.95 V. Its resting voltage is the higher of today's highest and the last day's, so a reading in a transmit's sag decides nothing. Not a setting.
-- **A cold battery's voltage (since 0.30.8; James, 26 November 2026):** a cell's voltage falls in the cold and comes back when it warms. So where the device's own temperature at the moment of a resting voltage is below 10 °C, the voltage is corrected to what it would read at 20 °C: 5.5 mV a degree for one coin cell, measured on a tester's outdoor CR2032, and 3 mV a degree for each AA or AAA cell, alkaline or lithium, from the makers' charts, times the number of cells. Correction is per chemistry, never learned per device. A coin cell's 2.9 V line judges the corrected voltage; nothing judges an AA or AAA by its voltage, so for them it is only shown. The device page shows the reading and then the corrected value, "Resting voltage 2.844 V (2.965 V corrected for −2 °C).", with the temperature in Home Assistant's unit; a coin cell shows its resting voltage always, an AA or AAA pack only when it is corrected. Without a temperature, at 10 °C or warmer, or AA and AAA cells with no count, the voltage is read as it is. Charts and forecasts do not read voltage yet.
+- **Low is the percentage only (since 0.30.12; James, 28 November 2026):** a battery is low by its percentage, never by its voltage. A coin cell's voltage is a state of its own, voltage falling, below.
+- **Voltage falling (since 0.30.12; James, 28 November 2026):** a device with one coin or CR cell that reports its voltage has its voltage falling at a resting voltage of 2.899 V or under, wherever its percentage reads, and it clears above 2.949 V. It is said as 2.9 V everywhere, to a tenth. Its resting voltage is the higher of today's highest and the last day's, so a reading in a transmit's sag decides nothing. Not a setting. It is listed on the Problem List as "battery voltage is falling, 2.6 V (new 3.0, spent 2.0)", counted on the Battery: falling sensor with the event kind `falling_battery`, and named on Battery Trends under Batteries With Problems. It sends no push, at its start or at its end. Its history in the Daily Brief says "battery voltage is falling: 2.8 V since 8:17 AM. The cell is near its end; replace it regardless of its percentage.", and the brief's battery lines add "Battery voltage falling: <name> (2.6 V)." It has no time left until there is data to forecast from: each day's highest and lowest voltage is already kept with the battery's day ranges for that. A cell first marked inside the startup grace is marked when the grace closes. A new battery clears it.
+- **Low wins (since 0.30.12; James, 28 November 2026):** a cell low by its percentage is low, never voltage falling as well, and a coin cell under the line says both in one place, "battery 9%, 2.4 V".
+- **Reported in tenths (since 0.30.12; James, 27 November 2026):** most Zigbee devices report their voltage in tenths of a volt, so 2.9 stands for anything from 2.90 to 2.99 V. A device whose voltages, today and on its last three kept days, have all been whole tenths is coarse, and its voltage is falling at 2.8 V or under and clears above 2.85 V. A millivolt reading in that window makes it fine, judged just under 2.9 V, until it ages out. Days before the device's last firmware update are not read, since an update can change how it reports. Its device page says so.
+- **A cold battery's voltage (since 0.30.8; James, 26 November 2026):** a cell's voltage falls in the cold and comes back when it warms. So where the device's own temperature at the moment of a resting voltage is below 10 °C, the voltage is corrected to what it would read at 20 °C: 5.5 mV a degree for one coin cell, measured on a tester's outdoor CR2032, and 3 mV a degree for each AA or AAA cell, alkaline or lithium, from the makers' charts, times the number of cells. Correction is per chemistry, never learned per device. A coin cell's voltage falling line judges the corrected voltage; nothing judges an AA or AAA by its voltage, so for them it is only shown. The device page shows the reading and then the corrected value, "Resting voltage 2.844 V (2.965 V corrected for −2 °C).", with the temperature in Home Assistant's unit; a coin cell shows its resting voltage always, an AA or AAA pack only when it is corrected. Without a temperature, at 10 °C or warmer, or AA and AAA cells with no count, the voltage is read as it is. Charts and forecasts do not read voltage yet.
 - **The upgrade (since 0.30.0):** every house moved to these defaults, whatever single threshold it had, a breaking change told once in the Daily Brief ([BRIEF-17](Rulebook__13_BRIEF_Daily_Brief.md#brief-17-a-breaking-change-told-once)).
 - **Clearing:** a low battery clears when it reads above its threshold plus 3 (23 percent at 20). So a cell that hovers near the line, or sags under load and recovers at rest, does clear.
 - **When a reading is judged:** as soon as it arrives. A value the device sends again unchanged after an outage is recorded and judged at its next change.
@@ -37,7 +41,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **Startup grace:** a battery that first reads low inside the startup grace is held until the grace closes, then judged. A low that stood before the restart stays.
 - **The words:** while the level reads at or below the threshold plus 3, the brief, and the phone push that uses its words, say "battery crossed the threshold on <date>. Its current level is <N>%." Back above that, they say "battery read low, since recovered", or "battery read low, since replaced or recharged" at 95 percent or over, with no number.
 
-*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_thresholds_by_type.py`](../tests/test_battery_thresholds_by_type.py), [`test_coin_cell_cold_voltage.py`](../tests/test_coin_cell_cold_voltage.py), [`test_battery_level_text.py`](../tests/test_battery_level_text.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
+*Proof:* [`test_battery.py`](../tests/test_battery.py), [`test_battery_thresholds_by_type.py`](../tests/test_battery_thresholds_by_type.py), [`test_coin_cell_cold_voltage.py`](../tests/test_coin_cell_cold_voltage.py), [`test_coin_cell_coarse_volts.py`](../tests/test_coin_cell_coarse_volts.py), [`test_coin_cell_voltage_falling.py`](../tests/test_coin_cell_voltage_falling.py), [`test_battery_level_text.py`](../tests/test_battery_level_text.py), [`test_battery_wording.py`](../tests/test_battery_wording.py).
 
 ### BAT-04 Battery Mutes
 
@@ -134,7 +138,7 @@ This section covers how Device Sentinel reads a battery, says when it is low, ju
 - **Today:** it is still falling.
 - **Recent drops:** the days it was heard among the last 14 calendar days hold at least three day-to-day drops. So a device with silent days has fewer days to find them in.
 
-One slow week does not take accelerating off. An accelerating battery reads "Falling faster each week, about N points a week today."
+One slow week does not take accelerating off. An accelerating battery reads "Battery decay is accelerating, about N points a week today.", and one falling at a steady pace "Battery charge is falling at a steady pace, about N points a week." (since 0.30.12; James, 28 November 2026).
 
 *Proof:* [`test_battery_trend.py`](../tests/test_battery_trend.py), [`test_battery_projection.py`](../tests/test_battery_projection.py).
 
@@ -155,11 +159,12 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 ### BAT-14 Warnings
 
 **There are two warning levels. Both are decided by the near end of the time left against Days Till Low Warning (7 to 30 days, default 30).**
-- **Full warning:** an accelerating battery whose near end is inside Days Till Low Warning, and which is not already low, gets an item on the Problem List, a phone push, the Daily Brief and the Battery: falling sensor.
-- **Batteries to Watch:** a battery falling at a steady pace inside Days Till Low Warning, and not already low, is listed under Batteries to Watch in the Daily Brief and on Battery Trends. It gets no push and no Problem List item.
+- **Full warning:** an accelerating battery whose near end is inside Days Till Low Warning, and which is not already low, gets an item on the Problem List, a phone push, the Daily Brief and the Battery: falling sensor. It reads "battery decay is accelerating, reaches 15% in about 2 weeks" (since 0.30.12; James, 28 November 2026). Its push says "<name> battery decay is accelerating, …" when it starts and "<name> battery decay has slowed" when it ends.
+- **Batteries to Watch:** a battery falling at a steady pace inside Days Till Low Warning, and not already low, is listed under Batteries to Watch in the Daily Brief, and under Other Cells on Battery Trends with its time left. It gets no push and no Problem List item.
 - **Already low:** a battery already low is left out of both, since it has its own line.
-- **Low and falling:** a device both low and falling reads as one line, the level and then the direction: "battery 16%, empty in about 2 weeks".
-- **No time left:** where no time left can be given, the falling clause reads "battery running down".
+- **One line:** a device both low and accelerating reads as one line, the level and then the direction: "battery 16%, decay is accelerating, empty in about 2 weeks".
+- **No time left:** where no time left can be given, the clause reads "battery decay is accelerating".
+- **Voltage falling:** a coin cell whose voltage is falling is counted on the Battery: falling sensor too, with no push ([BAT-03](#bat-03-low-battery)). An accelerating cell is counted once, as accelerating.
 
 *Proof:* [`test_battery_watch.py`](../tests/test_battery_watch.py), [`test_battery_report.py`](../tests/test_battery_report.py), [`test_battery_ceiling.py`](../tests/test_battery_ceiling.py), [`test_falling_surfaces.py`](../tests/test_falling_surfaces.py).
 
@@ -201,13 +206,14 @@ One slow week does not take accelerating off. An accelerating battery reads "Fal
 ### BAT-18 Battery Trends
 
 **Battery Trends reads the same weeks as the device page.**
-- **Batteries to Watch:** lists the steady fallers of [BAT-14](#bat-14-warnings).
-- **Falling:** shows the five weeks and the pace a week.
-- **Other Cells:** shows each remaining battery's last four weeks.
+- **The order (since 0.30.12; James, 28 November 2026):** the summary, the type picker, The Bank, Batteries With Problems, how to read that table, By Model, then Other Cells.
+- **Batteries With Problems:** every battery below its threshold, accelerating, or with its voltage falling ([BAT-03](#bat-03-low-battery)), each once, worst first in that order. Chips show all or one state, with their counts. Its columns are DEVICE, TYPE, STATE, LEVEL, VOLTAGE (with "new 3.0, spent 2.0" under a coin cell's), CELL, 4 WEEKS, SINCE and TIME LEFT. A falling voltage reads "not yet predicted"; a battery below its threshold reads its "empty in" once it is measurably falling, else "not measurably falling".
+- **How to read this table:** James's paragraph under it says what below the threshold, voltage falling, battery decay accelerating and charge falling at a steady pace mean.
+- **Other Cells:** every other battery, in a box across the page that opens shut, with a Show button: a battery whose charge is falling at a steady pace, with its time left; one holding its charge; and one above three times its threshold, "not judged". The page no longer has its own Batteries to Watch or Falling sections.
 - **By Model:** shows the points a week for each model. A device with no maker or model, or one that stands for none ([DEV-06](Rulebook__04_DEV_Device_Identity.md#dev-06-what-powers-a-device)), is a row of its own, not pooled with unrelated hardware (since 0.28.11), with a type chosen too. Its maker and model are followed by the device's name, so two such rows can be told apart in Simple, which leaves out WHICH ONE (since 0.29.3).
-- **The summary:** splits the batteries that report a level into three parts that add up: falling, at or under the threshold and not falling, and not falling or not yet judged.
+- **The summary:** splits the batteries that report a level into parts that add up, each counted once in its worst state: below the threshold, voltage falling, accelerating, charge falling at a steady pace, and not judged or steady ("not yet judged" while learning).
 
-*Proof:* [`test_dashboard_trends.py`](../tests/test_dashboard_trends.py), [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_type_filters.js`.
+*Proof:* [`test_dashboard_trends.py`](../tests/test_dashboard_trends.py), [`test_coin_cell_voltage_falling.py`](../tests/test_coin_cell_voltage_falling.py), [`tools/panel_checks/check_battery_weeks.js`](../tools/panel_checks/check_battery_weeks.js), `check_type_filters.js`.
 
 ### BAT-19 Battery Trends While Learning
 

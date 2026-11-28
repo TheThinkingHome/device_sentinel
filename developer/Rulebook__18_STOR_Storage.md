@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Storage (STOR)
 
-*Version: rulebook, 21 November 2026, on Device Sentinel 0.30.0. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 What Device Sentinel keeps on disk, how each file is written, checked, backed up and repaired, how long things are kept, what the diagnostics download carries, and what removing the integration deletes. The Storage Write Interval and How Much History to Keep are set on the Advanced screen (CFG); the Data Trim tool is [CFG-10](Rulebook__17_CFG_Settings.md#cfg-10-data-trim). The repair cards themselves are under [REP](Rulebook__16_REP_Repairs.md); the brief's sentences about storage are under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -242,7 +242,7 @@ What Device Sentinel keeps on disk, how each file is written, checked, backed up
 ### STOR-24 Removing the Integration
 
 **Deleting Device Sentinel from Home Assistant deletes only what it wrote.** A restart or a reload deletes nothing.
-- **Keep settings (opt-in):** Advanced settings can keep the config entry's options, the answers file ([STOR-20](#stor-20-the-answers-file)), and its last-good copy on removal. Re-adding the integration on the same Home Assistant installation loads them normally, applying the options migrations. One-off data trim selections are never kept. Learned data, history and reports are deleted. Home Assistant owns the areas, names and labels of the watched devices; the keep option does not copy or overwrite them. Removing with the option off deletes both the saved options and the answers file and its copies.
+- **Keep Settings After Removal (opt-in, since 0.30.12; contributed by Reifircax):** a switch at the end of the Advanced screen keeps the config entry's options, the answers file ([STOR-20](#stor-20-the-answers-file)), and its last-good copy on removal. Re-adding the integration on the same Home Assistant installation loads them normally, applying the options migrations. One-off data trim selections are never kept. Learned data, history and reports are deleted. Home Assistant owns the areas, names and labels of the watched devices; the keep option does not copy or overwrite them. Removing with the option off deletes both the saved options and the answers file and its copies.
 - **What goes:** its four storage files with each copy beside them, the stand-ins file for the diagnostics download ([STOR-21](#stor-21-the-diagnostics-download)), the old power file if one is left, its own reports and the diagnostics key, the stack probe file and its numbered copies, the diagnostic folder, trim_backups and the www folder.
 - **Its folder in `config`:** it goes only if it is then empty, and the log says what was left.
 - **Failures:** each target is removed on its own, and a failure is logged, never raised.

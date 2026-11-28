@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Freeze (FRZ)
 
-*Version: rulebook, 14 November 2026, on Device Sentinel 0.29.1. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 28 November 2026, on Device Sentinel 0.30.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 This section covers how Device Sentinel learns each device's reporting rhythm, how long it waits before calling a device frozen, which silences it learns from and which it sets aside, and how restarts, stops and clock steps are kept out of both. A device whose entities read unavailable is under [UNAV](Rulebook__06_UNAV_Unavailable.md). Freeze and unavailable mutes are under [MUTE](Rulebook__03_MUTE_Muting_and_Exclusion.md). Which devices are watched at all is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). The stacks' own readers (ESPHome connections, Z-Wave dead nodes, Matter, hubs) are under [STACK](Rulebook__08_STACK_Stacks.md). Upstream outages are under [UP](Rulebook__07_UP_Upstream_Outages.md).
 
@@ -249,3 +249,13 @@ This section covers how Device Sentinel learns each device's reporting rhythm, h
 - **On an older version:** a version before this rule leaves the list alone and counts every day.
 
 *Proof:* [`test_removed_days.py`](../tests/test_removed_days.py), [`tools/panel_checks/check_removed_days.js`](../tools/panel_checks/check_removed_days.js).
+
+### FRZ-26 A Wait That Grows Past a Silence
+
+**A device listed frozen whose wait grows past its silence, at midnight or because a setting changed, leaves the Problem List without having reported. It is not a recovery (since 0.30.12; James, 28 November 2026).**
+- **The words:** the log and the Daily Brief say "<name> was removed from the Problem List at 12:01 AM without reporting because its gap grew from 2.2h to 8.4h at midnight", and the brief's table says "left the Problem List: its gap grew from 2.2h to 8.4h and it has not been heard yet". "At midnight" is said when it left in the first quarter hour after midnight.
+- **What fires:** `device_sentinel_withdrawn` with the reason gap_grew ([NOTE-12](Rulebook__12_NOTE_Notifications.md)). No push and no recovered event, since the device has not been heard.
+- **Kept:** the row in the log keeps the wait before and after. The wait before is counted from when the device went silent, so hours it was not watched are left out ([UNAV-07](Rulebook__06_UNAV_Unavailable.md)).
+- **A device that reports:** a frozen device that is heard again recovers as before, and so does one heard in the minute before its line leaves ([LIST-06](Rulebook__11_LIST_Problem_List.md)).
+
+*Proof:* [`test_frozen_gap_grew.py`](../tests/test_frozen_gap_grew.py), [`test_frozen_sentence_times.py`](../tests/test_frozen_sentence_times.py).

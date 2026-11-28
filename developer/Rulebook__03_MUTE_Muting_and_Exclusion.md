@@ -1,6 +1,6 @@
 # Device Sentinel Rulebook: Muting and Exclusion (MUTE)
 
-*Version: rulebook, 10 November 2026, on Device Sentinel 0.28.10. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
+*Version: rulebook, 27 November 2026, on Device Sentinel 0.30.12. Index and how the IDs work: [Main__Rulebook.md](Main__Rulebook.md).*
 
 A person makes two choices about what Device Sentinel reports. Excluding stops the watching; muting stops only the reporting. What else sets a device aside is under [WATCH](Rulebook__02_WATCH_What_Is_Watched.md). A hub's mute covering the devices it controls is under [STACK](Rulebook__08_STACK_Stacks.md). Battery mutes are also in [BAT](Rulebook__09_BAT_Battery.md), and the brief leaving out what a device is muted for is under [BRIEF](Rulebook__13_BRIEF_Daily_Brief.md).
 
@@ -19,7 +19,7 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 ### MUTE-02 Excluded Integrations
 
 **An excluded integration's devices, their open episodes and incidents included, are discarded at the next local midnight.**
-- **A new install:** the list holds mobile_app, fully_kiosk, spook and ping, the routers tplink_router and unifi, and Music Assistant, Alexa Media Player, Google Cast and the television and media integrations (music_assistant, alexa_media, cast, webostv, androidtv, androidtv_remote, samsungtv, apple_tv, dlna_dmr). On a new install, a router integration first seen, FRITZ!Box, AsusWRT and the others Device Sentinel knows as well as the two above, is added to the list.
+- **A new install:** the list holds mobile_app, fully_kiosk, spook and ping, the routers tplink_router and unifi, and Music Assistant, Alexa Media Player, Google Cast and the television and media integrations (music_assistant, alexa_media, cast, webostv, androidtv, androidtv_remote, samsungtv, apple_tv, dlna_dmr). On a new install, a router integration first seen, FRITZ!Box, AsusWRT, Bbox (since 0.30.12) and the others Device Sentinel knows as well as the two above, is added to the list.
 - **A house that already exists:** nothing is added behind the person's back.
 - **The list is the person's:** an integration added to the list automatically by an earlier release stays as it is, and one taken off it stays off.
 - **Its card:** each integration Device Sentinel recommends excluding has its own card on the Recommendations tab, in Simple and Advanced alike ([REC-03](Rulebook__15_REC_Recommendations.md#rec-03-integrations-worth-excluding)). The card names it, says why it is usually excluded and lists its devices, with an Exclude button and a tick to keep watching it.
@@ -29,7 +29,7 @@ A person makes two choices about what Device Sentinel reports. Excluding stops t
 - **The recommended list:** the integrations Device Sentinel recommends excluding are in one list, each group with one reason, which the Integrations tab, the Recommendations tab and the brief all read. It holds the routers and media integrations above, more media players (kodi, plex), phones, tablets and addresses that leave or sleep (mobile_app, ping, fully_kiosk), tools (spook), virtual remotes (hair, smartir, samsung_infrared), readings worked out from another device (tank_volume, thermal_comfort and Home Assistant's helpers). A poller is never on it: since 0.28.10 it is watched as a whole and told when it stops ([UP-18](Rulebook__07_UP_Upstream_Outages.md#up-18-a-line-on-a-poller)).
 - **Printers:** a printer is not on it. One that goes off is a fault worth telling.
 
-*Proof:* [`test_ignored_integrations.py`](../tests/test_ignored_integrations.py), [`test_first_seen_exclusions.py`](../tests/test_first_seen_exclusions.py), [`test_router_entry_disabled.py`](../tests/test_router_entry_disabled.py), [`test_exclusion_recommendations.py`](../tests/test_exclusion_recommendations.py).
+*Proof:* [`test_ignored_integrations.py`](../tests/test_ignored_integrations.py), [`test_first_seen_exclusions.py`](../tests/test_first_seen_exclusions.py), [`test_router_entry_disabled.py`](../tests/test_router_entry_disabled.py), [`test_exclusion_recommendations.py`](../tests/test_exclusion_recommendations.py), [`test_router_bbox.py`](../tests/test_router_bbox.py).
 
 ### MUTE-03 Excluding One Device or One Integration
 
