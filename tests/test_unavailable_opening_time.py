@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_unavailable_opening_time.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_unavailable_opening_time.py, Version: 0.30.12 (2026-11-28)
 
 """A device that became unavailable is dated from when it went (rules
 UNAV-07, BRIEF-07).
@@ -198,7 +198,7 @@ async def test_a_group_with_a_low_battery_is_said_in_words(hass: HomeAssistant):
 
 @pytest.mark.parametrize(("kind", "words"), [
     ("railed_signal", "had a signal railed"),
-    ("falling_battery", "had a battery running down"),
+    ("falling_battery", "had battery decay accelerating"),
 ])
 async def test_a_group_reads_after_its_count(hass: HomeAssistant, kind, words):
     """Not "3 devices signal railed" or "3 devices battery is running

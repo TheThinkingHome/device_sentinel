@@ -1,5 +1,9 @@
 # Copyright (C) 2026 James Lander, The Thinking Home
 # Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_kept_config.py, Version: 0.30.12 (2026-11-27)
 
 """Removing the integration can keep settings, but not learned data (STOR-24)."""
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_read.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_escalation_read.py, Version: 0.30.12 (2026-11-28)
 
 """A problem replaced by a worse one is told as the change it is
 (rules LIST-06, LIST-07).
@@ -163,7 +163,7 @@ async def test_a_row_written_before_the_mark_reads_as_it_did(
 
 
 def _battery_rows(device_id: str, now: float) -> list[dict]:
-    """A forecast that came true: running down for 12 days, then low."""
+    """A forecast that came true: accelerating for 12 days, then low."""
     base = {"device_id": device_id, "name": "Door 2nd Bedroom", "cause": None}
     return [
         {**base, "kind": TODO_KIND_FALLING_BATTERY, "event": INCIDENT_OPENED,
@@ -185,10 +185,10 @@ async def test_a_battery_forecast_coming_true_is_a_change(hass: HomeAssistant):
     in_short = _section(text, "## In Short")
     table = _section(text, "## Last 24 Hours")
     assert (
-        "Door 2nd Bedroom's battery was marked low (14%) from running down at"
+        "Door 2nd Bedroom's battery was marked low (14%) from accelerating at"
         in in_short
     )
-    assert "| battery marked low (14%) from running down |" in table
+    assert "| battery marked low (14%) from accelerating |" in table
     assert "recovered" not in in_short + table
     assert "1 problem started, 0 ended." in table
 
@@ -203,7 +203,7 @@ async def test_the_level_is_left_out_once_the_cell_reads_full(
     coordinator.data[DATA_DEVICES][device.id][DEV_BATTERY_VALUE] = 100.0
     coordinator.data[DATA_INCIDENTS] = _battery_rows(device.id, now)
     table = _section(await _brief(hass, coordinator), "## Last 24 Hours")
-    assert "| battery marked low from running down |" in table
+    assert "| battery marked low from accelerating |" in table
 
 
 def test_a_silence_is_not_a_worse_signal():

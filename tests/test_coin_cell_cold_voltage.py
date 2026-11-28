@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_coin_cell_cold_voltage.py, Version: 0.30.8 (2026-11-26)
+# File: tests/test_coin_cell_cold_voltage.py, Version: 0.30.12 (2026-11-28)
 
 """A coin cell's voltage judged as it would read at 20 °C when it is cold (rule BAT-03).
 
@@ -27,8 +27,10 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_LOW,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
     DEV_BATTERY_TEMP_AT_VOLTS_HIGH,
     DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
 )
 from custom_components.device_sentinel.detect_battery import corrected_volts, note_battery_volts
 from custom_components.device_sentinel.power_source import POWER_OTHER, pencil_cell
@@ -85,7 +87,9 @@ async def _grill(hass: HomeAssistant):
 async def _read(hass, coord, device, entity, level):
     hass.states.async_set(entity, str(level), {"device_class": "battery", "unit_of_measurement": "%"})
     await hass.async_block_till_done()
-    return bool(coord.data["devices"][device.id].get(DEV_BATTERY_LOW))
+    # Under the line by voltage is voltage falling, not low (rule BAT-03).
+    record = coord.data["devices"][device.id]
+    return bool(record.get(DEV_BATTERY_LOW)) or record.get(DEV_BATTERY_VOLTS_FALLING_SINCE) is not None
 
 
 async def test_a_healthy_cell_on_a_frozen_day_is_not_low(hass: HomeAssistant):
@@ -110,11 +114,13 @@ async def test_without_a_temperature_the_reading_is_judged_as_it_is(hass: HomeAs
     assert coord.resting_volts_view(device.id, record)["celsius"] is None
 
 
-async def test_a_cell_really_running_down_is_still_low_in_the_cold(hass: HomeAssistant):
-    """2.70 V at -5 °C is 2.84 V at 20 °C: below the line, low."""
+async def test_a_cell_near_its_end_still_falls_in_the_cold(hass: HomeAssistant):
+    """2.70 V at -5 °C is 2.84 V at 20 °C: below the line, voltage falling."""
     coord, device, entity = await _grill(hass)
     record = coord.data["devices"][device.id]
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.70
+    # A millivolt reporter, judged just under 2.9 V (rule BAT-03).
+    record[DEV_BATTERY_VOLTS_TODAY_LOW] = 2.695
     record[DEV_BATTERY_TEMP_AT_VOLTS_HIGH] = -5.0
     assert await _read(hass, coord, device, entity, 80)
 

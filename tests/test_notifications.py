@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.30.11 (2026-11-27)
+# File: test_notifications.py, Version: 0.30.12 (2026-11-28)
 
 """The config-flow backbone, the notification surface, and the engine
 (rules NOTE-01 to NOTE-11).
@@ -438,13 +438,13 @@ async def test_family_summary_reads_the_lists():
         ["notify.phone"],
         battery=[{"device_id": "d1", "name": "Battery X", "level": 16}],
         falling=[
-            {"device_id": "d1", "name": "Battery X", "left": "about 2 weeks"},
-            {"device_id": "d2", "name": "Battery Y", "left": "about a month"},
+            {"device_id": "d1", "name": "Battery X", "words": "decay is accelerating, empty in about 2 weeks"},
+            {"device_id": "d2", "name": "Battery Y", "words": "voltage is falling, 2.6 V (new 3.0, spent 2.0)"},
         ],
     )
     summary = h._family_summary("battery")
-    assert "Battery X 16%, empty in about 2 weeks" in summary
-    assert "Battery Y empty in about a month" in summary
+    assert "Battery X 16%, decay is accelerating, empty in about 2 weeks" in summary
+    assert "Battery Y battery voltage is falling, 2.6 V (new 3.0, spent 2.0)" in summary
 
 
 async def test_events_dropped_in_quiet_hours():

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_frozen_sentence_times.py, Version: 0.27.10 (2026-10-27)
+# File: tests/test_frozen_sentence_times.py, Version: 0.30.12 (2026-11-28)
 
 """The frozen sentence's quiet and return times, across a longer wait,
 midnight and the clock change (rules FRZ-07, UNAV-07).
@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    ACTION_GAP_GREW,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DEV_DAILY_MAX,
@@ -30,6 +31,7 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_CAUSE,
@@ -67,10 +69,14 @@ async def test_a_freeze_cleared_by_a_longer_wait_is_not_told_as_a_report(
         r for r in coord.data[DATA_INCIDENTS]
         if r.get(INC_DEVICE_ID) == device.id and r.get(INC_KIND) == TODO_KIND_FROZEN
     ]
-    opened = next(r for r in rows if r[INC_EVENT] == INCIDENT_OPENED)
-    resolved = next(r for r in rows if r[INC_EVENT] == INCIDENT_RESOLVED)
-    sentence = coord._compose_episode(opened, resolved)
+    # It left the list as a withdrawal, its gap grown, not as a
+    # recovery (rule FRZ-26).
+    assert not any(r[INC_EVENT] == INCIDENT_RESOLVED for r in rows)
+    left = next(r for r in rows if r[INC_EVENT] == INCIDENT_ACTION)
+    assert left[INC_CAUSE] == ACTION_GAP_GREW
+    sentence = coord._compose_event(left)
     assert "reported again" not in sentence, sentence
+    assert "without reporting because its gap grew" in sentence, sentence
 
 
 async def test_a_freeze_across_the_fall_back_hour_does_not_read_backwards(

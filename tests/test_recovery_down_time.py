@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_down_time.py, Version: 0.27.15 (2026-10-30)
+# File: tests/test_recovery_down_time.py, Version: 0.30.12 (2026-11-28)
 
 """How long a recovered device was down, when it reports more than once
 in the minute its recovery waits (rules UNAV-07, LIST-06).
@@ -25,6 +25,8 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.device_sentinel.const import (
+    EVENT_WITHDRAWN,
+    WITHDRAWN_REASON_GAP_GREW,
     DATA_TODO_ITEMS,
     DEV_DAILY_MAX,
     DEV_TODAY_MAX,
@@ -154,10 +156,11 @@ async def test_a_report_kept_for_a_recovery_that_was_never_told_times_nothing_la
 ):
     """A device back from a freeze is muted inside its minute, so its
     recovery is never told. Its next freeze, cleared later with no
-    report, is timed from its own silence, not from the first one
-    (rule UNAV-07)."""
+    report, is withdrawn, not told as a recovery timed from the first
+    silence (rules UNAV-07, FRZ-26)."""
     coord, device, eid = await _armed_device(hass, freezer, "burst5")
     recoveries = record_events(hass, EVENT_RECOVERED)
+    withdrawn = record_events(hass, EVENT_WITHDRAWN)
     record = coord.data["devices"][device.id]
     await _minutes_on(hass, freezer, 160)
     assert record["frozen_category"] == "frozen"
@@ -173,11 +176,13 @@ async def test_a_report_kept_for_a_recovery_that_was_never_told_times_nothing_la
     assert record["frozen_category"] == "frozen"
     record[DEV_DAILY_MAX] = [12 * 3600.0] * (FREEZE_ARMING_DAYS + 2)
     await _minutes_on(hass, freezer, 1)
-    cleared = dt_util.utcnow().timestamp()
     await _minutes_on(hass, freezer, 2)
-    mine = [r for r in recoveries if r.get("device_id") == device.id]
-    assert mine, recoveries
-    assert abs(mine[-1]["down_for"] - (cleared - last_report)) <= 61, (mine[-1], cleared - last_report)
+    # Its second freeze cleared with no report: withdrawn, not a recovery,
+    # and the report kept from the first freeze times nothing (rule FRZ-26).
+    assert record["last_activity"] == last_report
+    assert not [r for r in recoveries if r.get("device_id") == device.id], recoveries
+    mine = [r for r in withdrawn if r.get("device_id") == device.id]
+    assert len(mine) == 1 and mine[0]["reason"] == WITHDRAWN_REASON_GAP_GREW, withdrawn
 
 
 

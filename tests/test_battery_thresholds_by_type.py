@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_thresholds_by_type.py, Version: 0.30.0 (2026-11-21)
+# File: test_battery_thresholds_by_type.py, Version: 0.30.12 (2026-11-28)
 
 """A low line for each battery type (rule BAT-03).
 
@@ -25,7 +25,9 @@ from custom_components.device_sentinel.const import (
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_DAY_RANGES,
     DEV_BATTERY_LOW,
+    DEV_BATTERY_VOLTS_FALLING_SINCE,
     DEV_BATTERY_VOLTS_TODAY_HIGH,
+    DEV_BATTERY_VOLTS_TODAY_LOW,
     SETTINGS_BATTERY_BY_TYPE,
     SYS_DETAIL,
     SYS_KIND,
@@ -87,8 +89,9 @@ async def test_each_type_is_low_at_its_own_line(hass: HomeAssistant):
     assert not await _read(hass, coord, unknown, unk, 24), "clears above 20 plus 3"
 
 
-async def test_a_coin_cell_is_low_at_its_resting_voltage(hass: HomeAssistant):
-    """An Aqara sensor on Zigbee2MQTT reads 33% at 2.9 V: low by its voltage."""
+async def test_a_coin_cell_falls_at_its_resting_voltage(hass: HomeAssistant):
+    """An Aqara sensor on Zigbee2MQTT reads 33% just under 2.9 V: its
+    voltage is falling, and it is not low (rule BAT-03)."""
     coin, cr = await _cell(hass, "door_aqara")
     coord = await setup_coordinator(hass)
     await registry_settled(hass)
@@ -96,14 +99,24 @@ async def test_a_coin_cell_is_low_at_its_resting_voltage(hass: HomeAssistant):
     coord.page_set_power(coin.id, "CR1632", 1)
     record = coord.data["devices"][coin.id]
 
+    def falling() -> bool:
+        return record.get(DEV_BATTERY_VOLTS_FALLING_SINCE) is not None
+
+    # Aqara reports millivolts: judged just under 2.9 V, not as a coarse
+    # reporter (rule BAT-03).
+    record[DEV_BATTERY_VOLTS_TODAY_LOW] = 2.885
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.95
-    assert not await _read(hass, coord, coin, cr, 66)
+    assert not await _read(hass, coord, coin, cr, 66) and not falling()
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.9
-    assert await _read(hass, coord, coin, cr, 33), "2.9 V resting is low"
+    assert not await _read(hass, coord, coin, cr, 34) and not falling(), "2.9 V resting is the line itself"
+    record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.895
+    assert not await _read(hass, coord, coin, cr, 33) and falling(), "just under 2.9 V is falling"
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.93
-    assert await _read(hass, coord, coin, cr, 53), "not cleared by 30 mV"
+    await _read(hass, coord, coin, cr, 53)
+    assert falling(), "not cleared by 35 mV"
     record[DEV_BATTERY_VOLTS_TODAY_HIGH] = 2.96
-    assert not await _read(hass, coord, coin, cr, 73), "clears above 2.95 V"
+    await _read(hass, coord, coin, cr, 73)
+    assert not falling(), "clears above 2.949 V"
 
 
 async def test_a_sag_today_is_not_the_resting_voltage(hass: HomeAssistant):

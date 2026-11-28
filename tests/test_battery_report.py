@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.30.4 (2026-11-23)
+# File: test_battery_report.py, Version: 0.30.12 (2026-11-28)
 
 """Which cells are going to be low (rules BAT-11, BAT-13, BAT-14).
 
@@ -320,7 +320,7 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "manual")
     brief = _brief(hass)
 
-    assert "Batteries falling faster each week: Door 2nd Bedroom (reaches 15% in under a week)." in brief
+    assert "Battery decay accelerating: Door 2nd Bedroom (reaches 15% in under a week)." in brief
     # A steady fall is named to watch, and the pointer is said once,
     # after the last battery line.
     assert ("Batteries to watch: Nearly Out (reaches 15% in under a week). "

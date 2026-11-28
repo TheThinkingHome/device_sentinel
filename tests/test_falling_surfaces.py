@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.30.11 (2026-11-27)
+# File: tests/test_falling_surfaces.py, Version: 0.30.12 (2026-11-28)
 
 """The falling battery on the phone and the card, and the crossing
 (rules LIST-02, NOTE-03, NOTE-10).
@@ -165,7 +165,7 @@ async def test_the_falling_push_reads_as_a_sentence(hass: HomeAssistant):
     assert recovery is False
     assert "_" not in line
     assert line.endswith(
-        "Door 2nd Bedroom battery is running down, reaches 18% in under a week."
+        "Door 2nd Bedroom battery decay is accelerating, reaches 18% in under a week."
     )
 
 
@@ -187,7 +187,7 @@ async def test_the_falling_recovery_names_the_kind_that_lifted(
         events[0][1]
     ]
     assert events[0][1].endswith(
-        "Door 2nd Bedroom battery is no longer running down."
+        "Door 2nd Bedroom battery decay has slowed."
     )
 
 
@@ -255,7 +255,7 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     # A card that lists anything ends with a link to the Problem List
     # (rule NOTE-11).
     assert message == (
-        "Battery: Door 2nd Bedroom reaches 18% in under a week."
+        "Battery: Door 2nd Bedroom battery decay is accelerating, reaches 18% in under a week."
         "\n\n[Open the Daily Brief](/device-sentinel?open=today)"
     )
 
@@ -271,6 +271,7 @@ async def test_a_device_with_both_kinds_reads_as_one_clause(
             "device_id": "d1",
             "name": "Door 2nd Bedroom",
             "left": "about 2 weeks",
+            "words": "decay is accelerating, empty in about 2 weeks",
         }
     ]
     with patch.object(
@@ -281,7 +282,7 @@ async def test_a_device_with_both_kinds_reads_as_one_clause(
         low.return_value = row_low
         falling.return_value = row_fall
         assert coord._family_summary("battery") == (
-            "Door 2nd Bedroom 16%, empty in about 2 weeks."
+            "Door 2nd Bedroom 16%, decay is accelerating, empty in about 2 weeks."
         )
 
 

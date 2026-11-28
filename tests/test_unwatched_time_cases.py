@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unwatched_time_cases.py, Version: 0.27.10 (2026-10-27)
+# File: test_unwatched_time_cases.py, Version: 0.30.12 (2026-11-28)
 
 """The return from being set aside is dated once (rule WATCH-08).
 
@@ -28,6 +28,10 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    ACTION_GAP_GREW,
+    DEV_FROZEN_SINCE,
+    EVENT_WITHDRAWN,
+    WITHDRAWN_REASON_GAP_GREW,
     CONF_EXCLUDED_DEVICES,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
@@ -191,7 +195,8 @@ async def test_a_freeze_cleared_without_a_report_does_not_count_unwatched_hours(
     hass: HomeAssistant, freezer
 ):
     """Excluded three hours, back, frozen a window after the return, and
-    cleared by a slider change with no report. The recovery counts from
+    cleared by a slider change with no report. It is withdrawn, not
+    recovered (rule FRZ-26), and the wait it was listed at counts from
     when it was watched again, not across the three unwatched hours
     (rule UNAV-07)."""
     coord, device, eids = await _ready(hass, freezer, "u05")
@@ -203,19 +208,20 @@ async def test_a_freeze_cleared_without_a_report_does_not_count_unwatched_hours(
     back = dt_util.utcnow().timestamp()
     assert await _frozen_at(hass, freezer, coord, device.id, window + H) is not None
     events = record_events(hass, EVENT_RECOVERED)
+    withdrawn = record_events(hass, EVENT_WITHDRAWN)
     await walk(hass, freezer, 1800)
+    listed = rec(coord, device.id)[DEV_FROZEN_SINCE]
     coord = await _options(hass, **{CONF_FREEZE_DELTA_LOW: 8, CONF_FREEZE_DELTA_HIGH: 12})
     await walk(hass, freezer, 180)
-    downs = _downs(events, device.id)
-    assert downs and downs[-1] is not None
-    told = downs[-1]
-    cleared = dt_util.utcnow().timestamp()
-    assert told <= cleared - back + 60 and told >= cleared - back - 600, (told, cleared - back)
-    incidents = [
-        i.get("duration") for i in coord.data.get("incidents") or []
-        if i.get("device_id") == device.id and i.get("duration") is not None
+    assert not _downs(events, device.id)
+    assert [w["reason"] for w in withdrawn if w.get("device_id") == device.id] == [WITHDRAWN_REASON_GAP_GREW]
+    rows = [
+        i for i in coord.data.get("incidents") or []
+        if i.get("device_id") == device.id and i.get("cause") == ACTION_GAP_GREW
     ]
-    assert incidents and abs(incidents[-1] - told) < 1, (incidents, told)
+    assert rows, coord.data.get("incidents")
+    before = rows[-1]["windows"]["before"]
+    assert before <= listed - back + 60, (before, listed - back)
 
 
 async def test_a_device_taken_back_then_frozen_counts_from_its_return(

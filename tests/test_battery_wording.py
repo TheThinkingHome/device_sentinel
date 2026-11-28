@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.27.17 (2026-11-01)
+# File: tests/test_battery_wording.py, Version: 0.30.12 (2026-11-28)
 
 """What the brief says when a battery level jumps (rule BAT-06).
 
@@ -132,7 +132,7 @@ async def test_a_repeated_low_battery_is_told_as_one(hass: HomeAssistant):
 async def test_a_repeated_falling_battery_is_told_as_one(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     sentence = coord._compose_flapping(_flap(TODO_KIND_FALLING_BATTERY, 600.0))
-    assert "battery fell twice" in sentence
+    assert "battery decay began accelerating twice" in sentence
     assert "silent" not in sentence
 
 async def test_a_battery_still_low_says_its_level(hass: HomeAssistant):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.30.4 (2026-11-23)
+# File: tests/test_battery_trend.py, Version: 0.30.12 (2026-11-28)
 
 """The battery trend by the week, and accelerating on a curve
 (rules BAT-10, BAT-11, BAT-12).
@@ -132,7 +132,7 @@ def test_a_gradual_bend_is_accelerating():
     trend = battery_trend(DOOR_2ND_BEDROOM, 14.5, True)
     assert trend["reading"] == "accelerating"
     assert round(trend["pace"], 1) == 2.7
-    assert battery_sentence(trend) == "Falling faster each week, about 2.7 points a week today."
+    assert battery_sentence(trend) == "Battery decay is accelerating, about 2.7 points a week today."
 
 
 def test_one_step_down_is_not_a_curve():
@@ -194,9 +194,9 @@ def test_the_month_drop_and_the_sentence():
     assert battery_month_drop([90.0] * 20) is None
     accelerating = battery_trend(S63, 57.0, True)
     words = battery_sentence(accelerating)
-    assert words.startswith("Falling faster each week, about 8.")
+    assert words.startswith("Battery decay is accelerating, about 8.")
     assert words.endswith(" points a week today.")
-    assert battery_sentence(battery_trend(S71, 61.5, True)).startswith("Falling about 3.")
+    assert battery_sentence(battery_trend(S71, 61.5, True)).startswith("Battery charge is falling at a steady pace, about 3.")
     assert battery_sentence(battery_trend(DOOR_MASTER_SHOWER, 76.0, True)) == ""
 
 
@@ -283,7 +283,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     # for a curve; a falling cell gets its line; a steady cell gets none.
     page = coord._page_battery(coord.data["devices"][fast.id])
     assert page["reading"] == "accelerating" and page["fit"] is None
-    assert page["sentence"].startswith("Falling faster each week, about ")
+    assert page["sentence"].startswith("Battery decay is accelerating, about ")
     assert len(coord._page_battery(coord.data["devices"][even.id])["fit"]["line"]) == 2
     steady = coord._page_battery(coord.data["devices"][wobble.id])
     assert steady["fit"] is None and steady["sentence"] == "" and len(steady["weeks"]) == 5
@@ -302,7 +302,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     assert [row["name"] for row in coord.battery_falling_list] == ["Garage Door"]
     coord._sync_problem_list()
     item = next(item for item in coord.todo_items if item["device_id"] == fast.id)
-    assert item["summary"].startswith("Garage Door: battery empty in")
+    assert item["summary"].startswith("Garage Door: battery decay is accelerating, empty in")
 
 
 async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):

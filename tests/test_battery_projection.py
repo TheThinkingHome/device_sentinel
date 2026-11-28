@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.30.0 (2026-11-21)
+# File: tests/test_battery_projection.py, Version: 0.30.12 (2026-11-28)
 
 """When a falling cell runs empty, as a range (rule BAT-13).
 
@@ -190,11 +190,11 @@ def test_a_curved_fall_is_said_as_speeding_up():
     assert curved["curved"] is True and curved["pace"] > 0
     steady = {"reading": "falling", "pace": 1.3, "fit": None}
     words = battery_sentence(steady, curved)
-    assert words == f"Falling faster each week, about {curved['pace']:.1f} points a week today."
+    assert words == f"Battery decay is accelerating, about {curved['pace']:.1f} points a week today."
     assert "steady" not in words
     straight = dict(curved, curved=False)
-    assert battery_sentence(steady, straight).endswith("at a steady pace.")
-    assert battery_sentence(steady).endswith("at a steady pace.")
+    assert battery_sentence(steady, straight).startswith("Battery charge is falling at a steady pace, ")
+    assert battery_sentence(steady).startswith("Battery charge is falling at a steady pace, ")
     # The pace today is the fitted path's, faster than the weeks' average.
     assert curved["pace"] > 1.3
 

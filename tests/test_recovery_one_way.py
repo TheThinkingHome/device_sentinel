@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.27.15 (2026-10-30)
+# File: tests/test_recovery_one_way.py, Version: 0.30.12 (2026-11-28)
 
 """A recovery goes one way, and the other rules it travels with
 (rules LIST-08, UP-06, FRZ-11, GEN-07, GEN-08, UNAV-07).
@@ -621,21 +621,24 @@ async def test_a_battery_recovery_keeps_its_own_opening(hass: HomeAssistant, fre
     assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "a damaged stamp: the opening"
 
 
-async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_report(hass: HomeAssistant, freezer):
+async def test_a_verdict_that_clears_without_a_report_is_withdrawn(hass: HomeAssistant, freezer):
     """A frozen verdict can clear on a minute tick when the wait grows (a
-    day folds in, a setting changes). The silence is still running, so
-    "down for" counts from the last report, not from the start of the
-    gap before it (rule UNAV-07)."""
+    day folds in, a setting changes). The silence is still running, so it
+    is no recovery: its line is withdrawn, with the reason gap_grew
+    (rule FRZ-26)."""
     from tests.helpers import record_events
 
     from custom_components.device_sentinel.const import (
         DEV_DAILY_MAX,
         EVENT_RECOVERED,
+        EVENT_WITHDRAWN,
         FREEZE_ARMING_DAYS,
+        WITHDRAWN_REASON_GAP_GREW,
     )
 
     coord, device, eid = await _armed_device(hass, freezer, "silent3")
     recoveries = record_events(hass, EVENT_RECOVERED)
+    withdrawn = record_events(hass, EVENT_WITHDRAWN)
     await _minutes_on(hass, freezer, 50)
     hass.states.async_set(eid, "23.0")
     await hass.async_block_till_done()
@@ -646,12 +649,12 @@ async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_repor
     record[DEV_DAILY_MAX] = [12 * 3600.0] * (FREEZE_ARMING_DAYS + 2)
     await _minutes_on(hass, freezer, 1)
     assert record["frozen_category"] is None
-    # Told after the minute's wait (rule LIST-06), timed to the clear.
-    now = dt_util.utcnow().timestamp()
+    # Withdrawn after the minute's wait (rule LIST-06).
     await _minutes_on(hass, freezer, 2)
-    mine = [r for r in recoveries if r.get("device_id") == device.id]
-    assert len(mine) == 1
-    assert abs(mine[0]["down_for"] - (now - last_report)) <= 61, (mine[0], now - last_report)
+    assert record["last_activity"] == last_report, "precondition: it never reported"
+    assert not [r for r in recoveries if r.get("device_id") == device.id]
+    mine = [r for r in withdrawn if r.get("device_id") == device.id]
+    assert len(mine) == 1 and mine[0]["reason"] == WITHDRAWN_REASON_GAP_GREW, withdrawn
 
 
 async def test_a_report_stamped_before_the_opening_by_its_last_seen_clock(hass: HomeAssistant, freezer):

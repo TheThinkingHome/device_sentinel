@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.30.0 (2026-11-21)
+# File: test_todo.py, Version: 0.30.12 (2026-11-28)
 
 """The problem list: one item per device, maintained by the sync
 (rules LIST-01, LIST-03, LIST-05, LIST-06, LIST-07, NOTE-12).
@@ -636,7 +636,7 @@ async def test_a_falling_cell_reaches_the_problem_list(
     assert item is not None
     # The time left runs to the 20 percent threshold of a battery whose type is not set (rules BAT-03, BAT-13).
     assert item["summary"] == (
-        "Falling Cell: battery reaches 20% in under a week"
+        "Falling Cell: battery decay is accelerating, reaches 20% in under a week"
     )
 
 
@@ -655,9 +655,9 @@ async def test_low_and_falling_read_as_one_line(
         "Dying Cell",
         {TODO_KIND_LOW_BATTERY: None, TODO_KIND_FALLING_BATTERY: None},
         16.0,
-        "about 2 weeks",
+        "decay is accelerating, empty in about 2 weeks",
     )
-    assert summary == "Dying Cell: battery 16%, empty in about 2 weeks"
+    assert summary == "Dying Cell: battery 16%, decay is accelerating, empty in about 2 weeks"
 
 
 async def test_the_falling_kind_keeps_an_acknowledgment(
@@ -713,24 +713,24 @@ async def test_the_falling_line_says_what_is_empty(
         "Falling Cell",
         {TODO_KIND_FALLING_BATTERY: None},
         None,
-        "about 2 weeks",
+        "decay is accelerating, empty in about 2 weeks",
     )
-    assert alone == "Falling Cell: battery empty in about 2 weeks"
+    assert alone == "Falling Cell: battery decay is accelerating, empty in about 2 weeks"
 
     both, _ = coord._problem_item_text(
         "Dying Cell",
         {TODO_KIND_LOW_BATTERY: None, TODO_KIND_FALLING_BATTERY: None},
         16.0,
-        "about 2 weeks",
+        "decay is accelerating, empty in about 2 weeks",
     )
-    assert both == "Dying Cell: battery 16%, empty in about 2 weeks"
+    assert both == "Dying Cell: battery 16%, decay is accelerating, empty in about 2 weeks"
     assert both.count("battery") == 1
 
     # No projection yet, so it says the direction without a time.
     vague, _ = coord._problem_item_text(
         "Vague Cell", {TODO_KIND_FALLING_BATTERY: None}, None, None
     )
-    assert vague == "Vague Cell: battery running down"
+    assert vague == "Vague Cell: battery decay is accelerating"
 
 
 # --------------------------------------------------------- bus events
