@@ -2106,6 +2106,7 @@ CONF_PERSISTENT_ENABLED = "persistent_enabled"
 # on one that upgraded (options step 7). The dashboard's own switch holds
 # only while the person stays on it (rule DASH-03).
 CONF_DASHBOARD_MODE = "dashboard_mode"
+CONF_KEEP_CONFIG_ON_REMOVAL = "keep_config_on_removal"
 DASHBOARD_SIMPLE = "simple"
 DASHBOARD_ADVANCED = "advanced"
 DASHBOARD_MODES = (DASHBOARD_SIMPLE, DASHBOARD_ADVANCED)

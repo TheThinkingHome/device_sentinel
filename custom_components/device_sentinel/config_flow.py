@@ -57,6 +57,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
+from . import migrate_options
+from .kept_config import async_load_kept_options
 from .naming import display_name
 from .notifier import notify_platform
 from .wifi import pick_adapter, scan_networks, wireless_interfaces
@@ -99,6 +101,7 @@ from .const import (
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
     CONF_DASHBOARD_MODE,
+    CONF_KEEP_CONFIG_ON_REMOVAL,
     DASHBOARD_ADVANCED,
     DASHBOARD_SIMPLE,
     DEFAULT_DASHBOARD_MODE,
@@ -712,8 +715,10 @@ class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Create the entry immediately, no questions asked."""
-        return self.async_create_entry(title="Device Sentinel", data={})
+        """Create the entry with defaults or options kept by the previous install."""
+        kept = await async_load_kept_options(self.hass)
+        options = migrate_options(kept[1], kept[0]) if kept is not None else {}
+        return self.async_create_entry(title="Device Sentinel", data={}, options=options)
 
     @staticmethod
     @callback
@@ -2329,6 +2334,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_ADVANCED},
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_KEEP_CONFIG_ON_REMOVAL,
+                        default=options.get(CONF_KEEP_CONFIG_ON_REMOVAL, False),
+                    ): selector.BooleanSelector(),
                     # The dashboard each window opens in (rule DASH-03).
                     vol.Required(
                         CONF_DASHBOARD_MODE,
